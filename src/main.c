@@ -6,13 +6,14 @@
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
+#include "input/touch.h"
 #include "gitrev.h"
 #include "config.h"
 
 const char build_id[] = GITREV;
 
 #ifndef REBOOT_AFTER_MS
-#define REBOOT_AFTER_MS 14000
+#define REBOOT_AFTER_MS 30000
 #endif
 
 extern void wdt_bark_handler(void);
@@ -30,26 +31,18 @@ static void sink_fbcon(const char *s, size_t n)
 	}
 }
 
-static void mesh_phase(uint32_t t0, uint32_t ms)
+static int dot_x = -1, dot_y = -1;
+
+static void draw_dot(uint32_t *buf)
 {
-	uint32_t start = time_ms(), frames0 = display_frames(), waits0 = display_waits();
-	uint32_t render_us = 0, last_report = start;
-	fbcon_set_overlay(true);
-	while (time_ms() - start < ms) {
-		wdt_feed();
-		uint32_t now = time_ms(), r0 = time_us();
-		flatmesh_render(display_backbuffer(), now - t0);
-		fbcon_draw(display_backbuffer());
-		render_us += time_us() - r0;
-		display_flip();
-		if (now - last_report >= 1000) {
-			uint32_t f = display_frames() - frames0;
-			log_printf("mesh: %lu frames, render %lu us/frame, wait %lu us/frame, %lu timeouts\n",
-				   f, f ? render_us / f : 0, f ? (display_waits() - waits0) / f : 0, display_timeouts());
-			last_report = now;
+	if (dot_x < 0)
+		return;
+	for (int dy = -6; dy <= 6; dy++)
+		for (int dx = -6; dx <= 6; dx++) {
+			int x = dot_x + dx, y = dot_y + dy;
+			if (x >= 0 && y >= 0 && x < (int)fb.width && y < (int)fb.height && dx * dx + dy * dy <= 36)
+				buf[y * fb.stride + x] = 0x00ffffff;
 		}
-	}
-	fbcon_set_overlay(false);
 }
 
 void main(void)
@@ -80,14 +73,57 @@ void main(void)
 	} else
 		log_printf("no fault record from the previous boot\n");
 
-	uint32_t t0 = time_ms(), last = 0;
-	bool mesh_done = false, panel_done = false;
+	pmic_charger_configure();
+	rpm_init();
+	bool have_touch = touch_init();
+	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
+
+	uint32_t t0 = time_ms(), last = 0, frames0 = display_frames();
+	bool key_was = false;
+	struct touch t;
+	int down_x = 0, down_y = 0;
+	uint32_t down_t = 0;
+	if (have_display)
+		fbcon_set_overlay(true);
 	for (;;) {
 		uint32_t now = time_ms();
 		wdt_feed();
+		if (have_touch && touch_poll(&t)) {
+			if (t.event == TOUCH_DOWN) {
+				down_x = t.x;
+				down_y = t.y;
+				down_t = now;
+			} else if (t.event == TOUCH_UP) {
+				int dx = t.x - down_x, dy = t.y - down_y;
+				const char *g = "tap";
+				if (dx * dx + dy * dy > 40 * 40)
+					g = (dx * dx > dy * dy) ? (dx > 0 ? "swipe right" : "swipe left") : (dy > 0 ? "swipe down" : "swipe up");
+				log_printf("gesture: %s (%d,%d -> %d,%d in %lu ms)\n", g, down_x, down_y, t.x, t.y, now - down_t);
+			}
+			dot_x = t.down ? t.x : -1;
+			dot_y = t.y;
+		}
+		bool key = pmic_power_key();
+		if (key != key_was) {
+			log_printf("power key %s\n", key ? "pressed" : "released");
+			key_was = key;
+			if (!key) {
+				log_printf("rebooting on power key\n");
+				reboot();
+			}
+		}
+		if (have_display) {
+			uint32_t *buf = display_backbuffer();
+			flatmesh_render(buf, now - t0);
+			draw_dot(buf);
+			fbcon_draw(buf);
+			display_flip();
+		}
 		if (now - last >= 1000) {
 			last = now;
-			log_printf("tick %lu\n", (now - t0) / 1000);
+			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s\n", (now - t0) / 1000,
+				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
+			frames0 = display_frames();
 #if defined(TEST_HANG)
 			if (now - t0 >= 2000) {
 				log_printf("test: hanging the main loop\n");
@@ -101,33 +137,11 @@ void main(void)
 			}
 #endif
 		}
-		if (have_display && !mesh_done && now - t0 >= 2000) {
-			mesh_phase(t0, 6000);
-			mesh_done = true;
-		}
-		if (have_display && mesh_done && !panel_done && now - t0 >= 8000) {
-			for (int level = 255; level >= 0; level -= 51) {
-				display_set_brightness((uint8_t)level);
-				log_printf("panel: brightness %d\n", level);
-				delay_ms(250);
-				wdt_feed();
-			}
-			display_set_brightness(255);
-			log_printf("panel: sleep\n");
-			display_sleep();
-			for (int i = 0; i < 6; i++) {
-				delay_ms(250);
-				wdt_feed();
-			}
-			display_wake();
-			log_printf("panel: awake, %lu frames so far\n", display_frames());
-			panel_done = true;
-		}
 		if (now - t0 >= REBOOT_AFTER_MS) {
 			log_printf("rebooting, %lu ticks\n", timer_ticks());
 			reboot();
 		}
-		if (timer_ticks())
+		if (!have_display && timer_ticks())
 			wfi();
 	}
 }

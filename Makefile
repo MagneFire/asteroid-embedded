@@ -17,6 +17,7 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 SRCS := src/start.S src/soc/cache.S src/main.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
+        src/soc/tlmm.c src/soc/i2c_gpio.c src/soc/rpm.c src/input/touch.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c
 OBJS := $(patsubst %,$(BUILD)/%.o,$(SRCS))

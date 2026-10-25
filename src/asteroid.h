@@ -32,6 +32,18 @@ void dcache_clean_invalidate_all(void);
 void gic_init(void);
 void gic_enable(unsigned id, void (*fn)(void));
 void gic_disable(unsigned id);
+void gic_mask(unsigned id);
+void gic_unmask(unsigned id);
+#define TLMM_INPUT 0
+#define TLMM_OUTPUT 1
+#define TLMM_PULL_NONE 0
+#define TLMM_PULL_DOWN 1
+#define TLMM_PULL_UP 3
+void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma);
+unsigned tlmm_get(unsigned n);
+void tlmm_set(unsigned n, unsigned v);
+void i2c_gpio_init(unsigned sda, unsigned scl);
+int i2c_gpio_xfer(uint8_t addr, const uint8_t *wbuf, unsigned wn, uint8_t *rbuf, unsigned rn);
 void irq_enable(void);
 void irq_disable(void);
 void timer_init(void);
@@ -52,6 +64,18 @@ uint8_t pmic_read(uint32_t addr);
 void pmic_write(uint32_t addr, uint8_t val);
 void pmic_init(void);
 const char *pmic_pon_reason(void);
+bool pmic_power_key(void);
+uint32_t pmic_rtc_read(void);
+void pmic_rtc_write(uint32_t secs);
+uint32_t pmic_battery_mv(void);
+const char *pmic_charger_status(void);
+void pmic_charger_configure(void);
+#define RPM_LDOA 0x616f646cu
+#define RPM_SMPA 0x61706d73u
+#define RPM_VSA 0x00617376u
+bool rpm_init(void);
+int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp);
+int rpm_regulator_enable(uint32_t type, uint32_t id, bool on);
 void dload_clear(void);
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
 int scm_wdog_debug_disable(void);
