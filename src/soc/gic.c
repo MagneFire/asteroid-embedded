@@ -53,6 +53,18 @@ void gic_enable(unsigned id, void (*fn)(void))
 	writel(BIT(id % 32), GICD_ISENABLER(id / 32));
 }
 
+void gic_mask(unsigned id)
+{
+	if (id < nirq)
+		writel(BIT(id % 32), GICD_ICENABLER(id / 32));
+}
+
+void gic_unmask(unsigned id)
+{
+	if (id < nirq)
+		writel(BIT(id % 32), GICD_ISENABLER(id / 32));
+}
+
 void gic_disable(unsigned id)
 {
 	if (id >= nirq)

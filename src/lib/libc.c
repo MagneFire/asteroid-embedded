@@ -70,3 +70,12 @@ unsigned long strtoul(const char *s, char **end, int base)
 	if (end) *end = (char *)s;
 	return v;
 }
+
+int strncmp(const char *a, const char *b, size_t n)
+{
+	for (; n; n--, a++, b++) {
+		if (*a != *b || !*a)
+			return (uint8_t)*a - (uint8_t)*b;
+	}
+	return 0;
+}

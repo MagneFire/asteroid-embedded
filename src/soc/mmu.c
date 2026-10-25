@@ -1,8 +1,8 @@
 /* Flat 1:1 map with 1 MiB sections.
  *   DRAM bank 0 (0 - 0x02f00000)             normal, write-back
- *   0x02f00000 - 0x04700000 (bootloader hole, framebuffer) normal, uncached
+ *   0x02f00000 - 0x04700000 (framebuffer, SMEM) normal, uncached
  *   DRAM bank 1 (0x04700000 - 0x20000000)    normal, write-back, except the
- *                                            section holding the persistent log
+ *                                            the section holding the persistent log
  *   peripherals (APCS, clock/PMIC arbiter, TLMM, multimedia, IMEM) device, XN
  *   everything else unmapped: a wild pointer aborts instead of corrupting. */
 #include "asteroid.h"
