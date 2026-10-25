@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: MIT
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "Huawei Watch";
+	compatible = "huawei,sturgeon", "qcom,apq8026";
+	qcom,msm-id = <199 0x20000>;
+	qcom,board-id = <8 4>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};

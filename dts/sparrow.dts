@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: MIT
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "ASUS ZenWatch 2";
+	compatible = "asus,sparrow", "qcom,apq8026";
+	qcom,msm-id = <199 0x20000>;
+	qcom,board-id = <8 3005>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};
