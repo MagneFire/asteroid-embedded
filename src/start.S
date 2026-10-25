@@ -40,6 +40,13 @@ reset:
         ldr     r0, =_start
         mcr     p15, 0, r0, c12, c0, 0          /* VBAR */
 
+        mrc     p15, 0, r0, c1, c0, 2
+        orr     r0, r0, #(0xf << 20)            /* CPACR: cp10/cp11 full access */
+        mcr     p15, 0, r0, c1, c0, 2
+        isb
+        mov     r0, #(1 << 30)
+        vmsr    fpexc, r0                       /* FPEXC.EN */
+
         cps     #0x12
         ldr     sp, =__stack_irq_top
         cps     #0x17
@@ -83,8 +90,14 @@ reset:
 irq_entry:
         sub     lr, lr, #4
         push    {r0-r3, r12, lr}
-        mov     r0, sp
+        vmrs    r0, fpscr
+        vpush   {d0-d7}
+        push    {r0}
+        add     r0, sp, #68
         bl      irq_handler
+        pop     {r0}
+        vpop    {d0-d7}
+        vmsr    fpscr, r0
         ldmfd   sp!, {r0-r3, r12, pc}^
 
         .global irq_enable
