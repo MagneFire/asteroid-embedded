@@ -65,10 +65,7 @@ void log_record(const char *text);
 const char *log_previous_record(void);
 void log_set_sink(void (*fn)(const char *s, size_t n));
 
-/* display */
-bool display_init(void);
-void display_update(void);
-void fbcon_init(void);
+/* display (see display/display.h) */
 void fbcon_puts(const char *s);
 void fbcon_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

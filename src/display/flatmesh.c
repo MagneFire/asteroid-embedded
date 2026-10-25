@@ -1,0 +1,93 @@
+/* AsteroidOS's FlatMesh background drawn in software: a Delaunay mesh of
+ * 100 points, each triangle a flat colour between the centre and outer
+ * colours by its distance from the centre, every vertex drifting between
+ * random shifts. The animation state advances 0.02 per 90 ms and the shift
+ * pair rotates once per loop, as the QML element does. */
+#include "asteroid.h"
+#include "display.h"
+#include "flatmesh_geometry.h"
+
+#define SCALE 1.2f
+#define CENTER_R 0xff
+#define CENTER_G 0xaa
+#define CENTER_B 0x39
+#define OUTER_R 0xdf
+#define OUTER_G 0x48
+#define OUTER_B 0x29
+
+static uint32_t colors[FLATMESH_INDICES / 3];
+static int hashes[FLATMESH_INDICES];
+static bool ready;
+
+static void prepare(void)
+{
+	for (int i = 0; i < FLATMESH_INDICES; i++) {
+		const float *v = flatmesh_vertices[flatmesh_indices[i]];
+		hashes[i] = (int)(v[0] * 100.0f) + (int)(v[1] * 100.0f);
+	}
+	for (int t = 0; t < FLATMESH_INDICES / 3; t++) {
+		float m = flatmesh_vertices[flatmesh_indices[3 * t]][2];
+		int r = (int)(CENTER_R * (1 - m) + OUTER_R * m);
+		int g = (int)(CENTER_G * (1 - m) + OUTER_G * m);
+		int b = (int)(CENTER_B * (1 - m) + OUTER_B * m);
+		colors[t] = (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
+	}
+	ready = true;
+}
+
+static void span(uint32_t *row, int x0, int x1, uint32_t c)
+{
+	if (x0 < 0) x0 = 0;
+	if (x1 > (int)fb.width) x1 = (int)fb.width;
+	for (int x = x0; x < x1; x++)
+		row[x] = c;
+}
+
+static void triangle(uint32_t *buf, float x0, float y0, float x1, float y1, float x2, float y2, uint32_t c)
+{
+	float t;
+	if (y1 < y0) { t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; }
+	if (y2 < y0) { t = x0; x0 = x2; x2 = t; t = y0; y0 = y2; y2 = t; }
+	if (y2 < y1) { t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+	int ya = (int)y0, yb = (int)y1, yc = (int)y2;
+	if (ya < 0) ya = 0;
+	if (yc >= (int)fb.height) yc = (int)fb.height - 1;
+	for (int y = ya; y <= yc; y++) {
+		float fy = (float)y + 0.5f;
+		if (fy < y0 || fy > y2 || y2 == y0)
+			continue;
+		float xl = x0 + (x2 - x0) * (fy - y0) / (y2 - y0);
+		float xr;
+		if (fy < y1 && y1 != y0)
+			xr = x0 + (x1 - x0) * (fy - y0) / (y1 - y0);
+		else if (y2 != y1)
+			xr = x1 + (x2 - x1) * (fy - y1) / (y2 - y1);
+		else
+			xr = x1;
+		if (xl > xr) { t = xl; xl = xr; xr = t; }
+		span(buf + y * fb.stride, (int)(xl + 0.5f), (int)(xr + 0.5f), c);
+	}
+	(void)yb;
+}
+
+void flatmesh_render(uint32_t *buf, uint32_t t_ms)
+{
+	if (!ready)
+		prepare();
+	uint32_t step = t_ms / 90;
+	int loop = (int)(step / 50);
+	float state = (float)(step % 50) * 0.02f;
+	float px[3], py[3];
+	for (int i = 0; i < FLATMESH_INDICES; i++) {
+		const float *v = flatmesh_vertices[flatmesh_indices[i]];
+		int idx = loop + hashes[i];
+		int a = ((idx % FLATMESH_SHIFTS) + FLATMESH_SHIFTS) % FLATMESH_SHIFTS;
+		int b = (a + 1) % FLATMESH_SHIFTS;
+		float sx = flatmesh_shifts[a][0] + (flatmesh_shifts[b][0] - flatmesh_shifts[a][0]) * state;
+		float sy = flatmesh_shifts[a][1] + (flatmesh_shifts[b][1] - flatmesh_shifts[a][1]) * state;
+		px[i % 3] = ((v[0] + sx) * SCALE + 0.5f) * (float)fb.width;
+		py[i % 3] = ((v[1] + sy) * SCALE + 0.5f) * (float)fb.height;
+		if (i % 3 == 2)
+			triangle(buf, px[0], py[0], px[1], py[1], px[2], py[2], colors[i / 3]);
+	}
+}
