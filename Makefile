@@ -25,9 +25,6 @@ CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=soft -ffreestanding -nostdlib \
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
           -Isrc -I$(BUILD)
-ifneq ($(TEST),)
-CFLAGS += -DTEST_$(shell echo $(TEST) | tr a-z A-Z)
-endif
 LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,ld/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments
 LIBS    := -lgcc
 
@@ -38,13 +35,18 @@ $(BUILD)/gitrev.h: FORCE
 	@echo '#define GITREV "$(GITREV)$(DIRTY)"' > $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
+$(BUILD)/config.h: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(if $(TEST),#define TEST_$(shell echo $(TEST) | tr a-z A-Z) 1,)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
 FORCE:
 
 $(BUILD)/%.S.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/%.c.o: %.c $(BUILD)/gitrev.h
+$(BUILD)/%.c.o: %.c $(BUILD)/gitrev.h $(BUILD)/config.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
