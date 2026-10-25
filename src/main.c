@@ -34,10 +34,11 @@ void main(void)
 	gic_init();
 	timer_init();
 	dload_clear();
+	int scm = scm_wdog_debug_disable();
 	wdt_arm(3000, 4000, wdt_bark_handler);
 	irq_enable();
 	log_init();
-	log_printf("asteroid-embedded %s up, timer %lu Hz\n", build_id, timer_hz());
+	log_printf("asteroid-embedded %s up, timer %lu Hz, scm %d\n", build_id, timer_hz(), scm);
 	spmi_init();
 	pmic_init();
 	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), pmic_pon_reason());

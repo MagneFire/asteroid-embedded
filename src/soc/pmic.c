@@ -2,6 +2,7 @@
  * chip powered on and decides what a PS_HOLD drop does: configured here as
  * a warm reset so DRAM, and with it the persistent log, survives every
  * reboot the firmware or the watchdog causes. */
+#include <string.h>
 #include "asteroid.h"
 
 #define REVID_TYPE		0x000104
@@ -16,7 +17,7 @@
 #define RESET_TYPE_WARM		0x1
 #define S2_RESET_EN		BIT(7)
 
-static char reason[96];
+static char reason[128];
 
 void pmic_init(void)
 {
@@ -31,6 +32,8 @@ void pmic_init(void)
 	delay_us(300);
 	pmic_write(PON_PS_HOLD_RESET_CTL, RESET_TYPE_WARM);
 	pmic_write(PON_PS_HOLD_RESET_CTL2, S2_RESET_EN);
+	snprintf(reason + strlen(reason), sizeof reason - strlen(reason), " ps_hold %02x/%02x",
+		 pmic_read(PON_PS_HOLD_RESET_CTL), pmic_read(PON_PS_HOLD_RESET_CTL2));
 }
 
 const char *pmic_pon_reason(void) { return reason; }

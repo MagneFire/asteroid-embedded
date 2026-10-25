@@ -53,6 +53,8 @@ void pmic_write(uint32_t addr, uint8_t val);
 void pmic_init(void);
 const char *pmic_pon_reason(void);
 void dload_clear(void);
+int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
+int scm_wdog_debug_disable(void);
 void reboot(void) __attribute__((noreturn));
 
 /* log (persistent RAM, survives a warm reset) */
