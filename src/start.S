@@ -83,6 +83,7 @@ reset:
 irq_entry:
         sub     lr, lr, #4
         push    {r0-r3, r12, lr}
+        mov     r0, sp
         bl      irq_handler
         ldmfd   sp!, {r0-r3, r12, pc}^
 
