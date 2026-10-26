@@ -44,6 +44,18 @@ unsigned tlmm_get(unsigned n);
 void tlmm_set(unsigned n, unsigned v);
 int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
 int i2c_qup_xfer(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
+typedef void (*i2c_done_fn)(int err, void *ctx);
+int i2c_qup_start(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
+bool i2c_qup_busy(void);
+void i2c_qup_poll(void);
+#define TLMM_IRQ_LEVEL_LOW 0
+#define TLMM_IRQ_LEVEL_HIGH 1
+#define TLMM_IRQ_EDGE_FALLING 2
+#define TLMM_IRQ_EDGE_RISING 3
+void tlmm_irq_init(void);
+void tlmm_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n));
+void tlmm_irq_enable(unsigned n, bool on);
+void tlmm_irq_ack(unsigned n);
 void irq_enable(void);
 void irq_disable(void);
 void timer_init(void);
