@@ -38,9 +38,10 @@ static void sink_fbcon(const char *s, size_t n)
 
 static int dot_x = -1, dot_y = -1;
 static bool have_gpu;
-static uint32_t gpu_frames, gpu_us, gpu_fail;
+static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
+static uint32_t *const layer = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
-static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms)
+static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 {
 	static float *vbo;
 	if (!vbo)
@@ -49,16 +50,20 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms)
 	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
 	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4 };
 	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
+	uint32_t t1 = time_us();
 	gpu_draw_begin(&t);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
+	if (with_layer)
+		gpu_draw_layer((uint32_t)(uintptr_t)layer, fb.width, fb.height, fb.stride * 4);
 	if (!gpu_draw_end()) {
 		if (gpu_fail++ == 0)
 			log_printf("gpu: draw did not complete\n");
 		have_gpu = false;
 	}
 	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
-	gpu_us += time_us() - t0;
+	gpu_us += time_us() - t1;
+	gpu_vert_us += t1 - t0;
 	gpu_frames++;
 }
 
@@ -107,7 +112,9 @@ void main(void)
 	pmic_charger_configure();
 	rpm_init();
 	have_gpu = gpu_init() && gpu_selftest();
-	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, fb.width, fb.height);
+	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layer, fb.stride, fb.width, fb.height);
+	if (have_ui)
+		dcache_clean_range(layer, fb.stride * fb.height * 4);
 	log_printf("ui: %s\n", have_ui ? "ready" : "not started");
 	tlmm_irq_init();
 	bool have_touch = touch_init();
@@ -118,7 +125,7 @@ void main(void)
 	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
 
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
-	uint32_t ui_frames = 0, ui_us = 0;
+	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool key_was = false;
 	struct touch t;
 	int down_x = 0, down_y = 0;
@@ -157,16 +164,26 @@ void main(void)
 		}
 		if (have_display) {
 			uint32_t *buf = display_backbuffer();
-			if (have_gpu)
-				gpu_flatmesh(buf, now - t0);
-			else
-				flatmesh_render(buf, now - t0);
 			if (have_ui) {
-				uint32_t u0 = time_us();
-				ui_render(buf, fb.stride);
+				uint32_t u0 = time_us(), x, y, w, h;
+				if (ui_update(&x, &y, &w, &h)) {
+					if (have_gpu)
+						for (uint32_t r = y; r < y + h; r++)
+							dcache_clean_range(layer + r * fb.stride + x, w * 4);
+					ui_repaints++;
+					ui_repaint_us += time_us() - u0;
+				}
 				ui_us += time_us() - u0;
 				ui_frames++;
+			}
+			if (have_gpu) {
+				gpu_flatmesh(buf, now - t0, have_ui);
 			} else {
+				flatmesh_render(buf, now - t0);
+				if (have_ui)
+					ui_render(buf, fb.stride);
+			}
+			if (!have_ui) {
 				draw_dot(buf);
 				fbcon_draw(buf);
 			}
@@ -188,11 +205,13 @@ void main(void)
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
 			if (gpu_frames)
-				log_printf("gpu: %lu draws, %lu us each\n", gpu_frames, gpu_us / gpu_frames);
-			gpu_frames = gpu_us = 0;
+				log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,
+					   gpu_us / gpu_frames, gpu_vert_us / gpu_frames);
+			gpu_frames = gpu_us = gpu_vert_us = 0;
 			if (ui_frames)
-				log_printf("ui: %lu frames, %lu us each\n", ui_frames, ui_us / ui_frames);
-			ui_frames = ui_us = 0;
+				log_printf("ui: %lu of %lu frames repainted, update %lu us avg, %lu us per repaint\n", ui_repaints,
+					   ui_frames, ui_us / ui_frames, ui_repaints ? ui_repaint_us / ui_repaints : 0);
+			ui_frames = ui_us = ui_repaints = ui_repaint_us = 0;
 #if defined(TEST_HANG)
 			if (now - t0 >= 2000) {
 				log_printf("test: hanging the main loop\n");

@@ -1,14 +1,10 @@
-// Slint platform on the firmware's framebuffer: the UI is rendered line by line and
-// blended over whatever the framebuffer already holds.
+// Slint platform on the firmware: the UI is rendered into a persistent premultiplied RGBA
+// layer, only where it changed, and composited over the background by the caller.
 use alloc::boxed::Box;
 use alloc::rc::Rc;
-use alloc::vec;
-use alloc::vec::Vec;
 use core::cell::{Cell, UnsafeCell};
 use core::time::Duration;
-use slint::platform::software_renderer::{
-    LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
-};
+use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, PhysicalSize, PlatformError};
 
@@ -41,7 +37,8 @@ impl Platform for Firmware {
 struct Ui {
     window: Rc<MinimalSoftwareWindow>,
     face: Watchface,
-    line: Vec<PremultipliedRgbaColor>,
+    layer: &'static mut [PremultipliedRgbaColor],
+    stride: usize,
     width: usize,
     height: usize,
 }
@@ -55,12 +52,26 @@ fn ui() -> Option<&'static mut Ui> {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_init(heap: *mut u8, heap_size: u32, width: u32, height: u32) -> bool {
-    if ui().is_some() || heap.is_null() || heap_size == 0 || width == 0 || height == 0 {
+pub unsafe extern "C" fn ui_init(
+    heap: *mut u8,
+    heap_size: u32,
+    layer: *mut u32,
+    stride_px: u32,
+    width: u32,
+    height: u32,
+) -> bool {
+    if ui().is_some()
+        || heap.is_null()
+        || heap_size == 0
+        || layer.is_null()
+        || width == 0
+        || height == 0
+        || stride_px < width
+    {
         return false;
     }
     unsafe { crate::heap_init(heap, heap_size as usize) };
-    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
     let platform = Firmware {
         window: window.clone(),
         last_ms: Cell::new(unsafe { time_ms() }),
@@ -76,11 +87,20 @@ pub unsafe extern "C" fn ui_init(heap: *mut u8, heap_size: u32, width: u32, heig
     if face.show().is_err() {
         return false;
     }
+    let layer = unsafe {
+        core::slice::from_raw_parts_mut(
+            layer as *mut PremultipliedRgbaColor,
+            stride_px as usize * height as usize,
+        )
+    };
+    layer.fill(PremultipliedRgbaColor::default());
+    window.request_redraw();
     unsafe {
         *UI.0.get() = Some(Ui {
             window,
             face,
-            line: vec![PremultipliedRgbaColor::default(); width as usize],
+            layer,
+            stride: stride_px as usize,
             width: width as usize,
             height: height as usize,
         });
@@ -126,10 +146,32 @@ pub extern "C" fn ui_touch(kind: i32, x: i32, y: i32) {
     }
 }
 
-struct Overlay<'a> {
-    fb: &'a mut [u32],
-    stride: usize,
-    line: &'a mut [PremultipliedRgbaColor],
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_update(x: *mut u32, y: *mut u32, w: *mut u32, h: *mut u32) -> bool {
+    let Some(ui) = ui() else { return false };
+    slint::platform::update_timers_and_animations();
+    let mut region = None;
+    let (layer, stride) = (&mut *ui.layer, ui.stride);
+    ui.window
+        .draw_if_needed(|renderer| region = Some(renderer.render(layer, stride)));
+    let Some(region) = region else { return false };
+    let origin = region.bounding_box_origin();
+    let size = region.bounding_box_size();
+    let x0 = (origin.x.max(0) as usize).min(ui.width);
+    let y0 = (origin.y.max(0) as usize).min(ui.height);
+    let x1 = (x0 + size.width as usize).min(ui.width);
+    let y1 = (y0 + size.height as usize).min(ui.height);
+    if x1 == x0 || y1 == y0 {
+        return false;
+    }
+    unsafe {
+        for (p, v) in [(x, x0), (y, y0), (w, x1 - x0), (h, y1 - y0)] {
+            if !p.is_null() {
+                *p = v as u32;
+            }
+        }
+    }
+    true
 }
 
 #[inline(always)]
@@ -138,18 +180,17 @@ fn over(src: u32, dst: u32, keep: u32) -> u32 {
     src + ((v + (v >> 8)) >> 8)
 }
 
-impl LineBufferProvider for Overlay<'_> {
-    type TargetPixel = PremultipliedRgbaColor;
-
-    fn process_line(
-        &mut self,
-        y: usize,
-        range: core::ops::Range<usize>,
-        render_fn: impl FnOnce(&mut [PremultipliedRgbaColor]),
-    ) {
-        let line = &mut self.line[range.clone()];
-        render_fn(line);
-        let row = &mut self.fb[y * self.stride + range.start..y * self.stride + range.end];
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32) {
+    let Some(ui) = ui() else { return };
+    let stride = stride_px as usize;
+    if buf.is_null() || stride < ui.width {
+        return;
+    }
+    let fb = unsafe { core::slice::from_raw_parts_mut(buf, stride * ui.height) };
+    for y in 0..ui.height {
+        let row = &mut fb[y * stride..y * stride + ui.width];
+        let line = &ui.layer[y * ui.stride..y * ui.stride + ui.width];
         for (d, s) in row.iter_mut().zip(line.iter()) {
             match s.alpha {
                 0 => {}
@@ -164,20 +205,4 @@ impl LineBufferProvider for Overlay<'_> {
             }
         }
     }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32) {
-    let Some(ui) = ui() else { return };
-    let stride = stride_px as usize;
-    if buf.is_null() || stride < ui.width {
-        return;
-    }
-    let fb = unsafe { core::slice::from_raw_parts_mut(buf, stride * ui.height) };
-    slint::platform::update_timers_and_animations();
-    ui.window.request_redraw();
-    let line = &mut ui.line[..];
-    ui.window.draw_if_needed(|renderer| {
-        renderer.render_by_line(Overlay { fb, stride, line });
-    });
 }
