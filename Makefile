@@ -22,7 +22,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c \
         src/soc/tlmm.c src/soc/i2c_qup.c src/soc/rpm.c src/input/touch.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c \
-        src/gpu/a3xx.c \
+        src/gpu/a3xx.c src/gpu/draw.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c

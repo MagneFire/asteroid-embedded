@@ -11,6 +11,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "a3xx.h"
+#include "a3xx_ring.h"
 
 #define GPU_BASE		0xfdb00000u
 #define MMSS_OXILI_GFX3D_CBCR	(MMSS_CC_BASE + 0x4028)
@@ -78,19 +79,12 @@
 #define CP_DEBUG_DYNAMIC_CLK_DISABLE	BIT(27)
 #define CP_ME_CNTL_HALT			BIT(28)
 
-#define CP_TYPE0(reg, n)	((((n) - 1) << 16) | ((reg) & 0x7fff))
-#define CP_TYPE3(op, n)		(0xc0000000u | (((n) - 1) << 16) | ((op) << 8))
-#define CP_NOP			0x10
-#define CP_WAIT_FOR_IDLE	0x26
-#define CP_MEM_WRITE		0x3d
-#define CP_ME_INIT		0x48
-
 #define RING_WORDS		(32768 / 4)
 
 
 static volatile uint32_t *const ring = (volatile uint32_t *)(uintptr_t)GPU_MEM_BASE;
 static volatile uint32_t *const scratch = (volatile uint32_t *)(uintptr_t)(GPU_MEM_BASE + 0x10000);
-static uint32_t wptr;
+static uint32_t wptr, submitted;
 static bool ready;
 
 static void gpu_write(uint32_t reg, uint32_t v) { writel(v, GPU_BASE + reg * 4); }
@@ -106,6 +100,7 @@ static bool flush(uint32_t timeout_ms)
 {
 	dsb();
 	gpu_write(REG_CP_RB_WPTR, wptr);
+	submitted = wptr;
 	uint32_t t0 = time_ms();
 	while (gpu_read(REG_CP_RB_RPTR) != wptr || (gpu_read(REG_RBBM_STATUS) & RBBM_STATUS_GPU_BUSY)) {
 		if (time_ms() - t0 > timeout_ms) {
@@ -117,6 +112,22 @@ static bool flush(uint32_t timeout_ms)
 		}
 	}
 	return true;
+}
+
+void gpu_ring_emit(uint32_t v)
+{
+	emit(v);
+}
+
+void gpu_ring_reserve(uint32_t n)
+{
+	if ((wptr - submitted) % RING_WORDS + n >= RING_WORDS - 16)
+		gpu_ring_flush(1000);
+}
+
+bool gpu_ring_flush(uint32_t timeout_ms)
+{
+	return ready && flush(timeout_ms);
 }
 
 static bool branch_on(uint32_t cbcr)
@@ -189,7 +200,7 @@ bool gpu_init(void)
 	gpu_write(REG_RBBM_INT_0_MASK, 0);
 
 	memset((void *)ring, 0, RING_WORDS * 4);
-	wptr = 0;
+	wptr = submitted = 0;
 	gpu_write(REG_CP_RB_CNTL, 12 | 2 << 8 | CP_RB_CNTL_NO_UPDATE);
 	gpu_write(REG_CP_RB_BASE, (uint32_t)(uintptr_t)ring);
 	gpu_write(REG_CP_PROTECT_CTRL, 0x00000007);
