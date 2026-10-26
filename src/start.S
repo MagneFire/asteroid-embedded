@@ -1,5 +1,5 @@
 /* Entry from the bootloader: non-secure SVC, MMU and caches off, IRQs
- * masked, r0 = 0, r1 = machine type, r2 = tags. The image starts with the
+ * masked, r0 = 0, r1 = machine type, r2 = device tree (kept in boot_dtb). The image starts with the
  * exception vectors so VBAR can point at the load address. */
         .syntax unified
         .arm
@@ -19,6 +19,8 @@ _start:
         .text
 reset:
         cpsid   if
+        ldr     r3, =boot_dtb
+        str     r2, [r3]
         ldr     sp, =__stack_svc_top
         bl      dcache_clean_invalidate_all
         mrc     p15, 0, r0, c1, c0, 0

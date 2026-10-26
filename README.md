@@ -14,6 +14,10 @@ Needs `arm-none-eabi-gcc`, `dtc` and Python 3.
     make TEST=hang      # a build that stalls its main loop (watchdog test)
     make TEST=abort     # a build that takes a data abort
 
+Every `firmware/*.fw` file goes into the boot image's ramdisk, which the
+bootloader loads next to the firmware; the firmware finds the files there
+by name.
+
 ## Run
 
 The watch must sit in fastboot (lk2nd built with `LK2ND_FORCE_FASTBOOT=1`

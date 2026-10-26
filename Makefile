@@ -16,7 +16,7 @@ TUSB   := third_party/tinyusb/src
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
         src/soc/tlmm.c src/soc/i2c_qup.c src/soc/rpm.c src/input/touch.c \
@@ -70,8 +70,15 @@ $(BUILD)/%.dtb: dts/%.dts
 $(BUILD)/qcdt-$(WATCH).img: $(BUILD)/$(WATCH).dtb tools/qcdt.py
 	python3 tools/qcdt.py -o $@ $<
 
-$(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt-$(WATCH).img tools/mkbootimg.py
-	python3 tools/mkbootimg.py --kernel $(BUILD)/asteroid.bin --dt $(BUILD)/qcdt-$(WATCH).img -o $@
+FIRMWARE := $(wildcard firmware/*.fw)
+$(BUILD)/ramdisk.img: FORCE
+	@mkdir -p $(BUILD)
+	@python3 tools/pack.py -o $@.tmp $(FIRMWARE)
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+
+$(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt-$(WATCH).img $(BUILD)/ramdisk.img tools/mkbootimg.py
+	python3 tools/mkbootimg.py --kernel $(BUILD)/asteroid.bin --ramdisk $(BUILD)/ramdisk.img --dt $(BUILD)/qcdt-$(WATCH).img -o $@
 
 run: $(BUILD)/asteroid.img
 	python3 tools/run.py $(RUNFLAGS)

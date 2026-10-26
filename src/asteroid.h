@@ -111,5 +111,9 @@ void usb_init(const char *serialno);
 void usb_poll(void);
 void usb_stats(uint32_t *rx, uint32_t *tx);
 
+/* boot handover */
+void boot_init(void);
+const void *boot_blob(const char *name, uint32_t *size);
+
 extern const char build_id[];
 #endif
