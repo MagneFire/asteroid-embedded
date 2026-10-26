@@ -44,6 +44,8 @@ unsigned tlmm_get(unsigned n);
 void tlmm_set(unsigned n, unsigned v);
 void i2c_gpio_init(unsigned sda, unsigned scl);
 int i2c_gpio_xfer(uint8_t addr, const uint8_t *wbuf, unsigned wn, uint8_t *rbuf, unsigned rn);
+int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
+int i2c_qup_xfer(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 void irq_enable(void);
 void irq_disable(void);
 void timer_init(void);

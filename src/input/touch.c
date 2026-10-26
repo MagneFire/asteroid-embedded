@@ -26,15 +26,17 @@ static bool present, was_down;
 static int last_x, last_y;
 static unsigned status_bytes = 1, max_x = 4095, max_y = 4095;
 
+static bool use_qup;
+
 static int rd(uint8_t reg, uint8_t *buf, unsigned n)
 {
-	return i2c_gpio_xfer(ADDR, &reg, 1, buf, n);
+	return use_qup ? i2c_qup_xfer(ADDR, &reg, 1, buf, n) : i2c_gpio_xfer(ADDR, &reg, 1, buf, n);
 }
 
 static int wr(uint8_t reg, uint8_t val)
 {
 	uint8_t buf[2] = { reg, val };
-	return i2c_gpio_xfer(ADDR, buf, 2, NULL, 0);
+	return use_qup ? i2c_qup_xfer(ADDR, buf, 2, NULL, 0) : i2c_gpio_xfer(ADDR, buf, 2, NULL, 0);
 }
 
 /* Power: analog supply from PM8226 LDO19, the I2C pull-ups from LVS1,
@@ -70,9 +72,19 @@ bool touch_init(void)
 {
 	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	power_on();
-	i2c_gpio_init(18, 19);
 	uint8_t e[6];
-	int ret = rd(PAGE_SELECT, e, 1);
+	use_qup = i2c_qup_init(5, 18, 19, 3, 384000) == 0;
+	int ret = use_qup ? rd(PAGE_SELECT, e, 1) : -1;
+	if (ret) {
+		log_printf("touch: qup i2c failed (%d), bit-banging\n", ret);
+		use_qup = false;
+		i2c_gpio_init(18, 19);
+		ret = rd(PAGE_SELECT, e, 1);
+	}
+	uint32_t t0 = time_us();
+	for (int i = 0; i < 10; i++)
+		rd(PAGE_SELECT, e, 1);
+	log_printf("touch: i2c via %s, %lu us per register read\n", use_qup ? "qup" : "gpio", (time_us() - t0) / 10);
 	if (ret) {
 		log_printf("touch: no answer on i2c (%d)\n", ret);
 		return false;
