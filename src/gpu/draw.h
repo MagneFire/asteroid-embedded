@@ -9,9 +9,19 @@
  * var[i].regid the register varying i is written from, pos_regid that of
  * the position. FS: var[i].inloc and var[i].compmask are the location and
  * mask of varying i, var[i].flat selects flat shading, ij_regid is where
- * the barycentrics arrive, color_regid/color_half the colour output.
+ * the barycentrics arrive, color_regid/color_half the colour output,
+ * pixlod is set when the shader samples a texture with implicit LOD.
  * Varying i of the VS feeds varying i of the FS. addr is set when the
- * code is first copied into GPU memory. */
+ * code is first copied into GPU memory.
+ * Textures are linear R8G8B8A8_UNORM (bytes R, G, B, A in memory), one
+ * level, nearest filtering, clamped to the edge; the base address must be
+ * 32-byte aligned and the pitch a multiple of 128 bytes (32 pixels). The
+ * texture cache is invalidated at gpu_draw_begin, so the CPU only has to
+ * clean the D-cache over the texels it wrote before gpu_draw_end, and must
+ * not write them again until gpu_draw_end has returned. Blending stays as
+ * set by gpu_draw_blend until the next gpu_draw_begin, which turns it off.
+ * gpu_draw_layer draws a premultiplied RGBA layer of the target's size
+ * over the target with source-over blending (texture unit 0). */
 #ifndef GPU_DRAW_H
 #define GPU_DRAW_H
 #include <stdint.h>
@@ -40,6 +50,7 @@ struct gpu_shader {
 	uint8_t ij_regid;
 	uint8_t color_regid;
 	bool color_half;
+	bool pixlod;
 	uint32_t addr;
 };
 
@@ -52,6 +63,9 @@ void *gpu_alloc(uint32_t size, uint32_t align);
 void gpu_draw_begin(const struct gpu_target *t);
 bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs);
 void gpu_draw_consts(int stage, unsigned first_vec4, const float *v, unsigned nvec4);
+void gpu_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes);
+void gpu_draw_blend(bool premultiplied_over);
 void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts);
+void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes);
 bool gpu_draw_end(void);
 #endif

@@ -3,12 +3,18 @@
  * binning pass, just the draw calls. Shaders are copied into GPU memory
  * and loaded into the shader processors' instruction buffers with
  * CP_LOAD_STATE (or fetched through the instruction cache when they are
- * too long for the buffers), uniforms are loaded inline. No depth,
- * stencil, blending or culling; the viewport covers the whole target. */
+ * too long for the buffers), uniforms are loaded inline. Textures are
+ * described to the texture pipe by a sampler (filter, wrap), a texture
+ * constant (format, size, pitch) and a table of level addresses, each
+ * loaded with CP_LOAD_STATE into the fragment stage's slots. Blending is
+ * off or premultiplied source-over; no depth, stencil or culling, and the
+ * viewport covers the whole target. A state change after a draw in the
+ * same submission first waits for the GPU to go idle. */
 #include <string.h>
 #include "asteroid.h"
 #include "a3xx_ring.h"
 #include "draw.h"
+#include "shaders.h"
 
 #define REG_UNKNOWN_0C3D		0x0c3d
 #define REG_GRAS_TSE_DEBUG_ECO		0x0c81
@@ -80,6 +86,8 @@
 #define EV_CACHE_FLUSH			0x06
 #define EV_HLSQ_FLUSH			0x07
 
+#define SB_FRAG_TEX			2
+#define SB_FRAG_MIPADDR			3
 #define SB_VERT_SHADER			4
 #define SB_FRAG_SHADER			6
 #define ST_SHADER			0
@@ -101,6 +109,7 @@
 #define ROP_COPY			12
 #define FACTOR_ZERO			0
 #define FACTOR_ONE			1
+#define FACTOR_ONE_MINUS_SRC_ALPHA	7
 #define PC_DRAW_TRIANGLES		2
 #define INTERP_FLAT			1
 #define TWO_QUADS			0
@@ -113,6 +122,9 @@
 #define RB_RENDER_CONTROL_BIN_WIDTH(x)	((x) >> 5 << 4)
 #define RB_MSAA_CONTROL_DISABLE		BIT(10)
 #define RB_MSAA_CONTROL_SAMPLE_MASK(x)	((x) << 16)
+#define RB_MRT_CONTROL_READ_DEST_ENABLE	BIT(3)
+#define RB_MRT_CONTROL_BLEND		BIT(4)
+#define RB_MRT_CONTROL_BLEND2		BIT(5)
 #define RB_MRT_CONTROL_ROP_CODE(x)	((x) << 8)
 #define RB_MRT_CONTROL_COMPONENT_ENABLE(x) ((x) << 24)
 #define RB_MRT_BUF_INFO_SWAP(x)		((x) << 10)
@@ -142,6 +154,7 @@
 #define SP_FS_CTRL_REG0_INOUTREGOVERLAP	BIT(18)
 #define SP_CTRL_REG0_THREADSIZE(x)	((x) << 20)
 #define SP_CTRL_REG0_SUPERTHREADMODE	BIT(21)
+#define SP_FS_CTRL_REG0_PIXLODENABLE	BIT(22)
 #define SP_CTRL_REG0_LENGTH(x)		(((x) & 0xff) << 24)
 #define SP_CTRL_REG1_CONST(len)		((len) | ((len) ? (len) - 1 : 0) << 10)
 #define SP_VS_CTRL_REG1_INITIALOUTSTANDING(x) ((x) << 24)
@@ -152,6 +165,20 @@
 #define SP_FS_OUTPUT_REG_DEPTH_REGID(x)	((x) << 8)
 #define SP_FS_MRT_REG_HALF_PRECISION	BIT(8)
 #define TPL1_TEX_OFFSET(s, m, b)	((s) | (m) << 8 | (b) << 16)
+#define FRAG_TEX_OFF			16
+#define FRAG_TEX_UNITS			16
+#define MIP_LEVELS			14
+#define TEX_NEAREST			0
+#define TEX_CLAMP_TO_EDGE		1
+#define TEX_SAMP_0(filt, wrap)		((filt) << 2 | (filt) << 4 | (wrap) << 6 | (wrap) << 9 | (wrap) << 12)
+#define TEX_SAMP_1_MAX_LOD(x)		((x) << 12)
+#define TEX_SWIZ_XYZW			(0 << 4 | 1 << 7 | 2 << 10 | 3 << 13)
+#define TFMT_8_8_8_8_UNORM		0x33
+#define TEX_2D				1
+#define TEX_CONST_0(swiz, fmt, type)	((swiz) | (fmt) << 22 | (type) << 30)
+#define TEX_CONST_1(w, h, align)	((h) | (w) << 14 | (align) << 28)
+#define TEX_PITCHALIGN_128B		3
+#define TEX_CONST_2(indx, pitch)	((indx) | (pitch) << 12)
 #define VFD_FETCH_INSTR_0(size, stride, next, idx) \
 	(((size) - 1) | (stride) << 7 | (next) << 17 | (idx) << 18 | 1u << 24)
 #define VFD_DECODE_INSTR(mask, fmt, swap, regid, size, next) \
@@ -164,6 +191,7 @@
 
 static struct gpu_shader *cur_vs;
 static uint32_t fs_total_in, pvt_mem, fence, seqno;
+static bool drawn;
 static volatile uint32_t *fence_ptr;
 
 static void out(uint32_t v) { gpu_ring_emit(v); }
@@ -171,6 +199,15 @@ static void pkt3(uint32_t op, unsigned n) { out(CP_TYPE3(op, n)); }
 static void cp_wfi(void) { pkt3(CP_WAIT_FOR_IDLE, 1); out(0); }
 static void event(uint32_t ev) { pkt3(CP_EVENT_WRITE, 1); out(ev); }
 static uint32_t fui(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+
+static void sync_state(void)
+{
+	if (!drawn)
+		return;
+	gpu_ring_reserve(2);
+	cp_wfi();
+	drawn = false;
+}
 
 static void regs(uint32_t r, unsigned n, const uint32_t *v)
 {
@@ -238,7 +275,7 @@ static void restore(void)
 	reg(REG_GRAS_CL_GB_CLIP_ADJ, 1, 0);
 	reg(REG_GRAS_TSE_DEBUG_ECO, 1, 1);
 	reg(REG_TPL1_TP_VS_TEX_OFFSET, 1, TPL1_TEX_OFFSET(0, 0, 0));
-	reg(REG_TPL1_TP_FS_TEX_OFFSET, 1, TPL1_TEX_OFFSET(16, 16, 14 * 16));
+	reg(REG_TPL1_TP_FS_TEX_OFFSET, 1, TPL1_TEX_OFFSET(FRAG_TEX_OFF, FRAG_TEX_OFF, MIP_LEVELS * FRAG_TEX_OFF));
 	reg(REG_VPC_VARY_CYLWRAP_ENABLE_0, 2, 0, 0);
 	reg(REG_UNKNOWN_0E43, 1, 1);
 	reg(REG_UNKNOWN_0F03, 1, 1);
@@ -275,6 +312,7 @@ void gpu_draw_begin(const struct gpu_target *t)
 	if ((t->base & 31) || (pitch_px & 31))
 		log_printf("gpu: target %08lx pitch %lu not 32-byte / 32-pixel aligned\n", t->base, t->pitch_bytes);
 	gpu_ring_reserve(512);
+	drawn = false;
 	restore();
 
 	reg(REG_RB_FRAME_BUFFER_DIMENSION, 1, w | h << 14);
@@ -314,6 +352,7 @@ bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs)
 {
 	if (!upload(vs) || !upload(fs))
 		return false;
+	sync_state();
 	unsigned vlen = vs->instrlen, flen = fs->instrlen, vsz = vlen, fsz = flen;
 	unsigned vmode = INSTR_BUFFER, fmode = INSTR_BUFFER;
 	if (vlen + flen > 128) {
@@ -384,7 +423,7 @@ bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs)
 	    SP_CTRL_REG0_BUFFERMODE(fmode) | (fmode == INSTR_CACHE ? SP_CTRL_REG0_CACHEINVALID : 0) |
 	    SP_CTRL_REG0_FOOTPRINT(footprint(fs->max_half_reg), footprint(fs->max_reg)) |
 	    SP_FS_CTRL_REG0_INOUTREGOVERLAP | SP_CTRL_REG0_THREADSIZE(FOUR_QUADS) |
-	    SP_CTRL_REG0_SUPERTHREADMODE | SP_CTRL_REG0_LENGTH(fsz),
+	    SP_CTRL_REG0_SUPERTHREADMODE | (fs->pixlod ? SP_FS_CTRL_REG0_PIXLODENABLE : 0) | SP_CTRL_REG0_LENGTH(fsz),
 	    SP_CTRL_REG1_CONST(fconst) | SP_FS_CTRL_REG1_INITIALOUTSTANDING(fs->sysval_in) |
 	    SP_FS_CTRL_REG1_HALFPRECVAROFFSET(63));
 	reg(REG_SP_FS_OBJ_OFFSET_REG, 2, SP_OBJ_OFFSET(vconst > 128 ? vconst : 128, fsoff), fs->addr);
@@ -412,6 +451,7 @@ bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs)
 
 void gpu_draw_consts(int stage, unsigned first_vec4, const float *v, unsigned nvec4)
 {
+	sync_state();
 	gpu_ring_reserve(4);
 	event(EV_HLSQ_FLUSH);
 	load_consts(stage == GPU_STAGE_VS ? SB_VERT_SHADER : SB_FRAG_SHADER, first_vec4, (const uint32_t *)v, nvec4);
@@ -463,6 +503,74 @@ void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, con
 	out(0);
 	out(DI_PT_TRILIST | DI_SRC_SEL_AUTO_INDEX << 6 | DRAW_PRE_DRAW_INITIATOR_ENABLE);
 	out(nverts);
+	drawn = true;
+}
+
+void gpu_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+{
+	if (unit < 0 || unit >= FRAG_TEX_UNITS) {
+		log_printf("gpu: no texture unit %d\n", unit);
+		return;
+	}
+	if ((addr & 31) || (pitch_bytes & 127))
+		log_printf("gpu: texture %08lx pitch %lu not 32-byte / 128-byte aligned\n", addr, pitch_bytes);
+	unsigned slot = FRAG_TEX_OFF + unit;
+	sync_state();
+	gpu_ring_reserve(2 + 4 + 6 + 2 + MIP_LEVELS);
+	event(EV_HLSQ_FLUSH);
+	pkt3(CP_LOAD_STATE, 4);
+	out(LOAD_STATE_0(slot, SS_DIRECT, SB_FRAG_TEX, 1));
+	out(ST_SHADER);
+	out(TEX_SAMP_0(TEX_NEAREST, TEX_CLAMP_TO_EDGE));
+	out(TEX_SAMP_1_MAX_LOD(8));
+	pkt3(CP_LOAD_STATE, 6);
+	out(LOAD_STATE_0(slot, SS_DIRECT, SB_FRAG_TEX, 1));
+	out(ST_CONSTANTS);
+	out(TEX_CONST_0(TEX_SWIZ_XYZW, TFMT_8_8_8_8_UNORM, TEX_2D));
+	out(TEX_CONST_1(width, height, TEX_PITCHALIGN_128B));
+	out(TEX_CONST_2(MIP_LEVELS * unit, pitch_bytes));
+	out(0);
+	pkt3(CP_LOAD_STATE, 2 + MIP_LEVELS);
+	out(LOAD_STATE_0(MIP_LEVELS * slot, SS_DIRECT, SB_FRAG_MIPADDR, MIP_LEVELS));
+	out(ST_CONSTANTS);
+	out(addr);
+	for (int i = 1; i < MIP_LEVELS; i++)
+		out(0);
+}
+
+void gpu_draw_blend(bool premultiplied_over)
+{
+	sync_state();
+	gpu_ring_reserve(4);
+	reg(REG_RB_MRT_CONTROL(0), 1, RB_MRT_CONTROL_ROP_CODE(ROP_COPY) | RB_MRT_CONTROL_COMPONENT_ENABLE(0xf) |
+	    (premultiplied_over ? RB_MRT_CONTROL_READ_DEST_ENABLE | RB_MRT_CONTROL_BLEND | RB_MRT_CONTROL_BLEND2 : 0));
+	reg(REG_RB_MRT_BLEND_CONTROL(0), 1, RB_MRT_BLEND_CLAMP_ENABLE |
+	    (premultiplied_over ? RB_MRT_BLEND(FACTOR_ONE, FACTOR_ONE_MINUS_SRC_ALPHA) : RB_MRT_BLEND(FACTOR_ONE, FACTOR_ZERO)));
+}
+
+void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+{
+	static const float quad[] = {
+		-1, 1, 0, 1, 0, 0,
+		1, 1, 0, 1, 1, 0,
+		-1, -1, 0, 1, 0, 1,
+		1, 1, 0, 1, 1, 0,
+		1, -1, 0, 1, 1, 1,
+		-1, -1, 0, 1, 0, 1,
+	};
+	static float *vbo;
+	if (!vbo) {
+		vbo = gpu_alloc(sizeof quad, 64);
+		if (!vbo)
+			return;
+		memcpy(vbo, quad, sizeof quad);
+	}
+	if (!gpu_draw_program(&shader_d_vs, &shader_d_fs))
+		return;
+	gpu_draw_texture(0, tex_addr, width, height, pitch_bytes);
+	gpu_draw_blend(true);
+	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 24, 2, (const uint8_t[]){4, 2}, 6);
+	gpu_draw_blend(false);
 }
 
 bool gpu_draw_end(void)
