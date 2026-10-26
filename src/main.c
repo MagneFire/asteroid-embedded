@@ -97,6 +97,8 @@ void main(void)
 	boot_init();
 	spmi_init();
 	pmic_init();
+	if (rpm_init())
+		rpm_bus_votes();
 	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), pmic_pon_reason());
 	bool have_display = display_init();
 	if (have_display) {
@@ -113,8 +115,6 @@ void main(void)
 		log_printf("no fault record from the previous boot\n");
 
 	pmic_charger_configure();
-	if (rpm_init())
-		rpm_bus_votes();
 	have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layer, fb.stride, fb.width, fb.height);
 	if (have_ui)
