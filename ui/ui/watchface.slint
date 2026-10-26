@@ -1,0 +1,128 @@
+// Digital watchface drawn over the animated background: time, date, battery.
+import "../fonts/NotoSans-Light.ttf";
+
+export component Watchface inherits Window {
+    in property <int> hour;
+    in property <int> minute;
+    in property <int> second;
+    in property <int> weekday;
+    in property <int> day;
+    in property <int> month;
+    in property <int> battery-percent;
+    in property <bool> charging;
+    property <bool> show-seconds;
+    property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    pure function two-digits(n: int) -> string {
+        return (n < 10 ? "0" : "") + n;
+    }
+
+    background: transparent;
+    default-font-family: "Noto Sans";
+    default-font-weight: 300;
+
+    Text {
+        x: 0;
+        y: root.show-seconds ? root.height * 0.17 : root.height * 0.22;
+        width: root.width;
+        height: root.height * 0.36;
+        text: root.two-digits(root.hour) + ":" + root.two-digits(root.minute);
+        color: white;
+        font-size: 110px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        animate y { duration: 250ms; easing: ease-out; }
+
+        TouchArea {
+            clicked => {
+                root.show-seconds = !root.show-seconds;
+            }
+        }
+    }
+
+    Text {
+        x: 0;
+        y: root.show-seconds ? root.height * 0.5 : root.height * 0.46;
+        width: root.width;
+        height: root.height * 0.12;
+        text: root.two-digits(root.second);
+        color: white;
+        font-size: 36px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        opacity: root.show-seconds ? 1 : 0;
+        animate y, opacity { duration: 250ms; easing: ease-out; }
+    }
+
+    Text {
+        x: 0;
+        y: root.height * 0.63;
+        width: root.width;
+        height: root.height * 0.08;
+        text: root.weekdays[root.weekday];
+        color: white;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Text {
+        x: 0;
+        y: root.height * 0.70;
+        width: root.width;
+        height: root.height * 0.08;
+        text: root.day + " " + root.months[root.month - 1];
+        color: white;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    HorizontalLayout {
+        x: 0;
+        width: root.width;
+        y: root.height * 0.82;
+        height: root.height * 0.07;
+        spacing: 8px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 1px;
+                Rectangle {
+                    width: 28px;
+                    height: 14px;
+                    border-width: 1.5px;
+                    border-color: white;
+                    border-radius: 2px;
+                    Rectangle {
+                        x: 3px;
+                        y: 3px;
+                        width: (parent.width - 6px) * clamp(root.battery-percent, 0, 100) / 100;
+                        height: parent.height - 6px;
+                        background: white;
+                        opacity: root.charging ? pulse : 1;
+                        property <float> pulse: 0.55 + 0.45 * Math.sin(animation-tick() / 1s * 180deg);
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 2px;
+                        height: 6px;
+                        background: white;
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: (root.charging ? "+" : "") + root.battery-percent + "%";
+            color: white;
+            font-size: 20px;
+            vertical-alignment: center;
+        }
+    }
+}

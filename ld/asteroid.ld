@@ -1,10 +1,11 @@
 /* The bootloader copies the image to 0x8000 and jumps to its first word.
  * Everything the firmware owns sits in the first DRAM bank (0 - 0x02f00000);
  * the inherited framebuffer and the persistent log are fixed addresses
- * elsewhere (src/soc/msm8226.h). */
+ * elsewhere (src/soc/msm8226.h). Code, data, bss and stacks must end below
+ * 0x01e00000, where the bootloader puts the device tree. */
 MEMORY
 {
-    IMG (rwx) : ORIGIN = 0x00008000, LENGTH = 4M
+    IMG (rwx) : ORIGIN = 0x00008000, LENGTH = 0x01e00000 - 0x00008000
 }
 ENTRY(_start)
 SECTIONS

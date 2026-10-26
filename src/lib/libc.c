@@ -37,6 +37,8 @@ int memcmp(const void *a, const void *b, size_t n)
 	return 0;
 }
 
+int bcmp(const void *a, const void *b, size_t n) { return memcmp(a, b, n); }
+
 size_t strlen(const char *s) { const char *p = s; while (*p) p++; return (size_t)(p - s); }
 int strcmp(const char *a, const char *b)
 {

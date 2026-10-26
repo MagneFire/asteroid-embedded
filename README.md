@@ -7,7 +7,10 @@ chip configured; the firmware takes it from there.
 
 ## Build
 
-Needs `arm-none-eabi-gcc`, `dtc` and Python 3.
+Needs `arm-none-eabi-gcc`, `dtc`, Python 3 and Rust (`cargo` on PATH or
+from Homebrew's rustup, with `rustup target add armv7a-none-eabihf`). The
+user interface in `ui/` is a Slint crate built into a static library and
+linked into the image.
 
     make                # build/asteroid.img for sturgeon
     make WATCH=sparrow
@@ -38,7 +41,9 @@ symbolizes the addresses in the fault record with `addr2line`.
 
 GPL-3.0-or-later (see LICENSE). Files taken from other projects keep their
 own license: TinyUSB and its ChipIdea port (MIT), the 5x12 console font
-(BSD, from the Android Open Source Project) and the FlatMesh geometry
-(BSD-3-Clause, from qml-asteroid). The GPU microcode in `firmware/` is
-Qualcomm's, redistributable under `firmware/LICENSE.qcom`; it is loaded
-from the boot image's ramdisk and is not part of the firmware binary.
+(BSD, from the Android Open Source Project), the FlatMesh geometry
+(BSD-3-Clause, from qml-asteroid) and the Noto Sans font in `ui/fonts/`
+(OFL-1.1). Slint is used under its GPL-3.0-only option. The GPU microcode
+in `firmware/` is Qualcomm's, redistributable under `firmware/LICENSE.qcom`;
+it is loaded from the boot image's ramdisk and is not part of the firmware
+binary.

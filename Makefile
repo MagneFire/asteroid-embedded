@@ -21,7 +21,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
         src/soc/tlmm.c src/soc/i2c_qup.c src/soc/rpm.c src/input/touch.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
-        src/lib/libc.c src/lib/fmt.c \
+        src/lib/libc.c src/lib/fmt.c src/ui/ui.c \
         src/gpu/a3xx.c src/gpu/draw.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
@@ -32,8 +32,13 @@ CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -ffreestanding
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
           -Isrc -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs
-LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,ld/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments
+LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,ld/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack
 LIBS    := -lgcc
+
+CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
+UI_LIB  := ui/target/armv7a-none-eabihf/release/libasteroid_ui.a
+UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
+           $(shell find ui/src ui/ui ui/fonts -type f 2>/dev/null)
 
 all: $(BUILD)/asteroid.img
 
@@ -58,8 +63,12 @@ $(BUILD)/%.c.o: %.c $(BUILD)/gitrev.h $(BUILD)/config.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
-$(BUILD)/asteroid.elf: $(OBJS) ld/asteroid.ld
-	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
+$(UI_LIB): $(UI_SRCS)
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" $(CARGO) build --release --target armv7a-none-eabihf
+	@touch $@
+
+$(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) ld/asteroid.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
 	$(SIZE) $@
 
 $(BUILD)/asteroid.bin: $(BUILD)/asteroid.elf

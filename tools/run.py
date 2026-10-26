@@ -49,7 +49,7 @@ def symbolize(text):
     addrs = set(re.findall(r"\b(?:pc|lr)=([0-9a-f]{8})", text))
     for m in re.finditer(r"stack: ((?:[0-9a-f]{8} ?)+)", text):
         addrs.update(m.group(1).split())
-    addrs = sorted(a for a in addrs if 0x8000 <= int(a, 16) < 0x400000)
+    addrs = sorted(a for a in addrs if 0x8000 <= int(a, 16) < 0x01e00000)
     if not addrs:
         return
     cross = os.environ.get("CROSS", "arm-none-eabi-")
