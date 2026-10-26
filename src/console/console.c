@@ -228,7 +228,13 @@ static void run(const char *text)
 	args = (char *)skip_spaces(args);
 	for (unsigned i = 0; i < ARRAY_SIZE(commands); i++)
 		if (!strcmp(buf, commands[i].name)) {
+			/* Some commands take seconds on the sleep clock. */
+			bool slow = cpu_clock_is_slow();
+			if (slow)
+				cpu_clock_slow(false);
 			commands[i].fn(args);
+			if (slow)
+				cpu_clock_slow(true);
 			return;
 		}
 	say("unknown command: %s\n", buf);

@@ -26,7 +26,15 @@ void cpu_clock_init(void)
 	cpu_clock_select(SRC_A7_PLL | DIV_1);
 }
 
+static bool slow_now;
+
 void cpu_clock_slow(bool slow)
 {
+	slow_now = slow;
 	cpu_clock_select((slow ? SRC_XO : SRC_A7_PLL) | DIV_1);
+}
+
+bool cpu_clock_is_slow(void)
+{
+	return slow_now;
 }
