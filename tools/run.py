@@ -102,7 +102,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-boot", action="store_true", help="only fetch the log region from fastboot")
     p.add_argument("--no-wait", action="store_true", help="boot and return")
-    p.add_argument("--timeout", type=float, default=90)
+    p.add_argument("--timeout", type=float, default=20)
     p.add_argument("--tail", type=int, default=40)
     a = p.parse_args()
     if a.no_boot:
@@ -134,7 +134,7 @@ def main():
             fetch_ramoops(a.tail)
             return
         time.sleep(0.3)
-    sys.exit("neither adb nor fastboot came back")
+    sys.exit("running for %.0f s but no adb device: USB did not come up" % a.timeout)
 
 if __name__ == "__main__":
     main()
