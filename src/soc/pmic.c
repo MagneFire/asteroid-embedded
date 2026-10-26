@@ -179,3 +179,55 @@ uint32_t pmic_battery_percent(uint32_t mv)
 		return 100;
 	return (mv - 3450) * 100 / (4300 - 3450);
 }
+
+/* Battery current through the current ADC across the external sense
+ * resistor (9.7 mOhm on this watch): each reading is calibrated with a
+ * gain conversion (17.857 mV reference) and an offset conversion of the
+ * same input with its terminals shorted. */
+#define IADC			0x003600
+#define IADC_STATUS1		(IADC + 0x08)
+#define IADC_MODE_CTL		(IADC + 0x40)
+#define IADC_EN_CTL1		(IADC + 0x46)
+#define IADC_CH_SEL		(IADC + 0x48)
+#define IADC_DIG_PARAM		(IADC + 0x50)
+#define IADC_HW_SETTLE		(IADC + 0x51)
+#define IADC_CONV_REQ		(IADC + 0x52)
+#define IADC_FAST_AVG_CTL	(IADC + 0x5a)
+#define IADC_DATA		(IADC + 0x60)
+#define IADC_CH_EXT_RSENSE	1
+#define IADC_CH_GAIN		3
+#define IADC_CH_EXT_OFFSET	5
+#define IADC_GAIN_UV		17857
+#define RSENSE_UOHM		9700
+
+static int iadc_raw(uint8_t chan)
+{
+	pmic_write(IADC_MODE_CTL, BIT(0));
+	pmic_write(IADC_CH_SEL, chan);
+	pmic_write(IADC_DIG_PARAM, 0);
+	pmic_write(IADC_HW_SETTLE, 0);
+	pmic_write(IADC_FAST_AVG_CTL, 0);
+	pmic_write(IADC_EN_CTL1, BIT(7));
+	pmic_write(IADC_CONV_REQ, BIT(7));
+	for (int i = 0; i < 100; i++) {
+		delay_us(100);
+		if ((pmic_read(IADC_STATUS1) & 3) == 1) {
+			uint8_t d[2];
+			spmi_read(IADC_DATA, d, 2);
+			pmic_write(IADC_EN_CTL1, 0);
+			return d[0] | d[1] << 8;
+		}
+	}
+	pmic_write(IADC_EN_CTL1, 0);
+	return -1;
+}
+
+/* Positive while the battery discharges. */
+int32_t pmic_battery_ua(void)
+{
+	int gain = iadc_raw(IADC_CH_GAIN), off = iadc_raw(IADC_CH_EXT_OFFSET), raw = iadc_raw(IADC_CH_EXT_RSENSE);
+	if (gain < 0 || off < 0 || raw < 0 || gain == off)
+		return 0;
+	int64_t uv = (int64_t)(int16_t)(raw - off) * IADC_GAIN_UV / (int16_t)(gain - off);
+	return -(int32_t)(uv * 1000000 / RSENSE_UOHM);
+}

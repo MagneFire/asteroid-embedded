@@ -83,6 +83,7 @@ void pmic_rtc_write(uint32_t secs);
 uint32_t pmic_battery_mv(void);
 const char *pmic_charger_status(void);
 bool pmic_charging(void);
+int32_t pmic_battery_ua(void);
 uint32_t pmic_battery_percent(uint32_t mv);
 void pmic_charger_configure(void);
 #define RPM_LDOA 0x616f646cu

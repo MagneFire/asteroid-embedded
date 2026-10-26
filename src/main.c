@@ -238,8 +238,8 @@ void main(void)
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
 			uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
-			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups\n", awake ? "awake" : "asleep",
-				   slept > 1000 ? 100 : slept / 10, wakeups);
+			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, battery %ld mA\n", awake ? "awake" : "asleep",
+				   slept > 1000 ? 100 : slept / 10, wakeups, pmic_battery_ua() / 1000);
 			asleep_ms = 0;
 			if (!awake)
 				asleep_t = now;
