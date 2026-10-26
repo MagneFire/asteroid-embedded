@@ -12,4 +12,5 @@ struct touch {
 
 bool touch_init(void);
 bool touch_poll(struct touch *t);
+void touch_stats(uint32_t *attentions, uint32_t *errors);
 #endif

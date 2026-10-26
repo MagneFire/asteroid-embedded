@@ -76,6 +76,7 @@ void main(void)
 
 	pmic_charger_configure();
 	rpm_init();
+	tlmm_irq_init();
 	bool have_touch = touch_init();
 	console_init();
 	usb_init("asteroid-sturgeon");
@@ -94,7 +95,7 @@ void main(void)
 		uint32_t now = time_ms();
 		wdt_feed();
 		usb_poll();
-		if (have_touch && touch_poll(&t)) {
+		while (have_touch && touch_poll(&t)) {
 			if (t.event == TOUCH_DOWN) {
 				down_x = t.x;
 				down_y = t.y;
@@ -127,10 +128,11 @@ void main(void)
 		}
 		if (now - last >= 1000) {
 			last = now;
-			uint32_t rx, tx;
+			uint32_t rx, tx, att, terr;
 			usb_stats(&rx, &tx);
-			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu\n", (now - t0) / 1000,
-				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx);
+			touch_stats(&att, &terr);
+			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - t0) / 1000,
+				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
 #if defined(TEST_HANG)
 			if (now - t0 >= 2000) {

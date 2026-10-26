@@ -6,7 +6,7 @@
  * 2D sensor, F11 (finger state byte then 5 bytes per finger: x and y high
  * bytes, low nibbles, width, pressure) or F12 (8 bytes per object: type,
  * x, y, z, wx, wy). The attention line, gpio 17, is low while a report is
- * pending; it is polled from the main loop. */
+ * pending and raises a pin interrupt. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -66,6 +66,105 @@ static void power_on(void)
 		   pmic_read(REG_L19 + REG_VOLTAGE2), pmic_read(REG_LVS1 + REG_STATUS1), tlmm_get(GPIO_RESET));
 }
 
+/* Attention handling, all in interrupt context: the level-low pin
+ * interrupt is masked, the interrupt status of F01 is read (which
+ * releases the line), then the finger data; the decoded event is queued
+ * and the pin interrupt unmasked again, so a line still held low starts
+ * the next round at once. */
+#define QUEUE_LEN 16
+static struct touch queue[QUEUE_LEN];
+static volatile unsigned q_head, q_tail;
+static uint8_t irq_status[2], report[16], data_reg, data_len;
+static uint32_t attentions, errors;
+static uint8_t status_reg;
+
+static void push(const struct touch *t)
+{
+	unsigned next = (q_head + 1) % QUEUE_LEN;
+	if (next == q_tail)
+		return;
+	queue[q_head] = *t;
+	q_head = next;
+}
+
+static void rearm(void)
+{
+	tlmm_irq_ack(GPIO_ATTN);
+	tlmm_irq_enable(GPIO_ATTN, true);
+}
+
+static void report_done(int err, void *ctx)
+{
+	if (err) {
+		errors++;
+		rearm();
+		return;
+	}
+	struct touch t = { TOUCH_NONE, 0, 0, false };
+	int x, y;
+	bool down;
+	if (f11.number) {
+		const uint8_t *f = report + status_bytes;
+		down = (report[0] & 3) != 0;
+		x = (f[0] << 4 | (f[2] & 0xf)) * (int)fb.width / (int)(max_x + 1);
+		y = (f[1] << 4 | f[2] >> 4) * (int)fb.height / (int)(max_y + 1);
+	} else {
+		down = report[0] != 0;
+		x = report[1] | report[2] << 8;
+		y = report[3] | report[4] << 8;
+	}
+	if (down) {
+		t.event = was_down ? TOUCH_MOVE : TOUCH_DOWN;
+		last_x = x;
+		last_y = y;
+	} else if (was_down) {
+		t.event = TOUCH_UP;
+		x = last_x;
+		y = last_y;
+	}
+	t.x = x;
+	t.y = y;
+	t.down = down;
+	was_down = down;
+	if (t.event != TOUCH_NONE)
+		push(&t);
+	rearm();
+}
+
+static void status_done(int err, void *ctx)
+{
+	if (err || i2c_qup_start(ADDR, &data_reg, 1, report, data_len, report_done, NULL)) {
+		errors++;
+		rearm();
+	}
+}
+
+static void attention(unsigned pin)
+{
+	tlmm_irq_enable(GPIO_ATTN, false);
+	attentions++;
+	if (i2c_qup_start(ADDR, &status_reg, 1, irq_status, 2, status_done, NULL)) {
+		errors++;
+		rearm();
+	}
+}
+
+bool touch_poll(struct touch *t)
+{
+	i2c_qup_poll();
+	if (q_tail == q_head)
+		return false;
+	*t = queue[q_tail];
+	q_tail = (q_tail + 1) % QUEUE_LEN;
+	return true;
+}
+
+void touch_stats(uint32_t *att, uint32_t *err)
+{
+	*att = attentions;
+	*err = errors;
+}
+
 bool touch_init(void)
 {
 	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
@@ -114,47 +213,11 @@ bool touch_init(void)
 		log_printf("touch: F11 %u fingers, %u status bytes, max %u x %u\n", fingers, status_bytes, max_x, max_y);
 	}
 	log_printf("touch: product %s, status %02x irq %02x, attn %u\n", (char *)id, st[0], st[1], tlmm_get(GPIO_ATTN));
+	status_reg = f01.data;
+	data_reg = f11.number ? f11.data : f12.data;
+	data_len = f11.number ? (uint8_t)(status_bytes + 5) : 8;
+	tlmm_irq_config(GPIO_ATTN, TLMM_IRQ_LEVEL_LOW, attention);
+	tlmm_irq_enable(GPIO_ATTN, true);
 	present = true;
 	return true;
-}
-
-bool touch_poll(struct touch *t)
-{
-	t->event = TOUCH_NONE;
-	if (!present || tlmm_get(GPIO_ATTN))
-		return false;
-	uint8_t st[2];
-	if (rd(f01.data, st, 2))
-		return false;
-	uint8_t d[16];
-	bool down;
-	int x, y;
-	if (f11.number) {
-		if (rd(f11.data, d, status_bytes + 5))
-			return false;
-		const uint8_t *f = d + status_bytes;
-		down = (d[0] & 3) != 0;
-		x = (f[0] << 4 | (f[2] & 0xf)) * (int)fb.width / (int)(max_x + 1);
-		y = (f[1] << 4 | f[2] >> 4) * (int)fb.height / (int)(max_y + 1);
-	} else {
-		if (rd(f12.data, d, 8))
-			return false;
-		down = d[0] != 0;
-		x = d[1] | d[2] << 8;
-		y = d[3] | d[4] << 8;
-	}
-	if (down) {
-		t->event = was_down ? TOUCH_MOVE : TOUCH_DOWN;
-		last_x = x;
-		last_y = y;
-	} else if (was_down) {
-		t->event = TOUCH_UP;
-		x = last_x;
-		y = last_y;
-	}
-	t->x = x;
-	t->y = y;
-	t->down = down;
-	was_down = down;
-	return t->event != TOUCH_NONE;
 }
