@@ -82,6 +82,16 @@ static void draw_dot(uint32_t *buf)
 		}
 }
 
+static volatile bool console_sleep, console_wake;
+
+void power_request(bool sleep)
+{
+	if (sleep)
+		console_sleep = true;
+	else
+		console_wake = true;
+}
+
 void main(void)
 {
 	cpu_clock_init();
@@ -180,6 +190,11 @@ void main(void)
 			} else {
 				wake_request = true;
 			}
+		}
+		if (console_sleep || console_wake) {
+			sleep_request |= console_sleep && awake;
+			wake_request |= console_wake && !awake;
+			console_sleep = console_wake = false;
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 			display_sleep();

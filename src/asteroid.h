@@ -27,6 +27,7 @@ unsigned long strtoul(const char *s, char **end, int base);
 void mmu_init(void);
 void cpu_clock_init(void);
 void cpu_clock_slow(bool slow);
+void power_request(bool sleep);
 void dcache_clean_range(const void *addr, uint32_t size);
 void dcache_invalidate_range(const void *addr, uint32_t size);
 void dcache_clean_invalidate_range(const void *addr, uint32_t size);

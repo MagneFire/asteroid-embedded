@@ -129,8 +129,8 @@ static void cmd_bright(const char *args)
 	display_set_brightness((uint8_t)v);
 }
 
-static void cmd_sleep(const char *args) { display_sleep(); }
-static void cmd_wake(const char *args) { display_wake(); }
+static void cmd_sleep(const char *args) { power_request(true); }
+static void cmd_wake(const char *args) { power_request(false); }
 
 static void cmd_rtc(const char *args)
 {
