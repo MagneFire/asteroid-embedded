@@ -189,3 +189,25 @@ int rpm_regulator_enable(uint32_t type, uint32_t id, bool on)
 	uint32_t kvp[3] = { 0x6e657773, 4, on };
 	return rpm_request(type, id, kvp, 1);
 }
+
+/* Bus and memory clocks: an RPM vote outlives a warm reset, so set the
+ * apps processor's votes explicitly at boot. */
+#define RPM_CLK1		0x316b6c63u
+#define RPM_CLK2		0x326b6c63u
+#define RPM_KEY_SWEN		0x6e657773u
+#define RPM_KEY_KHZ		0x007a484bu
+
+int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz)
+{
+	uint32_t kvp[6] = { RPM_KEY_SWEN, 4, 1, RPM_KEY_KHZ, 4, khz };
+	return rpm_request(type, id, kvp, 2);
+}
+
+void rpm_bus_votes(void)
+{
+	rpm_clock_rate(RPM_CLK2, 0, 200000);
+	rpm_clock_rate(RPM_CLK1, 1, 100000);
+	rpm_clock_rate(RPM_CLK1, 0, 50000);
+	rpm_clock_rate(RPM_CLK1, 2, 50000);
+}
+
