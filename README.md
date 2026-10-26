@@ -19,8 +19,12 @@ Needs `arm-none-eabi-gcc`, `dtc` and Python 3.
 The watch must sit in fastboot (lk2nd built with `LK2ND_FORCE_FASTBOOT=1`
 and `SCRATCH_SIZE=0x0F000000` flashed to `boot`).
 
-    make run            # fastboot boot, wait for the reboot, show the log
+    make run            # adb reboot, fastboot boot, show the log over adb
+    make test           # host tests for the adb and console code
 
-The firmware keeps its log and a fault record in DRAM across the warm reset;
-`tools/run.py` fetches them through `fastboot oem ramoops raw` and
-symbolizes the addresses in a fault record with `addr2line`.
+The running firmware is an adb device: `adb shell` gives the command
+console (`help` lists the commands), `adb push`/`adb pull` move files to
+and from a RAM file table, `adb reboot` returns to fastboot. The firmware
+keeps its log and a fault record in DRAM across a warm reset; when an image
+dies, `tools/run.py` fetches them through `fastboot oem ramoops raw` and
+symbolizes the addresses in the fault record with `addr2line`.

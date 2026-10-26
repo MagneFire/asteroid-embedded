@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Boot build/asteroid.img over fastboot, wait for the watch to come back to
-fastboot, fetch the persistent log region and print the console tail, the
-fault record and the symbolized addresses in it."""
+"""Boot build/asteroid.img over fastboot (after an adb reboot if the previous
+image is running) and show its log over adb. If the image dies and the watch
+returns to fastboot, fetch the persistent log region instead and print the
+console tail, the fault record and the symbolized addresses in it."""
 import argparse, os, re, struct, subprocess, sys, time
 
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
@@ -83,23 +84,11 @@ def show(blob, tail):
         print("no fault record")
         symbolize(console.decode("utf-8", "replace")[-4000:])
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--no-boot", action="store_true", help="only fetch and show the log")
-    p.add_argument("--no-wait", action="store_true", help="boot and return; fetch the log later with --no-boot")
-    p.add_argument("--timeout", type=float, default=90)
-    p.add_argument("--tail", type=int, default=40)
-    a = p.parse_args()
-    if not a.no_boot:
-        wait_for(True, 10, "appear in fastboot")
-        t0 = time.time()
-        fastboot("boot", IMG, quiet=True)
-        print("booted in %.1f s%s" % (time.time() - t0, "" if a.no_wait else ", waiting for the reboot"))
-        wait_for(False, 20, "leave fastboot")
-        if a.no_wait:
-            return
-        dt = wait_for(True, a.timeout, "come back to fastboot")
-        print("back in fastboot after %.1f s" % dt)
+def adb_online():
+    r = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    return any(l.endswith("\tdevice") for l in r.stdout.splitlines()[1:])
+
+def fetch_ramoops(tail):
     if os.path.exists(RAW):
         os.unlink(RAW)
     fastboot("oem", "ramoops", "raw", quiet=True)
@@ -107,7 +96,45 @@ def main():
     blob = open(RAW, "rb").read()
     if len(blob) != REGION_SIZE:
         sys.exit("unexpected log region size %d" % len(blob))
-    show(blob, a.tail)
+    show(blob, tail)
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--no-boot", action="store_true", help="only fetch the log region from fastboot")
+    p.add_argument("--no-wait", action="store_true", help="boot and return")
+    p.add_argument("--timeout", type=float, default=90)
+    p.add_argument("--tail", type=int, default=40)
+    a = p.parse_args()
+    if a.no_boot:
+        fetch_ramoops(a.tail)
+        return
+    if adb_online():
+        subprocess.run(["adb", "reboot"], capture_output=True, timeout=20)
+        wait_for(True, 20, "come back to fastboot")
+    else:
+        wait_for(True, 10, "appear in fastboot")
+    t0 = time.time()
+    fastboot("boot", IMG, quiet=True)
+    print("booted in %.1f s" % (time.time() - t0))
+    if a.no_wait:
+        return
+    wait_for(False, 20, "leave fastboot")
+    t0 = time.time()
+    while time.time() - t0 < a.timeout:
+        if adb_online():
+            print("adb online after %.1f s" % (time.time() - t0))
+            r = subprocess.run(["adb", "shell", "log %d" % a.tail], capture_output=True, text=True, timeout=20)
+            print(r.stdout.rstrip())
+            prev = re.findall(r"previous boot ended with:\n(.*?)\n\n", r.stdout, re.S)
+            if prev:
+                symbolize(prev[-1])
+            return
+        if devices():
+            print("back in fastboot after %.1f s without adb: the image died" % (time.time() - t0))
+            fetch_ramoops(a.tail)
+            return
+        time.sleep(0.3)
+    sys.exit("neither adb nor fastboot came back")
 
 if __name__ == "__main__":
     main()
