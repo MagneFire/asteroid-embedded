@@ -2,7 +2,9 @@
  *   DRAM bank 0 (0 - 0x02f00000)             normal, write-back
  *   0x02f00000 - 0x04700000 (framebuffer, SMEM) normal, uncached
  *   DRAM bank 1 (0x04700000 - 0x20000000)    normal, write-back, except the
- *                                            the section holding the persistent log
+ *                                            the GPU's ring buffer and command memory
+ *                                            (0x1e000000) and the section holding the
+ *                                            persistent log
  *   peripherals (APCS, clock/PMIC arbiter, TLMM, multimedia, IMEM) device, XN
  *   everything else unmapped: a wild pointer aborts instead of corrupting. */
 #include "asteroid.h"
@@ -26,6 +28,7 @@ void mmu_init(void)
 	map(0x00000000, 0x02f00000, SEC_WB);
 	map(0x02f00000, 0x04700000, SEC_NC);
 	map(0x04700000, 0x20000000, SEC_WB);
+	map(GPU_MEM_BASE, GPU_MEM_BASE + GPU_MEM_SIZE, SEC_NC);
 	map(RAMOOPS_BASE & ~0xfffffu, (RAMOOPS_BASE + RAMOOPS_SIZE + 0xfffffu) & ~0xfffffu, SEC_NC);
 	map(0xf9000000, 0xfa000000, SEC_DEV);
 	map(0xfc400000, 0xfc500000, SEC_DEV);

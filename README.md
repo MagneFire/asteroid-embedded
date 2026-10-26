@@ -16,7 +16,8 @@ Needs `arm-none-eabi-gcc`, `dtc` and Python 3.
 
 Every `firmware/*.fw` file goes into the boot image's ramdisk, which the
 bootloader loads next to the firmware; the firmware finds the files there
-by name.
+by name. `firmware/` holds the Adreno A3xx microcode (`a330_pm4.fw`,
+`a330_pfp.fw`, identical to linux-firmware's `qcom/` copies).
 
 ## Run
 
@@ -38,4 +39,6 @@ symbolizes the addresses in the fault record with `addr2line`.
 GPL-3.0-or-later (see LICENSE). Files taken from other projects keep their
 own license: TinyUSB and its ChipIdea port (MIT), the 5x12 console font
 (BSD, from the Android Open Source Project) and the FlatMesh geometry
-(BSD-3-Clause, from qml-asteroid).
+(BSD-3-Clause, from qml-asteroid). The GPU microcode in `firmware/` is
+Qualcomm's, redistributable under `firmware/LICENSE.qcom`; it is loaded
+from the boot image's ramdisk and is not part of the firmware binary.

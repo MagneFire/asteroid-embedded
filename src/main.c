@@ -8,6 +8,7 @@
 #include "display/display.h"
 #include "input/touch.h"
 #include "console/console.h"
+#include "gpu/a3xx.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -77,6 +78,8 @@ void main(void)
 
 	pmic_charger_configure();
 	rpm_init();
+	if (gpu_init())
+		gpu_selftest();
 	tlmm_irq_init();
 	bool have_touch = touch_init();
 	console_init();

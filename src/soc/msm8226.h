@@ -78,6 +78,8 @@
 #define DSI_INT_CTRL		(DSI0_BASE + 0x110)
 
 #define FB_BASE			0x05000000u
+#define GPU_MEM_BASE		0x1e000000u
+#define GPU_MEM_SIZE		0x00f00000u
 
 #define USB_HS_BASE		0xf9a55000u
 #define USB_SBUSCFG		(USB_HS_BASE + 0x090)
