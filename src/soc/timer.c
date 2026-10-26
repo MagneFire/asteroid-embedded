@@ -42,6 +42,14 @@ static void tick_irq(void)
 	ticks++;
 }
 
+/* After a power collapse: the core's timer starts out disabled. */
+void timer_resume(void)
+{
+	uint32_t tval = 1, ctl = 1;
+	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));
+	__asm__ volatile("mcr p15, 0, %0, c14, c2, 1" :: "r"(ctl));
+}
+
 void timer_init(void)
 {
 	uint32_t frq;

@@ -45,6 +45,21 @@ void gic_init(void)
 	writel(1, GICC_CTLR);
 }
 
+/* The CPU interface and the banked private interrupt enables are lost
+ * when the core is powered down. */
+uint32_t gic_cpu_save(void)
+{
+	return readl(GICD_ISENABLER(0));
+}
+
+void gic_cpu_restore(uint32_t ppis)
+{
+	writel(ppis, GICD_ISENABLER(0));
+	writel(0xff, GICC_PMR);
+	writel(0, GICC_BPR);
+	writel(1, GICC_CTLR);
+}
+
 void gic_enable(unsigned id, void (*fn)(void))
 {
 	if (id >= nirq)

@@ -125,6 +125,7 @@ void main(void)
 		log_printf("no fault record from the previous boot\n");
 
 	pmic_charger_configure();
+	spm_init();
 	have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layer, fb.stride, fb.width, fb.height);
 	if (have_ui)
@@ -267,8 +268,11 @@ void main(void)
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
 			uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
-			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, battery %ld mA\n", awake ? "awake" : "asleep",
-				   slept > 1000 ? 100 : slept / 10, wakeups, pmic_battery_ua() / 1000);
+			uint32_t pc, pcb;
+			spm_stats(&pc, &pcb);
+			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu collapses, battery %ld mA\n",
+				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, wakeups, pc, pcb,
+				   pmic_battery_ua() / 1000);
 			asleep_ms = 0;
 			if (!awake)
 				asleep_t = now;
@@ -301,6 +305,6 @@ void main(void)
 		}
 #endif
 		if ((!have_display || !awake) && timer_ticks())
-			wfi();
+			spm_cpu_idle_collapse();
 	}
 }

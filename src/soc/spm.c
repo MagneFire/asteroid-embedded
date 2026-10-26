@@ -1,0 +1,123 @@
+/* Subsystem power managers (SAW2 v2.1). Each CPU has one that runs a
+ * small command sequence when the CPU executes WFI; the L2 one controls
+ * the cluster and the APC rail. The sequences are the vendor's. */
+#include "asteroid.h"
+
+#define SAW_CPU0		0xf9089000u
+#define QTMR_FRAME0		0xf9021000u
+#define QTMR_CNTP_TVAL		(QTMR_FRAME0 + 0x28)
+#define QTMR_CNTP_CTL		(QTMR_FRAME0 + 0x2c)
+#define IRQ_QTMR_FRAME0		(32 + 8)
+
+#define SCM_SVC_BOOT		0x01
+#define SCM_BOOT_ADDR		0x01
+#define SCM_FLAG_WARMBOOT_CPU0	0x04
+#define SAW_CFG			0x08
+#define SAW_SPM_CTL		0x30
+#define SAW_SPM_DLY		0x34
+#define SAW_SEQ			0x80
+#define SAW_VERSION		0xfd0
+
+#define SPM_CTL_EN		BIT(0)
+#define SPM_CTL_BASE		BIT(3)
+#define SPM_CTL_START(off)	((uint32_t)(off) << 4)
+
+static const uint8_t cpu_seq[] = {
+	/* clock gating, offset 0 */
+	0x60, 0x03, 0x60, 0x0b, 0x0f,
+	/* power collapse, offset 5 */
+	0x20, 0x10, 0x80, 0x30, 0x90, 0x5b, 0x60, 0x03, 0x60, 0x3b,
+	0x76, 0x76, 0x0b, 0x94, 0x5b, 0x80, 0x10, 0x26, 0x30, 0x0f,
+};
+
+#define CPU_SEQ_CLOCK_GATING	0
+#define CPU_SEQ_POWER_COLLAPSE	5
+
+static bool ready, can_collapse;
+static uint32_t collapses, bailouts;
+
+int cpu_suspend(uint32_t flag);
+void cpu_resume(void);
+
+static void load_seq(uint32_t saw, const uint8_t *seq, unsigned len)
+{
+	for (unsigned w = 0; w < 32; w++) {
+		uint32_t v = 0;
+		for (unsigned b = 0; b < 4; b++)
+			if (w * 4 + b < len)
+				v |= (uint32_t)seq[w * 4 + b] << (b * 8);
+		writel(v, saw + SAW_SEQ + w * 4);
+	}
+}
+
+void spm_cpu_mode(enum spm_mode mode)
+{
+	if (!ready)
+		return;
+	uint32_t off = mode == SPM_POWER_COLLAPSE ? CPU_SEQ_POWER_COLLAPSE : CPU_SEQ_CLOCK_GATING;
+	writel(SPM_CTL_BASE | SPM_CTL_START(off) | SPM_CTL_EN, SAW_CPU0 + SAW_SPM_CTL);
+	dsb();
+}
+
+static void qtmr_irq(void)
+{
+	writel(0, QTMR_CNTP_CTL);
+}
+
+/* Idle with the core powered down until the next tick or interrupt.
+ * The core's own timer goes down with it, so the wake-up comes from the
+ * memory-mapped timer. */
+void spm_cpu_idle_collapse(void)
+{
+	if (!can_collapse) {
+		wfi();
+		return;
+	}
+	uint32_t tval, ppis;
+	__asm__ volatile("cpsid i" ::: "memory");
+	__asm__ volatile("mrc p15, 0, %0, c14, c2, 0" : "=r"(tval));	/* CNTP_TVAL */
+	if ((int32_t)tval <= 0) {
+		__asm__ volatile("cpsie i" ::: "memory");
+		return;
+	}
+	writel(tval, QTMR_CNTP_TVAL);
+	writel(1, QTMR_CNTP_CTL);
+	ppis = gic_cpu_save();
+	spm_cpu_mode(SPM_POWER_COLLAPSE);
+	if (cpu_suspend(0) == 0) {
+		collapses++;
+		gic_cpu_restore(ppis);
+		timer_resume();
+	} else {
+		bailouts++;
+	}
+	spm_cpu_mode(SPM_CLOCK_GATING);
+	__asm__ volatile("cpsie i" ::: "memory");
+}
+
+void spm_stats(uint32_t *c, uint32_t *b)
+{
+	*c = collapses;
+	*b = bailouts;
+}
+
+bool spm_init(void)
+{
+	uint32_t ver = readl(SAW_CPU0 + SAW_VERSION);
+	if ((ver >> 28) != 2 || ((ver >> 16) & 0xfff) != 1) {
+		log_printf("spm: unexpected SAW version %08lx\n", ver);
+		return false;
+	}
+	load_seq(SAW_CPU0, cpu_seq, sizeof cpu_seq);
+	writel(0, SAW_CPU0 + SAW_CFG);
+	writel(0x3c102800, SAW_CPU0 + SAW_SPM_DLY);
+	ready = true;
+	spm_cpu_mode(SPM_CLOCK_GATING);
+	int ret = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_WARMBOOT_CPU0, (uint32_t)(uintptr_t)cpu_resume);
+	if (ret)
+		log_printf("spm: warm boot address not accepted (%d)\n", ret);
+	can_collapse = !ret;
+	writel(0, QTMR_CNTP_CTL);
+	gic_enable(IRQ_QTMR_FRAME0, qtmr_irq);
+	return true;
+}
