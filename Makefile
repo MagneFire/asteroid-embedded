@@ -16,7 +16,7 @@ TUSB   := third_party/tinyusb/src
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
         src/soc/tlmm.c src/soc/i2c_qup.c src/soc/rpm.c src/input/touch.c \

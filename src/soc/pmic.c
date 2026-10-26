@@ -162,3 +162,20 @@ void pmic_charger_configure(void)
 		   pmic_read(SMBB_CHG_VMAX), pmic_read(SMBB_CHG_VSAFE), pmic_read(SMBB_CHG_IMAX),
 		   pmic_read(SMBB_CHG_ISAFE), pmic_read(SMBB_CHG_VIN_MIN), pmic_read(SMBB_USB_IMAX));
 }
+
+bool pmic_charging(void)
+{
+	uint8_t chg = pmic_read(SMBB_CHGR_RT_STS);
+	return (pmic_read(SMBB_USB_RT_STS) & BIT(1)) && (chg & (BIT(5) | BIT(4) | BIT(7)));
+}
+
+/* Rough state of charge from the resting voltage of a 4.35 V cell, until
+ * the fuel gauge is read: linear between 3.45 V (0 %) and 4.30 V (100 %). */
+uint32_t pmic_battery_percent(uint32_t mv)
+{
+	if (mv <= 3450)
+		return 0;
+	if (mv >= 4300)
+		return 100;
+	return (mv - 3450) * 100 / (4300 - 3450);
+}

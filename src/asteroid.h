@@ -81,6 +81,8 @@ uint32_t pmic_rtc_read(void);
 void pmic_rtc_write(uint32_t secs);
 uint32_t pmic_battery_mv(void);
 const char *pmic_charger_status(void);
+bool pmic_charging(void);
+uint32_t pmic_battery_percent(uint32_t mv);
 void pmic_charger_configure(void);
 #define RPM_LDOA 0x616f646cu
 #define RPM_SMPA 0x61706d73u
@@ -110,6 +112,9 @@ void fbcon_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void usb_init(const char *serialno);
 void usb_poll(void);
 void usb_stats(uint32_t *rx, uint32_t *tx);
+
+struct civil { uint32_t year, month, day, weekday, hour, minute, second; };
+void civil_from_epoch(uint32_t secs, struct civil *c);
 
 /* boot handover */
 void boot_init(void);

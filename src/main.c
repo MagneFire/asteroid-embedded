@@ -11,6 +11,7 @@
 #include "gpu/a3xx.h"
 #include "gpu/draw.h"
 #include "gpu/shaders.h"
+#include "ui/ui.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -106,6 +107,8 @@ void main(void)
 	pmic_charger_configure();
 	rpm_init();
 	have_gpu = gpu_init() && gpu_selftest();
+	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, fb.width, fb.height);
+	log_printf("ui: %s\n", have_ui ? "ready" : "not started");
 	tlmm_irq_init();
 	bool have_touch = touch_init();
 	console_init();
@@ -114,7 +117,8 @@ void main(void)
 		display_set_idle_hook(usb_poll);
 	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
 
-	uint32_t t0 = time_ms(), last = 0, frames0 = display_frames();
+	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
+	uint32_t ui_frames = 0, ui_us = 0;
 	bool key_was = false;
 	struct touch t;
 	int down_x = 0, down_y = 0;
@@ -126,6 +130,8 @@ void main(void)
 		wdt_feed();
 		usb_poll();
 		while (have_touch && touch_poll(&t)) {
+			if (have_ui)
+				ui_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x, t.y);
 			if (t.event == TOUCH_DOWN) {
 				down_x = t.x;
 				down_y = t.y;
@@ -155,9 +161,23 @@ void main(void)
 				gpu_flatmesh(buf, now - t0);
 			else
 				flatmesh_render(buf, now - t0);
-			draw_dot(buf);
-			fbcon_draw(buf);
+			if (have_ui) {
+				uint32_t u0 = time_us();
+				ui_render(buf, fb.stride);
+				ui_us += time_us() - u0;
+				ui_frames++;
+			} else {
+				draw_dot(buf);
+				fbcon_draw(buf);
+			}
 			display_flip();
+		}
+		if (have_ui && now - last_clock >= 1000) {
+			last_clock = now;
+			struct civil c;
+			civil_from_epoch(pmic_rtc_read(), &c);
+			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
+			ui_set_battery(pmic_battery_percent(pmic_battery_mv()), pmic_charging());
 		}
 		if (now - last >= 1000) {
 			last = now;
@@ -170,6 +190,9 @@ void main(void)
 			if (gpu_frames)
 				log_printf("gpu: %lu draws, %lu us each\n", gpu_frames, gpu_us / gpu_frames);
 			gpu_frames = gpu_us = 0;
+			if (ui_frames)
+				log_printf("ui: %lu frames, %lu us each\n", ui_frames, ui_us / ui_frames);
+			ui_frames = ui_us = 0;
 #if defined(TEST_HANG)
 			if (now - t0 >= 2000) {
 				log_printf("test: hanging the main loop\n");
@@ -183,10 +206,12 @@ void main(void)
 			}
 #endif
 		}
-		if (REBOOT_AFTER_MS > 0 && now - t0 >= (uint32_t)REBOOT_AFTER_MS) {
+#if REBOOT_AFTER_MS > 0
+		if (now - t0 >= REBOOT_AFTER_MS) {
 			log_printf("rebooting, %lu ticks\n", timer_ticks());
 			reboot();
 		}
+#endif
 		if (!have_display && timer_ticks())
 			wfi();
 	}
