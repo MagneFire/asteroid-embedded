@@ -188,10 +188,12 @@ void main(void)
 				gpu_off = true;
 			}
 			timer_set_period(100);
+			cpu_clock_slow(true);
 			awake = false;
 			asleep_t = now;
 			log_printf("sleep\n");
 		} else if (have_display && !awake && wake_request) {
+			cpu_clock_slow(false);
 			if (gpu_off) {
 				uint32_t g0 = time_us();
 				have_gpu = gpu_init();
