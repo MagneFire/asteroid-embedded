@@ -164,6 +164,24 @@ static void cmd_mem(const char *args)
 	}
 }
 
+static void cmd_pmic(const char *args)
+{
+	uint32_t addr, count = 1;
+	if (!parse_num(&args, 16, &addr) || (*skip_spaces(args) && !parse_num(&args, 0, &count))) {
+		say("usage: pmic <hex addr> [bytes]\n");
+		return;
+	}
+	if (count > 256)
+		count = 256;
+	for (uint32_t i = 0; i < count; i++) {
+		if (i % 16 == 0)
+			say("%05lx:", addr + i);
+		say(" %02x", pmic_read(addr + i));
+		if (i % 16 == 15 || i + 1 == count)
+			say("\n");
+	}
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -179,6 +197,7 @@ static const struct command commands[] = {
 	{ "wake", "", cmd_wake },
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
+	{ "pmic", "<hex addr> [bytes]", cmd_pmic },
 	{ "echo", "<text>", cmd_echo },
 };
 
