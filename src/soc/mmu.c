@@ -31,6 +31,7 @@ void mmu_init(void)
 	map(GPU_MEM_BASE, GPU_MEM_BASE + GPU_MEM_SIZE, SEC_NC);
 	map(RAMOOPS_BASE & ~0xfffffu, (RAMOOPS_BASE + RAMOOPS_SIZE + 0xfffffu) & ~0xfffffu, SEC_NC);
 	map(0xf9000000, 0xfa000000, SEC_DEV);
+	map(0xfc100000, 0xfc200000, SEC_DEV);
 	map(0xfc400000, 0xfc500000, SEC_DEV);
 	map(0xfd500000, 0xfd600000, SEC_DEV);
 	map(0xfd800000, 0xfdc00000, SEC_DEV);
