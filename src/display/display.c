@@ -1,7 +1,8 @@
 /* The bootloader leaves the DSI command-mode panel on with MDP5 pipe RGB_0
  * scanning a framebuffer it allocated. The pipe is re-pointed at two
  * buffers of the firmware's own, in XRGB8888, flipped vertically to match
- * the panel's orientation. A frame is pushed by flushing the pipe and
+ * the panel's orientation, with rows padded to a multiple of 32 pixels as
+ * the GPU's render target pitch requires. A frame is pushed by flushing the pipe and
  * kicking CTL_START; the ping-pong block waits for the panel's tearing
  * effect line, so kicks are paced by waiting for the previous frame's
  * PP_DONE before the next one. */
@@ -64,7 +65,7 @@ bool display_init(void)
 	uint32_t ar = readl(MDP_PP0 + PP_AUTOREFRESH_CONFIG);
 	fb.width = img & 0xffff;
 	fb.height = img >> 16;
-	fb.stride = fb.width;
+	fb.stride = (fb.width + 31) & ~31u;
 	fb.buf[0] = (uint32_t *)(uintptr_t)FB_BASE;
 	fb.buf[1] = (uint32_t *)(uintptr_t)(FB_BASE + fb.stride * fb.height * 4);
 	fb.back = 0;
