@@ -7,6 +7,7 @@
 
 static uint32_t hz = 19200000;
 static volatile uint32_t ticks;
+static uint32_t period_ms = 1;
 
 static inline uint64_t cnt_now(void)
 {
@@ -29,9 +30,14 @@ void delay_us(uint32_t us)
 
 void delay_ms(uint32_t ms) { delay_us(ms * 1000); }
 
+void timer_set_period(uint32_t ms)
+{
+	period_ms = ms ? ms : 1;
+}
+
 static void tick_irq(void)
 {
-	uint32_t tval = hz / 1000;
+	uint32_t tval = hz / 1000 * period_ms;
 	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));	/* CNTP_TVAL */
 	ticks++;
 }

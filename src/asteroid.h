@@ -63,6 +63,7 @@ uint32_t time_ms(void);
 uint32_t time_us(void);
 uint32_t timer_hz(void);
 uint32_t timer_ticks(void);
+void timer_set_period(uint32_t ms);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void));

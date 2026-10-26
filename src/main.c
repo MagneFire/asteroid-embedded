@@ -17,6 +17,8 @@
 
 const char build_id[] = GITREV;
 
+#define SLEEP_AFTER_MS 10000
+
 #ifndef REBOOT_AFTER_MS
 #define REBOOT_AFTER_MS 0
 #endif
@@ -126,7 +128,9 @@ void main(void)
 
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
-	bool key_was = false;
+	bool sleep_request = false, wake_request = false;
+	bool key_was = false, awake = true;
+	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
 	int down_x = 0, down_y = 0;
 	uint32_t down_t = 0;
@@ -136,7 +140,15 @@ void main(void)
 		uint32_t now = time_ms();
 		wdt_feed();
 		usb_poll();
+		if (!awake)
+			wakeups++;
 		while (have_touch && touch_poll(&t)) {
+			if (!awake) {
+				if (t.event == TOUCH_DOWN)
+					wake_request = true;
+				continue;
+			}
+			last_activity = now;
 			if (have_ui)
 				ui_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x, t.y);
 			if (t.event == TOUCH_DOWN) {
@@ -155,14 +167,35 @@ void main(void)
 		}
 		bool key = pmic_power_key();
 		if (key != key_was) {
-			log_printf("power key %s\n", key ? "pressed" : "released");
 			key_was = key;
-			if (!key) {
+			if (key) {
+				key_down_t = now;
+			} else if (now - key_down_t >= 3000) {
 				log_printf("rebooting on power key\n");
 				reboot();
+			} else if (awake) {
+				sleep_request = true;
+			} else {
+				wake_request = true;
 			}
 		}
-		if (have_display) {
+		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
+			display_sleep();
+			timer_set_period(100);
+			awake = false;
+			asleep_t = now;
+			log_printf("sleep\n");
+		} else if (have_display && !awake && wake_request) {
+			timer_set_period(1);
+			display_wake();
+			awake = true;
+			asleep_ms += now - asleep_t;
+			last_activity = now = time_ms();
+			last_clock = 0;
+			log_printf("wake\n");
+		}
+		sleep_request = wake_request = false;
+		if (have_display && awake) {
 			uint32_t *buf = display_backbuffer();
 			if (have_ui) {
 				uint32_t u0 = time_us(), x, y, w, h;
@@ -189,7 +222,7 @@ void main(void)
 			}
 			display_flip();
 		}
-		if (have_ui && now - last_clock >= 1000) {
+		if (have_ui && awake && (!last_clock || now - last_clock >= 1000)) {
 			last_clock = now;
 			struct civil c;
 			civil_from_epoch(pmic_rtc_read(), &c);
@@ -204,6 +237,13 @@ void main(void)
 			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - t0) / 1000,
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
+			uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
+			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups\n", awake ? "awake" : "asleep",
+				   slept > 1000 ? 100 : slept / 10, wakeups);
+			asleep_ms = 0;
+			if (!awake)
+				asleep_t = now;
+			wakeups = 0;
 			if (gpu_frames)
 				log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,
 					   gpu_us / gpu_frames, gpu_vert_us / gpu_frames);
@@ -231,7 +271,7 @@ void main(void)
 			reboot();
 		}
 #endif
-		if (!have_display && timer_ticks())
+		if ((!have_display || !awake) && timer_ticks())
 			wfi();
 	}
 }
