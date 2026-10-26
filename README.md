@@ -28,3 +28,10 @@ and from a RAM file table, `adb reboot` returns to fastboot. The firmware
 keeps its log and a fault record in DRAM across a warm reset; when an image
 dies, `tools/run.py` fetches them through `fastboot oem ramoops raw` and
 symbolizes the addresses in the fault record with `addr2line`.
+
+## License
+
+GPL-3.0-or-later (see LICENSE). Files taken from other projects keep their
+own license: TinyUSB and its ChipIdea port (MIT), the 5x12 console font
+(BSD, from the Android Open Source Project) and the FlatMesh geometry
+(BSD-3-Clause, from qml-asteroid).
