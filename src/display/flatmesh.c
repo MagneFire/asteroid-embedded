@@ -70,14 +70,13 @@ static void triangle(uint32_t *buf, float x0, float y0, float x1, float y1, floa
 	(void)yb;
 }
 
-void flatmesh_render(uint32_t *buf, uint32_t t_ms)
+static void animate(uint32_t t_ms, void (*vertex)(int i, float x, float y, void *ctx), void *ctx)
 {
 	if (!ready)
 		prepare();
 	uint32_t step = t_ms / 90;
 	int loop = (int)(step / 50);
 	float state = (float)(step % 50) * 0.02f;
-	float px[3], py[3];
 	for (int i = 0; i < FLATMESH_INDICES; i++) {
 		const float *v = flatmesh_vertices[flatmesh_indices[i]];
 		int idx = loop + hashes[i];
@@ -85,9 +84,45 @@ void flatmesh_render(uint32_t *buf, uint32_t t_ms)
 		int b = (a + 1) % FLATMESH_SHIFTS;
 		float sx = flatmesh_shifts[a][0] + (flatmesh_shifts[b][0] - flatmesh_shifts[a][0]) * state;
 		float sy = flatmesh_shifts[a][1] + (flatmesh_shifts[b][1] - flatmesh_shifts[a][1]) * state;
-		px[i % 3] = ((v[0] + sx) * SCALE + 0.5f) * (float)fb.width;
-		py[i % 3] = ((v[1] + sy) * SCALE + 0.5f) * (float)fb.height;
-		if (i % 3 == 2)
-			triangle(buf, px[0], py[0], px[1], py[1], px[2], py[2], colors[i / 3]);
+		vertex(i, (v[0] + sx) * SCALE + 0.5f, (v[1] + sy) * SCALE + 0.5f, ctx);
 	}
+}
+
+struct cpu_ctx { uint32_t *buf; float px[3], py[3]; };
+
+static void cpu_vertex(int i, float x, float y, void *ctx)
+{
+	struct cpu_ctx *c = ctx;
+	c->px[i % 3] = x * (float)fb.width;
+	c->py[i % 3] = y * (float)fb.height;
+	if (i % 3 == 2)
+		triangle(c->buf, c->px[0], c->py[0], c->px[1], c->py[1], c->px[2], c->py[2], colors[i / 3]);
+}
+
+void flatmesh_render(uint32_t *buf, uint32_t t_ms)
+{
+	struct cpu_ctx c = { .buf = buf };
+	animate(t_ms, cpu_vertex, &c);
+}
+
+/* For the GPU: interleaved {x, y, 0, 1, r, g, b, 1} per vertex in clip
+ * space, row 0 of the target at the top. */
+static void gpu_vertex(int i, float x, float y, void *ctx)
+{
+	float *o = (float *)ctx + i * 8;
+	uint32_t c = colors[i / 3];
+	o[0] = x * 2.0f - 1.0f;
+	o[1] = 1.0f - y * 2.0f;
+	o[2] = 0.0f;
+	o[3] = 1.0f;
+	o[4] = (float)((c >> 16) & 0xff) / 255.0f;
+	o[5] = (float)((c >> 8) & 0xff) / 255.0f;
+	o[6] = (float)(c & 0xff) / 255.0f;
+	o[7] = 1.0f;
+}
+
+unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms)
+{
+	animate(t_ms, gpu_vertex, out);
+	return FLATMESH_INDICES;
 }

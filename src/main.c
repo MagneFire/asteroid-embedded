@@ -9,6 +9,8 @@
 #include "input/touch.h"
 #include "console/console.h"
 #include "gpu/a3xx.h"
+#include "gpu/draw.h"
+#include "gpu/shaders.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -34,6 +36,31 @@ static void sink_fbcon(const char *s, size_t n)
 }
 
 static int dot_x = -1, dot_y = -1;
+static bool have_gpu;
+static uint32_t gpu_frames, gpu_us, gpu_fail;
+
+static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms)
+{
+	static float *vbo;
+	if (!vbo)
+		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
+	uint32_t t0 = time_us();
+	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
+	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4 };
+	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
+	gpu_draw_begin(&t);
+	gpu_draw_program(&shader_c_vs, &shader_c_fs);
+	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
+	if (!gpu_draw_end()) {
+		if (gpu_fail++ == 0)
+			log_printf("gpu: draw did not complete\n");
+		have_gpu = false;
+	}
+	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
+	gpu_us += time_us() - t0;
+	gpu_frames++;
+}
+
 
 static void draw_dot(uint32_t *buf)
 {
@@ -78,8 +105,7 @@ void main(void)
 
 	pmic_charger_configure();
 	rpm_init();
-	if (gpu_init())
-		gpu_selftest();
+	have_gpu = gpu_init() && gpu_selftest();
 	tlmm_irq_init();
 	bool have_touch = touch_init();
 	console_init();
@@ -125,7 +151,10 @@ void main(void)
 		}
 		if (have_display) {
 			uint32_t *buf = display_backbuffer();
-			flatmesh_render(buf, now - t0);
+			if (have_gpu)
+				gpu_flatmesh(buf, now - t0);
+			else
+				flatmesh_render(buf, now - t0);
 			draw_dot(buf);
 			fbcon_draw(buf);
 			display_flip();
@@ -138,6 +167,9 @@ void main(void)
 			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - t0) / 1000,
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
+			if (gpu_frames)
+				log_printf("gpu: %lu draws, %lu us each\n", gpu_frames, gpu_us / gpu_frames);
+			gpu_frames = gpu_us = 0;
 #if defined(TEST_HANG)
 			if (now - t0 >= 2000) {
 				log_printf("test: hanging the main loop\n");
