@@ -250,3 +250,24 @@ bool gpu_selftest(void)
 	log_printf("gpu: selftest %s in %lu us: scratch reg %08lx, memory %08lx\n", ok ? "passed" : "FAILED", us, reg, mem);
 	return ok;
 }
+
+/* Power the GPU down while it is not needed: halt the micro engine,
+ * gate its clocks, collapse its power domain and drop the core clock
+ * vote. gpu_init() brings it back. */
+void gpu_suspend(void)
+{
+	if (!ready)
+		return;
+	uint32_t t0 = time_ms();
+	while ((gpu_read(REG_RBBM_STATUS) & RBBM_STATUS_GPU_BUSY) && time_ms() - t0 < 50)
+		;
+	gpu_write(REG_CP_ME_CNTL, CP_ME_CNTL_HALT);
+	ready = false;
+	writel(readl(MMSS_OXILI_GFX3D_CBCR) & ~CBCR_ENABLE, MMSS_OXILI_GFX3D_CBCR);
+	writel(readl(MMSS_OXILICX_AXI_CBCR) & ~CBCR_ENABLE, MMSS_OXILICX_AXI_CBCR);
+	writel(readl(MMSS_OXILICX_AHB_CBCR) & ~CBCR_ENABLE, MMSS_OXILICX_AHB_CBCR);
+	writel(readl(MMSS_OXILICX_GDSCR) | GDSC_SW_COLLAPSE, MMSS_OXILICX_GDSCR);
+	uint32_t kvp[3] = { RPM_KEY_SWEN, 4, 0 };
+	rpm_request(RPM_CLK2, RPM_CLK_GFX3D, kvp, 1);
+}
+

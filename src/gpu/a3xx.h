@@ -5,4 +5,5 @@
 
 bool gpu_init(void);
 bool gpu_selftest(void);
+void gpu_suspend(void);
 #endif

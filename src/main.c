@@ -128,7 +128,7 @@ void main(void)
 
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
-	bool sleep_request = false, wake_request = false;
+	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool key_was = false, awake = true;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
@@ -181,11 +181,21 @@ void main(void)
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 			display_sleep();
+			if (have_gpu) {
+				gpu_suspend();
+				gpu_off = true;
+			}
 			timer_set_period(100);
 			awake = false;
 			asleep_t = now;
 			log_printf("sleep\n");
 		} else if (have_display && !awake && wake_request) {
+			if (gpu_off) {
+				uint32_t g0 = time_us();
+				have_gpu = gpu_init();
+				gpu_off = false;
+				log_printf("gpu: resumed in %lu us\n", time_us() - g0);
+			}
 			timer_set_period(1);
 			display_wake();
 			awake = true;
