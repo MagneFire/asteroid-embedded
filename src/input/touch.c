@@ -1,5 +1,5 @@
-/* Synaptics RMI4 touch controller at 0x20 on gpio 18 (SDA) / 19 (SCL),
- * driven with the bit-banged I2C master for now. The function table on
+/* Synaptics RMI4 touch controller at 0x20 on BLSP1 QUP5 (gpio 18/19).
+ * The function table on
  * page 0 starts at 0xE9 and grows downwards, six bytes per entry (query,
  * command, control and data base, interrupt count, function number); it
  * is scanned for F01 (device control: status, interrupt status) and the
@@ -26,17 +26,15 @@ static bool present, was_down;
 static int last_x, last_y;
 static unsigned status_bytes = 1, max_x = 4095, max_y = 4095;
 
-static bool use_qup;
-
 static int rd(uint8_t reg, uint8_t *buf, unsigned n)
 {
-	return use_qup ? i2c_qup_xfer(ADDR, &reg, 1, buf, n) : i2c_gpio_xfer(ADDR, &reg, 1, buf, n);
+	return i2c_qup_xfer(ADDR, &reg, 1, buf, n);
 }
 
 static int wr(uint8_t reg, uint8_t val)
 {
 	uint8_t buf[2] = { reg, val };
-	return use_qup ? i2c_qup_xfer(ADDR, buf, 2, NULL, 0) : i2c_gpio_xfer(ADDR, buf, 2, NULL, 0);
+	return i2c_qup_xfer(ADDR, buf, 2, NULL, 0);
 }
 
 /* Power: analog supply from PM8226 LDO19, the I2C pull-ups from LVS1,
@@ -73,18 +71,9 @@ bool touch_init(void)
 	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	power_on();
 	uint8_t e[6];
-	use_qup = i2c_qup_init(5, 18, 19, 3, 384000) == 0;
-	int ret = use_qup ? rd(PAGE_SELECT, e, 1) : -1;
-	if (ret) {
-		log_printf("touch: qup i2c failed (%d), bit-banging\n", ret);
-		use_qup = false;
-		i2c_gpio_init(18, 19);
+	int ret = i2c_qup_init(5, 18, 19, 3, 384000);
+	if (!ret)
 		ret = rd(PAGE_SELECT, e, 1);
-	}
-	uint32_t t0 = time_us();
-	for (int i = 0; i < 10; i++)
-		rd(PAGE_SELECT, e, 1);
-	log_printf("touch: i2c via %s, %lu us per register read\n", use_qup ? "qup" : "gpio", (time_us() - t0) / 10);
 	if (ret) {
 		log_printf("touch: no answer on i2c (%d)\n", ret);
 		return false;
