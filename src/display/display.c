@@ -12,6 +12,8 @@
 struct fb fb;
 static bool cmd_mode, kicked;
 static uint32_t frames, waits, timeouts;
+static void (*idle_hook)(void);
+void display_set_idle_hook(void (*fn)(void)) { idle_hook = fn; }
 uint32_t display_timeouts(void) { return timeouts; }
 
 #define SRC_FORMAT_XRGB8888	(0x3 << 9 | 0x3 << 6 | 0x3 << 4 | 0x3 << 2 | 0x3 << 0 | 0x1 << 17 | 0x3 << 12)
@@ -24,6 +26,8 @@ static void pp_wait(void)
 		return;
 	uint32_t t0 = time_us();
 	while (!(readl(MDP_INTR_STATUS) & MDP_INTR_PP0_DONE)) {
+		if (idle_hook)
+			idle_hook();
 		if (time_us() - t0 > 100000) {
 			timeouts++;
 			break;

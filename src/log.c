@@ -97,6 +97,29 @@ void log_record(const char *text)
 	dsb();
 }
 
+void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
+{
+	volatile struct zone *z = CONSOLE;
+	uint32_t size = z->size, base = (z->start + CONSOLE_CAP - size) % CONSOLE_CAP, from = 0;
+	unsigned seen = 0;
+	if (!lines)
+		return;
+	for (uint32_t i = size; i-- > 0;)
+		if (z->data[(base + i) % CONSOLE_CAP] == '\n' && i + 1 < size && ++seen == lines) {
+			from = i + 1;
+			break;
+		}
+	char buf[128];
+	size_t n = 0;
+	for (uint32_t i = from; i < size; i++) {
+		buf[n++] = (char)z->data[(base + i) % CONSOLE_CAP];
+		if (n == sizeof buf || i + 1 == size) {
+			out(buf, n, ctx);
+			n = 0;
+		}
+	}
+}
+
 const char *log_previous_record(void)
 {
 	return have_previous ? previous : NULL;

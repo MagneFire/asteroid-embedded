@@ -86,6 +86,7 @@ def show(blob, tail):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-boot", action="store_true", help="only fetch and show the log")
+    p.add_argument("--no-wait", action="store_true", help="boot and return; fetch the log later with --no-boot")
     p.add_argument("--timeout", type=float, default=90)
     p.add_argument("--tail", type=int, default=40)
     a = p.parse_args()
@@ -93,8 +94,10 @@ def main():
         wait_for(True, 10, "appear in fastboot")
         t0 = time.time()
         fastboot("boot", IMG, quiet=True)
-        print("booted in %.1f s, waiting for the reboot" % (time.time() - t0))
+        print("booted in %.1f s%s" % (time.time() - t0, "" if a.no_wait else ", waiting for the reboot"))
         wait_for(False, 20, "leave fastboot")
+        if a.no_wait:
+            return
         dt = wait_for(True, a.timeout, "come back to fastboot")
         print("back in fastboot after %.1f s" % dt)
     if os.path.exists(RAW):

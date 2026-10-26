@@ -1,0 +1,52 @@
+/* Host stand-ins for the hardware and log functions the console and adb
+ * code call. */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "asteroid.h"
+#include "stubs.h"
+
+const char build_id[] = "hosttest";
+uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
+bool stub_asleep;
+jmp_buf *stub_reboot_jmp;
+int stub_failures;
+
+uint32_t time_ms(void) { return stub_ms; }
+uint32_t timer_ticks(void) { return 42; }
+uint32_t display_frames(void) { return 7; }
+void display_set_brightness(uint8_t level) { stub_brightness = level; }
+void display_sleep(void) { stub_asleep = true; }
+void display_wake(void) { stub_asleep = false; }
+uint32_t pmic_battery_mv(void) { return 3900; }
+const char *pmic_charger_status(void) { return "discharging"; }
+uint32_t pmic_rtc_read(void) { return stub_rtc; }
+void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
+uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
+
+void reboot(void)
+{
+	if (stub_reboot_jmp)
+		longjmp(*stub_reboot_jmp, 1);
+	fprintf(stderr, "unexpected reboot\n");
+	abort();
+}
+
+void log_puts(const char *s) { fputs(s, stderr); }
+
+void log_printf(const char *fmt, ...)
+{
+	char buf[256];
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+	fputs(buf, stderr);
+}
+
+void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
+{
+	static const char *log[] = { "line one\n", "line two\n", "line three\n" };
+	for (unsigned i = lines < 3 ? 3 - lines : 0; i < 3; i++)
+		out(log[i], strlen(log[i]), ctx);
+}

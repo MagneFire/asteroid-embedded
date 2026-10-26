@@ -14,6 +14,7 @@ bool display_init(void);
 uint32_t *display_backbuffer(void);
 void display_flip(void);
 void display_wait_idle(void);
+void display_set_idle_hook(void (*fn)(void));
 uint32_t display_frames(void);
 uint32_t display_waits(void);
 uint32_t display_timeouts(void);

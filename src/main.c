@@ -7,13 +7,14 @@
 #include "asteroid.h"
 #include "display/display.h"
 #include "input/touch.h"
+#include "console/console.h"
 #include "gitrev.h"
 #include "config.h"
 
 const char build_id[] = GITREV;
 
 #ifndef REBOOT_AFTER_MS
-#define REBOOT_AFTER_MS 30000
+#define REBOOT_AFTER_MS 0
 #endif
 
 extern void wdt_bark_handler(void);
@@ -76,6 +77,10 @@ void main(void)
 	pmic_charger_configure();
 	rpm_init();
 	bool have_touch = touch_init();
+	console_init();
+	usb_init("asteroid-sturgeon");
+	if (have_display)
+		display_set_idle_hook(usb_poll);
 	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
 
 	uint32_t t0 = time_ms(), last = 0, frames0 = display_frames();
@@ -88,6 +93,7 @@ void main(void)
 	for (;;) {
 		uint32_t now = time_ms();
 		wdt_feed();
+		usb_poll();
 		if (have_touch && touch_poll(&t)) {
 			if (t.event == TOUCH_DOWN) {
 				down_x = t.x;
@@ -121,8 +127,10 @@ void main(void)
 		}
 		if (now - last >= 1000) {
 			last = now;
-			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s\n", (now - t0) / 1000,
-				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
+			uint32_t rx, tx;
+			usb_stats(&rx, &tx);
+			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu\n", (now - t0) / 1000,
+				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx);
 			frames0 = display_frames();
 #if defined(TEST_HANG)
 			if (now - t0 >= 2000) {
@@ -137,7 +145,7 @@ void main(void)
 			}
 #endif
 		}
-		if (now - t0 >= REBOOT_AFTER_MS) {
+		if (REBOOT_AFTER_MS > 0 && now - t0 >= (uint32_t)REBOOT_AFTER_MS) {
 			log_printf("rebooting, %lu ticks\n", timer_ticks());
 			reboot();
 		}

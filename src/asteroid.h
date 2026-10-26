@@ -88,10 +88,16 @@ void log_puts(const char *s);
 void log_record(const char *text);
 const char *log_previous_record(void);
 void log_set_sink(void (*fn)(const char *s, size_t n));
+void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
 
 /* display (see display/display.h) */
 void fbcon_puts(const char *s);
 void fbcon_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+/* usb */
+void usb_init(const char *serialno);
+void usb_poll(void);
+void usb_stats(uint32_t *rx, uint32_t *tx);
 
 extern const char build_id[];
 #endif
