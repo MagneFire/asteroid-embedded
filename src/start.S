@@ -92,10 +92,10 @@ irq_entry:
         push    {r0-r3, r12, lr}
         vmrs    r0, fpscr
         vpush   {d0-d7}
-        push    {r0}
-        add     r0, sp, #68
+        push    {r0, r1}
+        add     r0, sp, #72
         bl      irq_handler
-        pop     {r0}
+        pop     {r0, r1}
         vpop    {d0-d7}
         vmsr    fpscr, r0
         ldmfd   sp!, {r0-r3, r12, pc}^
