@@ -270,10 +270,10 @@ void main(void)
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
 			uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
-			uint32_t pc, pcb;
-			spm_stats(&pc, &pcb);
-			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu collapses, battery %ld mA, %ld mA average\n",
-				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, wakeups, pc, pcb,
+			uint32_t pc, pcc, pcb;
+			spm_stats(&pc, &pcc, &pcb);
+			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, battery %ld mA, %ld mA average\n",
+				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, wakeups, pc, pcc, pcb,
 				   pmic_battery_ua() / 1000, pmic_battery_avg_ua() / 1000);
 			asleep_ms = 0;
 			if (!awake)
@@ -307,6 +307,6 @@ void main(void)
 		}
 #endif
 		if ((!have_display || !awake) && timer_ticks())
-			spm_cpu_idle_collapse();
+			spm_idle(!awake && !usb_connected());
 	}
 }

@@ -1,11 +1,13 @@
-/* ARMv7 set/way D-cache clean+invalidate over every level in CLIDR.
+/* ARMv7 set/way D-cache clean+invalidate, or invalidate only, over every
+ * level in CLIDR.
  * Clobbers r0-r11; call before or after C code only. */
         .syntax unified
         .arm
         .text
 
-        .global dcache_clean_invalidate_all
-dcache_clean_invalidate_all:
+        .macro  setway name, crm
+        .global \name
+\name:
         push    {r4-r11, lr}
         dmb
         mrc     p15, 1, r0, c0, c0, 1           /* CLIDR */
@@ -31,7 +33,7 @@ dcache_clean_invalidate_all:
 2:      mov     r9, r4
 3:      orr     r11, r10, r9, lsl r5
         orr     r11, r11, r7, lsl r2
-        mcr     p15, 0, r11, c7, c14, 2         /* DCCISW */
+        mcr     p15, 0, r11, c7, \crm, 2
         subs    r9, r9, #1
         bge     3b
         subs    r7, r7, #1
@@ -44,3 +46,7 @@ dcache_clean_invalidate_all:
         dsb
         isb
         pop     {r4-r11, pc}
+        .endm
+
+        setway  dcache_clean_invalidate_all, c14   /* DCCISW */
+        setway  dcache_invalidate_all, c6          /* DCISW */

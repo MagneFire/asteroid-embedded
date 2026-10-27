@@ -68,6 +68,12 @@ void gic_enable(unsigned id, void (*fn)(void))
 	writel(BIT(id % 32), GICD_ISENABLER(id / 32));
 }
 
+void gic_set_edge(unsigned id)
+{
+	if (id < nirq)
+		writel(readl(GICD_ICFGR(id / 16)) | BIT(id % 16 * 2 + 1), GICD_ICFGR(id / 16));
+}
+
 void gic_mask(unsigned id)
 {
 	if (id < nirq)

@@ -20,6 +20,8 @@
 #define GEN2_SESS_VLD_CTRL_EN	BIT(7)
 #define USBCMD_SESS_VLD_CTRL	BIT(25)
 #define PORTSC_PTS_ULPI		BIT(31)
+#define PORTSC_CCS		BIT(0)
+#define PORTSC_SUSP		BIT(7)
 
 #define EP_ADB_OUT	0x01
 #define EP_ADB_IN	0x81
@@ -272,6 +274,14 @@ void tud_mount_cb(void)
 	log_printf("usb: configured, %s speed\n", tud_speed_get() == TUSB_SPEED_HIGH ? "high" : "full");
 }
 void tud_umount_cb(void) { log_printf("usb: unconfigured\n"); }
+/* A host is attached and the bus is not suspended. This comes from the
+ * port itself, as the controller only raises its interrupts while the
+ * crystal runs: after an unplug the bus goes idle and the port suspends,
+ * a newly attached host resets the port out of suspend. */
+bool usb_connected(void)
+{
+	return (readl(USB_PORTSC) & (PORTSC_CCS | PORTSC_SUSP)) == PORTSC_CCS;
+}
 
 static const struct adb_transport transport = { .send = adb_send };
 

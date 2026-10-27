@@ -16,6 +16,7 @@ static inline uint64_t cnt_now(void)
 	return ((uint64_t)hi << 32) | lo;
 }
 
+uint64_t timer_count(void) { return cnt_now(); }
 uint32_t timer_hz(void) { return hz; }
 uint32_t timer_ticks(void) { return ticks; }
 uint32_t time_ms(void) { return (uint32_t)(cnt_now() / (hz / 1000)); }

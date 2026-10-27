@@ -71,6 +71,9 @@ cpu_resume:
         mcr     p15, 0, r9, c10, c2, 0
         mcr     p15, 0, r10, c10, c2, 1
         mov     sp, r11
+        bl      dcache_invalidate_all           /* L2 may have lost power */
+        ldr     r1, =suspend_ctx
+        ldr     r2, [r1]
         dsb
         isb
         mcr     p15, 0, r2, c1, c0, 0           /* MMU and caches back on */
