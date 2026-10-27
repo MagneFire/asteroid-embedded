@@ -19,6 +19,8 @@
 #define SS_OPENING		1
 #define SS_OPENED		2
 #define RPM_REQ			0x00716572u
+#define RPM_SET_ACTIVE		0
+#define RPM_SET_SLEEP		1
 
 struct alloc_entry { uint32_t allocated, offset, size, base_ext; };
 struct chan_alloc { char name[20]; uint32_t cid, ctype, ref_count; };
@@ -144,7 +146,7 @@ static uint32_t rx_avail(void)
 	return w >= r ? w - r : fifo_size - r + w;
 }
 
-int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp)
+static int request(uint32_t set, uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp)
 {
 	if (!ready)
 		return -1;
@@ -153,7 +155,7 @@ int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp)
 	uint32_t data_len = nkvp * 12;
 	pkt[n++] = 28 + data_len; pkt[n++] = 0; pkt[n++] = 0; pkt[n++] = 0; pkt[n++] = 0;
 	pkt[n++] = RPM_REQ; pkt[n++] = 20 + data_len;
-	pkt[n++] = ++msg_id; pkt[n++] = 0; pkt[n++] = type; pkt[n++] = id; pkt[n++] = data_len;
+	pkt[n++] = ++msg_id; pkt[n++] = set; pkt[n++] = type; pkt[n++] = id; pkt[n++] = data_len;
 	for (unsigned i = 0; i < nkvp * 3; i++)
 		pkt[n++] = kvp[i];
 	port->remote.data_read = 0;
@@ -184,6 +186,11 @@ int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp)
 	return resp[0] == RPM_REQ ? 0 : -3;
 }
 
+int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp)
+{
+	return request(RPM_SET_ACTIVE, type, id, kvp, nkvp);
+}
+
 int rpm_regulator_enable(uint32_t type, uint32_t id, bool on)
 {
 	uint32_t kvp[3] = { 0x6e657773, 4, on };
@@ -211,3 +218,14 @@ void rpm_bus_votes(void)
 	rpm_clock_rate(RPM_CLK1, 2, 50000);
 }
 
+/* Requests in the sleep set apply while the CPU cluster is powered down
+ * with the RPM's help; without one the active set request stays in
+ * force. Dropping the vote for the crystal lets the RPM turn it off. */
+#define RPM_CLK0		0x306b6c63u
+#define RPM_KEY_ENABLE		0x62616e45u
+
+void rpm_sleep_votes(void)
+{
+	uint32_t kvp[3] = { RPM_KEY_ENABLE, 4, 0 };
+	request(RPM_SET_SLEEP, RPM_CLK0, 0, kvp, 1);
+}

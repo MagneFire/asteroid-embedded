@@ -107,8 +107,10 @@ void main(void)
 	boot_init();
 	spmi_init();
 	pmic_init();
-	if (rpm_init())
+	if (rpm_init()) {
 		rpm_bus_votes();
+		rpm_sleep_votes();
+	}
 	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), pmic_pon_reason());
 	bool have_display = display_init();
 	if (have_display) {

@@ -107,6 +107,7 @@ bool rpm_init(void);
 int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp);
 int rpm_regulator_enable(uint32_t type, uint32_t id, bool on);
 int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz);
+void rpm_sleep_votes(void);
 void rpm_bus_votes(void);
 void dload_clear(void);
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
