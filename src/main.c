@@ -270,9 +270,9 @@ void main(void)
 			uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
 			uint32_t pc, pcb;
 			spm_stats(&pc, &pcb);
-			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu collapses, battery %ld mA\n",
+			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu collapses, battery %ld mA, %ld mA average\n",
 				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, wakeups, pc, pcb,
-				   pmic_battery_ua() / 1000);
+				   pmic_battery_ua() / 1000, pmic_battery_avg_ua() / 1000);
 			asleep_ms = 0;
 			if (!awake)
 				asleep_t = now;

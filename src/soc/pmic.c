@@ -235,3 +235,36 @@ int32_t pmic_battery_ua(void)
 	int64_t uv = (int64_t)(int16_t)(raw - off) * IADC_GAIN_UV / (int16_t)(gain - off);
 	return -(int32_t)(uv * 1000000 / RSENSE_UOHM);
 }
+
+/* Coulomb counter of the battery monitor: a 36-bit signed sum of the
+ * sense resistor voltage that the PMIC keeps up on its own, also while
+ * the SoC sleeps. One count is 5.42535 uV over 56 sleep clock cycles. The
+ * output registers are held while they are read. */
+#define BMS_CC_DATA_CTL		0x004042
+#define BMS_CC_DATA0		0x00408a
+#define BMS_HOLD_OREG_DATA	BIT(0)
+
+static int64_t cc_raw(void)
+{
+	uint8_t d[5];
+	pmic_write(BMS_CC_DATA_CTL, BMS_HOLD_OREG_DATA);
+	delay_us(100);
+	spmi_read(BMS_CC_DATA0, d, 5);
+	pmic_write(BMS_CC_DATA_CTL, 0);
+	uint64_t v = d[0] | (uint64_t)d[1] << 8 | (uint64_t)d[2] << 16 | (uint64_t)d[3] << 24 | (uint64_t)(d[4] & 0xf) << 32;
+	return (int64_t)(v << 28) >> 28;
+}
+
+/* Average since the previous call, positive while the battery discharges. */
+int32_t pmic_battery_avg_ua(void)
+{
+	static int64_t last;
+	static uint32_t last_ms;
+	int64_t cc = cc_raw();
+	uint32_t now = time_ms(), ms = now - last_ms;
+	int64_t uas = (cc - last) * 542535 * 56 / 32764 * 10 / RSENSE_UOHM;
+	bool first = !last_ms;
+	last = cc;
+	last_ms = now;
+	return first || !ms ? 0 : (int32_t)(uas * 1000 / ms);
+}
