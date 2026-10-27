@@ -16,6 +16,8 @@
 #define PON_PS_HOLD_RESET_CTL2	0x00085b
 #define RESET_TYPE_WARM		0x1
 #define S2_RESET_EN		BIT(7)
+#define SMPS2_MODE		0x011745
+#define SMPS_MODE_AUTO		0x40
 
 static char reason[128];
 
@@ -34,6 +36,8 @@ void pmic_init(void)
 	pmic_write(PON_PS_HOLD_RESET_CTL2, S2_RESET_EN);
 	snprintf(reason + strlen(reason), sizeof reason - strlen(reason), " ps_hold %02x/%02x",
 		 pmic_read(PON_PS_HOLD_RESET_CTL), pmic_read(PON_PS_HOLD_RESET_CTL2));
+
+	pmic_write(SMPS2_MODE, SMPS_MODE_AUTO);
 }
 
 const char *pmic_pon_reason(void) { return reason; }
