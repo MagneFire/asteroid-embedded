@@ -88,3 +88,41 @@ suspend_ctx:
         .space  40
 scm_ctx:
         .space  4
+
+/* Entry point of the secondary cores. They are only started so that the
+ * secure world sees them in power collapse, the state it expects before
+ * it lets the last core take the cluster down. Each one points its SAW
+ * at the power collapse sequence, counts its entry and asks the secure
+ * world to collapse it as a hotplugged core. Runs with the MMU off. */
+#define SAW_CPU0                0xf9089000
+#define SAW_SPM_CTL             0x30
+#define SPM_CTL_POWER_COLLAPSE  0x59
+#define SCM_CORE_HOTPLUGGED     0x10
+
+        .text
+        .global secondary_park
+secondary_park:
+        cpsid   if
+        mrc     p15, 0, r4, c0, c0, 5           /* MPIDR */
+        and     r4, r4, #3
+        ldr     r5, =park_count
+        add     r5, r5, r4, lsl #2
+        ldr     r0, [r5]
+        add     r0, r0, #1
+        str     r0, [r5]
+        ldr     r6, =SAW_CPU0
+        add     r6, r6, r4, lsl #16
+        mov     r0, #SPM_CTL_POWER_COLLAPSE
+        str     r0, [r6, #SAW_SPM_CTL]
+        dsb
+        ldr     r0, =SCM_TERMINATE_PC
+        mov     r1, r5
+        mov     r2, #SCM_CORE_HOTPLUGGED
+        smc     #0
+        b       secondary_park
+
+        .data
+        .align  6
+        .global park_count
+park_count:
+        .space  64

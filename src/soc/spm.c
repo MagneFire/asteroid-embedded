@@ -36,8 +36,16 @@ static const uint8_t cpu_seq[] = {
 static bool ready, can_collapse;
 static uint32_t collapses, bailouts;
 
+#define APCS_ACC(cpu)		(0xf9088000u + (cpu) * 0x10000)
+#define ACC_PWR_STATUS		0x08
+#define ACC_COLLAPSED		BIT(19)
+#define SCM_FLAG_COLDBOOT_CPU123	(0x01 | 0x08 | 0x20)
+#define SCM_FLAG_WARMBOOT_CPU123	(0x02 | 0x10 | 0x40)
+
 int cpu_suspend(uint32_t flag);
 void cpu_resume(void);
+void secondary_park(void);
+extern volatile uint32_t park_count[16];
 
 static void load_seq(uint32_t saw, const uint8_t *seq, unsigned len)
 {
@@ -101,6 +109,59 @@ void spm_stats(uint32_t *c, uint32_t *b)
 	*b = bailouts;
 }
 
+/* Power-up sequence of a secondary core's ACC, from reset into the
+ * secure world's cold boot path. */
+static void release_secondary(unsigned cpu)
+{
+	uint32_t acc = APCS_ACC(cpu);
+	writel(0x00000033, acc + 0x04);
+	writel(0x10000001, acc + 0x14);
+	dsb();
+	delay_us(2);
+	writel(0x00000031, acc + 0x04);
+	writel(0x00000039, acc + 0x04);
+	dsb();
+	delay_us(2);
+	writel(0x00020038, acc + 0x04);
+	dsb();
+	delay_us(2);
+	writel(0x00020008, acc + 0x04);
+	writel(0x00020088, acc + 0x04);
+	dsb();
+}
+
+static bool park_secondaries(void)
+{
+	int c = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_COLDBOOT_CPU123, (uint32_t)(uintptr_t)secondary_park);
+	int w = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_WARMBOOT_CPU123, (uint32_t)(uintptr_t)secondary_park);
+	if (c || w) {
+		log_printf("spm: secondary boot address not accepted (%d %d)\n", c, w);
+		return false;
+	}
+	for (unsigned cpu = 1; cpu < 4; cpu++) {
+		uint32_t saw = SAW_CPU0 + cpu * 0x10000;
+		load_seq(saw, cpu_seq, sizeof cpu_seq);
+		writel(0, saw + SAW_CFG);
+		writel(0x3c102800, saw + SAW_SPM_DLY);
+		writel(SPM_CTL_BASE, saw + SAW_SPM_CTL);
+	}
+	dcache_clean_invalidate_range((const void *)park_count, sizeof park_count);
+	bool ok = true;
+	for (unsigned cpu = 1; cpu < 4; cpu++) {
+		release_secondary(cpu);
+		uint32_t t0 = time_us(), st;
+		do {
+			dcache_invalidate_range((const void *)park_count, sizeof park_count);
+			st = readl(APCS_ACC(cpu) + ACC_PWR_STATUS);
+		} while ((!park_count[cpu] || !(st & ACC_COLLAPSED)) && time_us() - t0 < 100000);
+		if (!park_count[cpu] || !(st & ACC_COLLAPSED)) {
+			log_printf("spm: cpu%u did not park, status %08lx\n", cpu, st);
+			ok = false;
+		}
+	}
+	return ok;
+}
+
 bool spm_init(void)
 {
 	uint32_t ver = readl(SAW_CPU0 + SAW_VERSION);
@@ -117,6 +178,8 @@ bool spm_init(void)
 	if (ret)
 		log_printf("spm: warm boot address not accepted (%d)\n", ret);
 	can_collapse = !ret;
+	if (can_collapse)
+		park_secondaries();
 	writel(0, QTMR_CNTP_CTL);
 	gic_enable(IRQ_QTMR_FRAME0, qtmr_irq);
 	return true;
