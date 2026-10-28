@@ -456,6 +456,83 @@ static void cmd_fs(const char *args)
 	say("AsteroidOS root: %s\n", storage_rootfs_where());
 }
 
+static void cmd_store(const char *args)
+{
+	int r = store_open();
+	const struct store_info *s = store_info();
+	if (r) {
+		say("no store (%s): %s\n", STORE_PARTITION, s->why ? s->why : "storage not mounted");
+		return;
+	}
+	say("%lu bytes, %s%s\n", s->size, s->writable ? "writable" : "read-only: ", s->why ? s->why : "");
+	for (unsigned i = 0; i < s->nsegs; i++)
+		say("  offset %7lu: lba %8lu + %lu\n", s->segs[i].off, s->segs[i].lba, s->segs[i].count);
+}
+
+static void cmd_emmctest(const char *args)
+{
+	if (store_open() || !store_info()->writable) {
+		say("store not writable\n");
+		return;
+	}
+	static uint8_t save[4096], pat[4096], back[4096];
+	uint32_t off = store_info()->size - sizeof save;
+	int r = store_read(off, save, sizeof save);
+	for (uint32_t i = 0; i < sizeof pat; i++)
+		pat[i] = (uint8_t)(i * 7 + time_us());
+	uint32_t t0 = time_us();
+	if (!r)
+		r = store_write(off, pat, sizeof pat);
+	uint32_t t1 = time_us();
+	if (!r)
+		r = store_read(off, back, sizeof back);
+	bool same = !r && !memcmp(pat, back, sizeof pat);
+	int r2 = store_write(off, save, sizeof save);
+	if (!r2)
+		r2 = store_read(off, back, sizeof back);
+	bool restored = !r2 && !memcmp(save, back, sizeof save);
+	say("write %d (%lu us), compare %s, restore %s\n", r, t1 - t0, same ? "ok" : "FAILED", restored ? "ok" : "FAILED");
+}
+
+static void kv_fn(const char *key, const uint8_t *val, unsigned len, void *ctx)
+{
+	say("%s (%u bytes):", key, len);
+	for (unsigned i = 0; i < len && i < 32; i++)
+		say(" %02x", val[i]);
+	say(len > 32 ? " ...\n" : "\n");
+}
+
+static void cmd_kv(const char *args)
+{
+	char op[8], key[KV_KEY_MAX + 1];
+	unsigned n = 0;
+	args = skip_spaces(args);
+	while (*args && *args != ' ' && n < sizeof op - 1)
+		op[n++] = *args++;
+	op[n] = 0;
+	args = skip_spaces(args);
+	n = 0;
+	while (*args && *args != ' ' && n < sizeof key - 1)
+		key[n++] = *args++;
+	key[n] = 0;
+	args = skip_spaces(args);
+	int r;
+	if (!*op) {
+		r = kv_each(kv_fn, NULL);
+		if (!r)
+			say("seq %lu\n", kv_seq());
+	} else if (!strcmp(op, "set") && *key) {
+		r = kv_set(key, args, (unsigned)strlen(args));
+	} else if (!strcmp(op, "del") && *key) {
+		r = kv_del(key);
+	} else {
+		say("usage: kv [set <key> <text> | del <key>]\n");
+		return;
+	}
+	if (r)
+		say("kv: %d\n", r);
+}
+
 struct btscan { struct ext4 *fs; char dir[96]; };
 
 static void bt_peer_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
@@ -557,6 +634,9 @@ static const struct command commands[] = {
 	{ "fs", "", cmd_fs },
 	{ "ls", "[userdata:]<path>", cmd_ls },
 	{ "cat", "[userdata:]<path>", cmd_cat },
+	{ "store", "", cmd_store },
+	{ "emmctest", "", cmd_emmctest },
+	{ "kv", "[set <key> <text> | del <key>]", cmd_kv },
 	{ "btinfo", "", cmd_btinfo },
 	{ "echo", "<text>", cmd_echo },
 };
