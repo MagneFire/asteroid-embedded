@@ -10,6 +10,7 @@ export component Watchface inherits Window {
     in property <int> month;
     in property <int> battery-percent;
     in property <bool> charging;
+    in property <int> passkey: -1;
     property <bool> show-seconds;
     property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -122,6 +123,32 @@ export component Watchface inherits Window {
             text: (root.charging ? "+" : "") + root.battery-percent + "%";
             color: white;
             font-size: 20px;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.passkey >= 0: Rectangle {
+        background: black;
+
+        Text {
+            y: root.height * 0.3;
+            height: root.height * 0.1;
+            width: root.width;
+            text: "Pairing code";
+            color: white;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            y: root.height * 0.42;
+            height: root.height * 0.2;
+            width: root.width;
+            text: root.two-digits(Math.floor(root.passkey / 10000)) + root.two-digits(Math.mod(Math.floor(root.passkey / 100), 100)) + root.two-digits(Math.mod(root.passkey, 100));
+            color: white;
+            font-size: 64px;
+            horizontal-alignment: center;
             vertical-alignment: center;
         }
     }

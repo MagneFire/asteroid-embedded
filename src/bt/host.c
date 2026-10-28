@@ -41,6 +41,13 @@ static void log_addr(const char *what, const ble_addr_t *a)
 		   a->val[1], a->val[0], a->type);
 }
 
+static int32_t passkey = -1;
+
+int32_t bt_passkey(void)
+{
+	return passkey;
+}
+
 static void passkey_action(uint16_t handle, const struct ble_gap_passkey_params *p)
 {
 	struct ble_sm_io io = { .action = p->action };
@@ -51,6 +58,7 @@ static void passkey_action(uint16_t handle, const struct ble_gap_passkey_params 
 		uint32_t r = 0;
 		ble_hs_hci_rand(&r, sizeof r);
 		io.passkey = r % 1000000;
+		passkey = (int32_t)io.passkey;
 		log_printf("bt: pairing, passkey %06lu\n", io.passkey);
 	} else {
 		log_printf("bt: pairing, unsupported action %u\n", p->action);
@@ -81,6 +89,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		}
 		break;
 	case BLE_GAP_EVENT_DISCONNECT:
+		passkey = -1;
 		log_printf("bt: disconnected, reason %04x\n", ev->disconnect.reason);
 		conn = BLE_HS_CONN_HANDLE_NONE;
 		advertise();
@@ -95,6 +104,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 			advertise();
 		break;
 	case BLE_GAP_EVENT_ENC_CHANGE:
+		passkey = -1;
 		if (!ble_gap_conn_find(ev->enc_change.conn_handle, &d)) {
 			log_printf("bt: encryption %d: encrypted %u, authenticated %u, bonded %u, key size %u\n",
 				   ev->enc_change.status, d.sec_state.encrypted, d.sec_state.authenticated,

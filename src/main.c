@@ -147,6 +147,7 @@ void main(void)
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool key_was = false, awake = true;
+	int32_t passkey = -1;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
 	int down_x = 0, down_y = 0;
@@ -197,6 +198,14 @@ void main(void)
 			} else {
 				wake_request = true;
 			}
+		}
+		if (bt_passkey() != passkey) {
+			passkey = bt_passkey();
+			if (have_ui)
+				ui_set_passkey(passkey);
+			if (passkey >= 0)
+				wake_request = !awake;
+			last_activity = now;
 		}
 		if (console_sleep || console_wake) {
 			sleep_request |= console_sleep && awake;

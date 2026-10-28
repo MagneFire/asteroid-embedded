@@ -127,6 +127,12 @@ pub extern "C" fn ui_set_battery(percent: u32, charging: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_passkey(passkey: i32) {
+    let Some(ui) = ui() else { return };
+    ui.face.set_passkey(passkey);
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_touch(kind: i32, x: i32, y: i32) {
     let Some(ui) = ui() else { return };
     let position = LogicalPosition::new(x as f32, y as f32);
