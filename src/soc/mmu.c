@@ -5,7 +5,8 @@
  *                                            the GPU's ring buffer and command memory
  *                                            (0x1e000000) and the section holding the
  *                                            persistent log
- *   peripherals (APCS, clock/PMIC arbiter, TLMM, multimedia, IMEM) device, XN
+ *   peripherals (APCS, clock/PMIC arbiter, TLMM, hardware mutexes, multimedia,
+ *   IMEM) device, XN
  *   everything else unmapped: a wild pointer aborts instead of corrupting. */
 #include "asteroid.h"
 
@@ -33,7 +34,7 @@ void mmu_init(void)
 	map(0xf9000000, 0xfa000000, SEC_DEV);
 	map(0xfc100000, 0xfc200000, SEC_DEV);
 	map(0xfc400000, 0xfc500000, SEC_DEV);
-	map(0xfd500000, 0xfd600000, SEC_DEV);
+	map(0xfd400000, 0xfd600000, SEC_DEV);
 	map(0xfd800000, 0xfdc00000, SEC_DEV);
 	map(0xfe800000, 0xfe900000, SEC_DEV);
 

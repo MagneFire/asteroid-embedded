@@ -1,6 +1,8 @@
 /* CPU power collapse. cpu_suspend(flag) saves the state the core loses
  * when its power is cut, cleans the caches and asks the secure world to
- * collapse the core (flag 0: L2 stays on, 1: L2 off). It returns nonzero
+ * collapse the core (flag 0: L2 stays on, 1: L2 off). The secure world
+ * expects the core to hold the handoff lock, a hardware mutex tagged with
+ * 128 + the core number, which it releases itself. It returns nonzero
  * if the secure world bailed out because an interrupt was pending. After
  * a real collapse the secure world restarts the core at cpu_resume with
  * the MMU off; that path restores the state and returns 0 from
@@ -10,6 +12,19 @@
         .fpu    neon
 
 #define SCM_TERMINATE_PC        0x00402221
+#define HANDOFF_LOCK            0xfd484380
+#define HANDOFF_TID             128
+
+        .macro  handoff_lock cpu, tmp, addr
+        add     \cpu, \cpu, #HANDOFF_TID
+        ldr     \addr, =HANDOFF_LOCK
+1:      str     \cpu, [\addr]
+        dsb
+        ldr     \tmp, [\addr]
+        cmp     \tmp, \cpu
+        bne     1b
+        sub     \cpu, \cpu, #HANDOFF_TID
+        .endm
 
         .text
         .global cpu_suspend
@@ -31,6 +46,9 @@ cpu_suspend:
         mov     r11, sp
         stmia   r1, {r2-r11}
         bl      dcache_clean_invalidate_all
+        mrc     p15, 0, r3, c0, c0, 5           /* MPIDR */
+        and     r3, r3, #3
+        handoff_lock r3, r0, r12
         ldr     r2, [sp]                        /* flag */
         ldr     r0, =SCM_TERMINATE_PC
         ldr     r1, =scm_ctx
@@ -118,6 +136,7 @@ secondary_park:
         mov     r0, #SPM_CTL_POWER_COLLAPSE
         str     r0, [r6, #SAW_SPM_CTL]
         dsb
+        handoff_lock r4, r0, r7
         ldr     r0, =SCM_TERMINATE_PC
         mov     r1, r5
         mov     r2, #SCM_CORE_HOTPLUGGED
