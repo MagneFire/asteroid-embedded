@@ -1,13 +1,13 @@
 /* Bond keys and the BD_ADDR. The host's ble_store callbacks work on RAM
- * tables; every change saves them as one blob through a small key/value
- * backend, and the BD_ADDR is a second key. The backend here keeps the
- * values in RAM only, so nothing survives a reboot until a persistent
- * store registers itself with bt_kv_set_backend(). */
+ * tables; every change saves them as one blob in the eMMC key/value
+ * store, and the BD_ADDR is a second key. Without a writable store the
+ * values only live in RAM. */
 #include <string.h>
 #include "asteroid.h"
 #include "host/ble_hs.h"
 #include "mbedtls/aes.h"
 #include "bt.h"
+#include "storage/storage.h"
 
 #define MAX_BONDS	MYNEWT_VAL(BLE_STORE_MAX_BONDS)
 #define MAX_CCCDS	MYNEWT_VAL(BLE_STORE_MAX_CCCDS)
@@ -61,33 +61,50 @@ static int ram_save(const char *key, const void *buf, unsigned len)
 }
 
 static const struct bt_kv ram_kv = { "ram", ram_load, ram_save };
-static const struct bt_kv *kv = &ram_kv;
 
-void bt_kv_set_backend(const struct bt_kv *backend)
+static int emmc_load(const char *key, void *buf, unsigned len)
 {
-	kv = backend ? backend : &ram_kv;
+	int n = kv_get(key, buf, len);
+	return n < 0 ? -1 : (unsigned)n < len ? n : (int)len;
+}
+
+static int emmc_save(const char *key, const void *buf, unsigned len)
+{
+	return kv_set(key, buf, len) ? -1 : 0;
+}
+
+static const struct bt_kv emmc_kv = { "emmc", emmc_load, emmc_save };
+static const struct bt_kv *kv;
+
+_Static_assert(sizeof(struct bonds) <= KV_VALUE_MAX, "bonds do not fit in one key/value entry");
+
+static const struct bt_kv *backend(void)
+{
+	if (!kv)
+		kv = !kv_load() && store_info()->writable ? &emmc_kv : &ram_kv;
+	return kv;
 }
 
 const char *bt_kv_name(void)
 {
-	return kv->name;
+	return backend()->name;
 }
 
 int bt_addr_load(uint8_t addr[6])
 {
-	return kv->load(KEY_ADDR, addr, 6) == 6 ? 0 : -1;
+	return backend()->load(KEY_ADDR, addr, 6) == 6 ? 0 : -1;
 }
 
 int bt_addr_save(const uint8_t addr[6])
 {
-	return kv->save(KEY_ADDR, addr, 6);
+	return backend()->save(KEY_ADDR, addr, 6);
 }
 
 static int persist(void)
 {
 	bonds.magic = BONDS_MAGIC;
 	bonds.size = sizeof bonds;
-	return kv->save(KEY_BONDS, &bonds, sizeof bonds) ? BLE_HS_ESTORE_FAIL : 0;
+	return backend()->save(KEY_BONDS, &bonds, sizeof bonds) ? BLE_HS_ESTORE_FAIL : 0;
 }
 
 static bool any_addr(const ble_addr_t *a)
@@ -132,7 +149,7 @@ static void remove_at(void *base, size_t size, uint32_t *n, int idx)
 	memmove(p, p + size, (*n - (uint32_t)idx) * size);
 }
 
-static int store_read(int type, const union ble_store_key *key, union ble_store_value *val)
+static int bond_read(int type, const union ble_store_key *key, union ble_store_value *val)
 {
 	int i;
 	switch (type) {
@@ -175,7 +192,7 @@ static int write_sec(struct ble_store_value_sec *table, uint32_t *n, int type, c
 	return persist();
 }
 
-static int store_write(int type, const union ble_store_value *val)
+static int bond_write(int type, const union ble_store_value *val)
 {
 	switch (type) {
 	case BLE_STORE_OBJ_TYPE_OUR_SEC:
@@ -199,7 +216,7 @@ static int store_write(int type, const union ble_store_value *val)
 	}
 }
 
-static int store_delete(int type, const union ble_store_key *key)
+static int bond_delete(int type, const union ble_store_key *key)
 {
 	int i;
 	switch (type) {
@@ -228,14 +245,14 @@ void bt_store_init(void)
 {
 	struct bonds b;
 	memset(&bonds, 0, sizeof bonds);
-	if (kv->load(KEY_BONDS, &b, sizeof b) == (int)sizeof b && b.magic == BONDS_MAGIC && b.size == sizeof b &&
+	if (backend()->load(KEY_BONDS, &b, sizeof b) == (int)sizeof b && b.magic == BONDS_MAGIC && b.size == sizeof b &&
 	    b.n_our <= MAX_BONDS && b.n_peer <= MAX_BONDS && b.n_cccd <= MAX_CCCDS)
 		bonds = b;
-	ble_hs_cfg.store_read_cb = store_read;
-	ble_hs_cfg.store_write_cb = store_write;
-	ble_hs_cfg.store_delete_cb = store_delete;
+	ble_hs_cfg.store_read_cb = bond_read;
+	ble_hs_cfg.store_write_cb = bond_write;
+	ble_hs_cfg.store_delete_cb = bond_delete;
 	ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-	log_printf("bt: key store \"%s\", %lu bonds\n", kv->name, bonds.n_peer);
+	log_printf("bt: key store \"%s\", %lu bonds\n", backend()->name, bonds.n_peer);
 }
 
 int bt_store_clear(void)

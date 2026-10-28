@@ -66,7 +66,6 @@ struct bt_kv {
 	int (*save)(const char *key, const void *buf, unsigned len);
 };
 
-void bt_kv_set_backend(const struct bt_kv *backend);
 const char *bt_kv_name(void);
 int bt_addr_load(uint8_t addr[6]);
 int bt_addr_save(const uint8_t addr[6]);
