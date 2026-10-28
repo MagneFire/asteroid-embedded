@@ -157,6 +157,7 @@ void main(void)
 		uint32_t now = time_ms();
 		wdt_feed();
 		usb_poll();
+		bt_poll();
 		if (!awake)
 			wakeups++;
 		while (have_touch && touch_poll(&t)) {

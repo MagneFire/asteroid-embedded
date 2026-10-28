@@ -151,6 +151,7 @@ void usb_stats(uint32_t *rx, uint32_t *tx);
 
 struct civil { uint32_t year, month, day, weekday, hour, minute, second; };
 void civil_from_epoch(uint32_t secs, struct civil *c);
+uint32_t epoch_from_civil(const struct civil *c);
 
 /* boot handover */
 void boot_init(void);

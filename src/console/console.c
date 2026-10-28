@@ -201,20 +201,60 @@ static bool parse_bdaddr(const char *s, uint8_t a[6])
 	return true;
 }
 
+static void say_addr(const char *what, const uint8_t *a, unsigned type)
+{
+	say("%s%02x:%02x:%02x:%02x:%02x:%02x (type %u)\n", what, a[5], a[4], a[3], a[2], a[1], a[0], type);
+}
+
+static void bt_status_say(void)
+{
+	static const char *const states[] = { "off", "starting", "advertising", "connected", "failed to sync" };
+	struct bt_status s;
+	bt_host_status(&s);
+	say("bt: chip %s, host %s%s, %lu resets\n", bt_running() ? "up" : "off", states[s.state],
+	    s.synced ? " (synced)" : "", s.resets);
+	if (s.connected) {
+		say_addr("peer ", s.peer, s.peer_type);
+		say("encrypted %u, authenticated %u, bonded %u, interval %u x 1.25 ms, mtu %u\n", s.encrypted,
+		    s.authenticated, s.bonded, s.interval, s.mtu);
+	}
+	say("bonded peers %u, key store \"%s\"\n", s.bonds, s.kv);
+	for (unsigned i = 0; i < s.bonds && i < ARRAY_SIZE(s.bond_addr); i++)
+		say_addr("  ", s.bond_addr[i], s.bond_type[i]);
+	say("hci %lu commands, %lu events, acl %lu out, %lu in, %lu dropped, %lu tx errors\n", s.transport.commands,
+	    s.transport.events, s.transport.acl_out, s.transport.acl_in, s.transport.dropped, s.transport.tx_errors);
+	if (s.next_ms != UINT32_MAX)
+		say("next host timer in %lu ms\n", s.next_ms);
+}
+
 static void cmd_bt(const char *args)
 {
 	uint8_t addr[6];
+	bool have_addr = false;
 	struct bt_info info;
+	if (!strcmp(args, "status")) {
+		bt_status_say();
+		return;
+	}
 	if (!strcmp(args, "off")) {
+		bt_host_stop();
 		bt_stop();
 		say("bt off\n");
 		return;
 	}
-	if (*args && !parse_bdaddr(args, addr)) {
-		say("usage: bt [off | <bd_addr>]\n");
-		return;
+	if (*args) {
+		if (!parse_bdaddr(args, addr)) {
+			say("usage: bt [off | status | <bd_addr>]\n");
+			return;
+		}
+		have_addr = true;
+		if (bt_addr_save(addr))
+			say("bt: could not store the address\n");
+	} else {
+		have_addr = !bt_addr_load(addr);
 	}
-	if (bt_start(*args ? addr : NULL, &info)) {
+	bt_host_stop();
+	if (bt_start(have_addr ? addr : NULL, &info)) {
 		say("bt: %s failed (%d)\n", info.failed, info.status);
 		return;
 	}
@@ -223,6 +263,11 @@ static void cmd_bt(const char *args)
 	    info.lmp_version, info.lmp_subversion, info.manufacturer);
 	say("bd_addr %02x:%02x:%02x:%02x:%02x:%02x, name \"%s\", host wake %u\n", info.bdaddr[0], info.bdaddr[1],
 	    info.bdaddr[2], info.bdaddr[3], info.bdaddr[4], info.bdaddr[5], info.name, bt_host_wake());
+	int r = bt_host_start();
+	if (r)
+		say("bt: host failed (%d)\n", r);
+	else
+		say("bt: host starting, advertises once synced (bt status)\n");
 }
 
 static void cmd_echo(const char *args)
@@ -241,7 +286,7 @@ static const struct command commands[] = {
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes]", cmd_pmic },
-	{ "bt", "[off | <bd_addr>]", cmd_bt },
+	{ "bt", "[off | status | <bd_addr>]", cmd_bt },
 	{ "echo", "<text>", cmd_echo },
 };
 

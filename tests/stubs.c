@@ -24,7 +24,6 @@ const char *pmic_charger_status(void) { return "discharging"; }
 uint32_t pmic_rtc_read(void) { return stub_rtc; }
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
-
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	memset(info, 0, sizeof *info);
@@ -34,6 +33,11 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 void bt_stop(void) {}
 bool bt_running(void) { return false; }
 bool bt_host_wake(void) { return false; }
+int bt_host_start(void) { return -1; }
+void bt_host_stop(void) {}
+void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
+int bt_addr_load(uint8_t addr[6]) { return -1; }
+int bt_addr_save(const uint8_t addr[6]) { return -1; }
 
 void reboot(void)
 {

@@ -34,4 +34,57 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info);
 void bt_stop(void);
 bool bt_running(void);
 bool bt_host_wake(void);
+
+enum bt_host_state { BT_HOST_OFF, BT_HOST_STARTING, BT_HOST_ADVERTISING, BT_HOST_CONNECTED, BT_HOST_FAILED };
+
+struct bt_transport_stats {
+	uint32_t commands, events, acl_out, acl_in, dropped, tx_errors;
+};
+
+struct bt_status {
+	enum bt_host_state state;
+	bool synced, connected, encrypted, authenticated, bonded;
+	uint8_t peer[6], peer_type;
+	uint16_t interval, mtu;
+	unsigned bonds;
+	uint8_t bond_addr[4][6], bond_type[4];
+	uint32_t resets, next_ms;
+	const char *kv;
+	struct bt_transport_stats transport;
+};
+
+int bt_host_start(void);
+void bt_host_stop(void);
+bool bt_host_running(void);
+void bt_host_status(struct bt_status *s);
+void bt_poll(void);
+uint32_t bt_idle_ms(void);
+
+struct bt_kv {
+	const char *name;
+	int (*load)(const char *key, void *buf, unsigned len);
+	int (*save)(const char *key, const void *buf, unsigned len);
+};
+
+void bt_kv_set_backend(const struct bt_kv *backend);
+const char *bt_kv_name(void);
+int bt_addr_load(uint8_t addr[6]);
+int bt_addr_save(const uint8_t addr[6]);
+
+struct ble_npl_eventq;
+void bt_npl_set_wait(void (*fn)(void));
+void bt_npl_expire(void);
+unsigned bt_npl_run(struct ble_npl_eventq *evq, unsigned max);
+uint32_t bt_npl_next_ms(void);
+void bt_transport_attach(void);
+void bt_transport_detach(void);
+void bt_transport_get_stats(struct bt_transport_stats *s);
+void bt_store_init(void);
+int bt_store_clear(void);
+bool bt_store_resolve(const uint8_t rpa[6], uint8_t *type, uint8_t addr[6]);
+int bt_gatt_init(void);
+void bt_gatt_battery_check(void);
+#ifdef H_BLE_UUID_
+extern const ble_uuid128_t bt_asteroid_adv_uuid;
+#endif
 #endif

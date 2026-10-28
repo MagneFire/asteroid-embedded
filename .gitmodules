@@ -1,3 +1,9 @@
 [submodule "third_party/tinyusb"]
 	path = third_party/tinyusb
 	url = https://github.com/hathach/tinyusb
+[submodule "third_party/nimble"]
+	path = third_party/nimble
+	url = https://github.com/apache/mynewt-nimble
+[submodule "third_party/mbedtls"]
+	path = third_party/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls
