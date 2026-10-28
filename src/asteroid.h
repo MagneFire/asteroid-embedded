@@ -129,6 +129,7 @@ void log_puts(const char *s);
 void log_record(const char *text);
 const char *log_previous_record(void);
 void log_set_sink(void (*fn)(const char *s, size_t n));
+void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
 void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
 
 /* display (see display/display.h) */

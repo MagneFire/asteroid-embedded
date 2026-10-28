@@ -120,6 +120,43 @@ void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), v
 	}
 }
 
+void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
+{
+	volatile struct zone *z = CONSOLE;
+	uint32_t size = z->size, base = (z->start + CONSOLE_CAP - size) % CONSOLE_CAP;
+	static uint32_t starts[64];
+	unsigned found = 0;
+	size_t plen = strlen(pat);
+	if (lines > 64)
+		lines = 64;
+	uint32_t end = size;
+	uint32_t stop = size > 65536 ? size - 65536 : 0;
+	for (uint32_t i = size; i-- > stop && found < lines;) {
+		if (i && z->data[(base + i - 1) % CONSOLE_CAP] != '\n')
+			continue;
+		for (uint32_t j = i; j + plen <= end; j++) {
+			size_t k = 0;
+			while (k < plen && z->data[(base + j + k) % CONSOLE_CAP] == (uint8_t)pat[k])
+				k++;
+			if (k == plen) {
+				starts[found++] = i;
+				break;
+			}
+		}
+		end = i;
+	}
+	char buf[160];
+	while (found--) {
+		size_t n = 0;
+		for (uint32_t i = starts[found]; i < size && n < sizeof buf; i++) {
+			buf[n++] = (char)z->data[(base + i) % CONSOLE_CAP];
+			if (buf[n - 1] == '\n')
+				break;
+		}
+		out(buf, n, ctx);
+	}
+}
+
 const char *log_previous_record(void)
 {
 	return have_previous ? previous : NULL;

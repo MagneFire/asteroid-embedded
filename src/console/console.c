@@ -107,10 +107,15 @@ static void cmd_log(const char *args)
 {
 	uint32_t n = 20;
 	if (*args && !parse_num(&args, 10, &n)) {
-		say("usage: log [lines]\n");
+		say("usage: log [lines] [pattern]\n");
 		return;
 	}
-	log_tail(n, log_out, NULL);
+	while (*args == ' ')
+		args++;
+	if (*args)
+		log_grep(args, n, log_out, NULL);
+	else
+		log_tail(n, log_out, NULL);
 }
 
 static void cmd_reboot(const char *args)

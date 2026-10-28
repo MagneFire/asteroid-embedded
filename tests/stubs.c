@@ -44,6 +44,10 @@ void log_printf(const char *fmt, ...)
 	fputs(buf, stderr);
 }
 
+void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
+{
+}
+
 void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
 {
 	static const char *log[] = { "line one\n", "line two\n", "line three\n" };
