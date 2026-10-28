@@ -13,6 +13,7 @@
 #include "gpu/shaders.h"
 #include "ui/ui.h"
 #include "bt/bt.h"
+#include "notify/notify.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -148,6 +149,9 @@ void main(void)
 	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool key_was = false, awake = true;
 	int32_t passkey = -1;
+	uint32_t notify_seen = 0;
+	uint32_t shown_seq = 0;
+	int32_t shown_id = 0;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
 	int down_x = 0, down_y = 0;
@@ -206,6 +210,26 @@ void main(void)
 			if (passkey >= 0)
 				wake_request = !awake;
 			last_activity = now;
+		}
+		if (have_ui && ui_notification_dismissed() && shown_seq) {
+			notify_dismiss(shown_id);
+			last_activity = now;
+		}
+		if (notify_serial() != notify_seen) {
+			notify_seen = notify_serial();
+			unsigned n = notify_count();
+			const struct notification *top = n ? notify_get(n - 1) : NULL;
+			if (top && top->seq != shown_seq) {
+				if (have_ui)
+					ui_show_notification(top->app, strlen(top->app), top->summary, strlen(top->summary), top->body,
+							     strlen(top->body));
+				wake_request = !awake;
+				last_activity = now;
+			} else if (!top && shown_seq && have_ui) {
+				ui_hide_notification();
+			}
+			shown_seq = top ? top->seq : 0;
+			shown_id = top ? top->id : 0;
 		}
 		if (console_sleep || console_wake) {
 			sleep_request |= console_sleep && awake;

@@ -7,6 +7,7 @@
 #include "asteroid.h"
 #include "host/ble_hs.h"
 #include "bt.h"
+#include "notify/notify.h"
 
 #define ASTEROID_UUID(n) \
 	BLE_UUID128_INIT(0x05, 0x1d, 0x40, 0x7e, 0xa5, 0, 0, 0, 0, 0, 0, 0, (n) & 0xff, (n) >> 8, 0, 0)
@@ -49,7 +50,6 @@ static const char *chr_name(uint16_t id)
 	case 0x8003: return "weather min";
 	case 0x8004: return "weather max";
 	case CHR_SCREENSHOT_REQ: return "screenshot request";
-	case CHR_NOTIF_UPDATE: return "notification";
 	default: return "write";
 	}
 }
@@ -101,6 +101,10 @@ static int access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctx
 		return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 	if (id == CHR_TIME_SET)
 		return set_time(payload, n);
+	if (id == CHR_NOTIF_UPDATE) {
+		notify_feed(payload, n);
+		return 0;
+	}
 	log_payload(chr_name(id), payload, n);
 	return 0;
 }

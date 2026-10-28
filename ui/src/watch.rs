@@ -3,6 +3,7 @@
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use core::cell::{Cell, UnsafeCell};
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
@@ -46,6 +47,7 @@ struct Ui {
 struct Global(UnsafeCell<Option<Ui>>);
 unsafe impl Sync for Global {}
 static UI: Global = Global(UnsafeCell::new(None));
+static DISMISSED: AtomicBool = AtomicBool::new(false);
 
 fn ui() -> Option<&'static mut Ui> {
     unsafe { (*UI.0.get()).as_mut() }
@@ -84,6 +86,7 @@ pub unsafe extern "C" fn ui_init(
     let Ok(face) = Watchface::new() else {
         return false;
     };
+    face.on_notification_dismissed(|| DISMISSED.store(true, Ordering::Relaxed));
     if face.show().is_err() {
         return false;
     }
@@ -130,6 +133,41 @@ pub extern "C" fn ui_set_battery(percent: u32, charging: bool) {
 pub extern "C" fn ui_set_passkey(passkey: i32) {
     let Some(ui) = ui() else { return };
     ui.face.set_passkey(passkey);
+}
+
+unsafe fn text(p: *const u8, len: u32) -> slint::SharedString {
+    if p.is_null() {
+        return slint::SharedString::new();
+    }
+    let bytes = unsafe { core::slice::from_raw_parts(p, len as usize) };
+    core::str::from_utf8(bytes).unwrap_or("").into()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_show_notification(
+    app: *const u8,
+    app_len: u32,
+    summary: *const u8,
+    summary_len: u32,
+    body: *const u8,
+    body_len: u32,
+) {
+    let Some(ui) = ui() else { return };
+    ui.face.set_notification_app(unsafe { text(app, app_len) });
+    ui.face.set_notification_summary(unsafe { text(summary, summary_len) });
+    ui.face.set_notification_body(unsafe { text(body, body_len) });
+    ui.face.set_notification_shown(true);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_hide_notification() {
+    let Some(ui) = ui() else { return };
+    ui.face.set_notification_shown(false);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_notification_dismissed() -> bool {
+    DISMISSED.swap(false, Ordering::Relaxed)
 }
 
 #[unsafe(no_mangle)]

@@ -11,6 +11,11 @@ export component Watchface inherits Window {
     in property <int> battery-percent;
     in property <bool> charging;
     in property <int> passkey: -1;
+    in property <bool> notification-shown;
+    in property <string> notification-app;
+    in property <string> notification-summary;
+    in property <string> notification-body;
+    callback notification-dismissed();
     property <bool> show-seconds;
     property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -124,6 +129,58 @@ export component Watchface inherits Window {
             color: white;
             font-size: 20px;
             vertical-alignment: center;
+        }
+    }
+
+    if root.notification-shown: Rectangle {
+        background: black;
+
+        Text {
+            x: root.width * 0.15;
+            y: root.height * 0.14;
+            width: root.width * 0.7;
+            height: root.height * 0.08;
+            text: root.notification-app;
+            color: #ffffffa0;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width * 0.12;
+            y: root.height * 0.23;
+            width: root.width * 0.76;
+            height: root.height * 0.16;
+            text: root.notification-summary;
+            color: white;
+            font-size: 28px;
+            font-weight: 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width * 0.12;
+            y: root.height * 0.41;
+            width: root.width * 0.76;
+            height: root.height * 0.42;
+            text: root.notification-body;
+            color: white;
+            font-size: 22px;
+            horizontal-alignment: center;
+            vertical-alignment: top;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        TouchArea {
+            clicked => {
+                root.notification-dismissed();
+            }
         }
     }
 
