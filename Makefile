@@ -23,6 +23,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c src/civil.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/ui/ui.c \
         src/gpu/a3xx.c src/gpu/draw.c \
+        src/bt/hci.c src/bt/bcm.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
@@ -81,7 +82,7 @@ $(BUILD)/%.dtb: dts/%.dts
 $(BUILD)/qcdt-$(WATCH).img: $(BUILD)/$(WATCH).dtb tools/qcdt.py
 	python3 tools/qcdt.py -o $@ $<
 
-FIRMWARE := $(wildcard firmware/*.fw)
+FIRMWARE := $(wildcard firmware/*.fw firmware/*.hcd)
 $(BUILD)/ramdisk.img: FORCE
 	@mkdir -p $(BUILD)
 	@python3 tools/pack.py -o $@.tmp $(FIRMWARE)
@@ -102,7 +103,7 @@ HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fn
                -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c
 
-$(BUILD)/test/%: tests/%.c $(HOST_SRCS) tests/host.h tests/stubs.h src/asteroid.h src/usb/adb.h src/console/console.h
+$(BUILD)/test/%: tests/%.c $(HOST_SRCS) tests/host.h tests/stubs.h src/asteroid.h src/usb/adb.h src/console/console.h src/bt/bt.h
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 

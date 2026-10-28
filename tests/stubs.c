@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "asteroid.h"
+#include "bt/bt.h"
 #include "stubs.h"
 
 const char build_id[] = "hosttest";
@@ -23,6 +24,16 @@ const char *pmic_charger_status(void) { return "discharging"; }
 uint32_t pmic_rtc_read(void) { return stub_rtc; }
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
+
+int bt_start(const uint8_t *bdaddr, struct bt_info *info)
+{
+	memset(info, 0, sizeof *info);
+	info->failed = "host test";
+	return -1;
+}
+void bt_stop(void) {}
+bool bt_running(void) { return false; }
+bool bt_host_wake(void) { return false; }
 
 void reboot(void)
 {

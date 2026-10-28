@@ -6,6 +6,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
+#include "bt/bt.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -187,6 +188,43 @@ static void cmd_pmic(const char *args)
 	}
 }
 
+static bool parse_bdaddr(const char *s, uint8_t a[6])
+{
+	for (int i = 0; i < 6; i++) {
+		char *end;
+		unsigned long v = strtoul(s, &end, 16);
+		if (end == s || end - s > 2 || v > 0xff || (i < 5 ? *end != ':' : *end != 0))
+			return false;
+		a[i] = (uint8_t)v;
+		s = end + 1;
+	}
+	return true;
+}
+
+static void cmd_bt(const char *args)
+{
+	uint8_t addr[6];
+	struct bt_info info;
+	if (!strcmp(args, "off")) {
+		bt_stop();
+		say("bt off\n");
+		return;
+	}
+	if (*args && !parse_bdaddr(args, addr)) {
+		say("usage: bt [off | <bd_addr>]\n");
+		return;
+	}
+	if (bt_start(*args ? addr : NULL, &info)) {
+		say("bt: %s failed (%d)\n", info.failed, info.status);
+		return;
+	}
+	say("bt: up in %lu ms, patch %lu ms\n", info.total_ms, info.patch_ms);
+	say("hci %u rev %04x, lmp %u subversion %04x, manufacturer %u\n", info.hci_version, info.hci_revision,
+	    info.lmp_version, info.lmp_subversion, info.manufacturer);
+	say("bd_addr %02x:%02x:%02x:%02x:%02x:%02x, name \"%s\", host wake %u\n", info.bdaddr[0], info.bdaddr[1],
+	    info.bdaddr[2], info.bdaddr[3], info.bdaddr[4], info.bdaddr[5], info.name, bt_host_wake());
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -203,6 +241,7 @@ static const struct command commands[] = {
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes]", cmd_pmic },
+	{ "bt", "[off | <bd_addr>]", cmd_bt },
 	{ "echo", "<text>", cmd_echo },
 };
 

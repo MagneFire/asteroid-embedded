@@ -12,6 +12,7 @@
 #include "gpu/draw.h"
 #include "gpu/shaders.h"
 #include "ui/ui.h"
+#include "bt/bt.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -317,7 +318,7 @@ void main(void)
 		}
 #endif
 		if ((!have_display || !awake) && timer_ticks()) {
-			bool cluster = !awake && !usb_connected();
+			bool cluster = !awake && !usb_connected() && !bt_running();
 			if (!awake)
 				cpu_clock_slow(true);
 			spm_idle(cluster);
