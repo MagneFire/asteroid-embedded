@@ -10,11 +10,16 @@
 #define SRC_XO			(0u << 8)
 #define SRC_A7_PLL		(5u << 8)
 #define DIV_1			1u
+#define A7_PLL_STATUS		0xf901601cu
+#define A7_PLL_LOCKED		BIT(16)
 
 static void cpu_clock_select(uint32_t cfg)
 {
 	if (readl(APCS_A7_CFG_RCGR) == cfg)
 		return;
+	if ((cfg & SRC_A7_PLL) == SRC_A7_PLL)
+		for (int i = 0; i < 100000 && !(readl(A7_PLL_STATUS) & A7_PLL_LOCKED); i++)
+			;
 	writel(cfg, APCS_A7_CFG_RCGR);
 	writel(readl(APCS_A7_CMD_RCGR) | RCG_UPDATE, APCS_A7_CMD_RCGR);
 	for (int i = 0; i < 100000 && (readl(APCS_A7_CMD_RCGR) & RCG_UPDATE); i++)
