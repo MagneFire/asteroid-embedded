@@ -94,6 +94,20 @@ void power_request(bool sleep)
 		console_wake = true;
 }
 
+static void vibrate(const char *how)
+{
+	static const uint16_t normal[] = { 200 }, strong[] = { 250, 150, 250 },
+			      ringtone[] = { 600, 400, 600, 400, 600, 400, 600 };
+	if (!strcmp(how, "none"))
+		return;
+	if (!strcmp(how, "normal"))
+		haptics_play(normal, ARRAY_SIZE(normal));
+	else if (!strcmp(how, "ringtone"))
+		haptics_play(ringtone, ARRAY_SIZE(ringtone));
+	else
+		haptics_play(strong, ARRAY_SIZE(strong));
+}
+
 void main(void)
 {
 	cpu_clock_init();
@@ -226,6 +240,8 @@ void main(void)
 				if (have_ui)
 					ui_show_notification(top->app, strlen(top->app), top->summary, strlen(top->summary), top->body,
 							     strlen(top->body));
+				if (have_haptics)
+					vibrate(top->vibrate);
 				wake_request = !awake;
 				last_activity = now;
 			} else if (!top && shown_seq && have_ui) {
