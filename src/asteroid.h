@@ -56,11 +56,11 @@ void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigne
 unsigned tlmm_get(unsigned n);
 void tlmm_set(unsigned n, unsigned v);
 int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
-int i2c_qup_xfer(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
+int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 typedef void (*i2c_done_fn)(int err, void *ctx);
-int i2c_qup_start(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
-bool i2c_qup_busy(void);
-void i2c_qup_poll(void);
+int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
+bool i2c_qup_busy(unsigned qup);
+void i2c_qup_poll(unsigned qup);
 int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud);
 int uart_dm_set_baud(uint32_t baud);
 int uart_dm_write(const uint8_t *p, unsigned n);

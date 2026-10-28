@@ -56,26 +56,28 @@
 #define TAG_STOP		(3u << 8)
 #define TAG_REC			(4u << 8)
 
-static uint32_t base;
-static uint32_t clk_ctl;
-static unsigned fifo_entries, irq;
+struct bus {
+	uint32_t base, clk_ctl;
+	unsigned fifo_entries;
+	struct {
+		volatile bool busy;
+		uint8_t *r;
+		unsigned rn;
+		uint32_t started;
+		i2c_done_fn done;
+		void *ctx;
+	} xfer;
+};
 
-static struct {
-	volatile bool busy;
-	uint8_t *r;
-	unsigned rn;
-	uint32_t started;
-	i2c_done_fn done;
-	void *ctx;
-} xfer;
+static struct bus buses[6];
 
 enum { WAIT_STATE, WAIT_VALID, WAIT_MAST_GEN };
 
-static int poll_state(uint32_t want, int mode)
+static int poll_state(struct bus *b, uint32_t want, int mode)
 {
 	uint32_t t0 = time_us();
 	while (time_us() - t0 < 5000) {
-		uint32_t s = readl(base + QUP_STATE);
+		uint32_t s = readl(b->base + QUP_STATE);
 		if (!(s & STATE_VALID))
 			continue;
 		if (mode == WAIT_VALID || (mode == WAIT_MAST_GEN && (s & STATE_MAST_GEN)) ||
@@ -85,73 +87,90 @@ static int poll_state(uint32_t want, int mode)
 	return -1;
 }
 
-static int set_state(uint32_t state)
+static int set_state(struct bus *b, uint32_t state)
 {
-	if (poll_state(0, WAIT_VALID))
+	if (poll_state(b, 0, WAIT_VALID))
 		return -1;
-	writel(state, base + QUP_STATE);
-	return poll_state(state, WAIT_STATE);
+	writel(state, b->base + QUP_STATE);
+	return poll_state(b, state, WAIT_STATE);
 }
 
-static int reset(void)
+static int reset(struct bus *b)
 {
-	writel(1, base + QUP_SW_RESET);
-	if (poll_state(STATE_RESET, WAIT_STATE))
+	writel(1, b->base + QUP_SW_RESET);
+	if (poll_state(b, STATE_RESET, WAIT_STATE))
 		return -1;
-	writel(0, base + QUP_CONFIG);
-	writel(OP_RESET, base + QUP_OPERATIONAL);
-	writel(ERROR_FLAGS, base + QUP_ERROR_FLAGS_EN);
-	writel(I2C_MINI_CORE | I2C_N_VAL, base + QUP_CONFIG);
-	writel(0, base + QUP_I2C_CLK_CTL);
-	writel(I2C_STATUS_RESET, base + QUP_I2C_STATUS);
+	writel(0, b->base + QUP_CONFIG);
+	writel(OP_RESET, b->base + QUP_OPERATIONAL);
+	writel(ERROR_FLAGS, b->base + QUP_ERROR_FLAGS_EN);
+	writel(I2C_MINI_CORE | I2C_N_VAL, b->base + QUP_CONFIG);
+	writel(0, b->base + QUP_I2C_CLK_CTL);
+	writel(I2C_STATUS_RESET, b->base + QUP_I2C_STATUS);
 	return 0;
 }
 
-static void finish(int err)
+static void finish(struct bus *b, int err)
 {
-	i2c_done_fn done = xfer.done;
-	void *ctx = xfer.ctx;
-	xfer.busy = false;
+	i2c_done_fn done = b->xfer.done;
+	void *ctx = b->xfer.ctx;
+	b->xfer.busy = false;
 	if (done)
 		done(err, ctx);
 }
 
-static void qup_irq(void)
+static void qup_irq(struct bus *b)
 {
-	if (!xfer.busy) {
-		writel(STATE_RESET, base + QUP_STATE);
+	if (!b->xfer.busy) {
+		writel(STATE_RESET, b->base + QUP_STATE);
 		return;
 	}
-	uint32_t st = readl(base + QUP_I2C_STATUS), err = readl(base + QUP_ERROR_FLAGS), op = readl(base + QUP_OPERATIONAL);
+	uint32_t st = readl(b->base + QUP_I2C_STATUS), err = readl(b->base + QUP_ERROR_FLAGS), op = readl(b->base + QUP_OPERATIONAL);
 	if ((st & I2C_ERROR_MASK) || (err & ERROR_FLAGS)) {
-		reset();
-		finish(st & I2C_NACK ? -2 : -1);
+		reset(b);
+		finish(b, st & I2C_NACK ? -2 : -1);
 		return;
 	}
-	writel(op & (OP_OUT_SVC | OP_IN_SVC), base + QUP_OPERATIONAL);
-	if (xfer.rn) {
+	writel(op & (OP_OUT_SVC | OP_IN_SVC), b->base + QUP_OPERATIONAL);
+	if (b->xfer.rn) {
 		if (!(op & OP_MX_INPUT_DONE))
 			return;
 		uint32_t v = 0;
-		for (unsigned i = 0; i < xfer.rn; i++) {
+		for (unsigned i = 0; i < b->xfer.rn; i++) {
 			if (!(i & 1))
-				v = readl(base + QUP_IN_FIFO);
-			xfer.r[i] = (uint8_t)((i & 1) ? v >> 16 : v);
+				v = readl(b->base + QUP_IN_FIFO);
+			b->xfer.r[i] = (uint8_t)((i & 1) ? v >> 16 : v);
 		}
 	} else if (!(op & OP_OUT_SVC) || (op & OP_OUT_NOT_EMPTY)) {
 		return;
 	}
 	uint32_t t0 = time_us();
-	while ((readl(base + QUP_I2C_STATUS) & (I2C_WR_BUFFER_FULL | I2C_BUS_ACTIVE)) && time_us() - t0 < 500)
+	while ((readl(b->base + QUP_I2C_STATUS) & (I2C_WR_BUFFER_FULL | I2C_BUS_ACTIVE)) && time_us() - t0 < 500)
 		;
-	writel(STATE_RESET, base + QUP_STATE);
-	finish(0);
+	writel(STATE_RESET, b->base + QUP_STATE);
+	finish(b, 0);
+}
+
+#define QUP_IRQ(n) \
+	static void qup##n##_irq(void) { qup_irq(&buses[(n) - 1]); }
+QUP_IRQ(1)
+QUP_IRQ(2)
+QUP_IRQ(3)
+QUP_IRQ(4)
+QUP_IRQ(5)
+QUP_IRQ(6)
+static void (*const irqs[6])(void) = { qup1_irq, qup2_irq, qup3_irq, qup4_irq, qup5_irq, qup6_irq };
+
+static struct bus *bus(unsigned qup)
+{
+	return qup >= 1 && qup <= 6 && buses[qup - 1].base ? &buses[qup - 1] : NULL;
 }
 
 int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz)
 {
-	base = 0xf9923000u + (qup - 1) * 0x1000;
-	irq = 32 + 95 + qup - 1;
+	if (qup < 1 || qup > 6)
+		return -3;
+	struct bus *b = &buses[qup - 1];
+	b->base = 0xf9923000u + (qup - 1) * 0x1000;
 	writel(readl(GCC_BLSP1_AHB_VOTE) | BIT(17), GCC_BLSP1_AHB_VOTE);
 	writel(0, GCC_QUP_I2C_CMD_RCGR(qup) + 4);
 	writel(readl(GCC_QUP_I2C_CMD_RCGR(qup)) | 1, GCC_QUP_I2C_CMD_RCGR(qup));
@@ -162,33 +181,37 @@ int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32
 		delay_us(1);
 	tlmm_config(sda, func, TLMM_INPUT, TLMM_PULL_NONE, 2);
 	tlmm_config(scl, func, TLMM_INPUT, TLMM_PULL_NONE, 2);
-	clk_ctl = 3u << 8 | ((19200000 / bus_hz) / 2 - 3);
-	uint32_t io = readl(base + QUP_IO_MODE);
+	b->clk_ctl = 3u << 8 | ((19200000 / bus_hz) / 2 - 3);
+	uint32_t io = readl(b->base + QUP_IO_MODE);
 	unsigned out_blk = (io & 3) ? (io & 3) * 16 : 16;
-	fifo_entries = out_blk / 2 * (2u << ((io >> 2) & 7));
-	int r = reset();
-	gic_enable(irq, qup_irq);
-	log_printf("i2c: qup%u io_mode %08lx fifo %u entries, state %08lx, reset %d\n", qup, io, fifo_entries,
-		   readl(base + QUP_STATE), r);
+	b->fifo_entries = out_blk / 2 * (2u << ((io >> 2) & 7));
+	int r = reset(b);
+	gic_enable(32 + 95 + qup - 1, irqs[qup - 1]);
+	log_printf("i2c: qup%u io_mode %08lx fifo %u entries, state %08lx, reset %d\n", qup, io, b->fifo_entries,
+		   readl(b->base + QUP_STATE), r);
 	return r;
 }
 
-static int fail(const char *what)
+static int fail(struct bus *b, const char *what)
 {
-	log_printf("i2c: %s: state %08lx i2c %08lx err %08lx op %08lx\n", what, readl(base + QUP_STATE),
-		   readl(base + QUP_I2C_STATUS), readl(base + QUP_ERROR_FLAGS), readl(base + QUP_OPERATIONAL));
-	reset();
-	xfer.busy = false;
+	log_printf("i2c: %s: state %08lx i2c %08lx err %08lx op %08lx\n", what, readl(b->base + QUP_STATE),
+		   readl(b->base + QUP_I2C_STATUS), readl(b->base + QUP_ERROR_FLAGS), readl(b->base + QUP_OPERATIONAL));
+	reset(b);
+	b->xfer.busy = false;
 	return -1;
 }
 
-int i2c_qup_start(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx)
+int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done,
+		  void *ctx)
 {
+	struct bus *b = bus(qup);
+	if (!b)
+		return -3;
 	uint16_t e[40];
 	unsigned n = 0;
-	if (xfer.busy)
+	if (b->xfer.busy)
 		return -4;
-	if (wn + 4 > ARRAY_SIZE(e) || rn > 256 || wn + 4 > fifo_entries || rn > fifo_entries)
+	if (wn + 4 > ARRAY_SIZE(e) || rn > 256 || wn + 4 > b->fifo_entries || rn > b->fifo_entries)
 		return -3;
 	if (wn) {
 		e[n++] = TAG_START | (uint16_t)(addr << 1);
@@ -199,41 +222,48 @@ int i2c_qup_start(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsig
 		e[n++] = TAG_START | (uint16_t)(addr << 1 | 1);
 		e[n++] = (uint16_t)(TAG_REC | (rn & 0xff));
 	}
-	xfer.busy = true;
-	xfer.r = r;
-	xfer.rn = rn;
-	xfer.done = done;
-	xfer.ctx = ctx;
-	xfer.started = time_ms();
-	if (reset() || poll_state(0, WAIT_MAST_GEN))
-		return fail("not ready");
-	writel(IO_PACK_UNPACK, base + QUP_IO_MODE);
-	writel(rn ? OP_OUT_SVC : 0, base + QUP_OPERATIONAL_MASK);
+	b->xfer.busy = true;
+	b->xfer.r = r;
+	b->xfer.rn = rn;
+	b->xfer.done = done;
+	b->xfer.ctx = ctx;
+	b->xfer.started = time_ms();
+	if (reset(b) || poll_state(b, 0, WAIT_MAST_GEN))
+		return fail(b, "not ready");
+	writel(IO_PACK_UNPACK, b->base + QUP_IO_MODE);
+	writel(rn ? OP_OUT_SVC : 0, b->base + QUP_OPERATIONAL_MASK);
 	if (rn)
-		writel(rn, base + QUP_MX_READ_CNT);
-	if (set_state(STATE_RUN))
-		return fail("run");
-	writel(clk_ctl, base + QUP_I2C_CLK_CTL);
+		writel(rn, b->base + QUP_MX_READ_CNT);
+	if (set_state(b, STATE_RUN))
+		return fail(b, "run");
+	writel(b->clk_ctl, b->base + QUP_I2C_CLK_CTL);
 	dsb();
-	if (set_state(STATE_PAUSE))
-		return fail("pause");
+	if (set_state(b, STATE_PAUSE))
+		return fail(b, "pause");
 	for (unsigned i = 0; i < n; i += 2)
-		writel(e[i] | (i + 1 < n ? (uint32_t)e[i + 1] << 16 : 0), base + QUP_OUT_FIFO);
-	if (set_state(STATE_RUN))
-		return fail("start");
+		writel(e[i] | (i + 1 < n ? (uint32_t)e[i + 1] << 16 : 0), b->base + QUP_OUT_FIFO);
+	if (set_state(b, STATE_RUN))
+		return fail(b, "start");
 	return 0;
 }
 
-bool i2c_qup_busy(void) { return xfer.busy; }
-
-void i2c_qup_poll(void)
+bool i2c_qup_busy(unsigned qup)
 {
-	if (xfer.busy && time_ms() - xfer.started > 20) {
+	struct bus *b = bus(qup);
+	return b && b->xfer.busy;
+}
+
+void i2c_qup_poll(unsigned qup)
+{
+	struct bus *b = bus(qup);
+	if (!b)
+		return;
+	if (b->xfer.busy && time_ms() - b->xfer.started > 20) {
 		irq_disable();
-		if (xfer.busy) {
-			fail("timeout");
-			if (xfer.done)
-				xfer.done(-5, xfer.ctx);
+		if (b->xfer.busy) {
+			fail(b, "timeout");
+			if (b->xfer.done)
+				b->xfer.done(-5, b->xfer.ctx);
 		}
 		irq_enable();
 	}
@@ -241,14 +271,14 @@ void i2c_qup_poll(void)
 
 static void sync_done(int err, void *ctx) { *(volatile int *)ctx = err; }
 
-int i2c_qup_xfer(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
 	volatile int result = 1;
-	int ret = i2c_qup_start(addr, w, wn, r, rn, sync_done, (void *)&result);
+	int ret = i2c_qup_start(qup, addr, w, wn, r, rn, sync_done, (void *)&result);
 	if (ret)
 		return ret;
 	while (result == 1) {
-		i2c_qup_poll();
+		i2c_qup_poll(qup);
 		if (result == 1)
 			wfi();
 	}

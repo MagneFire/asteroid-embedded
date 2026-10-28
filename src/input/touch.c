@@ -12,6 +12,7 @@
 #include "display/display.h"
 #include "touch.h"
 
+#define QUP		5
 #define ADDR		0x20
 #define PDT_START	0xe9
 #define PAGE_SELECT	0xff
@@ -28,13 +29,13 @@ static unsigned status_bytes = 1, max_x = 4095, max_y = 4095;
 
 static int rd(uint8_t reg, uint8_t *buf, unsigned n)
 {
-	return i2c_qup_xfer(ADDR, &reg, 1, buf, n);
+	return i2c_qup_xfer(QUP, ADDR, &reg, 1, buf, n);
 }
 
 static int wr(uint8_t reg, uint8_t val)
 {
 	uint8_t buf[2] = { reg, val };
-	return i2c_qup_xfer(ADDR, buf, 2, NULL, 0);
+	return i2c_qup_xfer(QUP, ADDR, buf, 2, NULL, 0);
 }
 
 /* Power: analog supply from PM8226 LDO19, the I2C pull-ups from LVS1,
@@ -133,7 +134,7 @@ static void report_done(int err, void *ctx)
 
 static void status_done(int err, void *ctx)
 {
-	if (err || i2c_qup_start(ADDR, &data_reg, 1, report, data_len, report_done, NULL)) {
+	if (err || i2c_qup_start(QUP, ADDR, &data_reg, 1, report, data_len, report_done, NULL)) {
 		errors++;
 		rearm();
 	}
@@ -143,7 +144,7 @@ static void attention(unsigned pin)
 {
 	tlmm_irq_enable(GPIO_ATTN, false);
 	attentions++;
-	if (i2c_qup_start(ADDR, &status_reg, 1, irq_status, 2, status_done, NULL)) {
+	if (i2c_qup_start(QUP, ADDR, &status_reg, 1, irq_status, 2, status_done, NULL)) {
 		errors++;
 		rearm();
 	}
@@ -151,7 +152,7 @@ static void attention(unsigned pin)
 
 bool touch_poll(struct touch *t)
 {
-	i2c_qup_poll();
+	i2c_qup_poll(QUP);
 	if (q_tail == q_head)
 		return false;
 	*t = queue[q_tail];
@@ -170,7 +171,7 @@ bool touch_init(void)
 	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	power_on();
 	uint8_t e[6];
-	int ret = i2c_qup_init(5, 18, 19, 3, 384000);
+	int ret = i2c_qup_init(QUP, 18, 19, 3, 384000);
 	if (!ret)
 		ret = rd(PAGE_SELECT, e, 1);
 	if (ret) {
