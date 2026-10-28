@@ -7,7 +7,7 @@
 #include "asteroid.h"
 #include "display/display.h"
 #include "bt/bt.h"
-#include "storage/emmc.h"
+#include "storage/storage.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -376,6 +376,164 @@ static void cmd_emmcrd(const char *args)
 	hexdump(off * EMMC_BLOCK, buf, count * EMMC_BLOCK);
 }
 
+static void ls_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
+{
+	static const char types[] = "?-dcbpsl";
+	say("%c %8lu %s\n", type < 8 ? types[type] : '?', ino, name);
+}
+
+static struct ext4 *lookup(const char *args, struct ext4_inode *in)
+{
+	const char *rest;
+	struct ext4 *fs = storage_resolve(skip_spaces(args), &rest);
+	if (!fs) {
+		say("storage not mounted (see log)\n");
+		return NULL;
+	}
+	int r = ext4_lookup(fs, rest, in);
+	if (r) {
+		say("%s: %s\n", rest, ext4_strerror(r));
+		return NULL;
+	}
+	return fs;
+}
+
+static void cmd_ls(const char *args)
+{
+	struct ext4_inode in;
+	struct ext4 *fs = lookup(args, &in);
+	if (!fs)
+		return;
+	if ((in.mode & EXT4_S_IFMT) != EXT4_S_IFDIR) {
+		say("%06o %lu bytes, flags %08lx, inode %lu\n", in.mode, (uint32_t)in.size, in.flags, in.ino);
+		return;
+	}
+	int r = ext4_list(fs, &in, ls_fn, NULL);
+	if (r)
+		say("%s\n", ext4_strerror(r));
+}
+
+static void cmd_cat(const char *args)
+{
+	struct ext4_inode in;
+	struct ext4 *fs = lookup(args, &in);
+	if (!fs)
+		return;
+	static char buf[2048];
+	int r = ext4_read(fs, &in, 0, buf, sizeof buf - 1);
+	if (r < 0) {
+		say("%s\n", ext4_strerror(r));
+		return;
+	}
+	for (int i = 0; i < r; i++)
+		if ((buf[i] < 0x20 || buf[i] >= 0x7f) && buf[i] != '\n' && buf[i] != '\t')
+			buf[i] = '.';
+	buf[r] = 0;
+	for (int i = 0; i < r; i += 160)
+		say("%.160s", buf + i);
+	if (r && buf[r - 1] != '\n')
+		say("\n");
+	if (in.size > (uint64_t)r)
+		say("[%lu of %lu bytes]\n", (uint32_t)r, (uint32_t)in.size);
+}
+
+static void cmd_fs(const char *args)
+{
+	if (storage_mount()) {
+		say("storage not mounted (see log)\n");
+		return;
+	}
+	struct ext4 *v[2] = { storage_userdata(), storage_rootfs() };
+	for (int i = 0; i < 2; i++) {
+		if (i && v[1] == v[0])
+			break;
+		struct ext4 *fs = v[i];
+		say("%s: label '%s' bs %lu blocks %lu inodes %lu isize %lu desc %lu state %04x\n", fs->name, fs->label, fs->bs,
+		    (uint32_t)fs->blocks, fs->inodes, fs->inode_size, fs->desc_size, fs->state);
+		say("  compat %08lx incompat %08lx ro_compat %08lx mount_opts %08lx%s\n", fs->compat, fs->incompat, fs->ro_compat,
+		    fs->default_mount_opts, (fs->incompat & EXT4_INCOMPAT_RECOVER) ? " NEEDS RECOVERY" : "");
+	}
+	say("AsteroidOS root: %s\n", storage_rootfs_where());
+}
+
+struct btscan { struct ext4 *fs; char dir[96]; };
+
+static void bt_peer_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
+{
+	struct btscan *b = ctx;
+	if (len != 17 || name[2] != ':')
+		return;
+	char path[128];
+	snprintf(path, sizeof path, "%s/%s/info", b->dir, name);
+	struct ext4_inode in;
+	static char info[1536];
+	if (ext4_lookup(b->fs, path, &in)) {
+		say("  %s: no info\n", name);
+		return;
+	}
+	int r = ext4_read(b->fs, &in, 0, info, sizeof info - 1);
+	if (r < 0)
+		return;
+	info[r] = 0;
+	static const char *groups[] = { "[LongTermKey]", "[PeripheralLongTermKey]", "[SlaveLongTermKey]", "[IdentityResolvingKey]",
+					"[LocalSignatureKey]", "[RemoteSignatureKey]", "[LinkKey]" };
+	say("  %s:", name);
+	for (unsigned i = 0; i < ARRAY_SIZE(groups); i++) {
+		size_t gl = strlen(groups[i]);
+		for (const char *p = info; *p; p++)
+			if (!strncmp(p, groups[i], gl)) {
+				char g[32];
+				memcpy(g, groups[i] + 1, gl - 2);
+				g[gl - 2] = 0;
+				say(" %s", g);
+				break;
+			}
+	}
+	const char *t = info;
+	while (*t && strncmp(t, "AddressType=", 12))
+		t++;
+	if (*t) {
+		char a[24];
+		unsigned k = 0;
+		while (t[k] && t[k] != '\n' && k < sizeof a - 1) {
+			a[k] = t[k];
+			k++;
+		}
+		a[k] = 0;
+		say(" %s", a);
+	}
+	say("\n");
+}
+
+static void bt_adapter_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
+{
+	struct btscan *b = ctx;
+	if (len != 17 || name[2] != ':')
+		return;
+	struct btscan peers = { b->fs, "" };
+	snprintf(peers.dir, sizeof peers.dir, "/var/lib/bluetooth/%s", name);
+	say("adapter %s\n", name);
+	struct ext4_inode in;
+	if (!ext4_lookup(b->fs, peers.dir, &in))
+		ext4_list(b->fs, &in, bt_peer_fn, &peers);
+}
+
+static void cmd_btinfo(const char *args)
+{
+	struct ext4_inode in;
+	struct ext4 *fs = lookup("/var/lib/bluetooth-rfkill-event/bluetooth_address", &in);
+	if (fs) {
+		char addr[24] = { 0 };
+		int r = ext4_read(fs, &in, 0, addr, 17);
+		say("bluetooth_address: %s\n", r == 17 ? addr : "unreadable");
+	}
+	fs = lookup("/var/lib/bluetooth", &in);
+	if (!fs)
+		return;
+	struct btscan b = { fs, "" };
+	ext4_list(fs, &in, bt_adapter_fn, &b);
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -396,6 +554,10 @@ static const struct command commands[] = {
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
 	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
+	{ "fs", "", cmd_fs },
+	{ "ls", "[userdata:]<path>", cmd_ls },
+	{ "cat", "[userdata:]<path>", cmd_cat },
+	{ "btinfo", "", cmd_btinfo },
 	{ "echo", "<text>", cmd_echo },
 };
 

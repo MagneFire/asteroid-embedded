@@ -6,7 +6,7 @@
 #include "asteroid.h"
 #include "bt/bt.h"
 #include "stubs.h"
-#include "storage/emmc.h"
+#include "storage/storage.h"
 
 const char build_id[] = "hosttest";
 uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
@@ -80,3 +80,12 @@ int emmc_part_scan(void) { return -1; }
 unsigned emmc_part_count(void) { return 0; }
 const struct emmc_part *emmc_part_get(unsigned i) { return NULL; }
 int emmc_part_find(const char *name, uint32_t *first, uint32_t *count) { return -1; }
+int storage_mount(void) { return -1; }
+struct ext4 *storage_userdata(void) { return NULL; }
+struct ext4 *storage_rootfs(void) { return NULL; }
+const char *storage_rootfs_where(void) { return "not mounted"; }
+struct ext4 *storage_resolve(const char *path, const char **rest) { return NULL; }
+int ext4_lookup(struct ext4 *fs, const char *path, struct ext4_inode *in) { return -1; }
+int ext4_read(struct ext4 *fs, const struct ext4_inode *in, uint64_t off, void *buf, uint32_t len) { return -1; }
+int ext4_list(struct ext4 *fs, const struct ext4_inode *dir, ext4_dir_fn fn, void *ctx) { return -1; }
+const char *ext4_strerror(int err) { return "error"; }
