@@ -69,6 +69,47 @@ int spmi_read(uint32_t addr, uint8_t *buf, unsigned n)
 	return 0;
 }
 
+/* Peripheral interrupts: the arbiter maps each peripheral (sid << 8 |
+ * peripheral) to an APID through a binary decision tree in its config
+ * block, collects the interrupt messages per APID and raises one level
+ * interrupt for this execution environment while any enabled APID has
+ * one pending. */
+#define SPMI_MAPPING(n)		(SPMI_CNFG + 0xb00 + 4 * (n))
+#define SPMI_ACC_STATUS(n)	(SPMI_INTR + 4 * (n))
+#define SPMI_ACC_ENABLE(apid)	(SPMI_INTR + 0x200 + 4 * (apid))
+#define SPMI_IRQ_STATUS(apid)	(SPMI_INTR + 0x600 + 4 * (apid))
+#define SPMI_IRQ_CLEAR(apid)	(SPMI_INTR + 0xa00 + 4 * (apid))
+
+int spmi_apid(uint32_t sid, uint32_t periph)
+{
+	uint32_t ppid = (sid & 0xf) << 8 | (periph & 0xff), index = 0;
+	for (int depth = 0; depth < 16; depth++) {
+		uint32_t m = readl(SPMI_MAPPING(index));
+		bool one = ppid & BIT((m >> 18) & 0xf);
+		bool next = one ? (m >> 8) & 1 : (m >> 17) & 1;
+		uint32_t result = one ? m & 0xff : (m >> 9) & 0xff;
+		if (!next)
+			return (int)result;
+		index = result;
+	}
+	return -1;
+}
+
+void spmi_irq_enable(int apid, bool on)
+{
+	writel(on, SPMI_ACC_ENABLE(apid));
+}
+
+uint32_t spmi_irq_status(int apid)
+{
+	return readl(SPMI_IRQ_STATUS(apid));
+}
+
+void spmi_irq_clear(int apid, uint32_t bits)
+{
+	writel(bits, SPMI_IRQ_CLEAR(apid));
+}
+
 uint8_t pmic_read(uint32_t addr)
 {
 	uint8_t v = 0;

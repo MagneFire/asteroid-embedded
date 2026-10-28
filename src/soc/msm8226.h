@@ -17,6 +17,9 @@
 #define SPMI_BASE		0xfc4c0000u
 #define SPMI_ARB_VERSION	(SPMI_BASE + 0xf000)
 #define SPMI_ARB_CHNL(n)	(SPMI_BASE + 0xf800 + (n) * 0x80)
+#define SPMI_INTR		(SPMI_BASE + 0xb000)
+#define SPMI_CNFG		(SPMI_BASE + 0xa000)
+#define IRQ_SPMI_PERIPH		(32 + 190)
 #define SPMI_CMD		0x00
 #define SPMI_CONFIG		0x04
 #define SPMI_STATUS		0x08
