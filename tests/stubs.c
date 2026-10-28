@@ -37,6 +37,7 @@ bool bt_running(void) { return false; }
 bool bt_host_wake(void) { return false; }
 int bt_host_start(void) { return -1; }
 void bt_host_stop(void) {}
+int bt_store_clear(void) { return -1; }
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_save(const uint8_t addr[6]) { return -1; }

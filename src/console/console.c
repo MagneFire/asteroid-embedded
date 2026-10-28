@@ -237,6 +237,10 @@ static void cmd_bt(const char *args)
 		bt_status_say();
 		return;
 	}
+	if (!strcmp(args, "forget")) {
+		say(bt_store_clear() ? "bt: could not clear the bonds\n" : "bt: bonds cleared\n");
+		return;
+	}
 	if (!strcmp(args, "off")) {
 		bt_host_stop();
 		bt_stop();
@@ -245,7 +249,7 @@ static void cmd_bt(const char *args)
 	}
 	if (*args) {
 		if (!parse_bdaddr(args, addr)) {
-			say("usage: bt [off | status | <bd_addr>]\n");
+			say("usage: bt [off | status | forget | <bd_addr>]\n");
 			return;
 		}
 		have_addr = true;
@@ -627,7 +631,7 @@ static const struct command commands[] = {
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes]", cmd_pmic },
-	{ "bt", "[off | status | <bd_addr>]", cmd_bt },
+	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
 	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
