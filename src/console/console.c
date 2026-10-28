@@ -615,6 +615,19 @@ static void cmd_btinfo(const char *args)
 	ext4_list(fs, &in, bt_adapter_fn, &b);
 }
 
+static void cmd_buzz(const char *args)
+{
+	static uint16_t ms;
+	uint32_t n = 300;
+	if (*args && !parse_num(&args, 10, &n)) {
+		say("usage: buzz [ms]\n");
+		return;
+	}
+	ms = (uint16_t)(n > 5000 ? 5000 : n);
+	haptics_play(&ms, 1);
+	say("buzz %u ms\n", ms);
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -642,6 +655,7 @@ static const struct command commands[] = {
 	{ "emmctest", "", cmd_emmctest },
 	{ "kv", "[set <key> <text> | del <key>]", cmd_kv },
 	{ "btinfo", "", cmd_btinfo },
+	{ "buzz", "[ms]", cmd_buzz },
 	{ "echo", "<text>", cmd_echo },
 };
 

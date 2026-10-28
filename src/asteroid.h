@@ -60,6 +60,10 @@ int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint
 typedef void (*i2c_done_fn)(int err, void *ctx);
 int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
 bool i2c_qup_busy(unsigned qup);
+bool haptics_init(void);
+void haptics_play(const uint16_t *on_off_ms, unsigned n);
+void haptics_poll(void);
+bool haptics_busy(void);
 void i2c_qup_poll(unsigned qup);
 int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud);
 int uart_dm_set_baud(uint32_t baud);

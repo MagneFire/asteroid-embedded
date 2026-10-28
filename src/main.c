@@ -138,6 +138,7 @@ void main(void)
 	tlmm_irq_init();
 	pmic_power_key_irq_init();
 	bool have_touch = touch_init();
+	bool have_haptics = haptics_init();
 	console_init();
 	usb_init("asteroid-sturgeon");
 	if (have_display)
@@ -165,6 +166,8 @@ void main(void)
 		bt_poll();
 		if (!awake)
 			wakeups++;
+		if (have_haptics)
+			haptics_poll();
 		while (have_touch && touch_poll(&t)) {
 			if (!awake) {
 				if (t.event == TOUCH_DOWN)
@@ -351,7 +354,7 @@ void main(void)
 			reboot();
 		}
 #endif
-		if ((!have_display || !awake) && timer_ticks()) {
+		if ((!have_display || !awake) && !haptics_busy() && timer_ticks()) {
 			bool cluster = !awake && !usb_connected() && !bt_running();
 			if (!awake)
 				cpu_clock_slow(true);
