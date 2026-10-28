@@ -134,6 +134,7 @@ void main(void)
 		dcache_clean_range(layer, fb.stride * fb.height * 4);
 	log_printf("ui: %s\n", have_ui ? "ready" : "not started");
 	tlmm_irq_init();
+	pmic_power_key_irq_init();
 	bool have_touch = touch_init();
 	console_init();
 	usb_init("asteroid-sturgeon");
@@ -180,6 +181,7 @@ void main(void)
 			dot_x = t.down ? t.x : -1;
 			dot_y = t.y;
 		}
+		pmic_power_key_irq();
 		bool key = pmic_power_key();
 		if (key != key_was) {
 			key_was = key;

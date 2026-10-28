@@ -50,6 +50,55 @@ bool pmic_power_key(void)
 	return pmic_read(PON_INT_RT_STS) & BIT(0);
 }
 
+/* The key also raises a PMIC interrupt on both edges, which reaches the
+ * MPM and so wakes the watch from its deepest sleep. The interrupt
+ * handler only masks it at the arbiter: SPMI transfers belong to the main
+ * loop, which acknowledges the press and unmasks it again. */
+#define PON_INT_SET_TYPE	0x000811
+#define PON_INT_POLARITY_HIGH	0x000812
+#define PON_INT_POLARITY_LOW	0x000813
+#define PON_INT_LATCHED_CLR	0x000814
+#define PON_INT_EN_SET		0x000815
+#define PON_KPDPWR		BIT(0)
+
+static int pon_apid = -1;
+static volatile bool key_irq;
+
+static void spmi_periph_irq(void)
+{
+	spmi_irq_enable(pon_apid, false);
+	key_irq = true;
+}
+
+void pmic_power_key_irq_init(void)
+{
+	pon_apid = spmi_apid(0, 0x08);
+	if (pon_apid < 0) {
+		log_printf("pmic: no interrupt mapping for the power key\n");
+		return;
+	}
+	pmic_write(PON_INT_SET_TYPE, pmic_read(PON_INT_SET_TYPE) | PON_KPDPWR);
+	pmic_write(PON_INT_POLARITY_HIGH, pmic_read(PON_INT_POLARITY_HIGH) | PON_KPDPWR);
+	pmic_write(PON_INT_POLARITY_LOW, pmic_read(PON_INT_POLARITY_LOW) | PON_KPDPWR);
+	pmic_write(PON_INT_LATCHED_CLR, PON_KPDPWR);
+	pmic_write(PON_INT_EN_SET, PON_KPDPWR);
+	spmi_irq_clear(pon_apid, spmi_irq_status(pon_apid));
+	gic_enable(IRQ_SPMI_PERIPH, spmi_periph_irq);
+	spmi_irq_enable(pon_apid, true);
+}
+
+/* Whether the key interrupt fired since the last call. */
+bool pmic_power_key_irq(void)
+{
+	if (!key_irq)
+		return false;
+	key_irq = false;
+	pmic_write(PON_INT_LATCHED_CLR, PON_KPDPWR);
+	spmi_irq_clear(pon_apid, spmi_irq_status(pon_apid));
+	spmi_irq_enable(pon_apid, true);
+	return true;
+}
+
 /* RTC: seconds since the epoch in four little-endian bytes; the counter
  * runs as long as the PMIC has power. Writes go through a stop/start of
  * the counter as the block requires. */

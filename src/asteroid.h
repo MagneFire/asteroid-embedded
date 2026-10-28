@@ -97,6 +97,8 @@ void pmic_write(uint32_t addr, uint8_t val);
 void pmic_init(void);
 const char *pmic_pon_reason(void);
 bool pmic_power_key(void);
+void pmic_power_key_irq_init(void);
+bool pmic_power_key_irq(void);
 uint32_t pmic_rtc_read(void);
 void pmic_rtc_write(uint32_t secs);
 uint32_t pmic_battery_mv(void);
