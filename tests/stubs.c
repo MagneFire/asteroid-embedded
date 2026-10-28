@@ -6,6 +6,7 @@
 #include "asteroid.h"
 #include "bt/bt.h"
 #include "stubs.h"
+#include "storage/emmc.h"
 
 const char build_id[] = "hosttest";
 uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
@@ -14,6 +15,7 @@ jmp_buf *stub_reboot_jmp;
 int stub_failures;
 
 uint32_t time_ms(void) { return stub_ms; }
+uint32_t time_us(void) { return stub_ms * 1000; }
 uint32_t timer_ticks(void) { return 42; }
 uint32_t display_frames(void) { return 7; }
 void display_set_brightness(uint8_t level) { stub_brightness = level; }
@@ -69,3 +71,12 @@ void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), v
 	for (unsigned i = lines < 3 ? 3 - lines : 0; i < 3; i++)
 		out(log[i], strlen(log[i]), ctx);
 }
+
+static struct emmc_info stub_emmc;
+int emmc_init(bool fast) { return -1; }
+const struct emmc_info *emmc_card(void) { return &stub_emmc; }
+int emmc_read(uint32_t lba, uint32_t n, void *buf) { return -1; }
+int emmc_part_scan(void) { return -1; }
+unsigned emmc_part_count(void) { return 0; }
+const struct emmc_part *emmc_part_get(unsigned i) { return NULL; }
+int emmc_part_find(const char *name, uint32_t *first, uint32_t *count) { return -1; }

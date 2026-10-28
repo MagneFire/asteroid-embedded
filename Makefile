@@ -27,6 +27,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c src/civil.c \
         src/gpu/a3xx.c src/gpu/draw.c \
         src/bt/hci.c src/bt/bcm.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
+        src/storage/emmc.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 NIMBLE_SRCS := $(filter-out %/ble_gatts_lcl.c,$(wildcard $(NIMBLE)/nimble/host/src/*.c)) \

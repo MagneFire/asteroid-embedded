@@ -7,6 +7,7 @@
 #include "asteroid.h"
 #include "display/display.h"
 #include "bt/bt.h"
+#include "storage/emmc.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -270,6 +271,111 @@ static void cmd_bt(const char *args)
 		say("bt: host starting, advertises once synced (bt status)\n");
 }
 
+static void hexdump(uint32_t base, const uint8_t *p, uint32_t n)
+{
+	for (uint32_t i = 0; i < n; i += 16) {
+		char hex[16 * 3 + 1], asc[17];
+		for (uint32_t j = 0; j < 16; j++) {
+			uint8_t c = i + j < n ? p[i + j] : 0;
+			snprintf(hex + j * 3, 4, i + j < n ? " %02x" : "   ", c);
+			asc[j] = i + j < n ? (c >= 0x20 && c < 0x7f ? (char)c : '.') : ' ';
+		}
+		asc[16] = 0;
+		say("%08lx:%s  %s\n", base + i, hex, asc);
+	}
+}
+
+static uint32_t bits(const uint32_t *r, unsigned start, unsigned len)
+{
+	uint32_t v = 0;
+	for (unsigned i = 0; i < len; i++)
+		v |= ((r[(start + i) / 32] >> ((start + i) % 32)) & 1u) << i;
+	return v;
+}
+
+static void cmd_emmc(const char *args)
+{
+	int r = emmc_init(strcmp(args, "safe") != 0);
+	const struct emmc_info *c = emmc_card();
+	say("host: mci %08lx caps %08lx, %u-bit, %lu Hz%s\n", c->mci_version, c->caps, c->bus_width, c->clock_hz,
+	    c->high_speed ? ", HS" : "");
+	if (r) {
+		say("init failed: %d (log has details)\n", r);
+		return;
+	}
+	char pnm[7];
+	for (int i = 0; i < 6; i++)
+		pnm[i] = (char)bits(c->cid, 96 - i * 8, 8);
+	pnm[6] = 0;
+	const uint8_t *e = c->ext_csd;
+	say("cid: mid %02lx oid %02lx name %s rev %lu.%lu serial %08lx date %lu/%lu\n", bits(c->cid, 120, 8), bits(c->cid, 104, 8),
+	    pnm, bits(c->cid, 52, 4), bits(c->cid, 48, 4), bits(c->cid, 16, 32), bits(c->cid, 12, 4), bits(c->cid, 8, 4));
+	say("csd: structure %lu spec %lu tran_speed %02lx\n", bits(c->csd, 126, 2), bits(c->csd, 122, 4), bits(c->csd, 96, 8));
+	say("ocr %08lx, %lu sectors = %lu MiB\n", c->ocr, c->sectors, c->sectors / 2048);
+	say("ext_csd: rev %u card_type %02x hs_timing %u bus_width %u part_config %02x\n", e[192], e[196], e[185], e[183], e[179]);
+	say("ext_csd: boot %u x 128 KiB, rpmb %u x 128 KiB, rst_n %u, wr_rel %02x/%02x, erase_grp_def %u\n", e[226], e[168], e[162],
+	    e[166], e[167], e[175]);
+	say("ext_csd: pre_eol %u life %u/%u, fw %02x%02x%02x%02x%02x%02x%02x%02x\n", e[267], e[268], e[269], e[254], e[255], e[256],
+	    e[257], e[258], e[259], e[260], e[261]);
+}
+
+static bool storage_ready(void)
+{
+	const struct emmc_info *c = emmc_card();
+	int r = 0;
+	if (!c->ready && (r = emmc_init(true))) {
+		say("emmc init failed: %d\n", r);
+		return false;
+	}
+	if (!emmc_part_count() && (r = emmc_part_scan())) {
+		say("no usable GPT: %d\n", r);
+		return false;
+	}
+	return true;
+}
+
+static void cmd_part(const char *args)
+{
+	if (!storage_ready())
+		return;
+	for (unsigned i = 0; i < emmc_part_count(); i++) {
+		const struct emmc_part *p = emmc_part_get(i);
+		say("%2u %-12s %8lu %8lu %7lu KiB\n", i + 1, p->name, p->first, p->count, p->count / 2);
+	}
+}
+
+static void cmd_emmcrd(const char *args)
+{
+	char name[37];
+	unsigned n = 0;
+	args = skip_spaces(args);
+	while (*args && *args != ' ' && *args != '\t' && n < sizeof name - 1)
+		name[n++] = *args++;
+	name[n] = 0;
+	uint32_t off, count = 1, first, size;
+	if (!n || !parse_num(&args, 0, &off) || (*skip_spaces(args) && !parse_num(&args, 0, &count)) || !count || count > 8) {
+		say("usage: emmcrd <partition> <sector> [count 1-8]\n");
+		return;
+	}
+	if (!storage_ready())
+		return;
+	if (emmc_part_find(name, &first, &size)) {
+		say("no partition %s\n", name);
+		return;
+	}
+	if (off >= size || count > size - off) {
+		say("outside %s (%lu sectors)\n", name, size);
+		return;
+	}
+	static uint8_t buf[8 * EMMC_BLOCK];
+	int r = emmc_read(first + off, count, buf);
+	if (r) {
+		say("read failed: %d\n", r);
+		return;
+	}
+	hexdump(off * EMMC_BLOCK, buf, count * EMMC_BLOCK);
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -287,6 +393,9 @@ static const struct command commands[] = {
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes]", cmd_pmic },
 	{ "bt", "[off | status | <bd_addr>]", cmd_bt },
+	{ "emmc", "[safe]", cmd_emmc },
+	{ "part", "", cmd_part },
+	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
 	{ "echo", "<text>", cmd_echo },
 };
 
