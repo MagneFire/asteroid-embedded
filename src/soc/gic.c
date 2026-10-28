@@ -34,6 +34,8 @@ void gic_init(void)
 		writel(~0u, GICD_ICENABLER(i));
 		writel(~0u, GICD_ICPENDR(i));
 	}
+	for (unsigned i = 2; i < nirq / 16; i++)
+		writel(0, GICD_ICFGR(i));
 	for (unsigned i = 0; i < nirq / 4; i++) {
 		writel(0xa0a0a0a0u, GICD_IPRIORITYR(i));
 		if (i >= 8)
