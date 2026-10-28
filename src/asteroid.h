@@ -61,6 +61,13 @@ typedef void (*i2c_done_fn)(int err, void *ctx);
 int i2c_qup_start(uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
 bool i2c_qup_busy(void);
 void i2c_qup_poll(void);
+int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud);
+int uart_dm_set_baud(uint32_t baud);
+int uart_dm_write(const uint8_t *p, unsigned n);
+unsigned uart_dm_read(uint8_t *p, unsigned n);
+bool uart_dm_cts(void);
+void uart_dm_stop(void);
+void uart_dm_stats(uint32_t *rx, uint32_t *tx, uint32_t *errors);
 #define TLMM_IRQ_LEVEL_LOW 0
 #define TLMM_IRQ_LEVEL_HIGH 1
 #define TLMM_IRQ_EDGE_FALLING 2

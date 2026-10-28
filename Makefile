@@ -19,7 +19,7 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
-        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/rpm.c src/input/touch.c \
+        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/input/touch.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/ui/ui.c \
         src/gpu/a3xx.c src/gpu/draw.c \
