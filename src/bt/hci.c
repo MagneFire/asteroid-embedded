@@ -114,6 +114,7 @@ int hci_send(uint8_t t, const uint8_t *p, unsigned n)
 {
 	if (n > MAX_PACKET)
 		return -1;
+	bt_tx_activity();
 	txbuf[0] = t;
 	memcpy(txbuf + 1, p, n);
 	return uart_dm_write(txbuf, n + 1);

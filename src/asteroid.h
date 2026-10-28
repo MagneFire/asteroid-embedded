@@ -71,6 +71,7 @@ int uart_dm_write(const uint8_t *p, unsigned n);
 unsigned uart_dm_read(uint8_t *p, unsigned n);
 bool uart_dm_cts(void);
 void uart_dm_stop(void);
+bool uart_dm_idle(void);
 void uart_dm_stats(uint32_t *rx, uint32_t *tx, uint32_t *errors);
 #define TLMM_IRQ_LEVEL_LOW 0
 #define TLMM_IRQ_LEVEL_HIGH 1

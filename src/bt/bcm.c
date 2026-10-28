@@ -17,6 +17,7 @@
 #define GPIO_BT_DEV_WAKE	63
 #define GPIO_BT_HOST_WAKE	64
 #define GPIO_BT_REG_ON		67
+#define DEV_WAKE_IDLE_MS	1000
 #define BAUD_BOOT		115200
 #define BAUD_FAST		3000000
 #define PATCH_NAME		"4343A0.hcd"
@@ -33,6 +34,8 @@
 
 static const uint8_t sleep_mode[12] = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 };
 
+static bool dev_awake = true;
+static uint32_t tx_t;
 static bool running;
 
 static void sleep_ms(uint32_t ms)
@@ -118,6 +121,12 @@ static int fail(struct bt_info *info, const char *what, int r)
 	return r ? r : -1;
 }
 
+static void host_wake_irq(unsigned n)
+{
+	tlmm_irq_ack(n);
+	bt_tx_activity();
+}
+
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	uint32_t hcd_len;
@@ -191,14 +200,20 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	log_printf("bt: up in %lu ms (patch %lu ms), lmp subversion %04x, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n",
 		   info->total_ms, info->patch_ms, info->lmp_subversion, tlmm_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts,
 		   herr);
+	dev_awake = true;
+	tx_t = time_ms();
+	tlmm_irq_config(GPIO_BT_HOST_WAKE, TLMM_IRQ_EDGE_FALLING, host_wake_irq);
+	tlmm_irq_enable(GPIO_BT_HOST_WAKE, true);
 	return 0;
 }
 
 void bt_stop(void)
 {
+	tlmm_irq_enable(GPIO_BT_HOST_WAKE, false);
 	uart_dm_stop();
 	power(false);
 	running = false;
+	dev_awake = true;
 }
 
 bool bt_running(void)
@@ -209,4 +224,24 @@ bool bt_running(void)
 bool bt_host_wake(void)
 {
 	return tlmm_get(GPIO_BT_HOST_WAKE);
+}
+
+
+void bt_tx_activity(void)
+{
+	tx_t = time_ms();
+	if (!dev_awake) {
+		tlmm_set(GPIO_BT_DEV_WAKE, 0);
+		dev_awake = true;
+	}
+}
+
+void bt_lpm_poll(void)
+{
+	if (running && !bt_host_wake())
+		bt_tx_activity();
+	if (running && dev_awake && time_ms() - tx_t >= DEV_WAKE_IDLE_MS && uart_dm_idle()) {
+		tlmm_set(GPIO_BT_DEV_WAKE, 1);
+		dev_awake = false;
+	}
 }

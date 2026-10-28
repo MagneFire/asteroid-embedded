@@ -312,3 +312,8 @@ void uart_dm_stats(uint32_t *rx, uint32_t *tx, uint32_t *errors)
 	*tx = tx_bytes;
 	*errors = dropped + overruns;
 }
+
+bool uart_dm_idle(void)
+{
+	return !base || ((readl(base + UART_DM_SR) & (SR_TXEMT | SR_RXRDY)) == SR_TXEMT && ring_head == ring_tail);
+}

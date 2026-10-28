@@ -34,6 +34,8 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info);
 void bt_stop(void);
 bool bt_running(void);
 bool bt_host_wake(void);
+void bt_tx_activity(void);
+void bt_lpm_poll(void);
 
 enum bt_host_state { BT_HOST_OFF, BT_HOST_STARTING, BT_HOST_ADVERTISING, BT_HOST_CONNECTED, BT_HOST_FAILED };
 

@@ -247,6 +247,7 @@ void bt_poll(void)
 	if (!host_on)
 		return;
 	hci_poll();
+	bt_lpm_poll();
 	bool boost = cpu_clock_is_slow() && bt_idle_ms() == 0;
 	if (boost)
 		cpu_clock_slow(false);
