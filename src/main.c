@@ -207,7 +207,7 @@ void main(void)
 				gpu_suspend();
 				gpu_off = true;
 			}
-			timer_set_period(100);
+			timer_set_period(1000);
 			cpu_clock_slow(true);
 			awake = false;
 			asleep_t = now;
@@ -263,7 +263,15 @@ void main(void)
 			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
 			ui_set_battery(pmic_battery_percent(pmic_battery_mv()), pmic_charging());
 		}
-		if (now - last >= 1000) {
+		if (!awake && now - last >= 10000) {
+			last = now;
+			uint32_t pc, pcc, pcb;
+			spm_stats(&pc, &pcc, &pcb);
+			log_printf("power: asleep, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", wakeups, pc, pcc, pcb,
+				   pmic_battery_avg_ua() / 1000);
+			wakeups = 0;
+		}
+		if (awake && now - last >= 1000) {
 			last = now;
 			uint32_t rx, tx, att, terr;
 			usb_stats(&rx, &tx);
@@ -308,7 +316,13 @@ void main(void)
 			reboot();
 		}
 #endif
-		if ((!have_display || !awake) && timer_ticks())
-			spm_idle(!awake && !usb_connected());
+		if ((!have_display || !awake) && timer_ticks()) {
+			bool cluster = !awake && !usb_connected();
+			if (!awake)
+				cpu_clock_slow(true);
+			spm_idle(cluster);
+			if (cluster)
+				cpu_clock_slow(false);
+		}
 	}
 }
