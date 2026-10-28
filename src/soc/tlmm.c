@@ -57,10 +57,14 @@ void tlmm_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
 	case TLMM_IRQ_EDGE_FALLING: v |= INTR_POLARITY_HIGH | 2u << INTR_DETECT_SHIFT; break;
 	default: break;
 	}
-	if (npin_irqs < MAX_PIN_IRQS) {
-		pin_irqs[npin_irqs].pin = n;
-		pin_irqs[npin_irqs].fn = fn;
-		npin_irqs++;
+	unsigned i = 0;
+	while (i < npin_irqs && pin_irqs[i].pin != n)
+		i++;
+	if (i < MAX_PIN_IRQS) {
+		pin_irqs[i].pin = n;
+		pin_irqs[i].fn = fn;
+		if (i == npin_irqs)
+			npin_irqs++;
 	}
 	writel(v, TLMM_INTR_CFG(n));
 	writel(0, TLMM_INTR_STATUS(n));
