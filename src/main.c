@@ -20,6 +20,7 @@
 const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
+#define BT_START_MS 2000
 
 #ifndef REBOOT_AFTER_MS
 #define REBOOT_AFTER_MS 0
@@ -94,6 +95,20 @@ void power_request(bool sleep)
 		console_wake = true;
 }
 
+static void bluetooth_start(void)
+{
+	uint8_t addr[6];
+	struct bt_info info;
+	bool have_addr = !bt_addr_load(addr);
+	if (bt_start(have_addr ? addr : NULL, &info)) {
+		log_printf("bt: %s failed (%d)\n", info.failed, info.status);
+		return;
+	}
+	int r = bt_host_start();
+	if (r)
+		log_printf("bt: host failed (%d)\n", r);
+}
+
 static void vibrate(const char *how)
 {
 	static const uint16_t normal[] = { 200 }, strong[] = { 250, 150, 250 },
@@ -164,7 +179,7 @@ void main(void)
 	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool key_was = false, awake = true;
 	int32_t passkey = -1;
-	uint32_t notify_seen = 0;
+	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0;
 	int32_t shown_id = 0;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
@@ -180,6 +195,10 @@ void main(void)
 		bt_poll();
 		if (!awake)
 			wakeups++;
+		if (bt_start_t && now - bt_start_t < 0x80000000u) {
+			bt_start_t = 0;
+			bluetooth_start();
+		}
 		if (have_haptics)
 			haptics_poll();
 		while (have_touch && touch_poll(&t)) {
