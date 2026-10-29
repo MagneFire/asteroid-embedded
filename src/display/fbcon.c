@@ -53,6 +53,7 @@ void fbcon_draw(uint32_t *buf)
 
 static void present(void)
 {
+	wdt_feed();
 	uint32_t *buf = display_backbuffer();
 	memset(buf, 0, fb.stride * fb.height * 4);
 	fbcon_draw(buf);
