@@ -105,7 +105,7 @@ void hci_poll(void)
 {
 	uint8_t buf[64];
 	unsigned n;
-	while ((n = uart_dm_read(buf, sizeof buf)))
+	while ((n = uart_dm_read(BT_UART, buf, sizeof buf)))
 		for (unsigned i = 0; i < n; i++)
 			feed(buf[i]);
 }
@@ -117,7 +117,7 @@ int hci_send(uint8_t t, const uint8_t *p, unsigned n)
 	bt_tx_activity();
 	txbuf[0] = t;
 	memcpy(txbuf + 1, p, n);
-	return uart_dm_write(txbuf, n + 1);
+	return uart_dm_write(BT_UART, txbuf, n + 1);
 }
 
 int hci_cmd(uint16_t opcode, const void *param, uint8_t plen, uint8_t *rsp, unsigned *rsp_len, uint32_t timeout_ms)

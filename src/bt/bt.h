@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define BT_UART		4
+
 #define HCI_COMMAND	1
 #define HCI_ACL		2
 #define HCI_SCO		3

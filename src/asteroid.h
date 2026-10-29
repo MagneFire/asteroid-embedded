@@ -68,15 +68,15 @@ void haptics_play(const uint16_t *on_off_ms, unsigned n);
 void haptics_poll(void);
 bool haptics_busy(void);
 void i2c_qup_poll(unsigned qup);
-int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud);
-int uart_dm_set_baud(uint32_t baud);
-int uart_dm_write(const uint8_t *p, unsigned n);
-unsigned uart_dm_read(uint8_t *p, unsigned n);
-bool uart_dm_cts(void);
-void uart_dm_stop(void);
-bool uart_dm_idle(void);
-void uart_dm_hold_rx(bool hold);
-void uart_dm_stats(uint32_t *rx, uint32_t *tx, uint32_t *errors);
+int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow);
+int uart_dm_set_baud(unsigned uart, uint32_t baud);
+int uart_dm_write(unsigned uart, const uint8_t *p, unsigned n);
+unsigned uart_dm_read(unsigned uart, uint8_t *p, unsigned n);
+bool uart_dm_cts(unsigned uart);
+void uart_dm_stop(unsigned uart);
+bool uart_dm_idle(unsigned uart);
+void uart_dm_hold_rx(unsigned uart, bool hold);
+void uart_dm_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors);
 #define TLMM_IRQ_LEVEL_LOW 0
 #define TLMM_IRQ_LEVEL_HIGH 1
 #define TLMM_IRQ_EDGE_FALLING 2

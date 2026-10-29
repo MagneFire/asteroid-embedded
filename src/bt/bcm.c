@@ -11,7 +11,6 @@
 #include "asteroid.h"
 #include "bt.h"
 
-#define BT_UART			4
 #define GPIO_BT_UART		12
 #define FUNC_BT_UART		2
 #define GPIO_BT_DEV_WAKE	63
@@ -80,7 +79,7 @@ static int set_baud(uint32_t baud)
 	int r = hci_cmd(BCM_UPDATE_BAUD_RATE, p, sizeof p, NULL, NULL, 1000);
 	if (r)
 		return r;
-	return uart_dm_set_baud(baud);
+	return uart_dm_set_baud(BT_UART, baud);
 }
 
 static int patchram(const uint8_t *hcd, uint32_t len)
@@ -113,11 +112,11 @@ static int patchram(const uint8_t *hcd, uint32_t len)
 static int fail(struct bt_info *info, const char *what, int r)
 {
 	uint32_t rx, tx, uerr, pkts, herr;
-	uart_dm_stats(&rx, &tx, &uerr);
+	uart_dm_stats(BT_UART, &rx, &tx, &uerr);
 	hci_stats(&pkts, &herr);
 	info->failed = what;
 	info->status = r;
-	log_printf("bt: %s failed: %d, cts %u, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n", what, r, uart_dm_cts(),
+	log_printf("bt: %s failed: %d, cts %u, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n", what, r, uart_dm_cts(BT_UART),
 		   tlmm_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts, herr);
 	return r ? r : -1;
 }
@@ -142,10 +141,10 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	hci_set_handler(log_packet);
 	power(true);
 	sleep_ms(100);
-	if (uart_dm_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, BAUD_BOOT))
+	if (uart_dm_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, BAUD_BOOT, true))
 		return fail(info, "uart", -1);
 	running = true;
-	log_printf("bt: powered, cts %u, host wake %u\n", uart_dm_cts(), tlmm_get(GPIO_BT_HOST_WAKE));
+	log_printf("bt: powered, cts %u, host wake %u\n", uart_dm_cts(BT_UART), tlmm_get(GPIO_BT_HOST_WAKE));
 	int r;
 	if ((r = reset()))
 		return fail(info, "reset", r);
@@ -155,10 +154,10 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	if ((r = patchram(hcd, hcd_len)))
 		return fail(info, "patch download", r);
 	info->patch_ms = time_ms() - t1;
-	uart_dm_set_baud(BAUD_BOOT);
+	uart_dm_set_baud(BT_UART, BAUD_BOOT);
 	sleep_ms(250);
 	uint8_t junk[64];
-	while (uart_dm_read(junk, sizeof junk))
+	while (uart_dm_read(BT_UART, junk, sizeof junk))
 		;
 	hci_reset_parser();
 	if ((r = reset()))
@@ -196,7 +195,7 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	}
 	info->total_ms = time_ms() - t0;
 	uint32_t rx, tx, uerr, pkts, herr;
-	uart_dm_stats(&rx, &tx, &uerr);
+	uart_dm_stats(BT_UART, &rx, &tx, &uerr);
 	hci_stats(&pkts, &herr);
 	log_printf("bt: up in %lu ms (patch %lu ms), lmp subversion %04x, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n",
 		   info->total_ms, info->patch_ms, info->lmp_subversion, tlmm_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts,
@@ -213,7 +212,7 @@ void bt_stop(void)
 {
 	spm_wake_pin(MPM_PIN_HOST_WAKE, false);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, false);
-	uart_dm_stop();
+	uart_dm_stop(BT_UART);
 	power(false);
 	running = false;
 	dev_awake = true;
@@ -243,7 +242,7 @@ void bt_lpm_poll(void)
 {
 	if (running && !bt_host_wake())
 		bt_tx_activity();
-	if (running && dev_awake && time_ms() - tx_t >= DEV_WAKE_IDLE_MS && uart_dm_idle()) {
+	if (running && dev_awake && time_ms() - tx_t >= DEV_WAKE_IDLE_MS && uart_dm_idle(BT_UART)) {
 		tlmm_set(GPIO_BT_DEV_WAKE, 1);
 		dev_awake = false;
 	}
@@ -251,11 +250,11 @@ void bt_lpm_poll(void)
 
 bool bt_can_sleep(void)
 {
-	return !running || (!dev_awake && bt_host_wake() && uart_dm_idle());
+	return !running || (!dev_awake && bt_host_wake() && uart_dm_idle(BT_UART));
 }
 
 void bt_sleep(bool asleep)
 {
 	if (running)
-		uart_dm_hold_rx(asleep);
+		uart_dm_hold_rx(BT_UART, asleep);
 }
