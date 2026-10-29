@@ -203,6 +203,11 @@ void main(void)
 		if (have_haptics)
 			haptics_poll();
 		while (have_touch && touch_poll(&t)) {
+			if (t.event == TOUCH_PALM) {
+				log_printf("touch: palm\n");
+				sleep_request |= awake;
+				continue;
+			}
 			if (!awake) {
 				if (t.event == TOUCH_DOWN)
 					wake_request = true;

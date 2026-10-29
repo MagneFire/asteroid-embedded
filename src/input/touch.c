@@ -13,6 +13,8 @@
 #include "touch.h"
 
 #define QUP		5
+#define F11_CTRL58	0x64
+#define PALM_SIZE	40
 #define ADDR		0x20
 #define PDT_START	0xe9
 #define PAGE_SELECT	0xff
@@ -23,7 +25,7 @@ struct fn {
 	uint8_t query, cmd, ctrl, data, intr, number;
 };
 static struct fn f01, f11, f12;
-static bool present, was_down;
+static bool present, was_down, palm_down;
 static int last_x, last_y;
 static unsigned status_bytes = 1, max_x = 4095, max_y = 4095;
 
@@ -77,7 +79,7 @@ static struct touch queue[QUEUE_LEN];
 static volatile unsigned q_head, q_tail;
 static uint8_t irq_status[2], report[16], data_reg, data_len;
 static uint32_t attentions, errors;
-static uint8_t status_reg;
+static uint8_t status_reg, palm_reg, palm_data;
 
 static void push(const struct touch *t)
 {
@@ -92,6 +94,17 @@ static void rearm(void)
 {
 	tlmm_irq_ack(GPIO_ATTN);
 	tlmm_irq_enable(GPIO_ATTN, true);
+}
+
+static void palm_done(int err, void *ctx)
+{
+	bool palm = !err && (palm_data & 2);
+	if (palm && !palm_down) {
+		struct touch t = { TOUCH_PALM, last_x, last_y, false };
+		push(&t);
+	}
+	palm_down = palm;
+	rearm();
 }
 
 static void report_done(int err, void *ctx)
@@ -129,7 +142,50 @@ static void report_done(int err, void *ctx)
 	was_down = down;
 	if (t.event != TOUCH_NONE)
 		push(&t);
-	rearm();
+	if (!palm_reg || i2c_qup_start(QUP, ADDR, &palm_reg, 1, &palm_data, 1, palm_done, NULL))
+		rearm();
+}
+
+/* Large object suppression flags a palm in F11 data 28; its offset follows
+ * from which F11 queries and data registers the sensor has. */
+static unsigned f11_data28(void)
+{
+	uint8_t q[6], q78[2] = { 0, 0 }, q9 = 0;
+	rd(f11.query, q, 6);
+	unsigned off = 6;
+	bool rel = q[1] & 0x08, gestures = q[1] & 0x20;
+	if (rel)
+		off += 1;
+	if (gestures) {
+		rd(f11.query + off, q78, 2);
+		off += 2;
+	}
+	if (q[0] & 0x08)
+		rd(f11.query + off, &q9, 1);
+	if (!(q[5] & 0x60))
+		return 0;
+	unsigned fingers = (q[1] & 7) <= 4 ? (q[1] & 7) + 1 : 10, d = (fingers + 3) / 4 + 5 * fingers;
+	if (rel)
+		d += 2 * fingers;
+	if (gestures) {
+		if (q78[0])
+			d += 1;
+		if (q78[0] || q78[1])
+			d += 1;
+		if (q78[0] & 0x50)
+			d += 1;
+		if ((q78[0] & 0x10) || (q78[1] & 0x02))
+			d += 2;
+		if (q78[1] & 0x04)
+			d += (fingers + 3) / 4;
+		if ((q78[1] & 0x08) || (q78[1] & 0x20) || (q78[0] & 0x80))
+			d += 2;
+		if ((q78[1] & 0x08) && (q78[1] & 0x10))
+			d += 2;
+	}
+	if ((q[0] & 0x08) && (q9 & 0x20))
+		d += 10 * fingers;
+	return d;
 }
 
 static void status_done(int err, void *ctx)
@@ -149,6 +205,7 @@ static void attention(unsigned pin)
 		rearm();
 	}
 }
+
 
 bool touch_poll(struct touch *t)
 {
@@ -212,6 +269,12 @@ bool touch_init(void)
 		max_x = c[0] | (c[1] & 0xf) << 8;
 		max_y = c[2] | (c[3] & 0xf) << 8;
 		log_printf("touch: F11 %u fingers, %u status bytes, max %u x %u\n", fingers, status_bytes, max_x, max_y);
+	}
+	if (f11.number) {
+		unsigned d = f11_data28();
+		if (d && !wr(F11_CTRL58, PALM_SIZE | 0x80))
+			palm_reg = (uint8_t)(f11.data + d);
+		log_printf("touch: palm detection %s, data 28 at +%u\n", palm_reg ? "on" : "off", d);
 	}
 	log_printf("touch: product %s, status %02x irq %02x, attn %u\n", (char *)id, st[0], st[1], tlmm_get(GPIO_ATTN));
 	status_reg = f01.data;

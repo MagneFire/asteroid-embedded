@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-enum touch_event { TOUCH_NONE, TOUCH_DOWN, TOUCH_MOVE, TOUCH_UP };
+enum touch_event { TOUCH_NONE, TOUCH_DOWN, TOUCH_MOVE, TOUCH_UP, TOUCH_PALM };
 struct touch {
 	enum touch_event event;
 	int x, y;
