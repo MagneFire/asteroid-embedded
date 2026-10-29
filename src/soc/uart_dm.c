@@ -68,6 +68,7 @@
 #define CR_RESET_CTS		0x070
 #define CR_RESET_STALE		0x080
 #define CR_SET_RFR		0x0d0
+#define CR_RESET_RFR		0x0e0
 #define CR_PROTECTION_EN	0x100
 #define CR_CLEAR_TX_READY	0x300
 #define CR_STALE_ENABLE		0x500
@@ -316,4 +317,18 @@ void uart_dm_stats(uint32_t *rx, uint32_t *tx, uint32_t *errors)
 bool uart_dm_idle(void)
 {
 	return !base || ((readl(base + UART_DM_SR) & (SR_TXEMT | SR_RXRDY)) == SR_TXEMT && ring_head == ring_tail);
+}
+
+void uart_dm_hold_rx(bool hold)
+{
+	if (!base)
+		return;
+	uint32_t mr1 = readl(base + UART_DM_MR1);
+	if (hold) {
+		writel(mr1 & ~MR1_RX_RDY_CTL, base + UART_DM_MR1);
+		writel(CR_RESET_RFR, base + UART_DM_CR);
+	} else {
+		writel(CR_SET_RFR, base + UART_DM_CR);
+		writel(mr1 | MR1_RX_RDY_CTL, base + UART_DM_MR1);
+	}
 }

@@ -36,6 +36,8 @@ bool bt_running(void);
 bool bt_host_wake(void);
 void bt_tx_activity(void);
 void bt_lpm_poll(void);
+bool bt_can_sleep(void);
+void bt_sleep(bool asleep);
 
 enum bt_host_state { BT_HOST_OFF, BT_HOST_STARTING, BT_HOST_ADVERTISING, BT_HOST_CONNECTED, BT_HOST_FAILED };
 

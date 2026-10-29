@@ -36,6 +36,7 @@ enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
 bool spm_init(void);
 void spm_cpu_mode(enum spm_mode mode);
 void spm_idle(bool cluster);
+void spm_wake_pin(unsigned pin, bool on);
 void spm_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
 void dcache_clean_range(const void *addr, uint32_t size);
 void dcache_invalidate_range(const void *addr, uint32_t size);
@@ -74,6 +75,7 @@ unsigned uart_dm_read(uint8_t *p, unsigned n);
 bool uart_dm_cts(void);
 void uart_dm_stop(void);
 bool uart_dm_idle(void);
+void uart_dm_hold_rx(bool hold);
 void uart_dm_stats(uint32_t *rx, uint32_t *tx, uint32_t *errors);
 #define TLMM_IRQ_LEVEL_LOW 0
 #define TLMM_IRQ_LEVEL_HIGH 1

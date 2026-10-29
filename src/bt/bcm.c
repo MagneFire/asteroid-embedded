@@ -17,6 +17,7 @@
 #define GPIO_BT_DEV_WAKE	63
 #define GPIO_BT_HOST_WAKE	64
 #define GPIO_BT_REG_ON		67
+#define MPM_PIN_HOST_WAKE	28
 #define DEV_WAKE_IDLE_MS	1000
 #define BAUD_BOOT		115200
 #define BAUD_FAST		3000000
@@ -204,11 +205,13 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	tx_t = time_ms();
 	tlmm_irq_config(GPIO_BT_HOST_WAKE, TLMM_IRQ_EDGE_FALLING, host_wake_irq);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, true);
+	spm_wake_pin(MPM_PIN_HOST_WAKE, true);
 	return 0;
 }
 
 void bt_stop(void)
 {
+	spm_wake_pin(MPM_PIN_HOST_WAKE, false);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, false);
 	uart_dm_stop();
 	power(false);
@@ -244,4 +247,15 @@ void bt_lpm_poll(void)
 		tlmm_set(GPIO_BT_DEV_WAKE, 1);
 		dev_awake = false;
 	}
+}
+
+bool bt_can_sleep(void)
+{
+	return !running || (!dev_awake && bt_host_wake() && uart_dm_idle());
+}
+
+void bt_sleep(bool asleep)
+{
+	if (running)
+		uart_dm_hold_rx(asleep);
 }
