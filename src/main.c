@@ -334,7 +334,7 @@ void main(void)
 			struct civil c;
 			civil_from_epoch(pmic_rtc_read(), &c);
 			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
-			ui_set_battery(pmic_battery_percent(pmic_battery_mv()), pmic_charging());
+			ui_set_battery(pmic_battery_percent(), pmic_charging());
 		}
 		if (!awake && now - last >= 10000) {
 			last = now;

@@ -33,7 +33,7 @@ static uint8_t payload[1024];
 
 static uint8_t battery_percent(void)
 {
-	uint32_t p = pmic_battery_percent(pmic_battery_mv());
+	uint32_t p = pmic_battery_percent();
 	return (uint8_t)(p > 100 ? 100 : p);
 }
 

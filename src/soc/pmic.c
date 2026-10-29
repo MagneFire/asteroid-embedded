@@ -224,13 +224,36 @@ bool pmic_charging(void)
 
 /* Rough state of charge from the resting voltage of a 4.35 V cell, until
  * the fuel gauge is read: linear between 3.45 V (0 %) and 4.30 V (100 %). */
-uint32_t pmic_battery_percent(uint32_t mv)
+/* State of charge of the HB442528EBC cell from its open circuit voltage:
+ * the measured voltage plus the drop over its 496 mOhm internal
+ * resistance, smoothed, looked up in the cell's 25 C table. */
+#define RBATT_MOHM		496
+
+static const struct { uint16_t mv; uint8_t pc; } ocv_table[] = {
+	{ 4344, 100 }, { 4279, 95 }, { 4222, 90 }, { 4166, 85 }, { 4112, 80 }, { 4062, 75 }, { 4014, 70 },
+	{ 3970, 65 }, { 3922, 60 }, { 3878, 55 }, { 3846, 50 }, { 3822, 45 }, { 3802, 40 }, { 3784, 35 },
+	{ 3769, 30 }, { 3750, 25 }, { 3728, 20 }, { 3704, 16 }, { 3685, 13 }, { 3682, 11 }, { 3679, 10 },
+	{ 3676, 9 }, { 3672, 8 }, { 3660, 7 }, { 3627, 6 }, { 3586, 5 }, { 3539, 4 }, { 3484, 3 },
+	{ 3406, 2 }, { 3283, 1 }, { 3000, 0 },
+};
+
+uint32_t pmic_battery_percent(void)
 {
-	if (mv <= 3450)
+	static int32_t ocv16;
+	uint32_t mv = pmic_battery_mv();
+	if (!mv)
 		return 0;
-	if (mv >= 4300)
+	int32_t ocv = (int32_t)mv + pmic_battery_ua() / 1000 * RBATT_MOHM / 1000;
+	ocv16 = ocv16 ? ocv16 + (ocv * 16 - ocv16) / 8 : ocv * 16;
+	int32_t v = ocv16 / 16;
+	if (v >= ocv_table[0].mv)
 		return 100;
-	return (mv - 3450) * 100 / (4300 - 3450);
+	for (unsigned i = 1; i < ARRAY_SIZE(ocv_table); i++)
+		if (v >= ocv_table[i].mv) {
+			int32_t hi = ocv_table[i - 1].mv, lo = ocv_table[i].mv;
+			return ocv_table[i].pc + (uint32_t)((v - lo) * (ocv_table[i - 1].pc - ocv_table[i].pc) / (hi - lo));
+		}
+	return 0;
 }
 
 /* Battery current through the current ADC across the external sense
