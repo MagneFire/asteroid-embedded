@@ -146,7 +146,7 @@ void spm_idle(bool cluster)
 	writel(1, QTMR_CNTP_CTL);
 	ppis = gic_cpu_save();
 	spm_cpu_mode(SPM_POWER_COLLAPSE);
-	if (cpu_suspend(0) == 0) {
+	if (cpu_suspend(cluster) == 0) {
 		if (cluster)
 			cluster_collapses++;
 		else

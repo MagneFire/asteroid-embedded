@@ -390,9 +390,16 @@ void main(void)
 		}
 #endif
 		if ((!have_display || !awake) && !haptics_busy() && timer_ticks()) {
+			bool cluster = !awake && !usb_connected() && !bt_running();
 			if (!awake)
 				cpu_clock_slow(true);
-			spm_idle(false);
+			if (cluster)
+				cpu_clock_park();
+			spm_idle(cluster);
+			if (cluster) {
+				cpu_clock_unpark();
+				cpu_clock_slow(false);
+			}
 		}
 	}
 }

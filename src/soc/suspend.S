@@ -45,10 +45,10 @@ cpu_suspend:
         mrc     p15, 0, r10, c10, c2, 1         /* NMRR */
         mov     r11, sp
         stmia   r1, {r2-r11}
-        bl      dcache_clean_invalidate_all
         mrc     p15, 0, r3, c0, c0, 5           /* MPIDR */
         and     r3, r3, #3
         handoff_lock r3, r0, r12
+        bl      dcache_clean_invalidate_all
         ldr     r2, [sp]                        /* flag */
         ldr     r0, =SCM_TERMINATE_PC
         ldr     r1, =scm_ctx
@@ -89,7 +89,6 @@ cpu_resume:
         mcr     p15, 0, r9, c10, c2, 0
         mcr     p15, 0, r10, c10, c2, 1
         mov     sp, r11
-        bl      dcache_invalidate_all           /* L2 may have lost power */
         ldr     r1, =suspend_ctx
         ldr     r2, [r1]
         dsb

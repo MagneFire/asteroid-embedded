@@ -1,5 +1,4 @@
-/* ARMv7 set/way D-cache clean+invalidate, or invalidate only, over every
- * level in CLIDR.
+/* ARMv7 set/way D-cache clean+invalidate over every level in CLIDR.
  * Clobbers r0-r11; call before or after C code only. */
         .syntax unified
         .arm
@@ -50,4 +49,3 @@
         .endm
 
         setway  dcache_clean_invalidate_all, c14   /* DCCISW */
-        setway  dcache_invalidate_all, c6          /* DCISW */
