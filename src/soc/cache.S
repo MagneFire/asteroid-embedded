@@ -38,7 +38,8 @@
         bge     3b
         subs    r7, r7, #1
         bge     2b
-4:      add     r10, r10, #2
+4:      dsb
+        add     r10, r10, #2
         cmp     r3, r10
         bgt     1b
 5:      mov     r10, #0
