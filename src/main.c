@@ -180,7 +180,7 @@ void main(void)
 	bool key_was = false, awake = true;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
-	uint32_t shown_seq = 0;
+	uint32_t shown_seq = 0, newest_seq = 0;
 	int32_t shown_id = 0;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
@@ -255,13 +255,18 @@ void main(void)
 			notify_seen = notify_serial();
 			unsigned n = notify_count();
 			const struct notification *top = n ? notify_get(n - 1) : NULL;
+			if ((top ? top->seq : 0) != shown_seq && have_haptics)
+				haptics_play(NULL, 0);
 			if (top && top->seq != shown_seq) {
 				if (have_ui)
 					ui_show_notification(top->app, strlen(top->app), top->summary, strlen(top->summary), top->body,
 							     strlen(top->body));
-				if (have_haptics)
-					vibrate(top->vibrate);
-				wake_request = !awake;
+				if (top->seq > newest_seq) {
+					newest_seq = top->seq;
+					if (have_haptics)
+						vibrate(top->vibrate);
+					wake_request = !awake;
+				}
 				last_activity = now;
 			} else if (!top && shown_seq && have_ui) {
 				ui_hide_notification();
