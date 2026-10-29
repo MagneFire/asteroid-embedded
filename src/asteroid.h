@@ -28,6 +28,8 @@ void mmu_init(void);
 void cpu_clock_init(void);
 void cpu_clock_slow(bool slow);
 bool cpu_clock_is_slow(void);
+void cpu_clock_park(void);
+void cpu_clock_unpark(void);
 void power_request(bool sleep);
 
 enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
