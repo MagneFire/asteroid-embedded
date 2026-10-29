@@ -24,6 +24,7 @@ void display_wake(void) { stub_asleep = false; }
 uint32_t pmic_battery_mv(void) { return 3900; }
 const char *pmic_charger_status(void) { return "discharging"; }
 uint32_t pmic_rtc_read(void) { return stub_rtc; }
+uint8_t pmic_read(uint32_t addr) { return 0; }
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
@@ -39,6 +40,9 @@ int bt_host_start(void) { return -1; }
 void bt_host_stop(void) {}
 int bt_store_clear(void) { return -1; }
 void haptics_play(const uint16_t *on_off_ms, unsigned n) {}
+void cpu_clock_slow(bool slow) {}
+bool cpu_clock_is_slow(void) { return false; }
+void power_request(bool sleep) { stub_asleep = sleep; }
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_save(const uint8_t addr[6]) { return -1; }
