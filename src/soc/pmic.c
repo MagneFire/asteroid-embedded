@@ -178,48 +178,234 @@ uint32_t pmic_battery_mv(void)
 	return (uint32_t)(mv * 3);
 }
 
-/* Charger (SMBB): real-time status bits of the charger, battery interface
- * and USB path peripherals; limits as the battery's profile asks. */
-#define SMBB_CHGR_RT_STS	0x001010
-#define SMBB_BAT_IF_RT_STS	0x001210
-#define SMBB_USB_RT_STS		0x001310
-#define SMBB_CHG_VMAX		0x001040
-#define SMBB_CHG_VSAFE		0x001041
-#define SMBB_CHG_IMAX		0x001044
-#define SMBB_CHG_ISAFE		0x001045
-#define SMBB_CHG_VIN_MIN	0x001047
-#define SMBB_USB_IMAX		0x001344
+/* Charger (SMBB on PM8226): the charger, buck, battery interface, USB
+ * path and misc peripherals at 0x1000, 0x1100, 0x1200, 0x1300 and 0x1600.
+ * Set up in the order the vendor driver probes them, with the limits of
+ * the HB442528EBC cell: 4.35 V, 300 mA fast charge, resume 100 mV below
+ * full. Writes to the 0xd0-0xff test registers need SEC_ACCESS first.
+ * The hardware end-of-charge logic is overridden, so the poll ends the
+ * charge itself, trims the regulation voltage and restarts charging. */
+#define SMBB_CHGR		0x001000
+#define SMBB_BUCK		0x001100
+#define SMBB_BAT_IF		0x001200
+#define SMBB_USB		0x001300
+#define SMBB_MISC		0x001600
+#define SMBB_RT_STS		0x10
+#define SMBB_SEC_ACCESS		0xd0
+#define SMBB_SEC_UNLOCK		0xa5
+#define CHGR_VDD_MAX		(SMBB_CHGR + 0x40)
+#define CHGR_VDD_SAFE		(SMBB_CHGR + 0x41)
+#define CHGR_IBAT_MAX		(SMBB_CHGR + 0x44)
+#define CHGR_IBAT_SAFE		(SMBB_CHGR + 0x45)
+#define CHGR_VIN_MIN		(SMBB_CHGR + 0x47)
+#define CHGR_CHG_CTRL		(SMBB_CHGR + 0x49)
+#define CHGR_CHG_FAILED		(SMBB_CHGR + 0x4a)
+#define CHGR_IBAT_TERM		(SMBB_CHGR + 0x5b)
+#define CHGR_VBAT_DET		(SMBB_CHGR + 0x5d)
+#define CHGR_TCHG_MAX_EN	(SMBB_CHGR + 0x60)
+#define CHGR_TCHG_MAX		(SMBB_CHGR + 0x61)
+#define CHGR_WDOG_TIME		(SMBB_CHGR + 0x62)
+#define CHGR_TRICKLE_CLAMP	(SMBB_CHGR + 0xe3)
+#define CHGR_CHG_OVR0		(SMBB_CHGR + 0xed)
+#define CHGR_COMP_OVR1		(SMBB_CHGR + 0xee)
+#define BUCK_VBAT_REG_MODE	(SMBB_BUCK + 0x74)
+#define BUCK_VCHG_OV		(SMBB_BUCK + 0x77)
+#define BUCK_COMP_OVRIDE1	(SMBB_BUCK + 0xeb)
+#define BUCK_CTRL_TRIM1		(SMBB_BUCK + 0xf1)
+#define BAT_IF_PRES_STATUS	(SMBB_BAT_IF + 0x08)
+#define BAT_IF_BPD_CTRL		(SMBB_BAT_IF + 0x48)
+#define BAT_IF_VREF_THM_CTRL	(SMBB_BAT_IF + 0x4a)
+#define BAT_IF_BATFET_CTRL4	(SMBB_BAT_IF + 0x93)
+#define USB_OVP_CTL		(SMBB_USB + 0x42)
+#define USB_IMAX		(SMBB_USB + 0x44)
+#define USB_SUSP		(SMBB_USB + 0x47)
+#define USB_ENUM_T_STOP		(SMBB_USB + 0x4e)
+#define USB_OCP_THR		(SMBB_USB + 0x52)
+#define USB_CHG_GONE_REV_BST	(SMBB_USB + 0xed)
+#define MISC_REVISION2		(SMBB_MISC + 0x01)
+#define MISC_BOOT_DONE		(SMBB_MISC + 0x42)
+#define CHGR_RT_FAILED		BIT(6)
+#define CHGR_RT_FAST		BIT(5)
+#define CHGR_RT_TRICKLE		BIT(4)
+#define CHGR_RT_VBAT_DET_LOW	BIT(0)
+#define BUCK_RT_VDD_LOOP	BIT(6)
+#define BAT_IF_RT_FET_ON	BIT(2)
+#define BAT_IF_RT_TEMP_OK	BIT(1)
+#define BAT_IF_RT_PRESENT	BIT(0)
+#define USB_RT_CHG_GONE		BIT(2)
+#define USB_RT_VALID		BIT(1)
+#define CHG_EN			BIT(7)
+#define CHG_ON_BAT_FORCE	BIT(0)
+#define VDDMAX_MV		4350
+#define VDDSAFE_MV		(VDDMAX_MV + 80)
+#define VINMIN_MV		4370
+#define IBATMAX_MA		300
+#define IBATSAFE_MA		600
+#define ITERM_MA		20
+#define RESUME_DELTA_MV		100
+#define VBATDET_ERR_MV		50
+#define TCHG_MINS		150
+#define USB_WALL_MA		500
+#define RESUME_PERCENT		99
+#define EOC_PERIOD_MS		10000
+#define EOC_COUNT		10
+#define TRIM_MAX_DELTA_MV	80
+
+static uint8_t trim_center;
+static int32_t vddmax_delta_mv;
+static bool usb_present, fast_on, chg_done, chg_failed, resuming, eoc_active;
+static unsigned eoc_count, vbat_low_count;
+static uint32_t poll_ms, eoc_ms, arb_ms, done_ms;
+static bool arb_wait, done_wait;
+
+static void smbb_update(uint32_t addr, uint8_t mask, uint8_t val)
+{
+	pmic_write(addr, (uint8_t)((pmic_read(addr) & ~mask) | (val & mask)));
+}
+
+static void smbb_update_secure(uint32_t addr, uint8_t mask, uint8_t val)
+{
+	uint8_t v = (uint8_t)((pmic_read(addr) & ~mask) | (val & mask));
+	pmic_write((addr & ~0xffu) + SMBB_SEC_ACCESS, SMBB_SEC_UNLOCK);
+	pmic_write(addr, v);
+}
+
+static void charge_enable(bool on)
+{
+	smbb_update(CHGR_CHG_CTRL, CHG_EN, on ? CHG_EN : 0);
+}
+
+static void force_run_on_battery(bool on)
+{
+	if (pmic_read(BAT_IF_PRES_STATUS) & BIT(7))
+		smbb_update(CHGR_CHG_CTRL, CHG_ON_BAT_FORCE, on ? CHG_ON_BAT_FORCE : 0);
+}
+
+static void vbatdet_set(int32_t mv)
+{
+	pmic_write(CHGR_VBAT_DET, (uint8_t)((mv - 3240) / 20));
+}
+
+static void vddmax_set(void)
+{
+	int32_t trim = trim_center + vddmax_delta_mv / 10;
+	pmic_write(CHGR_VDD_MAX, (VDDMAX_MV - 3240) / 10);
+	smbb_update_secure(BUCK_CTRL_TRIM1, 0xf0, (uint8_t)((trim < 0 ? 0 : trim > 15 ? 15 : trim) << 4));
+}
+
+static void vddmax_adjust(int32_t vbat_mv)
+{
+	int32_t delta = VDDMAX_MV - 4 - vbat_mv;
+	if (delta > 0 && delta < 8)
+		return;
+	int32_t closest = (delta + (delta > 0 ? 5 : -5)) / 10 * 10;
+	vddmax_delta_mv += closest;
+	if (vddmax_delta_mv > TRIM_MAX_DELTA_MV)
+		vddmax_delta_mv = TRIM_MAX_DELTA_MV;
+	if (vddmax_delta_mv < -TRIM_MAX_DELTA_MV)
+		vddmax_delta_mv = -TRIM_MAX_DELTA_MV;
+	vddmax_set();
+}
+
+static void vbatdet_bypass(bool on)
+{
+	smbb_update_secure(CHGR_COMP_OVR1, 0xff, on ? 0x01 : 0);
+}
+
+static void usb_changed(bool present)
+{
+	usb_present = present;
+	chg_done = false;
+	chg_failed = false;
+	if (present) {
+		smbb_update(USB_ENUM_T_STOP, BIT(0), BIT(0));
+		pmic_write(USB_IMAX, USB_WALL_MA / 100);
+		smbb_update(BAT_IF_BATFET_CTRL4, 0xc0, 0);
+		eoc_active = true;
+		eoc_ms = time_ms();
+	} else {
+		smbb_update(USB_SUSP, BIT(0), 0);
+		pmic_write(USB_IMAX, 0);
+		smbb_update(BAT_IF_BATFET_CTRL4, 0xc0, 0x40);
+		eoc_active = false;
+	}
+}
+
+static bool charging_now(uint8_t chg, uint8_t bat)
+{
+	if (!(bat & BAT_IF_RT_TEMP_OK))
+		return false;
+	return ((chg & CHGR_RT_TRICKLE) && !(bat & BAT_IF_RT_FET_ON)) ||
+	       ((chg & CHGR_RT_FAST) && (bat & BAT_IF_RT_FET_ON));
+}
 
 const char *pmic_charger_status(void)
 {
 	static char s[96];
-	uint8_t chg = pmic_read(SMBB_CHGR_RT_STS), bat = pmic_read(SMBB_BAT_IF_RT_STS), usb = pmic_read(SMBB_USB_RT_STS);
-	snprintf(s, sizeof s, "usb %s%s, battery %s, %s%s%s",
-		 usb & BIT(1) ? "valid" : "absent", usb & BIT(2) ? " (charger gone)" : "",
-		 bat & BIT(0) ? "present" : "absent",
-		 chg & BIT(7) ? "charge done" : chg & BIT(5) ? "fast charging" : chg & BIT(4) ? "trickle charging" : "not charging",
-		 bat & BIT(1) ? "" : ", temperature out of range",
-		 "");
+	uint8_t chg = pmic_read(SMBB_CHGR + SMBB_RT_STS), bat = pmic_read(SMBB_BAT_IF + SMBB_RT_STS);
+	uint8_t usb = pmic_read(SMBB_USB + SMBB_RT_STS);
+	const char *state = "not charging";
+	if (!(bat & BAT_IF_RT_TEMP_OK))
+		state = "not charging, temperature out of range";
+	else if (charging_now(chg, bat))
+		state = chg & CHGR_RT_FAST ? "fast charging" : "trickle charging";
+	else if ((chg & CHGR_RT_FAILED) || chg_failed)
+		state = "charge failed";
+	else if ((usb & USB_RT_VALID) && chg_done)
+		state = "charged";
+	snprintf(s, sizeof s, "usb %s%s, battery %s, %s",
+		 usb & USB_RT_VALID ? "valid" : "absent", usb & USB_RT_CHG_GONE ? " (charger gone)" : "",
+		 bat & BAT_IF_RT_PRESENT ? "present" : "absent", state);
 	return s;
-}
-
-void pmic_charger_configure(void)
-{
-	pmic_write(SMBB_CHG_VSAFE, (4370 - 3240) / 10);
-	pmic_write(SMBB_CHG_VMAX, (4350 - 3240) / 10);
-	pmic_write(SMBB_CHG_ISAFE, 600 / 50);
-	pmic_write(SMBB_CHG_IMAX, 300 / 50);
-	pmic_write(SMBB_CHG_VIN_MIN, (4350 - 3400) / 50);
-	pmic_write(SMBB_USB_IMAX, 5);
-	log_printf("charger: vmax %u vsafe %u imax %u isafe %u vinmin %u usb imax %u\n",
-		   pmic_read(SMBB_CHG_VMAX), pmic_read(SMBB_CHG_VSAFE), pmic_read(SMBB_CHG_IMAX),
-		   pmic_read(SMBB_CHG_ISAFE), pmic_read(SMBB_CHG_VIN_MIN), pmic_read(SMBB_USB_IMAX));
 }
 
 bool pmic_charging(void)
 {
-	uint8_t chg = pmic_read(SMBB_CHGR_RT_STS);
-	return (pmic_read(SMBB_USB_RT_STS) & BIT(1)) && (chg & (BIT(5) | BIT(4) | BIT(7)));
+	return charging_now(pmic_read(SMBB_CHGR + SMBB_RT_STS), pmic_read(SMBB_BAT_IF + SMBB_RT_STS));
+}
+
+void pmic_charger_configure(void)
+{
+	smbb_update(CHGR_VIN_MIN, 0x3f, (uint8_t)(0x0c + (VINMIN_MV - 4000) / 50));
+	pmic_write(CHGR_VDD_SAFE, (VDDSAFE_MV - 3240) / 10);
+	vbatdet_set(VDDMAX_MV - RESUME_DELTA_MV);
+	smbb_update(CHGR_IBAT_MAX, 0x3f, IBATMAX_MA / 50);
+	smbb_update(CHGR_IBAT_TERM, 0x03, (ITERM_MA < 100 ? 0 : (ITERM_MA - 100) / 50));
+	smbb_update(CHGR_IBAT_SAFE, 0x3f, IBATSAFE_MA / 50);
+	smbb_update(CHGR_TCHG_MAX_EN, BIT(7), 0);
+	smbb_update(CHGR_TCHG_MAX, 0x7f, TCHG_MINS / 4 - 1);
+	smbb_update(CHGR_TCHG_MAX_EN, BIT(7), BIT(7));
+	pmic_write(CHGR_WDOG_TIME, 0xa0);
+	pmic_write(CHGR_IBAT_TERM, 0x08);
+	smbb_update_secure(CHGR_CHG_OVR0, 0xff, 0);
+	smbb_update_secure(CHGR_TRICKLE_CLAMP, 0xff, 0);
+
+	smbb_update_secure(BUCK_COMP_OVRIDE1, 0xc0, 0x80);
+	smbb_update(BUCK_VBAT_REG_MODE, BIT(0), BIT(0));
+	trim_center = pmic_read(BUCK_CTRL_TRIM1) >> 4;
+	smbb_update_secure(BUCK_VCHG_OV, 0xff, 0);
+
+	smbb_update(BAT_IF_BPD_CTRL, 0x03, BIT(1));
+	smbb_update(BAT_IF_VREF_THM_CTRL, 0xc0, 0xc0);
+
+	smbb_update(USB_OVP_CTL, 0x03, 0x03);
+	smbb_update(USB_ENUM_T_STOP, BIT(0), BIT(0));
+	smbb_update_secure(USB_CHG_GONE_REV_BST, 0xff, 0x80);
+	smbb_update(USB_OCP_THR, 0x03, 0);
+
+	smbb_update(MISC_BOOT_DONE, BIT(7), BIT(7));
+
+	charge_enable(true);
+	force_run_on_battery(false);
+	vddmax_delta_mv = 0;
+	vddmax_set();
+	usb_changed(pmic_read(SMBB_USB + SMBB_RT_STS) & USB_RT_VALID);
+	poll_ms = time_ms();
+
+	log_printf("charger: rev %02x boot %02x ctrl %02x vmax %u vsafe %u vbatdet %u imax %u isafe %u vinmin %u usb imax %u trim %u\n",
+		   pmic_read(MISC_REVISION2), pmic_read(MISC_BOOT_DONE), pmic_read(CHGR_CHG_CTRL), pmic_read(CHGR_VDD_MAX),
+		   pmic_read(CHGR_VDD_SAFE), pmic_read(CHGR_VBAT_DET), pmic_read(CHGR_IBAT_MAX), pmic_read(CHGR_IBAT_SAFE),
+		   pmic_read(CHGR_VIN_MIN), pmic_read(USB_IMAX), trim_center);
 }
 
 /* Rough state of charge from the resting voltage of a 4.35 V cell, until
@@ -237,15 +423,8 @@ static const struct { uint16_t mv; uint8_t pc; } ocv_table[] = {
 	{ 3406, 2 }, { 3283, 1 }, { 3000, 0 },
 };
 
-uint32_t pmic_battery_percent(void)
+static uint32_t ocv_percent(int32_t v)
 {
-	static int32_t ocv16;
-	uint32_t mv = pmic_battery_mv();
-	if (!mv)
-		return 0;
-	int32_t ocv = (int32_t)mv + pmic_battery_ua() / 1000 * RBATT_MOHM / 1000;
-	ocv16 = ocv16 ? ocv16 + (ocv * 16 - ocv16) / 8 : ocv * 16;
-	int32_t v = ocv16 / 16;
 	if (v >= ocv_table[0].mv)
 		return 100;
 	for (unsigned i = 1; i < ARRAY_SIZE(ocv_table); i++)
@@ -254,6 +433,131 @@ uint32_t pmic_battery_percent(void)
 			return ocv_table[i].pc + (uint32_t)((v - lo) * (ocv_table[i - 1].pc - ocv_table[i].pc) / (hi - lo));
 		}
 	return 0;
+}
+
+uint32_t pmic_battery_percent(void)
+{
+	static int32_t ocv16;
+	uint32_t mv = pmic_battery_mv();
+	if (!mv)
+		return 0;
+	int32_t ocv = (int32_t)mv + pmic_battery_ua() / 1000 * RBATT_MOHM / 1000;
+	ocv16 = ocv16 ? ocv16 + (ocv * 16 - ocv16) / 8 : ocv * 16;
+	return ocv_percent(ocv16 / 16);
+}
+
+/* Charger upkeep, at most once a second: follows USB plug and unplug,
+ * restarts the charger after a charger-gone glitch or a failed charge,
+ * ends the charge every ten seconds once the current in constant voltage
+ * stays under the termination current, and restarts it when the state of
+ * charge drops below 99 %. */
+static void eoc_check(uint8_t chg, uint8_t bat)
+{
+	uint8_t buck = pmic_read(SMBB_BUCK + SMBB_RT_STS);
+	charge_enable(true);
+	if (!(bat & BAT_IF_RT_FET_ON) || !(chg & (CHGR_RT_FAST | CHGR_RT_TRICKLE))) {
+		eoc_active = false;
+		return;
+	}
+	int32_t ma = pmic_battery_ua() / 1000, mv = (int32_t)pmic_battery_mv();
+	if (!(chg & CHGR_RT_VBAT_DET_LOW) && mv < VDDMAX_MV - RESUME_DELTA_MV - VBATDET_ERR_MV) {
+		if (++vbat_low_count >= EOC_COUNT)
+			eoc_active = false;
+		return;
+	}
+	vbat_low_count = 0;
+	if (buck & BUCK_RT_VDD_LOOP)
+		vddmax_adjust(mv);
+	if (!(buck & BUCK_RT_VDD_LOOP) || -ma > ITERM_MA || ma > 0) {
+		eoc_count = 0;
+		return;
+	}
+	if (eoc_count++ < EOC_COUNT)
+		return;
+	log_printf("charger: end of charge at %ld mV, %ld mA\n", mv, ma);
+	chg_done = true;
+	charge_enable(false);
+	fast_on = false;
+	vbatdet_bypass(false);
+	done_wait = true;
+	done_ms = time_ms();
+	eoc_active = false;
+}
+
+void pmic_charger_poll(void)
+{
+	uint32_t now = time_ms();
+	if (now - poll_ms < 1000)
+		return;
+	poll_ms = now;
+	uint8_t chg = pmic_read(SMBB_CHGR + SMBB_RT_STS), bat = pmic_read(SMBB_BAT_IF + SMBB_RT_STS);
+	uint8_t usb = pmic_read(SMBB_USB + SMBB_RT_STS);
+
+	if (!!(usb & USB_RT_VALID) != usb_present)
+		usb_changed(usb & USB_RT_VALID);
+
+	if (done_wait && now - done_ms >= 2000) {
+		done_wait = false;
+		charge_enable(true);
+	}
+
+	if (arb_wait && now - arb_ms >= 1000) {
+		arb_wait = false;
+		if (!chg_done)
+			charge_enable(true);
+		force_run_on_battery(false);
+	} else if (!arb_wait && usb_present && (usb & USB_RT_CHG_GONE)) {
+		charge_enable(false);
+		force_run_on_battery(true);
+		arb_wait = true;
+		arb_ms = now;
+	}
+
+	if (chg & CHGR_RT_FAILED) {
+		log_printf("charger: charge failed, restarting\n");
+		chg_failed = true;
+		smbb_update(CHGR_CHG_FAILED, BIT(7), BIT(7));
+	}
+
+	bool fast = chg & CHGR_RT_FAST;
+	if (fast != fast_on) {
+		fast_on = fast;
+		vbatdet_bypass(fast);
+		if (fast) {
+			chg_done = false;
+			chg_failed = false;
+			if (resuming) {
+				resuming = false;
+				vbatdet_set(VDDMAX_MV - RESUME_DELTA_MV);
+			}
+			eoc_active = true;
+			eoc_ms = now;
+			eoc_count = vbat_low_count = 0;
+		}
+	}
+	if (chg & CHGR_RT_TRICKLE)
+		chg_done = false;
+
+	if (!usb_present || now - eoc_ms < EOC_PERIOD_MS)
+		return;
+	eoc_ms = now;
+	if (eoc_active && !done_wait && !arb_wait) {
+		eoc_check(chg, bat);
+		if (!eoc_active)
+			eoc_count = vbat_low_count = 0;
+		return;
+	}
+	if (resuming && !(chg & (CHGR_RT_FAST | CHGR_RT_TRICKLE)))
+		resuming = false;
+	if (charging_now(chg, bat) || resuming || done_wait || arb_wait || !(bat & BAT_IF_RT_PRESENT))
+		return;
+	int32_t ua = pmic_battery_ua(), mv = (int32_t)pmic_battery_mv();
+	if (mv && ocv_percent(mv + ua / 1000 * RBATT_MOHM / 1000) <= RESUME_PERCENT) {
+		log_printf("charger: resuming at %ld mV\n", mv);
+		resuming = true;
+		vbatdet_set(VDDMAX_MV + RESUME_DELTA_MV);
+		charge_enable(true);
+	}
 }
 
 /* Battery current through the current ADC across the external sense

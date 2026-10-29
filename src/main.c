@@ -199,6 +199,7 @@ void main(void)
 			bt_start_t = 0;
 			bluetooth_start();
 		}
+		pmic_charger_poll();
 		if (have_haptics)
 			haptics_poll();
 		while (have_touch && touch_poll(&t)) {

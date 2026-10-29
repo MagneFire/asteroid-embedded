@@ -124,6 +124,7 @@ int32_t pmic_battery_ua(void);
 int32_t pmic_battery_avg_ua(void);
 uint32_t pmic_battery_percent(void);
 void pmic_charger_configure(void);
+void pmic_charger_poll(void);
 #define RPM_LDOA 0x616f646cu
 #define RPM_SMPA 0x61706d73u
 #define RPM_VSA 0x00617376u
