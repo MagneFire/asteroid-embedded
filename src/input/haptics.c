@@ -4,11 +4,13 @@
  * 0x96 afterwards, signed real-time playback. A pattern is a list of
  * on/off durations played from the main loop in real-time playback mode. */
 #include "asteroid.h"
+#include "storage/storage.h"
 
 #define QUP			2
 #define ADDR			0x5a
 #define GPIO_TRIGGER		59
 #define GPIO_ENABLE		60
+#define KV_CALIBRATION		"haptics.cal"
 
 #define REG_STATUS		0x00
 #define REG_MODE		0x01
@@ -104,14 +106,24 @@ bool haptics_init(void)
 		log_printf("haptics: setup failed (%d)\n", r);
 		return false;
 	}
-	uint8_t cal = 0, comp = 0;
-	r = calibrate(&cal);
-	read_reg(REG_CAL_COMP, &comp);
-	read_reg(REG_CAL_BEMF, &bemf);
+	uint8_t saved[3] = { 0 }, cal = 0;
+	bool restored = kv_get(KV_CALIBRATION, saved, sizeof saved) == sizeof saved;
+	if (restored) {
+		r = write_reg(REG_CAL_COMP, saved[0]);
+		if (!r)
+			r = write_reg(REG_CAL_BEMF, saved[1]);
+		if (!r)
+			r = write_reg(REG_FEEDBACK, saved[2]);
+	} else {
+		r = calibrate(&cal);
+		if (!r && !(cal & STATUS_DIAG) && !read_reg(REG_CAL_COMP, &saved[0]) && !read_reg(REG_CAL_BEMF, &saved[1]) &&
+		    !read_reg(REG_FEEDBACK, &saved[2]))
+			kv_set(KV_CALIBRATION, saved, sizeof saved);
+	}
 	write_reg(REG_MODE, MODE_STANDBY);
 	write_reg(REG_CLAMP, 0x96);
-	log_printf("haptics: drv2605 status %02x, calibration %d status %02x comp %02x bemf %02x\n", status, r, cal, comp,
-		   bemf);
+	log_printf("haptics: drv2605 status %02x, %s %d, status %02x comp %02x bemf %02x feedback %02x\n", status,
+		   restored ? "restored calibration" : "calibration", r, cal, saved[0], saved[1], saved[2]);
 	ready = !r && !(cal & STATUS_DIAG);
 	return ready;
 }
