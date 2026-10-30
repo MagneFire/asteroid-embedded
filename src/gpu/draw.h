@@ -22,7 +22,9 @@
  * set by gpu_draw_blend until the next gpu_draw_begin, which turns it off.
  * gpu_draw_layer_at draws a premultiplied RGBA layer with its top-left
  * corner at pixel (x, y) of the target, source-over blended and faded by
- * alpha (texture unit 0); gpu_draw_layer is the same at (0, 0), opaque. */
+ * alpha (texture unit 0); gpu_draw_layer_parts draws only the given
+ * rectangles of it, in layer pixels, in one draw; gpu_draw_layer is the
+ * whole layer at (0, 0), opaque. */
 #ifndef GPU_DRAW_H
 #define GPU_DRAW_H
 #include <stdint.h>
@@ -60,6 +62,11 @@ struct gpu_target {
 	uint32_t width, height, pitch_bytes;
 };
 
+struct gpu_rect {
+	int x, y;
+	uint32_t width, height;
+};
+
 void *gpu_alloc(uint32_t size, uint32_t align);
 void gpu_draw_begin(const struct gpu_target *t);
 bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs);
@@ -69,5 +76,7 @@ void gpu_draw_blend(bool premultiplied_over);
 void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts);
 void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes);
 void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
+void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
+			  const struct gpu_rect *parts, unsigned n);
 bool gpu_draw_end(void);
 #endif
