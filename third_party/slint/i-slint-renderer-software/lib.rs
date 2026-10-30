@@ -1584,6 +1584,7 @@ fn prepare_scene(
 }
 
 trait ProcessScene {
+    fn set_rounded_clip(&mut self, _clip: Option<[f32; 5]>) {}
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>);
     fn process_target_texture(
         &mut self,
@@ -1908,6 +1909,10 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<'_, B> {
+    fn set_rounded_clip(&mut self, clip: Option<[f32; 5]>) {
+        self.buffer.set_rounded_clip(clip);
+    }
+
     fn process_scene_texture(&mut self, geometry: PhysicalRect, texture: SceneTexture<'static>) {
         self.process_texture_impl(geometry, texture);
     }
@@ -2226,6 +2231,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                     LogicalPoint::default(),
                     (screen_size.cast() / scale_factor).cast(),
                 ),
+                rounded_clip: None,
             },
             scale_factor,
             window,
@@ -2651,6 +2657,7 @@ struct RenderState {
     alpha: f32,
     offset: LogicalPoint,
     clip: LogicalRect,
+    rounded_clip: Option<[f32; 5]>,
 }
 
 impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilder<'_, T> {
@@ -3070,7 +3077,21 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         // TODO
     }
 
-    fn combine_clip(&mut self, other: LogicalRect, _radius: LogicalBorderRadius) -> bool {
+    fn combine_clip(&mut self, other: LogicalRect, radius: LogicalBorderRadius) -> bool {
+        let r = radius.top_left.max(radius.top_right).max(radius.bottom_right).max(radius.bottom_left);
+        if r as f32 > 0.0 {
+            let s = self.scale_factor.get();
+            let o = self.current_state.offset;
+            let clip = [
+                (other.min_x() + o.x) as f32 * s,
+                (other.min_y() + o.y) as f32 * s,
+                (other.max_x() + o.x) as f32 * s,
+                (other.max_y() + o.y) as f32 * s,
+                r as f32 * s,
+            ];
+            self.current_state.rounded_clip = Some(clip);
+            self.processor.set_rounded_clip(Some(clip));
+        }
         match self.current_state.clip.intersection(&other) {
             Some(r) => {
                 self.current_state.clip = r;
@@ -3081,7 +3102,6 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 false
             }
         }
-        // TODO: handle radius
     }
 
     fn get_current_clip(&self) -> LogicalRect {
@@ -3115,7 +3135,11 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
     }
 
     fn restore_state(&mut self) {
+        let rounded_clip = self.current_state.rounded_clip;
         self.current_state = self.state_stack.pop().unwrap();
+        if self.current_state.rounded_clip != rounded_clip {
+            self.processor.set_rounded_clip(self.current_state.rounded_clip);
+        }
     }
 
     fn scale_factor(&self) -> ScaleFactor {

@@ -229,4 +229,11 @@ pub trait TargetPixelBuffer {
     fn draw_texture(&mut self, _: &DrawTextureArgs, _clip: &PhysicalRegion) -> bool {
         false
     }
+
+    /// Called when the rounded clip that applies to the following draw calls changes: the
+    /// physical rectangle [x0, y0, x1, y1] and corner radius of the innermost element that
+    /// clips its children to rounded corners, or None. The clip region passed to each draw call
+    /// is still its bounding rectangle; a buffer that can should also leave out what lies
+    /// outside the rounded corners.
+    fn set_rounded_clip(&mut self, _clip: Option<[f32; 5]>) {}
 }
