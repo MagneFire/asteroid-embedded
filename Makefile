@@ -1,7 +1,7 @@
 # asteroid-embedded: bare-metal firmware for APQ8026 smartwatches.
 # make            build/asteroid.img for WATCH (sturgeon by default)
 # make run        boot it over fastboot, wait for the reboot, show the log
-# make test       host unit tests of the console and adb
+# make test       host unit tests of the console, adb and the parsers
 CROSS   ?= arm-none-eabi-
 CC      := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
@@ -123,16 +123,27 @@ disasm: $(BUILD)/asteroid.elf
 
 HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
-               -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h
+               -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h \
+               -fsanitize=address,undefined -fno-sanitize-recover=all
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c
+PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c
+
+$(BUILD)/test/parser_test: tests/parser_test.c $(PARSER_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< $(PARSER_SRCS) -o $@
+
+$(BUILD)/test/small.ext4: tests/data/small.ext4.gz
+	@mkdir -p $(dir $@)
+	gunzip -c $< > $@
 
 $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/parser_test $(BUILD)/test/small.ext4
 	$(BUILD)/test/console_test
 	$(BUILD)/test/adb_test
+	$(BUILD)/test/parser_test $(BUILD)/test/small.ext4
 
 clean:
 	rm -rf $(BUILD)
