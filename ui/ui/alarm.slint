@@ -70,6 +70,14 @@ component Round inherits Rectangle {
 
 export component AlarmApp {
     property <int> editing: -2;
+    property <int> back: Face.back-count;
+
+    changed editing => {
+        Face.app-depth = self.editing != -2 ? 1 : 0;
+    }
+    changed back => {
+        self.editing = -2;
+    }
     property <int> hour: 7;
     property <int> minute: 0;
     property <int> days: 62;

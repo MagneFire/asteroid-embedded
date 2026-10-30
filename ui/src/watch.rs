@@ -22,6 +22,7 @@ unsafe extern "C" {
 const SCREENS: usize = 7;
 const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
+const APP: usize = 6;
 
 struct Static<T>(UnsafeCell<T>);
 unsafe impl<T> Sync for Static<T> {}
@@ -427,7 +428,22 @@ pub extern "C" fn ui_alarm_action() -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_app(app: i32) {
-    each(|face| face.set_app(app));
+    each(|face| {
+        face.set_app(app);
+        face.set_app_depth(0);
+    });
+}
+
+/// Takes the open app one page back; false when it is on its first page.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_app_back() -> bool {
+    let Some(ui) = ui() else { return false };
+    let face = ui.screens[APP].global::<Face>();
+    if face.get_app_depth() == 0 {
+        return false;
+    }
+    face.set_back_count(face.get_back_count() + 1);
+    true
 }
 
 #[unsafe(no_mangle)]

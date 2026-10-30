@@ -75,6 +75,14 @@ component Step inherits Rectangle {
 
 export component SettingsApp {
     in-out property <int> page;
+    property <int> back: Face.back-count;
+
+    changed page => {
+        Face.app-depth = self.page > 0 ? 1 : 0;
+    }
+    changed back => {
+        self.page = 0;
+    }
 
     width: 100%;
     height: 100%;

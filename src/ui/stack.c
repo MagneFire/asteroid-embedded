@@ -3,7 +3,10 @@
  * watchface, (W, 0) with the notifications on screen, (-W, 0) for
  * Today, (0, -H) for the launcher and (0, H) for the quick settings; the
  * side screens sit one screen away from the watchface. An open app lies
- * over all of them at ax. A drag moves the origin with the finger,
+ * over all of them, fading in when opened; dragged from the left or top
+ * edge it follows the finger, fading, and let go past 15 % it goes a
+ * page back, or closes onto the watchface from its first page or from
+ * the top edge. A drag moves the origin with the finger,
  * clamped to the screens that exist in that direction, and a release
  * past 30 % or a quick flick switches screens; the slide back to rest is
  * an ease-out over SLIDE_MS. */
@@ -18,6 +21,9 @@
 #define SLIDE_MS	250
 #define DIM		0.4f
 #define FADE_MS		150
+#define APP_FADE_MS	100
+#define APP_SNAP_MS	200
+#define EDGE_PX		40
 #define BAND		16
 #define BANDS		32
 
@@ -27,9 +33,10 @@ enum { LEFT, RIGHT, UP, DOWN };
 static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] = true };
 static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
-static int W, H, fx, fy, from_x, from_y, ax, from_ax;
+static int W, H, fx, fy, from_x, from_y, off, from_off;
 static unsigned screen, gesture;
-static bool animating, dragging, horizontal, app_open, app_closing;
+static bool animating, dragging, horizontal, app_open, app_closing, app_top;
+static uint32_t app_t0;
 static int down_x, down_y;
 static uint32_t down_ms, anim_t0, fade_t;
 static float fade;
@@ -56,24 +63,38 @@ void stack_home(void)
 	fade = 0.0f;
 }
 
+/* The app moves back to rest, or (close) away and onto the watchface. */
 static void slide_app(bool close)
 {
-	from_ax = ax;
+	from_off = off;
 	app_closing = close;
 	anim_t0 = time_ms();
 	animating = true;
 	dragging = false;
+	if (close) {
+		screen = UI_PANEL_FACE;
+		fx = fy = 0;
+	}
 }
 
 void stack_open_app(void)
 {
 	app_open = true;
-	ax = W;
-	slide_app(false);
+	app_closing = false;
+	off = 0;
+	app_t0 = time_ms();
+}
+
+static float app_alpha(void)
+{
+	uint32_t t = time_ms() - app_t0;
+	float a = t >= APP_FADE_MS ? 1.0f : (float)t / APP_FADE_MS, size = app_top ? H : W;
+	float b = (size - 2.0f * off) / size;
+	return b < a ? (b > 0.0f ? b : 0.0f) : a;
 }
 
 unsigned stack_screen(void) { return screen; }
-bool stack_moving(void) { return animating || dragging; }
+bool stack_moving(void) { return animating || dragging || (app_open && time_ms() - app_t0 < APP_FADE_MS); }
 void stack_offset(int *x, int *y) { *x = fx; *y = fy; }
 
 static void slide_to(unsigned s)
@@ -144,37 +165,42 @@ static void cancel_press(void)
 	ui_touch(app_open ? UI_PANEL_APP : screen, UI_TOUCH_UP, -10000, -10000);
 }
 
-/* On an open app only a drag to the right is a swipe: it moves the app. */
-static void touch_app(int kind, int x, int y, int dx, int dy, bool far, bool flick)
+/* On an open app only a drag that starts at the left edge going right
+ * (back) or at the top edge going down (close) moves the app; anything
+ * else is the app's. */
+static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 {
-	bool swipe = dx > 0 && absi(dx) > absi(dy);
+	static bool from_left, from_top;
 	switch (kind) {
 	case UI_TOUCH_DOWN:
+		from_left = x < EDGE_PX;
+		from_top = y < EDGE_PX;
 		ui_touch(UI_PANEL_APP, kind, x, y);
 		break;
 	case UI_TOUCH_MOVE:
-		if (gesture == PENDING && far && swipe) {
-			gesture = SWIPE;
-			cancel_press();
-		} else if (gesture == PENDING && far) {
-			gesture = SCROLL;
-		}
-		if (gesture == SWIPE) {
-			ax = clampi(dx, 0, W);
-			animating = false;
-			dragging = true;
-		} else {
-			ui_touch(UI_PANEL_APP, kind, x, y);
-		}
-		break;
 	case UI_TOUCH_UP:
-		if (gesture == SWIPE || (gesture == PENDING && far && swipe)) {
-			if (gesture == PENDING)
+		if (gesture == PENDING && far) {
+			bool back = from_left && dx > 0 && absi(dx) > absi(dy), down = from_top && dy > 0 && absi(dy) > absi(dx);
+			gesture = back || down ? SWIPE : SCROLL;
+			if (gesture == SWIPE) {
+				app_top = down;
 				cancel_press();
-			ax = clampi(dx, 0, W);
-			slide_app(ax * 10 > W * 3 || flick);
-		} else {
+			}
+		}
+		if (gesture != SWIPE) {
 			ui_touch(UI_PANEL_APP, kind, x, y);
+			break;
+		}
+		off = app_top ? clampi(dy, 0, H) : clampi(dx, 0, W);
+		animating = false;
+		dragging = kind == UI_TOUCH_MOVE;
+		if (kind == UI_TOUCH_UP) {
+			if (off * 100 <= (app_top ? H : W) * 15)
+				slide_app(false);
+			else if (!app_top && ui_app_back())
+				slide_app(false);
+			else
+				slide_app(true);
 		}
 		break;
 	}
@@ -210,7 +236,7 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 			down_y = y;
 			down_ms = now_ms;
 		}
-		touch_app(kind, x, y, dx, dy, far, flick);
+		touch_app(kind, x, y, dx, dy, far);
 		if (kind == UI_TOUCH_UP)
 			gesture = IDLE;
 		return;
@@ -266,10 +292,10 @@ void stack_update(uint32_t now_ms)
 		return;
 	uint32_t t = now_ms - anim_t0;
 	if (app_open) {
-		float u = t >= SLIDE_MS ? 0.0f : 1.0f - (float)t / SLIDE_MS, p = 1.0f - u * u * u;
-		int to = app_closing ? W : 0;
-		ax = from_ax + (int)((to - from_ax) * p);
-		if (t >= SLIDE_MS) {
+		float u = t >= APP_SNAP_MS ? 0.0f : 1.0f - (float)t / APP_SNAP_MS, p = 1.0f - u * u * u * u * u;
+		int to = app_closing ? (app_top ? H : W) / 2 : 0;
+		off = from_off + (int)((to - from_off) * p);
+		if (t >= APP_SNAP_MS) {
 			animating = false;
 			app_open = !app_closing;
 		}
@@ -350,8 +376,8 @@ static void layer(unsigned panel, int x, int y, float alpha)
 float stack_dim(void)
 {
 	float dx = (float)absi(fx) / W, dy = fy > 0 ? (float)fy / H : 0.0f, d = dx > dy ? dx : dy;
-	if (app_open && (float)(W - ax) / W > d)
-		d = (float)(W - ax) / W;
+	if (app_open && app_alpha() > d)
+		d = app_alpha();
 	return d * DIM;
 }
 
@@ -362,7 +388,8 @@ float stack_launcher(void)
 
 void stack_compose(void)
 {
-	if (!app_open || ax > 0) {
+	float a = app_open ? app_alpha() : 0.0f;
+	if (a < 1.0f) {
 		layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
 		layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
 		layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
@@ -370,7 +397,7 @@ void stack_compose(void)
 		layer(UI_PANEL_FACE, fx, fy, 1.0f);
 	}
 	if (app_open)
-		layer(UI_PANEL_APP, ax, 0, 1.0f);
+		layer(UI_PANEL_APP, app_top ? 0 : off, app_top ? off : 0, a);
 	if (fade > 0.0f)
 		layer(UI_PANEL_OVERLAY, 0, 0, fade);
 }

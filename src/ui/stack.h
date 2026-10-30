@@ -2,8 +2,9 @@
  * (swipe right), Today to its right (swipe left), the app
  * launcher below it (swipe up) and the quick settings above it (swipe
  * down), the opposite swipe going back, as on
- * AsteroidOS. stack_open_app slides the app panel in over the stack from
- * the right; a swipe right slides it out again. Each screen is a Slint panel in its own layer (ui.h); the
+ * AsteroidOS. stack_open_app fades the app panel in over the stack; a
+ * drag from the left edge goes back (ui_app_back) and closes it from its
+ * first page, one from the top edge closes it. Each screen is a Slint panel in its own layer (ui.h); the
  * stack owns where the layers are on the display and draws them on the
  * GPU: a touch that moves past the swipe threshold drags the screens
  * along (the press is cancelled so no click fires), except vertical

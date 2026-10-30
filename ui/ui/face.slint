@@ -36,6 +36,9 @@ export global Face {
     in-out property <bool> nightstand;
     in-out property <bool> nightstand-on: true;
     in-out property <int> app: -1;
+    // How many pages deep the open app is, and a count it watches to go one back.
+    in-out property <int> app-depth;
+    in-out property <int> back-count;
     in-out property <float> launcher-position;
     in-out property <int> brightness: 100;
     in-out property <bool> bluetooth-on: true;
