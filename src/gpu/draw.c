@@ -169,10 +169,13 @@
 #define FRAG_TEX_UNITS			16
 #define MIP_LEVELS			14
 #define TEX_NEAREST			0
+#define TEX_LINEAR			1
 #define TEX_CLAMP_TO_EDGE		1
 #define TEX_SAMP_0(filt, wrap)		((filt) << 2 | (filt) << 4 | (wrap) << 6 | (wrap) << 9 | (wrap) << 12)
 #define TEX_SAMP_1_MAX_LOD(x)		((x) << 12)
-#define TEX_SWIZ_XYZW			(0 << 4 | 1 << 7 | 2 << 10 | 3 << 13)
+#define TEX_SWIZ(x, y, z, w)		((x) << 4 | (y) << 7 | (z) << 10 | (w) << 13)
+#define TEX_SWIZ_XYZW			TEX_SWIZ(0, 1, 2, 3)
+#define TFMT_8_UNORM			0x30
 #define TFMT_8_8_8_8_UNORM		0x33
 #define TEX_2D				1
 #define TEX_CONST_0(swiz, fmt, type)	((swiz) | (fmt) << 22 | (type) << 30)
@@ -516,6 +519,12 @@ void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, con
 
 void gpu_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
 {
+	gpu_draw_texture_format(unit, addr, width, height, pitch_bytes, GPU_TEX_RGBA);
+}
+
+void gpu_draw_texture_format(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes,
+			     enum gpu_tex format)
+{
 	if (unit < 0 || unit >= FRAG_TEX_UNITS) {
 		log_printf("gpu: no texture unit %d\n", unit);
 		return;
@@ -529,12 +538,15 @@ void gpu_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, 
 	pkt3(CP_LOAD_STATE, 4);
 	out(LOAD_STATE_0(slot, SS_DIRECT, SB_FRAG_TEX, 1));
 	out(ST_SHADER);
-	out(TEX_SAMP_0(TEX_NEAREST, TEX_CLAMP_TO_EDGE));
+	out(TEX_SAMP_0(format & GPU_TEX_LINEAR ? TEX_LINEAR : TEX_NEAREST, TEX_CLAMP_TO_EDGE));
+	format &= ~GPU_TEX_LINEAR;
 	out(TEX_SAMP_1_MAX_LOD(8));
 	pkt3(CP_LOAD_STATE, 6);
 	out(LOAD_STATE_0(slot, SS_DIRECT, SB_FRAG_TEX, 1));
 	out(ST_CONSTANTS);
-	out(TEX_CONST_0(TEX_SWIZ_XYZW, TFMT_8_8_8_8_UNORM, TEX_2D));
+	out(format == GPU_TEX_ALPHA ? TEX_CONST_0(TEX_SWIZ(0, 0, 0, 0), TFMT_8_UNORM, TEX_2D) :
+	    format == GPU_TEX_RGBA_ALPHA ? TEX_CONST_0(TEX_SWIZ(3, 3, 3, 3), TFMT_8_8_8_8_UNORM, TEX_2D) :
+	    TEX_CONST_0(TEX_SWIZ_XYZW, TFMT_8_8_8_8_UNORM, TEX_2D));
 	out(TEX_CONST_1(width, height, TEX_PITCHALIGN_128B));
 	out(TEX_CONST_2(MIP_LEVELS * unit, pitch_bytes));
 	out(0);
@@ -544,6 +556,14 @@ void gpu_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, 
 	out(addr);
 	for (int i = 1; i < MIP_LEVELS; i++)
 		out(0);
+}
+
+void gpu_draw_invalidate_textures(void)
+{
+	sync_state();
+	gpu_ring_reserve(8);
+	cp_wfi();
+	reg(REG_UCHE_CACHE_INVALIDATE0, 2, 0, UCHE_INVALIDATE_ENTIRE);
 }
 
 void gpu_draw_blend(bool premultiplied_over)
