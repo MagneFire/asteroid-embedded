@@ -211,7 +211,8 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 	unsigned n = 0;
 	if (b->xfer.busy)
 		return -4;
-	if (wn + 4 > ARRAY_SIZE(e) || rn > 256 || wn + 4 > b->fifo_entries || rn > b->fifo_entries)
+	if (wn > ARRAY_SIZE(e) - 4 || rn > 256 || b->fifo_entries < 4 || wn > b->fifo_entries - 4 ||
+	    rn > b->fifo_entries)
 		return -3;
 	if (wn) {
 		e[n++] = TAG_START | (uint16_t)(addr << 1);
