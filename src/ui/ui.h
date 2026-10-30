@@ -32,7 +32,12 @@
  * button, UI_EVENT_ALARM_RING a button on a ringing alarm or timer,
  * UI_EVENT_ALARM_EDIT the alarm at that index (-1 for a new one) as
  * edited, UI_EVENT_ALARM_DELETE the alarm at that index deleted and
- * UI_EVENT_DISMISS the id of a dismissed notification. */
+ * UI_EVENT_DISMISS the id of a dismissed notification.
+ *
+ * Every ui_* function is called from the main loop only, never from an
+ * interrupt handler, as the UI keeps its state in plain statics. Strings
+ * and arrays passed in are copied before the call returns, and pointers
+ * passed out must be valid for the call only. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
