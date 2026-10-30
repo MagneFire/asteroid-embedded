@@ -38,6 +38,7 @@ unsafe extern "C" {
         edge: u32,
     ) -> bool;
     fn paint_cpu(y0: u32, y1: u32);
+    fn paint_rounded_clip(clip: *const f32);
     fn paint_sync();
     fn paint_end();
     fn paint_finish();
@@ -126,6 +127,12 @@ impl TargetPixelBuffer for GpuLayer<'_> {
 
     fn num_lines(&self) -> usize {
         self.height
+    }
+
+    fn set_rounded_clip(&mut self, clip: Option<[f32; 5]>) {
+        if self.on {
+            unsafe { paint_rounded_clip(clip.as_ref().map_or(core::ptr::null(), |c| c.as_ptr())) };
+        }
     }
 
     fn fill_background(&mut self, brush: &Brush, region: &PhysicalRegion) -> bool {

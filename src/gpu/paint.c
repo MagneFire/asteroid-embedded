@@ -12,7 +12,9 @@
  * cleaned before the GPU blends over them, and the rows the GPU drew are
  * invalidated once it is done. paint_end does not wait for that: the
  * rows are noted and invalidated by paint_finish, or by the next wait,
- * and the vertices of submissions in flight are kept until then. */
+ * and the vertices of submissions in flight are kept until then. While a
+ * rounded clip is set, draws use shader g, which multiplies each pixel by
+ * its coverage of the rounded rectangle. */
 #include <string.h>
 #include "asteroid.h"
 #include "a3xx.h"
@@ -57,6 +59,8 @@ static float *verts;
 static unsigned nverts, first;
 static int kind = NONE;
 static bool copy_mode, begun, drawn, ready;
+static bool rounded, rounded_prog, have_prog;
+static float rounded_clip[5];
 static int dirty_y0, dirty_y1;
 static struct { uint32_t *layer; uint32_t pitch; int y0, y1; } pending[8];
 static unsigned npending;
@@ -96,11 +100,26 @@ static void flush(void)
 		return;
 	if (!begun) {
 		gpu_draw_begin(&target);
-		gpu_draw_program(&shader_f_vs, &shader_f_fs);
+		have_prog = false;
 		begun = true;
 		drawn = false;
 		for (int i = 0; i < 2; i++)
 			atlases[i].changed = false;
+	}
+	if (!have_prog || rounded != rounded_prog) {
+		if (rounded)
+			gpu_draw_program(&shader_g_vs, &shader_g_fs);
+		else
+			gpu_draw_program(&shader_f_vs, &shader_f_fs);
+		have_prog = true;
+		rounded_prog = rounded;
+	}
+	if (rounded) {
+		const float *c = rounded_clip;
+		float w = (float)target.width / 2, h = (float)target.height / 2, cx = (c[0] + c[2]) / 2, cy = (c[1] + c[3]) / 2;
+		float hx = (c[2] - c[0]) / 2 - c[4], hy = (c[3] - c[1]) / 2 - c[4];
+		gpu_draw_consts(GPU_STAGE_VS, 0, (const float[]){ w, -h, w, h, cx, cy, 0, 0 }, 2);
+		gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ 0, 0, hx, hy, c[4], 0, 0, 0 }, 2);
 	}
 	int t = kind & ~TEX_LINEAR;
 	struct atlas *a = &atlases[t == TEX_ALPHA ? 0 : 1];
@@ -130,6 +149,17 @@ static void submit(void)
 	dirty_y1 = 0;
 }
 
+void paint_rounded_clip(const float *clip)
+{
+	bool on = clip != NULL;
+	if (on == rounded && (!on || !memcmp(clip, rounded_clip, sizeof rounded_clip)))
+		return;
+	flush();
+	rounded = on;
+	if (on)
+		memcpy(rounded_clip, clip, sizeof rounded_clip);
+}
+
 void paint_finish(void)
 {
 	if (!npending && nverts == 0)
@@ -153,6 +183,7 @@ bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride
 {
 	if (!gpu_ready() || !setup())
 		return false;
+	rounded = false;
 	if (npending == ARRAY_SIZE(pending))
 		paint_finish();
 	if (!atlases[0].row_h)

@@ -15,7 +15,9 @@
  * of the layer since the last call; paint_sync finishes the GPU's work
  * so the CPU can read and write the layer. paint_end ends the layer
  * without waiting for the GPU; paint_finish waits for all layers ended
- * so far, after which the CPU may read them. */
+ * so far, after which the CPU may read them. paint_rounded_clip limits
+ * what follows to a rounded rectangle, clip being x0, y0, x1, y1 and the
+ * radius, or lifts that with NULL. */
 #ifndef GPU_PAINT_H
 #define GPU_PAINT_H
 #include <stdint.h>
@@ -23,6 +25,7 @@
 
 enum { PAINT_RGB, PAINT_RGBA, PAINT_RGBA_PREMULTIPLIED, PAINT_ALPHA };
 
+void paint_rounded_clip(const float *clip);
 bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px);
 void paint_rect(float x0, float y0, float x1, float y1, const int32_t clip[4], uint32_t color, bool copy);
 bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
