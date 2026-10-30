@@ -18,6 +18,7 @@
 #include "a3xx.h"
 #include "draw.h"
 #include "paint.h"
+#include "ui/ui.h"
 #include "shaders.h"
 
 #define ALPHA_W		1024
@@ -45,6 +46,7 @@ static struct atlas atlases[2] = {
 
 static struct slot {
 	const uint8_t *key;
+	uint32_t sum;
 	uint16_t x, y, w, h;
 	uint8_t atlas;
 } slots[SLOTS];
@@ -298,6 +300,20 @@ static void copy_in(struct atlas *a, uint32_t x, uint32_t y, const uint8_t *data
 	a->changed = true;
 }
 
+/* Texels in the UI heap, such as glyphs rasterised at run time, can be
+ * freed and their address reused for others, so those are told apart by
+ * a checksum of their contents as well. */
+static uint32_t checksum(const uint8_t *data, uint32_t stride, uint32_t bytes, uint32_t height)
+{
+	uint32_t sum = 2166136261u;
+	if ((uintptr_t)data < UI_HEAP_BASE || (uintptr_t)data >= UI_HEAP_BASE + UI_HEAP_SIZE)
+		return 0;
+	for (uint32_t r = 0; r < height; r++)
+		for (uint32_t c = 0; c < bytes; c++)
+			sum = (sum ^ data[r * stride + c]) * 16777619u;
+	return sum;
+}
+
 /* The atlas slot holding the texels for key, copied in from data (or
  * made by make) on first use; the atlases start over, once the GPU is
  * done with them, when there is no room. */
@@ -306,9 +322,10 @@ static struct slot *lookup(const uint8_t *key, const uint8_t *data, uint32_t str
 {
 	unsigned n = format == PAINT_ALPHA ? 0 : 1;
 	struct atlas *a = &atlases[n];
+	uint32_t sum = make ? 0 : checksum(data, stride, width * (format == PAINT_ALPHA ? 1 : format == PAINT_RGB ? 3 : 4), height);
 	bool found;
 	struct slot *s = find(key, width, height, n, &found);
-	if (found)
+	if (found && s->sum == sum)
 		return s;
 	uint32_t x, y;
 	if (!s || !place(a, width, height, &x, &y)) {
@@ -325,7 +342,7 @@ static struct slot *lookup(const uint8_t *key, const uint8_t *data, uint32_t str
 		stride = width;
 	}
 	copy_in(a, x, y, data, stride, width, height, format);
-	*s = (struct slot){ key, (uint16_t)x, (uint16_t)y, (uint16_t)width, (uint16_t)height, (uint8_t)n };
+	*s = (struct slot){ key, sum, (uint16_t)x, (uint16_t)y, (uint16_t)width, (uint16_t)height, (uint8_t)n };
 	return s;
 }
 
