@@ -56,6 +56,7 @@ uint32_t stub_repaints;
 void ui_repaint(uint32_t panel, bool gpu) { stub_repaints++; }
 char stub_notify[1024];
 void notify_feed(const uint8_t *p, unsigned n) { snprintf(stub_notify, sizeof stub_notify, "%.*s", (int)n, (const char *)p); }
+void media_write(uint16_t chr, const uint8_t *p, unsigned n) {}
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_save(const uint8_t addr[6]) { return -1; }

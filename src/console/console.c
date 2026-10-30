@@ -12,6 +12,7 @@
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
 #include "notify/notify.h"
+#include "media/media.h"
 #include "ui/ui.h"
 #include "console.h"
 
@@ -736,6 +737,25 @@ static void xml_text(char *out, size_t size, size_t *len, const char *s)
 	}
 }
 
+/* Plays the phone's part of the media service: the volume, whether it
+ * plays, and the title and artist. */
+static void cmd_media(const char *args)
+{
+	uint32_t vol, playing;
+	if (!parse_num(&args, 10, &vol) || !parse_num(&args, 10, &playing)) {
+		say("usage: media <volume> <playing> <title>|<artist>\n");
+		return;
+	}
+	args = skip_spaces(args);
+	const char *bar = strchr(args, '|');
+	unsigned tn = bar ? (unsigned)(bar - args) : (unsigned)strlen(args);
+	uint8_t v = (uint8_t)(vol > 100 ? 100 : vol), p = playing != 0;
+	media_write(0x7001, (const uint8_t *)args, tn);
+	media_write(0x7003, (const uint8_t *)(bar ? bar + 1 : ""), bar ? (unsigned)strlen(bar + 1) : 0);
+	media_write(0x7004, &p, 1);
+	media_write(0x7006, &v, 1);
+}
+
 static void cmd_notify(const char *args)
 {
 	static uint32_t tests;
@@ -814,6 +834,7 @@ static const struct command commands[] = {
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "shot", "[layer [n]]", cmd_shot },
 	{ "notify", "[text] | remove <n>", cmd_notify },
+	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 	{ "echo", "<text>", cmd_echo },
 };
