@@ -9,6 +9,7 @@ component Toggle {
     in property <image> icon;
     in property <bool> on;
     in property <bool> button;
+    in property <bool> held;
     in property <length> size: 112px;
     callback clicked();
 
@@ -18,7 +19,7 @@ component Toggle {
     Rectangle {
         border-radius: root.size / 2;
         background: #222222;
-        opacity: touch.pressed ? 1 : root.button ? 1 : root.on ? 0.75 : 0.2;
+        opacity: touch.pressed || root.held ? 1 : root.button ? 1 : root.on ? 0.75 : 0.2;
     }
 
     Image {
@@ -43,7 +44,16 @@ export component QuickSettings {
     in-out property <int> page;
     property <length> drag;
     property <bool> dragging;
+    property <bool> swiped;
     property <length> strip: 3 * 112px + 2 * 16px;
+    // The toggle under a press on the strip, which swipes between pages and so takes the press
+    // from the toggles: an index into toggles, or -1.
+    property <length> at: strip-touch.pressed-x + root.page * (root.strip + 16px);
+    property <int> column: Math.floor(self.at / 128px);
+    property <length> left: Math.mod(self.at / 1px, 128) * 1px;
+    property <int> hit: root.page == 0 ? (self.column < 3 && self.left < 112px ? self.column : -1)
+        : self.at - root.strip - 16px >= (root.strip - 112px) / 2 && self.at - root.strip - 16px < (root.strip + 112px) / 2 ? 3 : -1;
+    property <int> held: strip-touch.pressed && !root.dragging ? root.hit : -1;
 
     width: 100%;
     height: 100%;
@@ -93,6 +103,7 @@ export component QuickSettings {
                 Toggle {
                     icon: @image-url("../icons/ios-sunny.svg");
                     on: true;
+                    held: root.held == 0;
                     clicked => {
                         Face.setting-toggled(0);
                     }
@@ -101,6 +112,7 @@ export component QuickSettings {
                 Toggle {
                     icon: Face.bluetooth-on ? @image-url("../icons/ios-bluetooth.svg") : @image-url("../icons/ios-bluetooth-off-outline.svg");
                     on: Face.bluetooth-on;
+                    held: root.held == 1;
                     clicked => {
                         Face.setting-toggled(1);
                     }
@@ -109,6 +121,7 @@ export component QuickSettings {
                 Toggle {
                     icon: @image-url("../icons/ios-watch-vibrating.svg");
                     on: Face.vibration-on;
+                    held: root.held == 2;
                     clicked => {
                         Face.setting-toggled(2);
                     }
@@ -124,6 +137,7 @@ export component QuickSettings {
                 Toggle {
                     icon: Face.aod-on ? @image-url("../icons/ios-watch-aod-on.svg") : @image-url("../icons/ios-watch-aod-off.svg");
                     on: Face.aod-on;
+                    held: root.held == 3;
                     clicked => {
                         Face.setting-toggled(3);
                     }
@@ -131,16 +145,25 @@ export component QuickSettings {
             }
         }
 
-        TouchArea {
+        strip-touch := TouchArea {
+            clicked => {
+                if !root.swiped && root.hit >= 0 {
+                    Face.setting-toggled(root.hit);
+                }
+            }
             moved => {
                 if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 10px {
                     root.dragging = true;
+                    root.swiped = true;
                 }
                 if root.dragging {
                     root.drag = self.mouse-x - self.pressed-x;
                 }
             }
             pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    root.swiped = false;
+                }
                 if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) && root.dragging {
                     root.page = Math.clamp(root.page + (root.drag < -40px ? 1 : root.drag > 40px ? -1 : 0), 0, root.pages - 1);
                     root.drag = 0;
