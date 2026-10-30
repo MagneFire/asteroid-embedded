@@ -137,10 +137,9 @@ void power_request(bool sleep)
 		console_wake = true;
 }
 
-/* The always-on face: shown while asleep unless turned off or the palm
- * covered the screen, drawn on the CPU so the GPU can stay off, with the
- * panel in idle mode at 18 % brightness, AsteroidOS's low power mode
- * level on this watch. */
+/* The always-on face: shown while asleep unless turned off, drawn on
+ * the CPU so the GPU can stay off, with the panel in idle mode at 18 %
+ * brightness, AsteroidOS's low power mode level on this watch. */
 #define AOD_BRIGHTNESS 18
 static bool ambient;
 static uint32_t ambient_minute;
@@ -369,7 +368,7 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
-	bool key_was = false, awake = true, palm = false, ringing = false, ring_timer = false, sw_running = false;
+	bool key_was = false, awake = true, ringing = false, ring_timer = false, sw_running = false;
 	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
 	uint32_t shown_timer = 1, shown_sw = 1;
 	int32_t passkey = -1;
@@ -417,7 +416,6 @@ void main(void)
 			if (t.event == TOUCH_PALM) {
 				log_printf("touch: palm\n");
 				sleep_request |= awake;
-				palm = true;
 				continue;
 			}
 			if (!awake) {
@@ -621,7 +619,7 @@ void main(void)
 				log_printf("alarm: %s\n", ring_timer ? "dismissed" : "snoozed");
 				ringing = false;
 			}
-			ambient = have_ui && !palm && setting_get(SETTING_AOD);
+			ambient = have_ui && setting_get(SETTING_AOD);
 			if (!ambient)
 				display_sleep();
 			if (have_ui) {
@@ -668,7 +666,7 @@ void main(void)
 				stack_indicators();
 			log_printf("wake\n");
 		}
-		sleep_request = wake_request = palm = false;
+		sleep_request = wake_request = false;
 		if (ambient && !awake && pmic_rtc_read() / 60 != ambient_minute) {
 			cpu_clock_slow(false);
 			ambient_draw();
