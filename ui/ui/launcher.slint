@@ -522,15 +522,47 @@ component ThreeByThree {
     }
 }
 
+// The discs of the speed dial, spread evenly around the wheel, pos turning it.
+component Wheel {
+    in property <length> size;
+    in property <float> pos;
+    in property <int> selected;
+    property <int> n: Apps.list.length;
+    property <length> orbit: self.size * 0.355;
+    property <length> disc: self.size / 3.5 * 0.8;
+
+    for app[i] in Apps.list: Rectangle {
+        property <angle> a: (i - root.pos) * 360deg / root.n;
+        x: root.size / 2 + root.orbit * Math.cos(self.a) - root.disc / 2;
+        y: root.size / 2 + root.orbit * Math.sin(self.a) - root.disc / 2;
+        width: root.disc;
+        height: root.disc;
+        border-radius: root.disc / 2;
+        background: root.selected == i ? app.center : #f4f4f4;
+
+        Image {
+            x: root.disc * 0.15;
+            y: root.disc * 0.15;
+            width: root.disc * 0.7;
+            height: self.width;
+            source: app.icon;
+            colorize: root.selected == i ? white : black;
+            opacity: 0.9;
+        }
+    }
+}
+
 // 005-speed-dial: the apps on a wheel, turned by dragging around it, the one at 3 o'clock
-// selected: filled with its colour and named on a bar across the left. A tap opens the selected
-// app, or the disc tapped.
+// selected: filled with its colour and named on a bar across the left, behind which the wheel
+// disappears. The software renderer only clips to rectangles, so the wheel is drawn above,
+// below and right of the bar. A tap opens the selected app, or the disc tapped.
 component SpeedDial {
     in property <length> size: 400px;
     in property <bool> preview;
     property <float> k: self.size / 400px;
     property <int> n: Apps.list.length;
-    property <angle> step: 360deg / Math.max(self.n, 8);
+    property <angle> step: 360deg / self.n;
+    property <length> bar: self.size * 0.26;
     property <length> orbit: self.size * 0.355;
     property <length> disc: self.size / 3.5 * 0.8;
     in-out property <int> index;
@@ -586,24 +618,23 @@ component SpeedDial {
         overflow: elide;
     }
 
-    for app[i] in Apps.list: Rectangle {
-        property <float> rel: Math.mod(Math.mod(i - root.pos, root.n) + root.n, root.n);
-        property <angle> a: (self.rel > root.n / 2 ? self.rel - root.n : self.rel) * root.step;
-        x: root.size / 2 + root.orbit * Math.cos(self.a) - root.disc / 2;
-        y: root.size / 2 + root.orbit * Math.sin(self.a) - root.disc / 2;
-        width: root.disc;
-        height: root.disc;
-        border-radius: root.disc / 2;
-        background: root.selected == i ? app.center : #f4f4f4;
+    for part in [
+        { x: 0, y: 0, w: 1, h: 0.37 },
+        { x: 0, y: 0.63, w: 1, h: 0.37 },
+        { x: 0.5, y: 0.37, w: 0.5, h: 0.26 },
+    ]: Rectangle {
+        x: part.x * root.size;
+        y: part.y * root.size;
+        width: part.w * root.size;
+        height: part.h * root.size;
+        clip: true;
 
-        Image {
-            x: root.disc * 0.15;
-            y: root.disc * 0.15;
-            width: root.disc * 0.7;
-            height: self.width;
-            source: app.icon;
-            colorize: root.selected == i ? white : black;
-            opacity: 0.9;
+        Wheel {
+            x: -parent.x;
+            y: -parent.y;
+            size: root.size;
+            pos: root.pos;
+            selected: root.selected;
         }
     }
 
