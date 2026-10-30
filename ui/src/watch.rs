@@ -1,12 +1,13 @@
 // Slint platform on the firmware: every screen (the watchface, the screens beside it and the
-// overlay) is its own Slint window rendered into its own persistent premultiplied RGBA layer,
-// only where it changed; the caller places and composites the layers on the GPU. All screens
-// get the same state through their Face global.
+// overlay) is its own Slint window rendered into its own persistent premultiplied RGBA layer, only
+// where it changed and on the GPU while it is on; the caller places and composites the layers on
+// the GPU. All screens get the same state through their Face global.
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::time::Duration;
+use crate::paint::GpuLayer;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError, VecModel};
@@ -15,6 +16,7 @@ slint::include_modules!();
 
 unsafe extern "C" {
     fn time_ms() -> u32;
+    fn dcache_clean_invalidate_range(addr: *const u8, size: u32);
 }
 
 const SCREENS: usize = 5;
@@ -89,6 +91,7 @@ fn open(component: &impl ComponentHandle, layer: *mut u32, stride: usize, width:
     component.show().ok()?;
     let layer = unsafe { core::slice::from_raw_parts_mut(layer as *mut PremultipliedRgbaColor, stride * height) };
     layer.fill(PremultipliedRgbaColor::default());
+    unsafe { dcache_clean_invalidate_range(layer.as_ptr() as *const u8, (layer.len() * 4) as u32) };
     window.request_redraw();
     Some(Panel { window, layer })
 }
@@ -351,8 +354,10 @@ pub unsafe extern "C" fn ui_update(panel: u32, x: *mut u32, y: *mut u32, w: *mut
     let Some(ui) = ui() else { return false };
     let Some(panel) = ui.panels.get_mut(panel as usize) else { return false };
     let mut region = None;
-    let (layer, stride) = (&mut *panel.layer, ui.stride);
-    panel.window.draw_if_needed(|renderer| region = Some(renderer.render(layer, stride)));
+    let (layer, stride, width, height) = (&mut *panel.layer, ui.stride, ui.width, ui.height);
+    panel.window.draw_if_needed(|renderer| {
+        region = Some(renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height)))
+    });
     let Some(region) = region else { return false };
     let origin = region.bounding_box_origin();
     let size = region.bounding_box_size();

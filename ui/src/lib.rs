@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+mod paint;
 mod watch;
 
 use core::fmt::Write;

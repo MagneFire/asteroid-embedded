@@ -5,9 +5,10 @@
  * and the overlay drawn over all of them while ui_modal says a
  * notification or the pairing code is up. Per frame, feed touch events to
  * the panel on screen, call ui_tick once, then ui_update per panel
- * repaints its layer where it changed and returns the bounding box of the
- * change; ui_render blends the watchface and overlay layers over a
- * finished XRGB8888 background on the CPU. weekday 0 = Sunday, month 1-12;
+ * repaints its layer where it changed, on the GPU while it is on, and
+ * returns the bounding box of the change; ui_render blends the
+ * watchface and overlay layers over a finished XRGB8888 background on
+ * the CPU. weekday 0 = Sunday, month 1-12;
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
  * code. Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id, and ui_notification_dismissed hands out, one
