@@ -1,0 +1,61 @@
+// For make preview only: one window that takes the sample data as its own properties and
+// shows the screen chosen by `screen` (0 watchface, 1 notifications, 2 weather, 3 music)
+// with the overlay on top, over a backdrop instead of the FlatMesh.
+import "../fonts/NotoSans-Light.ttf";
+import { Face, Note, Day, Watchface } from "face.slint";
+import { NoteList } from "notes.slint";
+import { WeatherScreen } from "weather.slint";
+import { MusicScreen } from "music.slint";
+import { Overlay } from "overlay.slint";
+
+export component Preview inherits Window {
+    in-out property <int> hour <=> Face.hour;
+    in-out property <int> minute <=> Face.minute;
+    in-out property <int> second <=> Face.second;
+    in-out property <int> weekday <=> Face.weekday;
+    in-out property <int> day <=> Face.day;
+    in-out property <int> month <=> Face.month;
+    in-out property <int> battery-percent <=> Face.battery-percent;
+    in-out property <bool> charging <=> Face.charging;
+    in-out property <int> passkey <=> Face.passkey;
+    in-out property <bool> notification-shown <=> Face.notification-shown;
+    in-out property <int> notification-icon <=> Face.notification-icon;
+    in-out property <string> notification-app <=> Face.notification-app;
+    in-out property <string> notification-summary <=> Face.notification-summary;
+    in-out property <string> notification-body <=> Face.notification-body;
+    in-out property <[Note]> notes <=> Face.notes;
+    in-out property <string> media-title <=> Face.media-title;
+    in-out property <string> media-artist <=> Face.media-artist;
+    in-out property <string> media-album <=> Face.media-album;
+    in-out property <bool> media-playing <=> Face.media-playing;
+    in-out property <int> media-volume <=> Face.media-volume;
+    in-out property <bool> weather-valid <=> Face.weather-valid;
+    in-out property <string> weather-city <=> Face.weather-city;
+    in-out property <Day> weather-today <=> Face.weather-today;
+    in-out property <[Day]> weather-forecast <=> Face.weather-forecast;
+    in property <int> screen;
+    in property <brush> backdrop: #303030;
+    in property <bool> round-mask;
+
+    width: 400px;
+    height: 400px;
+    background: root.backdrop;
+    default-font-family: "Noto Sans";
+    default-font-weight: 300;
+
+    if root.screen == 0: Watchface { }
+    if root.screen == 1: NoteList { }
+    if root.screen == 2: WeatherScreen { }
+    if root.screen == 3: MusicScreen { }
+    Overlay { }
+
+    if root.round-mask: Rectangle {
+        x: -100px;
+        y: -100px;
+        width: root.width + 200px;
+        height: root.height + 200px;
+        border-radius: self.width / 2;
+        border-width: 100px;
+        border-color: #000000c0;
+    }
+}

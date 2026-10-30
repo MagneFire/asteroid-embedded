@@ -12,6 +12,7 @@
 #include "gpu/draw.h"
 #include "gpu/shaders.h"
 #include "ui/ui.h"
+#include "ui/stack.h"
 #include "bt/bt.h"
 #include "notify/notify.h"
 #include "sensors/hub.h"
@@ -49,7 +50,7 @@ static void sink_fbcon(const char *s, size_t n)
 static int dot_x = -1, dot_y = -1;
 static bool have_gpu;
 static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
-static uint32_t *const layer = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
+static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
 static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 {
@@ -65,7 +66,7 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
 	if (with_layer)
-		gpu_draw_layer((uint32_t)(uintptr_t)layer, fb.width, fb.height, fb.stride * 4);
+		stack_compose();
 	if (!gpu_draw_end()) {
 		if (gpu_fail++ == 0)
 			log_printf("gpu: draw did not complete\n");
@@ -176,9 +177,13 @@ void main(void)
 	pmic_charger_configure();
 	spm_init();
 	have_gpu = gpu_init() && gpu_selftest();
-	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layer, fb.stride, fb.width, fb.height);
-	if (have_ui)
-		dcache_clean_range(layer, fb.stride * fb.height * 4);
+	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
+					       fb.width, fb.height);
+	if (have_ui) {
+		stack_init(fb.width, fb.height);
+		for (unsigned p = 0; p < UI_PANELS; p++)
+			dcache_clean_range(layers + p * (UI_LAYER_STRIDE / 4), fb.stride * fb.height * 4);
+	}
 	log_printf("ui: %s\n", have_ui ? "ready" : "not started");
 	if (have_display && !have_ui)
 		log_set_sink(sink_fbcon);
@@ -242,7 +247,8 @@ void main(void)
 			}
 			last_activity = now;
 			if (have_ui)
-				ui_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x, t.y);
+				stack_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x,
+					    t.y, now);
 			if (t.event == TOUCH_DOWN) {
 				down_x = t.x;
 				down_y = t.y;
@@ -330,8 +336,10 @@ void main(void)
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 			display_sleep();
-			if (have_ui)
-				ui_home();
+			if (have_ui) {
+				stack_home();
+				ui_hide_notification();
+			}
 			if (have_gpu) {
 				gpu_suspend();
 				gpu_off = true;
@@ -362,20 +370,28 @@ void main(void)
 			uint32_t *buf = display_backbuffer();
 			if (have_ui) {
 				uint32_t u0 = time_us(), x, y, w, h;
-				if (ui_update(&x, &y, &w, &h)) {
-					if (have_gpu)
-						for (uint32_t r = y; r < y + h; r++)
-							dcache_clean_range(layer + r * fb.stride + x, w * 4);
+				bool repainted = false;
+				int sx, sy;
+				stack_update(now);
+				if (stack_moving())
+					last_activity = now;
+				ui_tick();
+				for (unsigned p = 0; p < UI_PANELS; p++)
+					if (ui_update(p, &x, &y, &w, &h)) {
+						uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
+						if (have_gpu)
+							for (uint32_t r = y; r < y + h; r++)
+								dcache_clean_range(layer + r * fb.stride + x, w * 4);
+						repainted = true;
+					}
+				if (repainted) {
 					ui_repaints++;
 					ui_repaint_us += time_us() - u0;
 				}
 				ui_us += time_us() - u0;
 				ui_frames++;
-			}
-			if (have_ui) {
-				float sx = 0, sy = 0;
-				ui_scroll(&sx, &sy);
-				flatmesh_view(1.1f, sx * 0.05f, sy * 0.05f);
+				stack_offset(&sx, &sy);
+				flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f);
 			}
 			if (have_gpu) {
 				gpu_flatmesh(buf, now - t0, have_ui);

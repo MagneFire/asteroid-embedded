@@ -1,0 +1,97 @@
+// Drawn over every screen: a notification that was opened or just came in, or the
+// Bluetooth pairing code. A tap on the notification dismisses it.
+import { NoteIcons } from "note_icons.slint";
+import { Face } from "face.slint";
+
+export component Overlay {
+    width: 100%;
+    height: 100%;
+
+    if Face.notification-shown: Rectangle {
+        background: black;
+
+        Image {
+            x: (root.width - 36px) / 2;
+            y: 16px;
+            width: 36px;
+            height: 36px;
+            source: Face.notification-icon >= 0 ? NoteIcons.list[Face.notification-icon] : @image-url("../icons/ios-alert-outline.svg");
+            colorize: white;
+        }
+
+        Text {
+            x: root.width * 0.15;
+            y: root.height * 0.14;
+            width: root.width * 0.7;
+            height: root.height * 0.08;
+            text: Face.notification-app;
+            color: #ffffffa0;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width * 0.12;
+            y: root.height * 0.23;
+            width: root.width * 0.76;
+            height: root.height * 0.16;
+            text: Face.notification-summary;
+            color: white;
+            font-size: 28px;
+            font-weight: 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width * 0.12;
+            y: root.height * 0.41;
+            width: root.width * 0.76;
+            height: root.height * 0.42;
+            text: Face.notification-body;
+            color: white;
+            font-size: 22px;
+            horizontal-alignment: center;
+            vertical-alignment: top;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        TouchArea {
+            clicked => {
+                Face.notification-shown = false;
+                Face.notification-dismissed(Face.notification-id);
+            }
+        }
+    }
+
+    if Face.passkey >= 0: Rectangle {
+        background: black;
+
+        Text {
+            y: root.height * 0.3;
+            height: root.height * 0.1;
+            width: root.width;
+            text: "Pairing code";
+            color: white;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            y: root.height * 0.42;
+            height: root.height * 0.2;
+            width: root.width;
+            text: Face.two-digits(Math.floor(Face.passkey / 10000)) + Face.two-digits(Math.mod(Math.floor(Face.passkey / 100), 100)) + Face.two-digits(Math.mod(Face.passkey, 100));
+            color: white;
+            font-size: 64px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

@@ -1,0 +1,184 @@
+// The watch state, in the Face global the firmware sets on every Screen, and the watchface
+// itself: time, date, battery and today's weather.
+export struct Note {
+    id: int,
+    icon: int,
+    app: string,
+    summary: string,
+    body: string,
+}
+
+export struct Day {
+    id: int,
+    min: int,
+    max: int,
+}
+
+export global Face {
+    in-out property <int> hour;
+    in-out property <int> minute;
+    in-out property <int> second;
+    in-out property <int> weekday;
+    in-out property <int> day;
+    in-out property <int> month;
+    in-out property <int> battery-percent;
+    in-out property <bool> charging;
+    in-out property <int> passkey: -1;
+    in-out property <bool> notification-shown;
+    in-out property <int> notification-id;
+    in-out property <int> notification-icon: -1;
+    in-out property <string> notification-app;
+    in-out property <string> notification-summary;
+    in-out property <string> notification-body;
+    in-out property <[Note]> notes;
+    in-out property <string> media-title;
+    in-out property <string> media-artist;
+    in-out property <string> media-album;
+    in-out property <bool> media-playing;
+    in-out property <int> media-volume: -1;
+    in-out property <bool> weather-valid;
+    in-out property <string> weather-city;
+    in-out property <Day> weather-today;
+    in-out property <[Day]> weather-forecast;
+    callback notification-opened(int);
+    callback notification-dismissed(int);
+    callback media-action(int);
+
+    public pure function two-digits(n: int) -> string {
+        return (n < 10 ? "0" : "") + n;
+    }
+
+    public pure function condition(id: int) -> string {
+        return id >= 200 && id < 300 ? "Thunderstorm" : id >= 300 && id < 400 ? "Drizzle" : id == 511 ? "Freezing rain" : id >= 500 && id < 600 ? "Rain" : id >= 600 && id < 700 ? "Snow" : id >= 700 && id < 800 ? "Mist" : id == 800 ? "Clear" : id == 801 ? "Partly cloudy" : id > 801 && id < 900 ? "Cloudy" : "Unknown";
+    }
+
+    public pure function weather-icon(id: int) -> image {
+        return id >= 200 && id < 300 ? @image-url("../icons/ios-thunderstorm-outline.svg") : id >= 300 && id < 400 ? @image-url("../icons/ios-drizzle-outline.svg") : id == 511 ? @image-url("../icons/ios-snow-outline.svg") : id >= 500 && id < 600 ? @image-url("../icons/ios-rainy-outline.svg") : id >= 600 && id < 700 ? @image-url("../icons/ios-snow-outline.svg") : id >= 700 && id < 800 ? @image-url("../icons/ios-cloudy-outline.svg") : id == 800 ? @image-url("../icons/ios-sunny-outline.svg") : id == 801 ? @image-url("../icons/ios-partly-sunny-outline.svg") : id > 801 && id < 900 ? @image-url("../icons/ios-cloudy-outline.svg") : @image-url("../icons/ios-alert-outline.svg");
+    }
+}
+
+export component Watchface {
+    property <bool> show-seconds;
+    property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    width: 100%;
+    height: 100%;
+
+    if Face.weather-valid: Text {
+        x: root.width * 0.2;
+        y: root.height * 0.08;
+        width: root.width * 0.6;
+        height: root.height * 0.07;
+        text: Face.condition(Face.weather-today.id) + "  " + Face.weather-today.max + "° / " + Face.weather-today.min + "°";
+        color: #ffffffc0;
+        font-size: 20px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Text {
+        x: 0;
+        y: root.show-seconds ? root.height * 0.17 : root.height * 0.22;
+        width: root.width;
+        height: root.height * 0.36;
+        text: Face.two-digits(Face.hour) + ":" + Face.two-digits(Face.minute);
+        color: white;
+        font-size: 110px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        animate y { duration: 250ms; easing: ease-out; }
+
+        TouchArea {
+            clicked => {
+                root.show-seconds = !root.show-seconds;
+            }
+        }
+    }
+
+    Text {
+        x: 0;
+        y: root.show-seconds ? root.height * 0.5 : root.height * 0.46;
+        width: root.width;
+        height: root.height * 0.12;
+        text: Face.two-digits(Face.second);
+        color: white;
+        font-size: 36px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        opacity: root.show-seconds ? 1 : 0;
+        animate y, opacity { duration: 250ms; easing: ease-out; }
+    }
+
+    Text {
+        x: 0;
+        y: root.height * 0.63;
+        width: root.width;
+        height: root.height * 0.08;
+        text: root.weekdays[Face.weekday];
+        color: white;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Text {
+        x: 0;
+        y: root.height * 0.70;
+        width: root.width;
+        height: root.height * 0.08;
+        text: Face.day + " " + root.months[Face.month - 1];
+        color: white;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    HorizontalLayout {
+        x: 0;
+        width: root.width;
+        y: root.height * 0.82;
+        height: root.height * 0.07;
+        spacing: 8px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 1px;
+                Rectangle {
+                    width: 28px;
+                    height: 14px;
+                    border-width: 1.5px;
+                    border-color: white;
+                    border-radius: 2px;
+                    Rectangle {
+                        x: 3px;
+                        y: 3px;
+                        width: (parent.width - 6px) * clamp(Face.battery-percent, 0, 100) / 100;
+                        height: parent.height - 6px;
+                        background: white;
+                        opacity: Face.charging ? pulse : 1;
+                        property <float> pulse: 0.55 + 0.45 * Math.sin(animation-tick() / 1s * 180deg);
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 2px;
+                        height: 6px;
+                        background: white;
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: (Face.charging ? "+" : "") + Face.battery-percent + "%";
+            color: white;
+            font-size: 20px;
+            vertical-alignment: center;
+        }
+    }
+}

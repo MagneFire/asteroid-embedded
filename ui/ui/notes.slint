@@ -1,0 +1,100 @@
+// The notifications screen: one row per notification, newest first, with its app icon; a
+// tap opens it, the cross dismisses it.
+import { NoteIcons } from "note_icons.slint";
+import { Face } from "face.slint";
+
+export component NoteList {
+    width: 100%;
+    height: 100%;
+
+    Text {
+        y: root.height * 0.07;
+        width: root.width;
+        height: root.height * 0.1;
+        text: Face.notes.length == 0 ? "No notifications" : "Notifications";
+        color: #ffffffa0;
+        font-size: 22px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Flickable {
+        x: root.width * 0.12;
+        y: root.height * 0.18;
+        width: root.width * 0.76;
+        height: root.height * 0.7;
+        content-height: max(self.height, Face.notes.length * 84px);
+
+        for note[i] in Face.notes: Rectangle {
+            y: i * 84px;
+            width: parent.width;
+            height: 76px;
+            border-radius: 14px;
+            background: open.pressed ? #ffffff40 : #ffffff1c;
+
+            Image {
+                x: 14px;
+                y: (parent.height - 32px) / 2;
+                width: 32px;
+                height: 32px;
+                source: note.icon >= 0 ? NoteIcons.list[note.icon] : @image-url("../icons/ios-alert-outline.svg");
+                colorize: white;
+            }
+
+            Text {
+                x: 58px;
+                y: 8px;
+                width: parent.width - 114px;
+                height: 22px;
+                text: note.app;
+                color: #ffffffa0;
+                font-size: 20px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Text {
+                x: 58px;
+                y: 32px;
+                width: parent.width - 114px;
+                height: 34px;
+                text: note.summary;
+                color: white;
+                font-size: 22px;
+                font-weight: 400;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            open := TouchArea {
+                width: parent.width - 56px;
+                clicked => {
+                    Face.notification-opened(note.id);
+                }
+            }
+
+            Rectangle {
+                x: parent.width - 56px;
+                width: 56px;
+                height: parent.height;
+                border-radius: 14px;
+                background: dismiss.pressed ? #ffffff40 : transparent;
+
+                Image {
+                    x: (parent.width - 28px) / 2;
+                    y: (parent.height - 28px) / 2;
+                    width: 28px;
+                    height: 28px;
+                    source: @image-url("../icons/ios-close.svg");
+                    colorize: white;
+                }
+
+                dismiss := TouchArea {
+                    clicked => {
+                        Face.notification-dismissed(note.id);
+                    }
+                }
+            }
+        }
+    }
+}

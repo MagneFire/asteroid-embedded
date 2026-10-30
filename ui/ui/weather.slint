@@ -1,0 +1,124 @@
+// The weather screen: today in the middle, the next days below it.
+import { Face } from "face.slint";
+
+export component WeatherScreen {
+    property <[string]> short-weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    width: 100%;
+    height: 100%;
+
+    if !Face.weather-valid: Text {
+        width: root.width;
+        height: root.height;
+        text: "No weather data";
+        color: #ffffffa0;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if Face.weather-valid: Rectangle {
+        Text {
+            x: root.width * 0.2;
+            y: root.height * 0.08;
+            width: root.width * 0.6;
+            height: root.height * 0.08;
+            text: Face.weather-city;
+            color: #ffffffa0;
+            font-size: 22px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Image {
+            x: (root.width - 88px) / 2;
+            y: root.height * 0.17;
+            width: 88px;
+            height: 88px;
+            source: Face.weather-icon(Face.weather-today.id);
+            colorize: white;
+        }
+
+        Text {
+            y: root.height * 0.4;
+            width: root.width;
+            height: root.height * 0.07;
+            text: Face.condition(Face.weather-today.id);
+            color: white;
+            font-size: 22px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        HorizontalLayout {
+            y: root.height * 0.47;
+            width: root.width;
+            height: root.height * 0.13;
+            alignment: center;
+            spacing: 18px;
+
+            Text {
+                text: Face.weather-today.max + "°";
+                color: white;
+                font-size: 36px;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: Face.weather-today.min + "°";
+                color: #ffffffa0;
+                font-size: 36px;
+                vertical-alignment: center;
+            }
+        }
+
+        HorizontalLayout {
+            y: root.height * 0.62;
+            width: root.width;
+            height: root.height * 0.22;
+            alignment: center;
+            spacing: 4px;
+
+            for day[i] in Face.weather-forecast: VerticalLayout {
+                width: 72px;
+                alignment: start;
+
+                Text {
+                    text: root.short-weekdays[Math.mod(Face.weekday + i + 1, 7)];
+                    color: #ffffffa0;
+                    font-size: 20px;
+                    horizontal-alignment: center;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+
+                    Image {
+                        width: 36px;
+                        height: 36px;
+                        source: Face.weather-icon(day.id);
+                        colorize: white;
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 4px;
+
+                    Text {
+                        text: day.max + "°";
+                        color: white;
+                        font-size: 20px;
+                    }
+
+                    Text {
+                        text: day.min + "°";
+                        color: #ffffffa0;
+                        font-size: 20px;
+                    }
+                }
+            }
+        }
+    }
+}
