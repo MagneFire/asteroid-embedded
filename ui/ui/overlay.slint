@@ -1,7 +1,8 @@
 // Drawn over every screen: a notification that was opened or just came in, the
-// Bluetooth pairing code, or a ringing alarm or timer with Snooze and Dismiss.
+// Bluetooth pairing code, or a ringing alarm or timer with dismiss and snooze buttons.
 import { NoteIcons } from "note_icons.slint";
 import { Face } from "face.slint";
+import { IconButton, StatusPage } from "controls.slint";
 
 export component Overlay {
     width: 100%;
@@ -78,81 +79,99 @@ export component Overlay {
         }
     }
 
+    // BluetoothAgent: a light disc with a drop shadow, a grey Bluetooth icon and the pass key.
     if Face.passkey >= 0: Rectangle {
-        background: black;
+        Rectangle {
+            x: 58px;
+            y: 58px;
+            width: 284px;
+            height: 284px;
+            border-radius: 142px;
+            background: #00000040;
+        }
 
-        Text {
-            y: root.height * 0.3;
-            height: root.height * 0.1;
-            width: root.width;
-            text: "Pairing code";
-            color: white;
-            font-size: 24px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+        Rectangle {
+            x: 60px;
+            y: 60px;
+            width: 280px;
+            height: 280px;
+            border-radius: 140px;
+            background: #f4f4f4;
+        }
+
+        Image {
+            x: 160px;
+            y: 80px;
+            width: 80px;
+            height: 80px;
+            source: @image-url("../icons/ios-bluetooth.svg");
+            colorize: #666666;
         }
 
         Text {
-            y: root.height * 0.42;
-            height: root.height * 0.2;
-            width: root.width;
+            x: 60px;
+            y: 172px;
+            width: 280px;
+            text: "Pass Key:";
+            color: #666666;
+            font-size: 20px;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            x: 60px;
+            y: 200px;
+            width: 280px;
+            height: 40px;
             text: Face.two-digits(Math.floor(Face.passkey / 10000)) + Face.two-digits(Math.mod(Math.floor(Face.passkey / 100), 100)) + Face.two-digits(Math.mod(Face.passkey, 100));
-            color: white;
-            font-size: 64px;
+            color: #666666;
+            font-size: 28px;
+            font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
     }
 
+    // The alarm presenter: a dark mesh, the alarm or timer icon in a disc, the alarm's time (or
+    // the timer's duration) at the bottom, dismiss on the left and snooze (or, for the timer,
+    // start again) on the right.
     if Face.alarm-ringing: Rectangle {
-        background: black;
+        background: @radial-gradient(circle, #333333 0%, #000000 100%);
 
-        Text {
-            x: 0;
-            y: root.height * 0.14;
-            width: root.width;
-            height: root.height * 0.1;
-            text: Face.ringing-timer ? "Timer" : "Alarm";
-            color: #ffffffa0;
-            font-size: 24px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+        StatusPage {
+            icon: Face.ringing-timer ? @image-url("../icons/ios-timer-outline.svg") : @image-url("../icons/ios-alarm-outline.svg");
         }
 
         Text {
-            x: 0;
-            y: root.height * 0.25;
-            width: root.width;
-            height: root.height * 0.25;
-            text: Face.two-digits(Face.hour) + ":" + Face.two-digits(Face.minute);
+            x: 76px;
+            y: 224px;
+            width: 248px;
+            height: 176px;
+            text: Face.ringing-timer ? Face.two-digits(Math.floor(Face.timer-set-ms / 3600000)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 60000), 60)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 1000), 60)) : (Face.clock12 ? Face.two-digits(Math.mod(Face.hour, 12)) : Face.two-digits(Face.hour)) + ":" + Face.two-digits(Face.minute) + (Face.clock12 ? (Face.hour >= 12 ? "PM" : "AM") : "");
             color: white;
-            font-size: 80px;
+            font-size: Face.ringing-timer ? 32px : 60px;
             horizontal-alignment: center;
             vertical-alignment: center;
+            wrap: word-wrap;
         }
 
-        for action[i] in ["Snooze", "Dismiss"]: Rectangle {
-            visible: i == 1 || !Face.ringing-timer;
-            x: Face.ringing-timer ? (root.width - self.width) / 2 : root.width * 0.5 + (i == 0 ? -128px : 8px);
-            y: root.height * 0.6;
-            width: 120px;
-            height: 64px;
-            border-radius: 32px;
-            background: touch.pressed ? #ffffff70 : #ffffff30;
-
-            Text {
-                width: parent.width;
-                height: parent.height;
-                text: action;
-                color: white;
-                font-size: 22px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+        IconButton {
+            x: 12px;
+            y: 160px;
+            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            clicked => {
+                Face.alarm-action(1);
             }
+        }
 
-            touch := TouchArea {
-                clicked => {
-                    Face.alarm-action(i);
+        IconButton {
+            x: 308px;
+            y: 160px;
+            icon: Face.ringing-timer ? @image-url("../icons/ios-refresh-circle-outline.svg") : @image-url("../icons/ios-sleep-circle-outline.svg");
+            clicked => {
+                Face.alarm-action(0);
+                if Face.ringing-timer {
+                    Face.clock-action(20);
                 }
             }
         }
