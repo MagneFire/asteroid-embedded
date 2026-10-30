@@ -20,6 +20,7 @@
 #include "media/media.h"
 #include "weather/weather.h"
 #include "screenshot/screenshot.h"
+#include "storage/storage.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -100,6 +101,56 @@ void power_request(bool sleep)
 		console_sleep = true;
 	else
 		console_wake = true;
+}
+
+/* The always-on face: shown while asleep unless turned off or the palm
+ * covered the screen, drawn on the CPU so the GPU can stay off, with the
+ * panel in idle mode. */
+#define KV_AOD "aod"
+static bool aod = true, aod_loaded, ambient;
+static uint32_t ambient_minute;
+
+bool aod_enabled(void)
+{
+	if (!aod_loaded) {
+		uint8_t v;
+		if (kv_get(KV_AOD, &v, 1) == 1)
+			aod = v;
+		aod_loaded = true;
+	}
+	return aod;
+}
+
+void aod_set(bool on)
+{
+	uint8_t v = on;
+	aod = on;
+	aod_loaded = true;
+	kv_set(KV_AOD, &v, 1);
+}
+
+static void ambient_draw(void)
+{
+	struct civil c;
+	uint32_t rtc = pmic_rtc_read(), x, y, w, h, *buf = display_backbuffer();
+	civil_from_epoch(rtc, &c);
+	ambient_minute = rtc / 60;
+	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
+	ui_set_battery(bms_percent(), pmic_charging());
+	ui_tick();
+	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
+	for (unsigned i = 0; i < ARRAY_SIZE(panels); i++) {
+		unsigned p = panels[i];
+		if (ui_update(p, &x, &y, &w, &h)) {
+			uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
+			stack_damage(p, x, y, w, h);
+			for (uint32_t r = y; r < y + h; r++)
+				dcache_clean_range(layer + r * fb.stride + x, w * 4);
+		}
+	}
+	memset(buf, 0, fb.stride * fb.height * 4);
+	ui_render(buf, fb.stride);
+	display_flip();
 }
 
 static void bluetooth_start(void)
@@ -203,7 +254,7 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
-	bool key_was = false, awake = true;
+	bool key_was = false, awake = true, palm = false;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
@@ -241,6 +292,7 @@ void main(void)
 			if (t.event == TOUCH_PALM) {
 				log_printf("touch: palm\n");
 				sleep_request |= awake;
+				palm = true;
 				continue;
 			}
 			if (!awake) {
@@ -338,7 +390,9 @@ void main(void)
 			console_sleep = console_wake = false;
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
-			display_sleep();
+			ambient = have_ui && !palm && aod_enabled();
+			if (!ambient)
+				display_sleep();
 			if (have_ui) {
 				stack_home();
 				ui_hide_notification();
@@ -346,6 +400,11 @@ void main(void)
 			if (have_gpu) {
 				gpu_suspend();
 				gpu_off = true;
+			}
+			if (ambient) {
+				ui_set_ambient(true);
+				ambient_draw();
+				display_idle(true);
 			}
 			timer_set_period(1000);
 			cpu_clock_slow(true);
@@ -361,14 +420,25 @@ void main(void)
 				log_printf("gpu: resumed in %lu us\n", time_us() - g0);
 			}
 			timer_set_period(1);
-			display_wake();
+			if (ambient) {
+				ui_set_ambient(false);
+				display_idle(false);
+				ambient = false;
+			} else {
+				display_wake();
+			}
 			awake = true;
 			asleep_ms += now - asleep_t;
 			last_activity = now = time_ms();
 			last_clock = 0;
 			log_printf("wake\n");
 		}
-		sleep_request = wake_request = false;
+		sleep_request = wake_request = palm = false;
+		if (ambient && !awake && pmic_rtc_read() / 60 != ambient_minute) {
+			cpu_clock_slow(false);
+			ambient_draw();
+			cpu_clock_slow(true);
+		}
 		if (have_display && awake) {
 			uint32_t *buf = display_backbuffer();
 			if (have_ui) {
@@ -503,6 +573,9 @@ void main(void)
 					next = lpm;
 				if (have_hub && !hub_can_sleep() && next > 50)
 					next = 50;
+				uint32_t minute = (60 - pmic_rtc_read() % 60) * 1000;
+				if (ambient && minute < next)
+					next = minute;
 			}
 			bool long_sleep = !awake && next > 1000;
 			if (long_sleep) {

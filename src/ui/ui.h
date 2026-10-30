@@ -15,7 +15,8 @@
  * pops one of them up by id, and ui_notification_dismissed hands out, one
  * per call, the ids the user dismissed. ui_media_action returns the next
  * pressed music button or -1. Weather days start today, temperatures in
- * degrees Celsius, a volume below 0 is unknown. */
+ * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
+ * the watchface to its always-on form. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -43,6 +44,7 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 	     uint32_t height);
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month);
 void ui_set_battery(uint32_t percent, bool charging);
+void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);
 void ui_clear_notifications(void);
 void ui_add_notification(int32_t id, const char *app, uint32_t app_len, const char *summary, uint32_t summary_len,

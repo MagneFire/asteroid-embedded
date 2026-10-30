@@ -144,6 +144,15 @@ static void cmd_bright(const char *args)
 static void cmd_sleep(const char *args) { power_request(true); }
 static void cmd_wake(const char *args) { power_request(false); }
 
+static void cmd_aod(const char *args)
+{
+	if (!strcmp(args, "on") || !strcmp(args, "off"))
+		aod_set(!strcmp(args, "on"));
+	else if (*args)
+		say("usage: aod [on|off]\n");
+	say("aod %s\n", aod_enabled() ? "on" : "off");
+}
+
 static void cmd_rtc(const char *args)
 {
 	uint32_t v;
@@ -759,6 +768,7 @@ static const struct command commands[] = {
 	{ "bright", "<0-255>", cmd_bright },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
+	{ "aod", "[on|off]", cmd_aod },
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes]", cmd_pmic },

@@ -21,6 +21,7 @@ uint32_t display_timeouts(void);
 void display_set_brightness(uint8_t level);
 void display_sleep(void);
 void display_wake(void);
+void display_idle(bool on);
 
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n);
 

@@ -31,6 +31,8 @@ bool cpu_clock_is_slow(void);
 void cpu_clock_park(void);
 void cpu_clock_unpark(void);
 void power_request(bool sleep);
+bool aod_enabled(void);
+void aod_set(bool on);
 
 enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
 bool spm_init(void);

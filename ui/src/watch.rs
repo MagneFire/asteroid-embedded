@@ -177,6 +177,11 @@ pub extern "C" fn ui_set_battery(percent: u32, charging: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_ambient(ambient: bool) {
+    each(|face| face.set_ambient(ambient));
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_passkey(passkey: i32) {
     each(|face| face.set_passkey(passkey));
 }
