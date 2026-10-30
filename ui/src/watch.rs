@@ -330,6 +330,15 @@ pub unsafe extern "C" fn ui_set_build(build: *const u8) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_face(watchface: i32, nightstand_setting: bool, nightstand: bool) {
+    each(|face| {
+        face.set_watchface(watchface);
+        face.set_nightstand_on(nightstand_setting);
+        face.set_nightstand(nightstand);
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_setting_toggled() -> i32 {
     let Some(ui) = ui() else { return -1 };
     pop(&ui.toggled).unwrap_or(-1)

@@ -1,6 +1,8 @@
 // Compiles the .slint files with fonts and icons embedded as pixel data for the software renderer.
 // The notification icons are the AsteroidOS Ionicons set, resized to NOTE_ICON_PX and listed in a
-// generated Slint global, with their sorted names for the lookup by name.
+// generated Slint global, with their sorted names for the lookup by name. The nightstand battery
+// ring is generated too: each of its segments a small SVG cut to its bounding box on a 400 px
+// screen, with its position, since paths cannot be drawn at run time here.
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -48,6 +50,11 @@ fn main() {
     std::fs::write(out.join("note_icons.slint"), slint).unwrap();
     std::fs::write(out.join("note_icons.rs"), rust).unwrap();
 
+    ring(&out);
+    // Sizes only known at run time: the digital watchface's at full size and in nightstand
+    // mode (86 %), and the hour in its 160 px preview.
+    unsafe { std::env::set_var("SLINT_FONT_SIZES", "144,124,72,62,58,30,26,22") };
+
     let config = slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRenderer)
         .with_include_paths(vec![out]);
@@ -55,4 +62,37 @@ fn main() {
     println!("cargo:rerun-if-changed=fonts");
     println!("cargo:rerun-if-changed=icons");
     println!("cargo:rerun-if-changed={ICON_DIR}");
+}
+
+/// 50 segments of 1.2 degrees, 7.2 degrees apart from 12 o'clock clockwise, between radius
+/// 0.395 and 0.45 of the screen.
+fn ring(out: &std::path::Path) {
+    const SIZE: f64 = 400.0;
+    let dir = out.join("ring");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut slint = String::from("export global Ring {\n    out property <[{img: image, x: length, y: length}]> segments: [\n");
+    for i in 0..50 {
+        let a0 = (-90.0 + i as f64 * 7.2_f64).to_radians();
+        let a1 = a0 + 1.2_f64.to_radians();
+        let pts: Vec<(f64, f64)> = [(0.395, a0), (0.45, a0), (0.45, a1), (0.395, a1)]
+            .iter()
+            .map(|&(r, a)| (SIZE / 2.0 + r * SIZE * a.cos(), SIZE / 2.0 + r * SIZE * a.sin()))
+            .collect();
+        let x0 = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min).floor();
+        let y0 = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min).floor();
+        let x1 = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max).ceil();
+        let y1 = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max).ceil();
+        let poly: Vec<String> = pts.iter().map(|p| format!("{:.2},{:.2}", p.0 - x0, p.1 - y0)).collect();
+        let svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\"><polygon points=\"{}\" fill=\"white\"/></svg>",
+            poly.join(" "),
+            w = x1 - x0,
+            h = y1 - y0
+        );
+        let path = dir.join(format!("{i}.svg"));
+        std::fs::write(&path, svg).unwrap();
+        writeln!(slint, "        {{ img: @image-url(\"{}\"), x: {x0}px, y: {y0}px }},", path.display()).unwrap();
+    }
+    slint.push_str("    ];\n}\n");
+    std::fs::write(out.join("ring.slint"), slint).unwrap();
 }

@@ -126,6 +126,8 @@ static void ambient_draw(void)
 	ambient_minute = rtc / 60;
 	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
 	ui_set_battery(bms_percent(), pmic_charging());
+	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
+		    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
 	ui_tick();
 	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
 	for (unsigned i = 0; i < ARRAY_SIZE(panels); i++) {
@@ -156,10 +158,13 @@ static void bluetooth_start(void)
 		log_printf("bt: host failed (%d)\n", r);
 }
 
+/* Nightstand mode is in effect while the watch is on its charger. */
 static void show_settings(void)
 {
 	ui_set_settings(setting_get(SETTING_BRIGHTNESS), setting_get(SETTING_BLUETOOTH), setting_get(SETTING_VIBRATION),
 			setting_get(SETTING_AOD), setting_get(SETTING_CLOCK12));
+	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
+		    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
 }
 
 static void set_brightness(void)
@@ -178,6 +183,8 @@ static void setting_toggled(int s)
 			b = s == UI_BRIGHTNESS_UP ? (b + 10 > 100 ? 100 : b + 10) : (b - 10 < 10 ? 10 : b - 10);
 		setting_set(SETTING_BRIGHTNESS, b);
 		set_brightness();
+	} else if (s >= UI_WATCHFACE_FIRST && s < UI_WATCHFACE_FIRST + 2) {
+		setting_set(SETTING_WATCHFACE, s - UI_WATCHFACE_FIRST);
 	} else if (s == UI_FORGET_PHONE) {
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 	} else if (s == SETTING_BLUETOOTH) {
@@ -674,6 +681,8 @@ void main(void)
 				show_weather();
 			}
 			ui_set_battery(bms_percent(), pmic_charging());
+			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
+				    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
 		}
 		if (!awake && now - last >= ASLEEP_STATS_MS) {
 			last = now;

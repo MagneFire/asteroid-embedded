@@ -20,7 +20,9 @@
  * with ui_set_app; ui_app_opened returns the next app picked in the
  * launcher, or -1. ui_set_settings shows the settings (brightness in
  * per cent) and ui_setting_toggled returns the next one the user
- * changed, as an enum setting or enum ui_action, or -1. ui_set_alarms
+ * changed, as an enum setting or enum ui_action (UI_WATCHFACE_FIRST + n
+ * picks watchface n), or -1. ui_set_face selects the watchface and
+ * whether nightstand mode is on and in effect. ui_set_alarms
  * takes 4 bytes per alarm (hour, minute, weekdays, on); ui_alarm_edit
  * returns the next change made in the alarm app, packed as index + 1
  * (0 new) in bits 0-7, hour 8-12, minute 13-18, weekdays 19-25, on 26
@@ -54,7 +56,7 @@ enum ui_clock_action {
 	UI_STOPWATCH_RESET,
 };
 enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
-enum ui_action { UI_BRIGHTNESS_DOWN = 10, UI_BRIGHTNESS_UP, UI_FORGET_PHONE };
+enum ui_action { UI_BRIGHTNESS_DOWN = 10, UI_BRIGHTNESS_UP, UI_FORGET_PHONE, UI_WATCHFACE_FIRST };
 enum ui_media_action {
 	UI_MEDIA_PREVIOUS,
 	UI_MEDIA_NEXT,
@@ -83,6 +85,7 @@ int ui_media_action(void);
 int ui_app_opened(void);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);
+void ui_set_face(int watchface, bool nightstand_setting, bool nightstand);
 void ui_set_alarms(const uint8_t *rec, uint32_t n);
 int ui_alarm_edit(void);
 void ui_set_ringing(bool ringing, bool timer);

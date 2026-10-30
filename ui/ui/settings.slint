@@ -1,7 +1,9 @@
-// The Settings app: the quick settings and a few more, in a list that scrolls. Rows call
-// setting-toggled with the firmware's enum setting, or 10/11 to step the brightness down/up
-// and 12 to forget the paired phone.
-import { Face } from "face.slint";
+// The Settings app: the quick settings and a few more, in a list that scrolls, and a page that
+// picks the watchface from previews of each. Rows call setting-toggled with the firmware's enum
+// setting, or 10/11 to step the brightness down/up, 12 to forget the paired phone and 13 + n to
+// pick watchface n.
+import { Face, Watchface } from "face.slint";
+import { DigitalFace } from "digital.slint";
 
 component Row {
     in property <string> label;
@@ -72,8 +74,68 @@ component Step inherits Rectangle {
 }
 
 export component SettingsApp {
+    in-out property <int> page;
+
     width: 100%;
     height: 100%;
+
+    if root.page == 1: Rectangle {
+        Text {
+            x: 0;
+            y: root.height * 0.06;
+            width: root.width;
+            height: root.height * 0.1;
+            text: "Watchface";
+            color: white;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        for name[i] in ["Digital", "Classic"]: Rectangle {
+            x: root.width / 2 + (i == 0 ? -170px : 10px);
+            y: root.height * 0.28;
+            width: 160px;
+            height: 190px;
+
+            Rectangle {
+                width: 160px;
+                height: 160px;
+                border-radius: 80px;
+                clip: true;
+                background: #00000060;
+                border-width: Face.watchface == i ? 3px : 0;
+                border-color: white;
+
+                if i == 0: DigitalFace {
+                    size: 160px;
+                    preview: true;
+                }
+                if i == 1: Watchface {
+                    size: 160px;
+                }
+            }
+
+            Text {
+                y: 164px;
+                width: parent.width;
+                height: 26px;
+                text: name;
+                color: white;
+                font-size: 18px;
+                horizontal-alignment: center;
+            }
+
+            TouchArea {
+                clicked => {
+                    Face.setting-toggled(13 + i);
+                    root.page = 0;
+                }
+            }
+        }
+    }
+
+    if root.page == 0: Rectangle {
 
     Text {
         x: 0;
@@ -153,6 +215,22 @@ export component SettingsApp {
             }
 
             Row {
+                label: "Watchface";
+                value: Face.watchface == 0 ? "Digital" : "Classic";
+                clicked => {
+                    root.page = 1;
+                }
+            }
+
+            Row {
+                label: "Nightstand";
+                value: Face.nightstand-on ? "On" : "Off";
+                clicked => {
+                    Face.setting-toggled(6);
+                }
+            }
+
+            Row {
                 label: "Clock";
                 value: Face.clock12 ? "12 hour" : "24 hour";
                 clicked => {
@@ -172,5 +250,6 @@ export component SettingsApp {
                 enabled: false;
             }
         }
+    }
     }
 }

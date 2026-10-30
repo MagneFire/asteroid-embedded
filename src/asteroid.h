@@ -31,7 +31,16 @@ bool cpu_clock_is_slow(void);
 void cpu_clock_park(void);
 void cpu_clock_unpark(void);
 void power_request(bool sleep);
-enum setting { SETTING_BRIGHTNESS, SETTING_BLUETOOTH, SETTING_VIBRATION, SETTING_AOD, SETTING_CLOCK12, SETTINGS };
+enum setting {
+	SETTING_BRIGHTNESS,
+	SETTING_BLUETOOTH,
+	SETTING_VIBRATION,
+	SETTING_AOD,
+	SETTING_CLOCK12,
+	SETTING_WATCHFACE,
+	SETTING_NIGHTSTAND,
+	SETTINGS
+};
 int setting_get(enum setting s);
 void setting_set(enum setting s, int v);
 const char *setting_name(enum setting s);
