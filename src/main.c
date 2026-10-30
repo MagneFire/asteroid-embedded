@@ -15,6 +15,7 @@
 #include "bt/bt.h"
 #include "notify/notify.h"
 #include "sensors/hub.h"
+#include "media/media.h"
 #include "weather/weather.h"
 #include "screenshot/screenshot.h"
 #include "gitrev.h"
@@ -127,6 +128,20 @@ static void vibrate(const char *how)
 		haptics_play(strong, ARRAY_SIZE(strong));
 }
 
+static void show_weather(void)
+{
+	const struct weather *w = weather_get();
+	int32_t ids[WEATHER_DAYS], lo[WEATHER_DAYS], hi[WEATHER_DAYS];
+	uint32_t today = pmic_rtc_read() / 86400, day0 = w->time / 86400;
+	unsigned n = 0;
+	for (uint32_t i = today >= day0 ? today - day0 : WEATHER_DAYS; i < w->days; i++, n++) {
+		ids[n] = w->id[i];
+		lo[n] = (int32_t)w->min[i] - 273;
+		hi[n] = (int32_t)w->max[i] - 273;
+	}
+	ui_set_weather(w->city, strlen(w->city), n, ids, lo, hi);
+}
+
 void main(void)
 {
 	cpu_clock_init();
@@ -184,8 +199,8 @@ void main(void)
 	bool key_was = false, awake = true;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
-	uint32_t shown_seq = 0, newest_seq = 0;
-	int32_t shown_id = 0;
+	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
+	int32_t dismissed_id;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
 	int down_x = 0, down_y = 0;
@@ -265,8 +280,8 @@ void main(void)
 				wake_request = !awake;
 			last_activity = now;
 		}
-		if (have_ui && ui_notification_dismissed() && shown_seq) {
-			notify_dismiss(shown_id);
+		while (have_ui && ui_notification_dismissed(&dismissed_id)) {
+			notify_dismiss(dismissed_id);
 			last_activity = now;
 		}
 		if (notify_serial() != notify_seen) {
@@ -275,22 +290,38 @@ void main(void)
 			const struct notification *top = n ? notify_get(n - 1) : NULL;
 			if ((top ? top->seq : 0) != shown_seq && have_haptics)
 				haptics_play(NULL, 0);
-			if (top && top->seq != shown_seq) {
-				if (have_ui)
-					ui_show_notification(top->app, strlen(top->app), top->summary, strlen(top->summary), top->body,
-							     strlen(top->body));
-				if (top->seq > newest_seq) {
-					newest_seq = top->seq;
-					if (have_haptics)
-						vibrate(top->vibrate);
-					wake_request = !awake;
+			if (have_ui) {
+				ui_clear_notifications();
+				for (unsigned i = n; i--;) {
+					const struct notification *e = notify_get(i);
+					ui_add_notification(e->id, e->app, strlen(e->app), e->summary, strlen(e->summary), e->body,
+							    strlen(e->body), e->icon, strlen(e->icon));
 				}
+			}
+			if (top && top->seq > newest_seq) {
+				newest_seq = top->seq;
+				if (have_ui)
+					ui_show_notification(top->id);
+				if (have_haptics)
+					vibrate(top->vibrate);
+				wake_request = !awake;
 				last_activity = now;
-			} else if (!top && shown_seq && have_ui) {
-				ui_hide_notification();
 			}
 			shown_seq = top ? top->seq : 0;
-			shown_id = top ? top->id : 0;
+		}
+		if (have_ui && media_serial() != media_seen) {
+			media_seen = media_serial();
+			const struct media *m = media_get();
+			ui_set_media(m->title, strlen(m->title), m->artist, strlen(m->artist), m->album, strlen(m->album),
+				     m->playing, m->volume);
+		}
+		for (int action; have_ui && (action = ui_media_action()) >= 0;) {
+			media_command((unsigned)action);
+			last_activity = now;
+		}
+		if (have_ui && weather_serial() != weather_seen) {
+			weather_seen = weather_serial();
+			show_weather();
 		}
 		if (console_sleep || console_wake) {
 			sleep_request |= console_sleep && awake;
@@ -299,6 +330,8 @@ void main(void)
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 			display_sleep();
+			if (have_ui)
+				ui_home();
 			if (have_gpu) {
 				gpu_suspend();
 				gpu_off = true;
@@ -339,6 +372,11 @@ void main(void)
 				ui_us += time_us() - u0;
 				ui_frames++;
 			}
+			if (have_ui) {
+				float sx = 0, sy = 0;
+				ui_scroll(&sx, &sy);
+				flatmesh_view(1.1f, sx * 0.05f, sy * 0.05f);
+			}
 			if (have_gpu) {
 				gpu_flatmesh(buf, now - t0, have_ui);
 			} else {
@@ -355,8 +393,13 @@ void main(void)
 		if (have_ui && awake && (!last_clock || now - last_clock >= 1000)) {
 			last_clock = now;
 			struct civil c;
-			civil_from_epoch(pmic_rtc_read(), &c);
+			uint32_t rtc = pmic_rtc_read();
+			civil_from_epoch(rtc, &c);
 			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
+			if (rtc / 86400 != weather_day) {
+				weather_day = rtc / 86400;
+				show_weather();
+			}
 			ui_set_battery(pmic_battery_percent(), pmic_charging());
 		}
 		if (!awake && now - last >= ASLEEP_STATS_MS) {

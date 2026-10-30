@@ -7,3 +7,6 @@
 [submodule "third_party/mbedtls"]
 	path = third_party/mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls
+[submodule "third_party/asteroid-icons-ion"]
+	path = third_party/asteroid-icons-ion
+	url = https://github.com/AsteroidOS/asteroid-icons-ion

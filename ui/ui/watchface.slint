@@ -1,5 +1,22 @@
-// Digital watchface drawn over the animated background: time, date, battery.
+// Watch UI drawn over the animated background: the watchface with, as on AsteroidOS, the
+// notifications to its left (swipe right), today's weather to its right (swipe left) and the
+// music controls below it (swipe up); the opposite swipe goes back.
 import "../fonts/NotoSans-Light.ttf";
+import { NoteIcons } from "note_icons.slint";
+
+export struct Note {
+    id: int,
+    icon: int,
+    app: string,
+    summary: string,
+    body: string,
+}
+
+export struct Day {
+    id: int,
+    min: int,
+    max: int,
+}
 
 export component Watchface inherits Window {
     in property <int> hour;
@@ -11,129 +28,641 @@ export component Watchface inherits Window {
     in property <int> battery-percent;
     in property <bool> charging;
     in property <int> passkey: -1;
-    in property <bool> notification-shown;
-    in property <string> notification-app;
-    in property <string> notification-summary;
-    in property <string> notification-body;
-    callback notification-dismissed();
+    in-out property <bool> notification-shown;
+    in-out property <int> notification-id;
+    in-out property <int> notification-icon: -1;
+    in-out property <string> notification-app;
+    in-out property <string> notification-summary;
+    in-out property <string> notification-body;
+    in property <[Note]> notes;
+    in property <string> media-title;
+    in property <string> media-artist;
+    in property <string> media-album;
+    in property <bool> media-playing;
+    in property <int> media-volume: -1;
+    in property <bool> weather-valid;
+    in property <string> weather-city;
+    in property <Day> weather-today;
+    in property <[Day]> weather-forecast;
+    in-out property <int> screen;
+    in-out property <length> drag-x;
+    in-out property <length> drag-y;
+    in-out property <bool> dragging;
+    out property <float> scroll-x: face.x / root.width;
+    out property <float> scroll-y: face.y / root.height;
+    in property <brush> backdrop: #00000001;
+    in property <bool> round-mask;
+    callback notification-dismissed(int);
+    callback media-action(int);
     property <bool> show-seconds;
+    property <bool> slide;
+    property <duration> slide-time: root.slide ? 250ms : 0ms;
     property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    property <[string]> short-weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
     pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;
     }
 
-    background: transparent;
-    default-font-family: "Noto Sans";
-    default-font-weight: 300;
+    pure function condition(id: int) -> string {
+        return id >= 200 && id < 300 ? "Thunderstorm" : id >= 300 && id < 400 ? "Drizzle" : id == 511 ? "Freezing rain" : id >= 500 && id < 600 ? "Rain" : id >= 600 && id < 700 ? "Snow" : id >= 700 && id < 800 ? "Mist" : id == 800 ? "Clear" : id == 801 ? "Partly cloudy" : id > 801 && id < 900 ? "Cloudy" : "Unknown";
+    }
 
-    Text {
-        x: 0;
-        y: root.show-seconds ? root.height * 0.17 : root.height * 0.22;
-        width: root.width;
-        height: root.height * 0.36;
-        text: root.two-digits(root.hour) + ":" + root.two-digits(root.minute);
-        color: white;
-        font-size: 110px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        animate y { duration: 250ms; easing: ease-out; }
+    pure function weather-icon(id: int) -> image {
+        return id >= 200 && id < 300 ? @image-url("../icons/ios-thunderstorm-outline.svg") : id >= 300 && id < 400 ? @image-url("../icons/ios-drizzle-outline.svg") : id == 511 ? @image-url("../icons/ios-snow-outline.svg") : id >= 500 && id < 600 ? @image-url("../icons/ios-rainy-outline.svg") : id >= 600 && id < 700 ? @image-url("../icons/ios-snow-outline.svg") : id >= 700 && id < 800 ? @image-url("../icons/ios-cloudy-outline.svg") : id == 800 ? @image-url("../icons/ios-sunny-outline.svg") : id == 801 ? @image-url("../icons/ios-partly-sunny-outline.svg") : id > 801 && id < 900 ? @image-url("../icons/ios-cloudy-outline.svg") : @image-url("../icons/ios-alert-outline.svg");
+    }
 
-        TouchArea {
-            clicked => {
-                root.show-seconds = !root.show-seconds;
-            }
+    public pure function scrolls-vertically() -> bool {
+        return root.screen == 1 && !root.notification-shown && root.passkey < 0;
+    }
+
+    public function swipe(direction: int) {
+        if root.passkey >= 0 {
+            return;
+        }
+        if root.notification-shown {
+            root.notification-shown = false;
+            return;
+        }
+        root.slide = true;
+        if root.screen == 0 {
+            root.screen = direction == 1 ? 1 : direction == 0 ? 2 : direction == 2 ? 3 : 0;
+        } else if (root.screen == 1 && direction == 0) || (root.screen == 2 && direction == 1) || (root.screen == 3 && direction == 3) {
+            root.screen = 0;
         }
     }
 
-    Text {
-        x: 0;
-        y: root.show-seconds ? root.height * 0.5 : root.height * 0.46;
-        width: root.width;
-        height: root.height * 0.12;
-        text: root.two-digits(root.second);
-        color: white;
-        font-size: 36px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        opacity: root.show-seconds ? 1 : 0;
-        animate y, opacity { duration: 250ms; easing: ease-out; }
+    public function drag(dx: length, dy: length) {
+        if root.passkey >= 0 || root.notification-shown {
+            return;
+        }
+        root.dragging = true;
+        root.drag-x = root.screen == 0 ? clamp(dx, -root.width, root.width) : root.screen == 1 ? clamp(dx, -root.width, 0) : root.screen == 2 ? clamp(dx, 0, root.width) : 0;
+        root.drag-y = root.screen == 0 ? clamp(dy, -root.height, 0) : root.screen == 3 ? clamp(dy, 0, root.height) : 0;
     }
 
-    Text {
-        x: 0;
-        y: root.height * 0.63;
-        width: root.width;
-        height: root.height * 0.08;
-        text: root.weekdays[root.weekday];
-        color: white;
-        font-size: 24px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    public function release(flick: bool) {
+        if !root.dragging {
+            return;
+        }
+        let x = root.drag-x;
+        let y = root.drag-y;
+        root.slide = true;
+        root.dragging = false;
+        root.drag-x = 0;
+        root.drag-y = 0;
+        if abs(x) > root.width * 0.3 || abs(y) > root.height * 0.3 || (flick && (x != 0 || y != 0)) {
+            root.swipe(abs(x) >= abs(y) ? (x > 0 ? 1 : 0) : (y < 0 ? 2 : 3));
+        }
     }
 
-    Text {
-        x: 0;
-        y: root.height * 0.70;
-        width: root.width;
-        height: root.height * 0.08;
-        text: root.day + " " + root.months[root.month - 1];
-        color: white;
-        font-size: 24px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    public function home() {
+        root.slide = false;
+        root.screen = 0;
+        root.notification-shown = false;
     }
 
-    HorizontalLayout {
-        x: 0;
-        width: root.width;
-        y: root.height * 0.82;
-        height: root.height * 0.07;
-        spacing: 8px;
-        alignment: center;
+    function open-note(note: Note) {
+        root.notification-id = note.id;
+        root.notification-icon = note.icon;
+        root.notification-app = note.app;
+        root.notification-summary = note.summary;
+        root.notification-body = note.body;
+        root.notification-shown = true;
+    }
 
-        VerticalLayout {
-            alignment: center;
-            HorizontalLayout {
-                spacing: 1px;
-                Rectangle {
-                    width: 28px;
-                    height: 14px;
-                    border-width: 1.5px;
-                    border-color: white;
-                    border-radius: 2px;
-                    Rectangle {
-                        x: 3px;
-                        y: 3px;
-                        width: (parent.width - 6px) * clamp(root.battery-percent, 0, 100) / 100;
-                        height: parent.height - 6px;
-                        background: white;
-                        opacity: root.charging ? pulse : 1;
-                        property <float> pulse: 0.55 + 0.45 * Math.sin(animation-tick() / 1s * 180deg);
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 2px;
-                        height: 6px;
-                        background: white;
-                    }
+    background: root.backdrop;
+    default-font-family: "Noto Sans";
+    default-font-weight: 300;
+
+    Rectangle {
+        background: black;
+        opacity: max(abs(face.x / root.width), abs(face.y / root.height)) * 0.4;
+    }
+
+    face := Rectangle {
+        x: (root.screen == 1 ? root.width : root.screen == 2 ? -root.width : 0) + (root.dragging ? root.drag-x : 0);
+        y: (root.screen == 3 ? -root.height : 0) + (root.dragging ? root.drag-y : 0);
+        width: root.width;
+        height: root.height;
+        animate x, y { duration: root.dragging ? 0ms : root.slide-time; easing: ease-out; }
+
+        if root.weather-valid: Text {
+            x: root.width * 0.2;
+            y: root.height * 0.08;
+            width: root.width * 0.6;
+            height: root.height * 0.07;
+            text: root.condition(root.weather-today.id) + "  " + root.weather-today.max + "° / " + root.weather-today.min + "°";
+            color: #ffffffc0;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Text {
+            x: 0;
+            y: root.show-seconds ? root.height * 0.17 : root.height * 0.22;
+            width: root.width;
+            height: root.height * 0.36;
+            text: root.two-digits(root.hour) + ":" + root.two-digits(root.minute);
+            color: white;
+            font-size: 110px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            animate y { duration: 250ms; easing: ease-out; }
+
+            TouchArea {
+                clicked => {
+                    root.show-seconds = !root.show-seconds;
                 }
             }
         }
 
         Text {
-            text: (root.charging ? "+" : "") + root.battery-percent + "%";
+            x: 0;
+            y: root.show-seconds ? root.height * 0.5 : root.height * 0.46;
+            width: root.width;
+            height: root.height * 0.12;
+            text: root.two-digits(root.second);
             color: white;
-            font-size: 20px;
+            font-size: 36px;
+            horizontal-alignment: center;
             vertical-alignment: center;
+            opacity: root.show-seconds ? 1 : 0;
+            animate y, opacity { duration: 250ms; easing: ease-out; }
+        }
+
+        Text {
+            x: 0;
+            y: root.height * 0.63;
+            width: root.width;
+            height: root.height * 0.08;
+            text: root.weekdays[root.weekday];
+            color: white;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            x: 0;
+            y: root.height * 0.70;
+            width: root.width;
+            height: root.height * 0.08;
+            text: root.day + " " + root.months[root.month - 1];
+            color: white;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        HorizontalLayout {
+            x: 0;
+            width: root.width;
+            y: root.height * 0.82;
+            height: root.height * 0.07;
+            spacing: 8px;
+            alignment: center;
+
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 1px;
+                    Rectangle {
+                        width: 28px;
+                        height: 14px;
+                        border-width: 1.5px;
+                        border-color: white;
+                        border-radius: 2px;
+                        Rectangle {
+                            x: 3px;
+                            y: 3px;
+                            width: (parent.width - 6px) * clamp(root.battery-percent, 0, 100) / 100;
+                            height: parent.height - 6px;
+                            background: white;
+                            opacity: root.charging ? pulse : 1;
+                            property <float> pulse: 0.55 + 0.45 * Math.sin(animation-tick() / 1s * 180deg);
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 2px;
+                            height: 6px;
+                            background: white;
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: (root.charging ? "+" : "") + root.battery-percent + "%";
+                color: white;
+                font-size: 20px;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    Rectangle {
+        x: face.x - root.width;
+        width: root.width;
+        height: root.height;
+
+        Text {
+            y: root.height * 0.07;
+            width: root.width;
+            height: root.height * 0.1;
+            text: root.notes.length == 0 ? "No notifications" : "Notifications";
+            color: #ffffffa0;
+            font-size: 22px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Flickable {
+            x: root.width * 0.12;
+            y: root.height * 0.18;
+            width: root.width * 0.76;
+            height: root.height * 0.7;
+            content-height: max(self.height, root.notes.length * 84px);
+
+            for note[i] in root.notes: Rectangle {
+                y: i * 84px;
+                width: parent.width;
+                height: 76px;
+                border-radius: 14px;
+                background: open.pressed ? #ffffff40 : #ffffff1c;
+
+                Image {
+                    x: 14px;
+                    y: (parent.height - 32px) / 2;
+                    width: 32px;
+                    height: 32px;
+                    source: note.icon >= 0 ? NoteIcons.list[note.icon] : @image-url("../icons/ios-alert-outline.svg");
+                    colorize: white;
+                }
+
+                Text {
+                    x: 58px;
+                    y: 8px;
+                    width: parent.width - 114px;
+                    height: 22px;
+                    text: note.app;
+                    color: #ffffffa0;
+                    font-size: 20px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                Text {
+                    x: 58px;
+                    y: 32px;
+                    width: parent.width - 114px;
+                    height: 34px;
+                    text: note.summary;
+                    color: white;
+                    font-size: 22px;
+                    font-weight: 400;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                open := TouchArea {
+                    width: parent.width - 56px;
+                    clicked => {
+                        root.open-note(note);
+                    }
+                }
+
+                Rectangle {
+                    x: parent.width - 56px;
+                    width: 56px;
+                    height: parent.height;
+                    border-radius: 14px;
+                    background: dismiss.pressed ? #ffffff40 : transparent;
+
+                    Image {
+                        x: (parent.width - 28px) / 2;
+                        y: (parent.height - 28px) / 2;
+                        width: 28px;
+                        height: 28px;
+                        source: @image-url("../icons/ios-close.svg");
+                        colorize: white;
+                    }
+
+                    dismiss := TouchArea {
+                        clicked => {
+                            root.notification-dismissed(note.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: face.x + root.width;
+        width: root.width;
+        height: root.height;
+
+        if !root.weather-valid: Text {
+            width: root.width;
+            height: root.height;
+            text: "No weather data";
+            color: #ffffffa0;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if root.weather-valid: Rectangle {
+            Text {
+                x: root.width * 0.2;
+                y: root.height * 0.08;
+                width: root.width * 0.6;
+                height: root.height * 0.08;
+                text: root.weather-city;
+                color: #ffffffa0;
+                font-size: 22px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Image {
+                x: (root.width - 88px) / 2;
+                y: root.height * 0.17;
+                width: 88px;
+                height: 88px;
+                source: root.weather-icon(root.weather-today.id);
+                colorize: white;
+            }
+
+            Text {
+                y: root.height * 0.4;
+                width: root.width;
+                height: root.height * 0.07;
+                text: root.condition(root.weather-today.id);
+                color: white;
+                font-size: 22px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            HorizontalLayout {
+                y: root.height * 0.47;
+                width: root.width;
+                height: root.height * 0.13;
+                alignment: center;
+                spacing: 18px;
+
+                Text {
+                    text: root.weather-today.max + "°";
+                    color: white;
+                    font-size: 36px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.weather-today.min + "°";
+                    color: #ffffffa0;
+                    font-size: 36px;
+                    vertical-alignment: center;
+                }
+            }
+
+            HorizontalLayout {
+                y: root.height * 0.62;
+                width: root.width;
+                height: root.height * 0.22;
+                alignment: center;
+                spacing: 4px;
+
+                for day[i] in root.weather-forecast: VerticalLayout {
+                    width: 72px;
+                    alignment: start;
+
+                    Text {
+                        text: root.short-weekdays[Math.mod(root.weekday + i + 1, 7)];
+                        color: #ffffffa0;
+                        font-size: 20px;
+                        horizontal-alignment: center;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        Image {
+                            width: 36px;
+                            height: 36px;
+                            source: root.weather-icon(day.id);
+                            colorize: white;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 4px;
+
+                        Text {
+                            text: day.max + "°";
+                            color: white;
+                            font-size: 20px;
+                        }
+
+                        Text {
+                            text: day.min + "°";
+                            color: #ffffffa0;
+                            font-size: 20px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: face.y + root.height;
+        width: root.width;
+        height: root.height;
+
+        Text {
+            x: root.width * 0.16;
+            y: root.height * 0.1;
+            width: root.width * 0.68;
+            height: root.height * 0.21;
+            text: root.media-title == "" ? "Nothing playing" : root.media-title;
+            color: white;
+            font-size: 28px;
+            font-weight: 400;
+            horizontal-alignment: center;
+            vertical-alignment: bottom;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        Text {
+            x: root.width * 0.15;
+            y: root.height * 0.31;
+            width: root.width * 0.7;
+            height: root.height * 0.07;
+            text: root.media-album == "" ? root.media-artist : root.media-artist == "" ? root.media-album : root.media-artist + " – " + root.media-album;
+            color: #ffffffa0;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Rectangle {
+            x: root.width / 2 - 150px;
+            y: root.height * 0.53 - 36px;
+            width: 72px;
+            height: 72px;
+            border-radius: 36px;
+            background: previous.pressed ? #ffffff40 : transparent;
+
+            Image {
+                x: (parent.width - 44px) / 2;
+                y: (parent.height - 44px) / 2;
+                width: 44px;
+                height: 44px;
+                source: @image-url("../icons/ios-skip-backward.svg");
+                colorize: white;
+            }
+
+            previous := TouchArea {
+                clicked => {
+                    root.media-action(0);
+                }
+            }
+        }
+
+        Rectangle {
+            x: root.width / 2 - 52px;
+            y: root.height * 0.53 - 52px;
+            width: 104px;
+            height: 104px;
+            border-radius: 52px;
+            border-width: 2px;
+            border-color: #ffffffa0;
+            background: play.pressed ? #ffffff40 : transparent;
+
+            Image {
+                x: (parent.width - 56px) / 2 + (root.media-playing ? 0 : 4px);
+                y: (parent.height - 56px) / 2;
+                width: 56px;
+                height: 56px;
+                source: root.media-playing ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
+                colorize: white;
+            }
+
+            play := TouchArea {
+                clicked => {
+                    root.media-action(root.media-playing ? 3 : 2);
+                }
+            }
+        }
+
+        Rectangle {
+            x: root.width / 2 + 78px;
+            y: root.height * 0.53 - 36px;
+            width: 72px;
+            height: 72px;
+            border-radius: 36px;
+            background: next.pressed ? #ffffff40 : transparent;
+
+            Image {
+                x: (parent.width - 44px) / 2;
+                y: (parent.height - 44px) / 2;
+                width: 44px;
+                height: 44px;
+                source: @image-url("../icons/ios-skip-forward.svg");
+                colorize: white;
+            }
+
+            next := TouchArea {
+                clicked => {
+                    root.media-action(1);
+                }
+            }
+        }
+
+        Rectangle {
+            x: root.width / 2 - 120px;
+            y: root.height * 0.75 - 32px;
+            width: 64px;
+            height: 64px;
+            border-radius: 32px;
+            background: volume-down.pressed ? #ffffff40 : transparent;
+
+            Image {
+                x: (parent.width - 52px) / 2;
+                y: (parent.height - 52px) / 2;
+                width: 52px;
+                height: 52px;
+                source: @image-url("../icons/ios-volume-down.svg");
+                colorize: white;
+            }
+
+            volume-down := TouchArea {
+                clicked => {
+                    root.media-action(6);
+                }
+            }
+        }
+
+        Text {
+            x: root.width / 2 - 50px;
+            y: root.height * 0.75 - 20px;
+            width: 100px;
+            height: 40px;
+            text: root.media-volume < 0 ? "" : root.media-volume + "%";
+            color: #ffffffa0;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Rectangle {
+            x: root.width / 2 + 56px;
+            y: root.height * 0.75 - 32px;
+            width: 64px;
+            height: 64px;
+            border-radius: 32px;
+            background: volume-up.pressed ? #ffffff40 : transparent;
+
+            Image {
+                x: (parent.width - 52px) / 2;
+                y: (parent.height - 52px) / 2;
+                width: 52px;
+                height: 52px;
+                source: @image-url("../icons/ios-volume-up.svg");
+                colorize: white;
+            }
+
+            volume-up := TouchArea {
+                clicked => {
+                    root.media-action(5);
+                }
+            }
         }
     }
 
     if root.notification-shown: Rectangle {
         background: black;
+
+        Image {
+            x: (root.width - 36px) / 2;
+            y: 16px;
+            width: 36px;
+            height: 36px;
+            source: root.notification-icon >= 0 ? NoteIcons.list[root.notification-icon] : @image-url("../icons/ios-alert-outline.svg");
+            colorize: white;
+        }
 
         Text {
             x: root.width * 0.15;
@@ -179,7 +708,8 @@ export component Watchface inherits Window {
 
         TouchArea {
             clicked => {
-                root.notification-dismissed();
+                root.notification-shown = false;
+                root.notification-dismissed(root.notification-id);
             }
         }
     }
@@ -208,5 +738,15 @@ export component Watchface inherits Window {
             horizontal-alignment: center;
             vertical-alignment: center;
         }
+    }
+
+    if root.round-mask: Rectangle {
+        x: -100px;
+        y: -100px;
+        width: root.width + 200px;
+        height: root.height + 200px;
+        border-radius: self.width / 2;
+        border-width: 100px;
+        border-color: #000000c0;
     }
 }

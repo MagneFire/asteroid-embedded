@@ -42,8 +42,9 @@ symbolizes the addresses in the fault record with `addr2line`.
 GPL-3.0-or-later (see LICENSE). Files taken from other projects keep their
 own license: TinyUSB and its ChipIdea port (MIT), the 5x12 console font
 (BSD, from the Android Open Source Project), the FlatMesh geometry
-(BSD-3-Clause, from qml-asteroid) and the Noto Sans font in `ui/fonts/`
-(OFL-1.1). Slint is used under its GPL-3.0-only option. The GPU microcode
+(BSD-3-Clause, from qml-asteroid), the Noto Sans font in `ui/fonts/`
+(OFL-1.1) and the Ionicons in `ui/icons/` (MIT, from asteroid-icons-ion,
+resized). Slint is used under its GPL-3.0-only option. The GPU microcode
 in `firmware/` is Qualcomm's, redistributable under `firmware/LICENSE.qcom`;
 it is loaded from the boot image's ramdisk and is not part of the firmware
 binary.

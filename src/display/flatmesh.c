@@ -16,6 +16,14 @@
 #define OUTER_B 0x00
 
 static uint32_t colors[FLATMESH_INDICES / 3];
+static float view_scale = 1.0f, view_x, view_y;
+
+void flatmesh_view(float scale, float dx, float dy)
+{
+	view_scale = scale;
+	view_x = dx;
+	view_y = dy;
+}
 static int hashes[FLATMESH_INDICES];
 static bool ready;
 
@@ -93,6 +101,8 @@ struct cpu_ctx { uint32_t *buf; float px[3], py[3]; };
 static void cpu_vertex(int i, float x, float y, void *ctx)
 {
 	struct cpu_ctx *c = ctx;
+	x = 0.5f + (x - 0.5f) * view_scale + view_x;
+	y = 0.5f + (y - 0.5f) * view_scale + view_y;
 	c->px[i % 3] = x * (float)fb.width;
 	c->py[i % 3] = y * (float)fb.height;
 	if (i % 3 == 2)
@@ -111,6 +121,8 @@ static void gpu_vertex(int i, float x, float y, void *ctx)
 {
 	float *o = (float *)ctx + i * 8;
 	uint32_t c = colors[i / 3];
+	x = 0.5f + (x - 0.5f) * view_scale + view_x;
+	y = 0.5f + (y - 0.5f) * view_scale + view_y;
 	o[0] = x * 2.0f - 1.0f;
 	o[1] = 1.0f - y * 2.0f;
 	o[2] = 0.0f;

@@ -1,13 +1,15 @@
 // Slint platform on the firmware: the UI is rendered into a persistent premultiplied RGBA
-// layer, only where it changed, and composited over the background by the caller.
+// layer, only where it changed, and composited over the background by the caller. Touch
+// moves past SWIPE_PX become a swipe for the screen stack (the press is cancelled so no
+// click fires), except vertical drags on a screen that scrolls.
 use alloc::boxed::Box;
 use alloc::rc::Rc;
-use core::cell::{Cell, UnsafeCell};
-use core::sync::atomic::{AtomicBool, Ordering};
+use alloc::vec::Vec;
+use core::cell::{Cell, RefCell, UnsafeCell};
 use core::time::Duration;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{ComponentHandle, LogicalPosition, PhysicalSize, PlatformError};
+use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError, VecModel};
 
 slint::include_modules!();
 
@@ -35,6 +37,17 @@ impl Platform for Firmware {
     }
 }
 
+const SWIPE_PX: i32 = 40;
+const FLICK_MS: u32 = 300;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Gesture {
+    Idle,
+    Pending,
+    Scroll,
+    Swipe,
+}
+
 struct Ui {
     window: Rc<MinimalSoftwareWindow>,
     face: Watchface,
@@ -42,12 +55,21 @@ struct Ui {
     stride: usize,
     width: usize,
     height: usize,
+    notes: Rc<VecModel<Note>>,
+    forecast: Rc<VecModel<Day>>,
+    dismissed: Rc<RefCell<Vec<i32>>>,
+    actions: Rc<RefCell<Vec<i32>>>,
+    gesture: Gesture,
+    down: (i32, i32),
+    down_ms: u32,
+    horizontal: bool,
+    screen: i32,
+    full_until: u32,
 }
 
 struct Global(UnsafeCell<Option<Ui>>);
 unsafe impl Sync for Global {}
 static UI: Global = Global(UnsafeCell::new(None));
-static DISMISSED: AtomicBool = AtomicBool::new(false);
 
 fn ui() -> Option<&'static mut Ui> {
     unsafe { (*UI.0.get()).as_mut() }
@@ -86,7 +108,16 @@ pub unsafe extern "C" fn ui_init(
     let Ok(face) = Watchface::new() else {
         return false;
     };
-    face.on_notification_dismissed(|| DISMISSED.store(true, Ordering::Relaxed));
+    let notes = Rc::new(VecModel::default());
+    let forecast = Rc::new(VecModel::default());
+    face.set_notes(notes.clone().into());
+    face.set_weather_forecast(forecast.clone().into());
+    let dismissed = Rc::new(RefCell::new(Vec::new()));
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let queue = dismissed.clone();
+    face.on_notification_dismissed(move |id| queue.borrow_mut().push(id));
+    let queue = actions.clone();
+    face.on_media_action(move |action| queue.borrow_mut().push(action));
     if face.show().is_err() {
         return false;
     }
@@ -106,6 +137,16 @@ pub unsafe extern "C" fn ui_init(
             stride: stride_px as usize,
             width: width as usize,
             height: height as usize,
+            notes,
+            forecast,
+            dismissed,
+            actions,
+            gesture: Gesture::Idle,
+            down: (0, 0),
+            down_ms: 0,
+            horizontal: false,
+            screen: 0,
+            full_until: 0,
         });
     }
     true
@@ -140,22 +181,55 @@ unsafe fn text(p: *const u8, len: u32) -> slint::SharedString {
         return slint::SharedString::new();
     }
     let bytes = unsafe { core::slice::from_raw_parts(p, len as usize) };
-    core::str::from_utf8(bytes).unwrap_or("").into()
+    match core::str::from_utf8(bytes) {
+        Ok(s) => s.into(),
+        Err(e) => core::str::from_utf8(&bytes[..e.valid_up_to()]).unwrap_or("").into(),
+    }
+}
+
+include!(concat!(env!("OUT_DIR"), "/note_icons.rs"));
+
+fn note_icon(name: &str) -> i32 {
+    NOTE_ICON_NAMES.binary_search(&name).map_or(-1, |i| i as i32)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_show_notification(
+pub extern "C" fn ui_clear_notifications() {
+    let Some(ui) = ui() else { return };
+    ui.notes.set_vec(Vec::new());
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_add_notification(
+    id: i32,
     app: *const u8,
     app_len: u32,
     summary: *const u8,
     summary_len: u32,
     body: *const u8,
     body_len: u32,
+    icon: *const u8,
+    icon_len: u32,
 ) {
     let Some(ui) = ui() else { return };
-    ui.face.set_notification_app(unsafe { text(app, app_len) });
-    ui.face.set_notification_summary(unsafe { text(summary, summary_len) });
-    ui.face.set_notification_body(unsafe { text(body, body_len) });
+    ui.notes.push(Note {
+        id,
+        icon: note_icon(unsafe { text(icon, icon_len) }.as_str()),
+        app: unsafe { text(app, app_len) },
+        summary: unsafe { text(summary, summary_len) },
+        body: unsafe { text(body, body_len) },
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_show_notification(id: i32) {
+    let Some(ui) = ui() else { return };
+    let Some(note) = ui.notes.iter().find(|n| n.id == id) else { return };
+    ui.face.set_notification_id(note.id);
+    ui.face.set_notification_icon(note.icon);
+    ui.face.set_notification_app(note.app);
+    ui.face.set_notification_summary(note.summary);
+    ui.face.set_notification_body(note.body);
     ui.face.set_notification_shown(true);
 }
 
@@ -166,9 +240,88 @@ pub extern "C" fn ui_hide_notification() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_notification_dismissed() -> bool {
-    DISMISSED.swap(false, Ordering::Relaxed)
+pub unsafe extern "C" fn ui_notification_dismissed(id: *mut i32) -> bool {
+    let Some(ui) = ui() else { return false };
+    let mut queue = ui.dismissed.borrow_mut();
+    if queue.is_empty() {
+        return false;
+    }
+    let first = queue.remove(0);
+    if !id.is_null() {
+        unsafe { *id = first };
+    }
+    true
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_media(
+    title: *const u8,
+    title_len: u32,
+    artist: *const u8,
+    artist_len: u32,
+    album: *const u8,
+    album_len: u32,
+    playing: bool,
+    volume: i32,
+) {
+    let Some(ui) = ui() else { return };
+    ui.face.set_media_title(unsafe { text(title, title_len) });
+    ui.face.set_media_artist(unsafe { text(artist, artist_len) });
+    ui.face.set_media_album(unsafe { text(album, album_len) });
+    ui.face.set_media_playing(playing);
+    ui.face.set_media_volume(volume.clamp(-1, 100));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_media_action() -> i32 {
+    let Some(ui) = ui() else { return -1 };
+    let mut queue = ui.actions.borrow_mut();
+    if queue.is_empty() { -1 } else { queue.remove(0) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_weather(
+    city: *const u8,
+    city_len: u32,
+    days: u32,
+    ids: *const i32,
+    min_c: *const i32,
+    max_c: *const i32,
+) {
+    let Some(ui) = ui() else { return };
+    let n = if ids.is_null() || min_c.is_null() || max_c.is_null() { 0 } else { days as usize };
+    let day = |i: usize| unsafe { Day { id: *ids.add(i), min: *min_c.add(i), max: *max_c.add(i) } };
+    ui.face.set_weather_valid(n > 0);
+    ui.face.set_weather_city(unsafe { text(city, city_len) });
+    ui.face.set_weather_today(if n > 0 { day(0) } else { Day::default() });
+    ui.forecast.set_vec((1..n).map(day).collect::<Vec<_>>());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_home() {
+    let Some(ui) = ui() else { return };
+    ui.face.invoke_home();
+    ui.gesture = Gesture::Idle;
+}
+
+fn drag(ui: &Ui, dx: i32, dy: i32) {
+    let (dx, dy) = if ui.horizontal { (dx, 0) } else { (0, dy) };
+    ui.face.invoke_drag(dx as f32, dy as f32);
+}
+
+fn flick(ui: &Ui) -> bool {
+    unsafe { time_ms() }.wrapping_sub(ui.down_ms) < FLICK_MS
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_scroll(x: *mut f32, y: *mut f32) {
+    let Some(ui) = ui() else { return };
+    unsafe {
+        *x = ui.face.get_scroll_x();
+        *y = ui.face.get_scroll_y();
+    }
+}
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_touch(kind: i32, x: i32, y: i32) {
@@ -179,12 +332,55 @@ pub extern "C" fn ui_touch(kind: i32, x: i32, y: i32) {
     let dispatch = |event| {
         let _ = window.dispatch_event_with_result(event);
     };
+    let cancel = || {
+        let away = LogicalPosition::new(-10000.0, -10000.0);
+        dispatch(WindowEvent::PointerReleased { position: away, button });
+        dispatch(WindowEvent::PointerExited);
+    };
+    let (dx, dy) = (x - ui.down.0, y - ui.down.1);
+    let far = dx * dx + dy * dy > SWIPE_PX * SWIPE_PX;
+    let scrolls = dy.abs() >= dx.abs() && ui.face.invoke_scrolls_vertically();
     match kind {
-        0 => dispatch(WindowEvent::PointerPressed { position, button }),
-        1 => dispatch(WindowEvent::PointerMoved { position }),
+        0 => {
+            ui.gesture = Gesture::Pending;
+            ui.down = (x, y);
+            ui.down_ms = unsafe { time_ms() };
+            dispatch(WindowEvent::PointerPressed { position, button });
+        }
+        1 => match ui.gesture {
+            Gesture::Pending if far && !scrolls => {
+                ui.gesture = Gesture::Swipe;
+                ui.horizontal = dx.abs() >= dy.abs();
+                cancel();
+                drag(ui, dx, dy);
+            }
+            Gesture::Swipe => drag(ui, dx, dy),
+            Gesture::Pending if far => {
+                ui.gesture = Gesture::Scroll;
+                dispatch(WindowEvent::PointerMoved { position });
+            }
+            Gesture::Pending | Gesture::Scroll => dispatch(WindowEvent::PointerMoved { position }),
+            _ => {}
+        },
         2 => {
-            dispatch(WindowEvent::PointerReleased { position, button });
-            dispatch(WindowEvent::PointerExited);
+            match ui.gesture {
+                Gesture::Swipe => {
+                    drag(ui, dx, dy);
+                    ui.face.invoke_release(flick(ui));
+                }
+                Gesture::Pending if far && !scrolls => {
+                    cancel();
+                    ui.horizontal = dx.abs() >= dy.abs();
+                    drag(ui, dx, dy);
+                    ui.face.invoke_release(true);
+                }
+                Gesture::Pending | Gesture::Scroll => {
+                    dispatch(WindowEvent::PointerReleased { position, button });
+                    dispatch(WindowEvent::PointerExited);
+                }
+                Gesture::Idle => {}
+            }
+            ui.gesture = Gesture::Idle;
         }
         _ => {}
     }
@@ -193,11 +389,25 @@ pub extern "C" fn ui_touch(kind: i32, x: i32, y: i32) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_update(x: *mut u32, y: *mut u32, w: *mut u32, h: *mut u32) -> bool {
     let Some(ui) = ui() else { return false };
+    if ui.face.get_notification_shown() {
+        let id = ui.face.get_notification_id();
+        if !ui.notes.iter().any(|n| n.id == id) {
+            ui.face.set_notification_shown(false);
+        }
+    }
     slint::platform::update_timers_and_animations();
+    let now = unsafe { time_ms() };
+    if ui.face.get_screen() != ui.screen {
+        ui.screen = ui.face.get_screen();
+        ui.full_until = now.wrapping_add(400);
+    }
+    let full = (ui.full_until.wrapping_sub(now) as i32) > 0;
     let mut region = None;
     let (layer, stride) = (&mut *ui.layer, ui.stride);
-    ui.window
-        .draw_if_needed(|renderer| region = Some(renderer.render(layer, stride)));
+    ui.window.draw_if_needed(|renderer| {
+        renderer.set_repaint_buffer_type(if full { RepaintBufferType::NewBuffer } else { RepaintBufferType::ReusedBuffer });
+        region = Some(renderer.render(layer, stride))
+    });
     let Some(region) = region else { return false };
     let origin = region.bounding_box_origin();
     let size = region.bounding_box_size();

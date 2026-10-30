@@ -31,4 +31,5 @@ void fbcon_set_overlay(bool on);
 void flatmesh_render(uint32_t *buf, uint32_t t_ms);
 #define FLATMESH_GPU_VERTICES 516
 unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms);
+void flatmesh_view(float scale, float dx, float dy);
 #endif
