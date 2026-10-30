@@ -15,6 +15,7 @@
 #include "bt/bt.h"
 #include "notify/notify.h"
 #include "sensors/hub.h"
+#include "screenshot/screenshot.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -195,6 +196,7 @@ void main(void)
 		wdt_feed();
 		usb_poll();
 		bt_poll();
+		screenshot_poll();
 		if (!awake)
 			wakeups++;
 		if (bt_start_t && now - bt_start_t < 0x80000000u) {
@@ -407,7 +409,7 @@ void main(void)
 			reboot();
 		}
 #endif
-		if ((!have_display || !awake) && !haptics_busy() && timer_ticks()) {
+		if ((!have_display || !awake) && !haptics_busy() && !screenshot_busy() && timer_ticks()) {
 			bool cluster = !awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
 			if (!awake)
 				cpu_clock_slow(true);

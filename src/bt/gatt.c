@@ -1,8 +1,11 @@
 /* The GATT services asteroid-btsyncd exposes and AsteroidOSSync talks to:
  * vendor services on the base xxxxxxxx-0000-0000-0000-00a57e401d05 plus
  * the standard Battery service, with btsyncd's properties (writes and
- * reads need an authenticated, encrypted link). Battery and time are
- * real; the rest log what the phone sends. */
+ * reads need an authenticated, encrypted link). Battery, time and
+ * screenshots are real; the rest log what the phone sends. A screenshot
+ * goes out on 6002 as btsyncd sends it: the size as a little-endian 32-bit
+ * notification, then the JPEG file in 20-byte notifications, paced by the
+ * free mbufs from bt_poll. */
 #include <string.h>
 #include "asteroid.h"
 #include "host/ble_hs.h"
@@ -25,11 +28,21 @@
 #define CHR_NOTIF_FEEDBACK	0x9002
 #define CHR_BATTERY_LEVEL	0x2a19
 
+#define SHOT_CHUNK		20
+#define SHOT_MSYS_RESERVE	12
+#define SHOT_PER_POLL		16
+
 const ble_uuid128_t bt_asteroid_adv_uuid = ASTEROID_UUID(0x0000);
 
 static uint16_t h_time, h_screenshot, h_media, h_weather_city, h_notif_feedback, h_battery;
 static uint8_t battery_sent = 0xff;
 static uint8_t payload[1024];
+static uint16_t sub_conn = BLE_HS_CONN_HANDLE_NONE;
+static bool sub_screenshot, shot_request, shot_header;
+static const uint8_t *shot;
+static uint32_t shot_len, shot_off;
+static uint8_t shot_value[SHOT_CHUNK];
+static unsigned shot_value_len;
 
 static uint8_t battery_percent(void)
 {
@@ -49,7 +62,6 @@ static const char *chr_name(uint16_t id)
 	case 0x8002: return "weather ids";
 	case 0x8003: return "weather min";
 	case 0x8004: return "weather max";
-	case CHR_SCREENSHOT_REQ: return "screenshot request";
 	default: return "write";
 	}
 }
@@ -91,7 +103,7 @@ static int access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctx
 			return os_mbuf_append(ctxt->om, &v, 1) ? BLE_ATT_ERR_INSUFFICIENT_RES : 0;
 		}
 		if (id == CHR_SCREENSHOT_DATA)
-			return 0;
+			return os_mbuf_append(ctxt->om, shot_value, shot_value_len) ? BLE_ATT_ERR_INSUFFICIENT_RES : 0;
 		return BLE_ATT_ERR_READ_NOT_PERMITTED;
 	}
 	if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR)
@@ -105,7 +117,10 @@ static int access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctx
 		notify_feed(payload, n);
 		return 0;
 	}
-	log_payload(chr_name(id), payload, n);
+	if (id == CHR_SCREENSHOT_REQ)
+		shot_request = true;
+	else
+		log_payload(chr_name(id), payload, n);
 	return 0;
 }
 
@@ -191,5 +206,84 @@ void bt_gatt_battery_check(void)
 	if (v != battery_sent) {
 		battery_sent = v;
 		ble_gatts_chr_updated(h_battery);
+	}
+}
+
+static int notify_value(uint16_t handle, const void *p, unsigned n)
+{
+	struct os_mbuf *om = ble_hs_mbuf_from_flat(p, (uint16_t)n);
+	return om ? ble_gatts_notify_custom(sub_conn, handle, om) : BLE_HS_ENOMEM;
+}
+
+void bt_gatt_subscribe(uint16_t conn, uint16_t attr, bool on)
+{
+	sub_conn = conn;
+	if (attr == h_screenshot) {
+		sub_screenshot = on;
+		if (!on && shot) {
+			log_printf("bt: screenshot aborted at %lu of %lu bytes\n", shot_off, shot_len);
+			shot = NULL;
+		}
+	}
+}
+
+bool bt_gatt_screenshot_requested(void)
+{
+	bool r = shot_request && sub_screenshot;
+	if (shot_request && !sub_screenshot)
+		log_printf("bt: screenshot requested, 6002 not subscribed\n");
+	shot_request = false;
+	return r;
+}
+
+void bt_gatt_screenshot_send(const uint8_t *p, uint32_t n)
+{
+	if (!sub_screenshot)
+		return;
+	if (!p || !n) {
+		shot_value[0] = '0';
+		shot_value_len = 1;
+		notify_value(h_screenshot, shot_value, 1);
+		return;
+	}
+	shot = p;
+	shot_len = n;
+	shot_off = 0;
+	shot_header = true;
+}
+
+bool bt_gatt_screenshot_busy(void)
+{
+	return shot != NULL;
+}
+
+void bt_gatt_poll(void)
+{
+	for (unsigned i = 0; shot && i < SHOT_PER_POLL && os_msys_num_free() > SHOT_MSYS_RESERVE; i++) {
+		uint8_t v[SHOT_CHUNK];
+		unsigned k = SHOT_CHUNK;
+		if (shot_header) {
+			for (k = 0; k < 4; k++)
+				v[k] = (uint8_t)(shot_len >> (8 * k));
+		} else {
+			k = shot_len - shot_off < SHOT_CHUNK ? shot_len - shot_off : SHOT_CHUNK;
+			memcpy(v, shot + shot_off, k);
+		}
+		int rc = notify_value(h_screenshot, v, k);
+		if (rc == BLE_HS_ENOMEM)
+			break;
+		if (rc) {
+			log_printf("bt: screenshot notify failed: %d\n", rc);
+			shot = NULL;
+			break;
+		}
+		memcpy(shot_value, v, k);
+		shot_value_len = k;
+		if (shot_header)
+			shot_header = false;
+		else if ((shot_off += k) == shot_len) {
+			log_printf("bt: screenshot sent, %lu bytes\n", shot_len);
+			shot = NULL;
+		}
 	}
 }

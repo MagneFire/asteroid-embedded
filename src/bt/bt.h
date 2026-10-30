@@ -91,6 +91,11 @@ int bt_store_clear(void);
 bool bt_store_resolve(const uint8_t rpa[6], uint8_t *type, uint8_t addr[6]);
 int bt_gatt_init(void);
 void bt_gatt_battery_check(void);
+void bt_gatt_subscribe(uint16_t conn, uint16_t attr, bool on);
+void bt_gatt_poll(void);
+bool bt_gatt_screenshot_requested(void);
+void bt_gatt_screenshot_send(const uint8_t *p, uint32_t n);
+bool bt_gatt_screenshot_busy(void);
 #ifdef H_BLE_UUID_
 extern const ble_uuid128_t bt_asteroid_adv_uuid;
 #endif

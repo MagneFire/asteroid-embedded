@@ -124,6 +124,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 	case BLE_GAP_EVENT_SUBSCRIBE:
 		log_printf("bt: subscribe handle %u, notify %u, indicate %u\n", ev->subscribe.attr_handle,
 			   ev->subscribe.cur_notify, ev->subscribe.cur_indicate);
+		bt_gatt_subscribe(ev->subscribe.conn_handle, ev->subscribe.attr_handle, ev->subscribe.cur_notify);
 		break;
 	case BLE_GAP_EVENT_MTU:
 		mtu = ev->mtu.value;
@@ -252,6 +253,7 @@ void bt_poll(void)
 	if (boost)
 		cpu_clock_slow(false);
 	bt_npl_run(nimble_port_get_dflt_eventq(), 32);
+	bt_gatt_poll();
 	if (boost)
 		cpu_clock_slow(true);
 	if (state == BT_HOST_STARTING && time_ms() - start_t >= SYNC_TIMEOUT_MS) {
