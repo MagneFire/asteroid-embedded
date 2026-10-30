@@ -10,8 +10,10 @@ pub mod svg;
 #[cfg(any(target_family = "wasm", target_os = "nto"))]
 use fontique::ScriptExt;
 
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
 use std::collections::HashSet;
-use std::sync::Arc;
 
 /// Create a new fontique Collection.
 /// When `shared` is true, the collection uses `Arc`-based internal sharing,
@@ -19,13 +21,18 @@ use std::sync::Arc;
 pub fn create_collection(shared: bool) -> Collection {
     let mut collection =
         fontique::Collection::new(fontique::CollectionOptions { shared, system_fonts: true });
+    #[cfg(feature = "std")]
     let mut source_cache =
         if shared { fontique::SourceCache::new_shared() } else { fontique::SourceCache::default() };
+    #[cfg(not(feature = "std"))]
+    let mut source_cache = fontique::SourceCache::default();
 
     // Preserves insertion order — the primary (SLINT_DEFAULT_FONT) lands first, fallbacks
     // (SLINT_FONT_PATH) follow. The runtime bitmap-font fallback and the compile-time
     // bitmap-font emission both rely on this ordering rather than any later sort.
-    let mut default_fonts: Vec<(std::path::PathBuf, fontique::QueryFont)> = Vec::new();
+    #[allow(unused_mut)]
+    let mut default_fonts: Vec<(FontPath, fontique::QueryFont)> = Vec::new();
+    #[allow(unused_mut)]
     let mut chain_families: Vec<fontique::FamilyId> = Vec::new();
 
     #[cfg(any(target_family = "wasm", target_os = "nto"))]
@@ -50,7 +57,9 @@ pub fn create_collection(shared: bool) -> Collection {
         }
     }
 
+    #[cfg(feature = "std")]
     let mut registered_paths: HashSet<std::path::PathBuf> = HashSet::new();
+    #[cfg(feature = "std")]
     let mut register_path =
         |path: std::path::PathBuf,
          collection: &mut fontique::Collection,
@@ -79,6 +88,7 @@ pub fn create_collection(shared: bool) -> Collection {
         };
 
     // SLINT_DEFAULT_FONT: a single .ttf to act as the primary font.
+    #[cfg(feature = "std")]
     if let Some(path) = std::env::var_os("SLINT_DEFAULT_FONT") {
         register_path(
             path.into(),
@@ -92,6 +102,7 @@ pub fn create_collection(shared: bool) -> Collection {
     // SLINT_FONT_PATH: OS-PATH-style list of additional fonts. Entries may be `.ttf`
     // files or directories (scanned non-recursively); everything found is appended to
     // the fallback chain after the primary.
+    #[cfg(feature = "std")]
     if let Some(path_list) = std::env::var_os("SLINT_FONT_PATH") {
         for entry in std::env::split_paths(&path_list) {
             if entry.is_file() {
@@ -129,11 +140,16 @@ pub fn create_collection(shared: bool) -> Collection {
     Collection { inner: collection, source_cache, default_fonts: Arc::new(default_fonts) }
 }
 
+#[cfg(feature = "std")]
+pub type FontPath = std::path::PathBuf;
+#[cfg(not(feature = "std"))]
+pub type FontPath = alloc::string::String;
+
 #[derive(Clone)]
 pub struct Collection {
     pub inner: fontique::Collection,
     pub source_cache: fontique::SourceCache,
-    pub default_fonts: Arc<Vec<(std::path::PathBuf, fontique::QueryFont)>>,
+    pub default_fonts: Arc<Vec<(FontPath, fontique::QueryFont)>>,
 }
 
 impl Collection {
@@ -157,7 +173,7 @@ fn get_font_for_info(
     info: &fontique::FontInfo,
 ) -> Option<fontique::QueryFont> {
     let mut query = collection.query(source_cache);
-    query.set_families(std::iter::once(fontique::QueryFamily::from(family_id)));
+    query.set_families(core::iter::once(fontique::QueryFamily::from(family_id)));
     query.set_attributes(fontique::Attributes {
         weight: info.weight(),
         style: info.style(),
@@ -171,7 +187,7 @@ fn get_font_for_info(
     font
 }
 
-impl std::ops::Deref for Collection {
+impl core::ops::Deref for Collection {
     type Target = fontique::Collection;
 
     fn deref(&self) -> &Self::Target {
@@ -179,7 +195,7 @@ impl std::ops::Deref for Collection {
     }
 }
 
-impl std::ops::DerefMut for Collection {
+impl core::ops::DerefMut for Collection {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

@@ -35,6 +35,8 @@ all-features = true
 [features]
 color-parsing = []
 default = []
+std = ["fontique?/std", "skrifa?/std"]
+libm = ["fontique?/libm", "skrifa?/libm"]
 fontconfig-dlopen = ["fontique?/fontconfig-dlopen"]
 locale-decimal-separator = [
     "dep:icu_decimal",
@@ -78,6 +80,12 @@ default-features = false
 [dependencies.fontique]
 version = "0.11.1"
 optional = true
+default-features = false
+
+[dependencies.hashbrown]
+version = "0.16"
+default-features = false
+features = ["default-hasher", "inline-more"]
 
 [dependencies.htmlparser]
 version = "0.2.1"
@@ -114,3 +122,4 @@ default-features = false
 [dependencies.skrifa]
 version = "0.44"
 optional = true
+default-features = false

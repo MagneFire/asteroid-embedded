@@ -6,6 +6,8 @@
 
 use super::shaping::{Brush, TextParagraph};
 use super::*;
+#[allow(unused_imports)]
+use num_traits::Float as _;
 use crate::items::TextCursorAffinity;
 
 impl From<TextCursorAffinity> for parley::layout::Affinity {

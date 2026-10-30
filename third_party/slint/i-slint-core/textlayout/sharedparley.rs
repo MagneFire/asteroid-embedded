@@ -25,9 +25,9 @@ use core::pin::Pin;
 use euclid::num::Zero;
 use i_slint_common::sharedfontique;
 use skrifa::MetadataProvider as _;
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::sync::Arc;
+use alloc::sync::Arc;
+use core::cell::RefCell;
+use hashbrown::HashSet;
 
 #[derive(derive_more::Deref, derive_more::DerefMut)]
 pub struct FontContext {
@@ -235,7 +235,6 @@ pub fn draw_text(
     );
 }
 
-#[cfg(feature = "std")]
 pub fn link_under_cursor(
     scale_factor: ScaleFactor,
     text: Pin<&dyn crate::item_rendering::RenderText>,
@@ -244,7 +243,7 @@ pub fn link_under_cursor(
     cursor: PhysicalPoint,
     window: &crate::api::Window,
     cache: Option<&TextLayoutCache>,
-) -> Option<std::string::String> {
+) -> Option<alloc::string::String> {
     let layout_builder = shaping_builder(text, Some(item_rc), text.wrap(), scale_factor);
 
     let (horizontal_align, vertical_align) = text.alignment();
@@ -268,7 +267,7 @@ pub fn link_under_cursor(
     .flatten()
 }
 
-fn link_in_layout(layout: &Layout, cursor: PhysicalPoint) -> Option<std::string::String> {
+fn link_in_layout(layout: &Layout, cursor: PhysicalPoint) -> Option<alloc::string::String> {
     layout.paragraph_by_y(cursor.y_length()).and_then(|paragraph| {
         let paragraph_y: f64 = paragraph.y.cast::<f64>().get();
 

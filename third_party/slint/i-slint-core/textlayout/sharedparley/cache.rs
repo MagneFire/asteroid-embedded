@@ -50,17 +50,17 @@ pub struct TextLayoutCache {
     /// `OverflowWrap::Anywhere`, so the result is kept instead of the paragraphs.
     content_widths: crate::item_rendering::ItemCache<crate::renderer::ContentWidths>,
     /// Bumped once per rendered frame; entries are stamped with it when served.
-    generation: std::cell::Cell<u32>,
+    generation: core::cell::Cell<u32>,
     /// Approximate entry count; a stale-high value just triggers one extra sweep.
-    entry_count_estimate: std::cell::Cell<usize>,
+    entry_count_estimate: core::cell::Cell<usize>,
     /// Estimate above which the next sweep runs; raised when the active set exceeds the limit.
-    sweep_threshold: std::cell::Cell<usize>,
+    sweep_threshold: core::cell::Cell<usize>,
     #[cfg(feature = "testing")]
-    cache_miss_count: std::cell::Cell<u64>,
+    cache_miss_count: core::cell::Cell<u64>,
     #[cfg(feature = "testing")]
-    layout_miss_count: std::cell::Cell<u64>,
+    layout_miss_count: core::cell::Cell<u64>,
     #[cfg(feature = "testing")]
-    content_widths_miss_count: std::cell::Cell<u64>,
+    content_widths_miss_count: core::cell::Cell<u64>,
 }
 
 #[allow(clippy::derivable_impls)] // clippy doesn't see the feature = "testing" code
@@ -71,13 +71,13 @@ impl Default for TextLayoutCache {
             content_widths: Default::default(),
             generation: Default::default(),
             entry_count_estimate: Default::default(),
-            sweep_threshold: std::cell::Cell::new(ENTRY_LIMIT),
+            sweep_threshold: core::cell::Cell::new(ENTRY_LIMIT),
             #[cfg(feature = "testing")]
-            cache_miss_count: std::cell::Cell::new(0),
+            cache_miss_count: core::cell::Cell::new(0),
             #[cfg(feature = "testing")]
-            layout_miss_count: std::cell::Cell::new(0),
+            layout_miss_count: core::cell::Cell::new(0),
             #[cfg(feature = "testing")]
-            content_widths_miss_count: std::cell::Cell::new(0),
+            content_widths_miss_count: core::cell::Cell::new(0),
         }
     }
 }
@@ -169,7 +169,7 @@ impl TextLayoutCache {
 pub(super) struct CachedParagraphsGuard<'a> {
     paragraphs: Option<Vec<TextParagraph>>,
     line_breaking: Option<RetainedLineBreaking>,
-    container: Option<std::cell::RefMut<'a, CachedParagraphs>>,
+    container: Option<core::cell::RefMut<'a, CachedParagraphs>>,
 }
 
 impl CachedParagraphsGuard<'_> {

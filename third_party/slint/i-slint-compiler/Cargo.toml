@@ -184,6 +184,7 @@ optional = true
 version = "=1.18.1"
 features = [
     "default",
+    "std",
     "color-parsing",
     "markdown",
 ]

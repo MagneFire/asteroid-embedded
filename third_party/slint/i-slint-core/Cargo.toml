@@ -69,6 +69,10 @@ image-default-formats = ["image?/default-formats"]
 libm = [
     "num-traits/libm",
     "euclid/libm",
+    "parley?/libm",
+    "skrifa?/libm",
+    "swash?/libm",
+    "i-slint-common/libm",
 ]
 log = ["dep:log"]
 path = [
@@ -90,6 +94,10 @@ shared-swash = ["dep:swash"]
 std = [
     "euclid/std",
     "once_cell/std",
+    "parley?/std",
+    "skrifa?/std",
+    "swash?/std",
+    "i-slint-common/std",
     "dep:web-time",
     "path",
     "raw-window-handle-06?/std",
@@ -279,6 +287,12 @@ default-features = false
 [dependencies.skrifa]
 version = "0.44"
 optional = true
+default-features = false
+
+[dependencies.hashbrown]
+version = "0.16"
+default-features = false
+features = ["default-hasher", "inline-more"]
 
 [dependencies.slab]
 version = "0.4.3"
@@ -391,6 +405,7 @@ default-features = false
 version = "0.11.1"
 features = ["complex-scripts"]
 optional = true
+default-features = false
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.clru]
 version = "0.6.0"

@@ -4,7 +4,7 @@
 // cSpell: ignore fallbackfont
 use core::cell::RefCell;
 
-use std::collections::HashMap;
+use hashbrown::HashMap;
 
 use i_slint_common::sharedfontique::{HashedBlob, fontique};
 use i_slint_core::lengths::ScaleFactor;
@@ -73,7 +73,7 @@ pub fn fallbackfont(
     VectorFont::new(font, swash_key, swash_offset, requested_pixel_size)
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 pub fn register_font_from_path(
     collection: &mut fontique::Collection,
     path: &std::path::Path,

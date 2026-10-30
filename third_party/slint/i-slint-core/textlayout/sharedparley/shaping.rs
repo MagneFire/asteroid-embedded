@@ -17,7 +17,7 @@ use super::*;
 /// that visually marks them as code.
 const INLINE_CODE_FONT_SCALE: f32 = 0.85;
 
-std::thread_local! {
+crate::thread_local! {
     static LAYOUT_CONTEXT: RefCell<parley::LayoutContext<Brush>> = Default::default();
 }
 
@@ -104,7 +104,7 @@ impl LayoutWithoutLineBreaksBuilder {
                 )
             };
 
-            builder.push_default(parley::style::FontFamily::List(std::borrow::Cow::Borrowed(
+            builder.push_default(parley::style::FontFamily::List(alloc::borrow::Cow::Borrowed(
                 font_families,
             )));
 
@@ -168,7 +168,8 @@ impl LayoutWithoutLineBreaksBuilder {
     ) -> parley::Layout<Brush> {
         use i_slint_common::styled_text::Style;
 
-        LAYOUT_CONTEXT.with_borrow_mut(|layout_ctx| {
+        LAYOUT_CONTEXT.with(|layout_ctx| {
+            let layout_ctx = &mut *layout_ctx.borrow_mut();
             let mut builder = self.ranged_builder(layout_ctx, font_context, text);
 
             // filter empty ranges otherwise parley will panic on assert
@@ -279,9 +280,9 @@ pub(super) fn create_text_paragraphs(
     let paragraph_from_text =
         |font_context: &mut parley::FontContext,
          text: &str,
-         range: std::ops::Range<usize>,
+         range: core::ops::Range<usize>,
          formatting: Vec<i_slint_common::styled_text::FormattedSpan>,
-         links: Vec<(std::ops::Range<usize>, std::string::String)>| {
+         links: Vec<(core::ops::Range<usize>, alloc::string::String)>| {
             let code_ranges: alloc::vec::Vec<Range<usize>> = formatting
                 .iter()
                 .filter(|s| matches!(s.style, i_slint_common::styled_text::Style::Code))
@@ -393,9 +394,9 @@ pub(super) struct TextParagraph {
     pub(super) range: Range<usize>,
     pub(super) y: PhysicalLength,
     pub(super) layout: parley::Layout<Brush>,
-    pub(super) links: std::vec::Vec<(Range<usize>, std::string::String)>,
+    pub(super) links: alloc::vec::Vec<(Range<usize>, alloc::string::String)>,
     /// Byte ranges within the paragraph's text that carry `Style::Code`. Drawn with a
     /// translucent rounded background by `draw` for visual parity with common markdown
     /// renderers.
-    pub(super) code_ranges: std::vec::Vec<Range<usize>>,
+    pub(super) code_ranges: alloc::vec::Vec<Range<usize>>,
 }

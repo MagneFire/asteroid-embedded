@@ -294,7 +294,7 @@ pub trait RendererSealed {
         Err("This renderer does not support registering custom fonts.".into())
     }
 
-    #[cfg(all(feature = "std", feature = "shared-parley"))]
+    #[cfg(feature = "shared-parley")]
     /// This function can be used to register a custom TrueType font with Slint,
     /// for use with the `font-family` property. The provided slice must be a valid TrueType
     /// font.
@@ -303,7 +303,7 @@ pub trait RendererSealed {
     fn register_font_from_memory(
         &self,
         data: &'static [u8],
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn core::error::Error>> {
         let ctx = self.slint_context().ok_or("slint platform not initialized")?;
         ctx.font_context().borrow_mut().register_static_font(data);
         Ok(())

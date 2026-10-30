@@ -17,13 +17,10 @@ use crate::lengths::{
 pub use crate::partial_renderer::CachedRenderingData;
 use crate::window::WindowAdapterRc;
 use crate::{Brush, SharedString};
-#[cfg(feature = "std")]
 use alloc::boxed::Box;
-#[cfg(feature = "std")]
 use core::cell::RefCell;
 use core::pin::Pin;
-#[cfg(feature = "std")]
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use vtable::VRc;
 
 /// A per-item cache.
@@ -34,7 +31,6 @@ use vtable::VRc;
 /// cache is automatically invalided when the property gets dirty.
 /// [`ItemCache::component_destroyed`] must be called to clear the cache for that
 /// component.
-#[cfg(feature = "std")]
 pub struct ItemCache<T> {
     /// The pointer is a pointer to a component
     map: RefCell<HashMap<*const vtable::Dyn, HashMap<u32, crate::graphics::CachedGraphicsData<T>>>>,
@@ -42,14 +38,12 @@ pub struct ItemCache<T> {
     window_scale_factor_tracker: Pin<Box<crate::properties::PropertyTracker>>,
 }
 
-#[cfg(feature = "std")]
 impl<T> Default for ItemCache<T> {
     fn default() -> Self {
         Self { map: Default::default(), window_scale_factor_tracker: Box::pin(Default::default()) }
     }
 }
 
-#[cfg(feature = "std")]
 impl<T: Clone> ItemCache<T> {
     /// Returns the cached value associated to the `item_rc` if it is still valid.
     /// Otherwise call the `update_fn` to compute that value, and track property access
@@ -58,7 +52,7 @@ impl<T: Clone> ItemCache<T> {
         let component = &(**item_rc.item_tree()) as *const _;
         let mut borrowed = self.map.borrow_mut();
         match borrowed.entry(component).or_default().entry(item_rc.index()) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
+            hashbrown::hash_map::Entry::Occupied(mut entry) => {
                 let mut tracker = entry.get_mut().dependency_tracker.take();
                 drop(borrowed);
                 let maybe_new_data = tracker
@@ -75,7 +69,7 @@ impl<T: Clone> ItemCache<T> {
                     e.data.clone()
                 }
             }
-            std::collections::hash_map::Entry::Vacant(_) => {
+            hashbrown::hash_map::Entry::Vacant(_) => {
                 drop(borrowed);
                 let new_entry = crate::graphics::CachedGraphicsData::new(update_fn);
                 let data = new_entry.data.clone();
@@ -90,7 +84,6 @@ impl<T: Clone> ItemCache<T> {
     }
 }
 
-#[cfg(feature = "std")]
 impl<T> ItemCache<T> {
     /// Returns the cached value associated with the `item_rc` if it is in the cache
     /// and still valid.
@@ -152,7 +145,7 @@ impl<T> ItemCache<T> {
         });
     }
 
-    /// Returns a [`RefMut`](std::cell::RefMut) referencing the cached value associated with
+    /// Returns a [`RefMut`](core::cell::RefMut) referencing the cached value associated with
     /// `item_rc`, updating the cache entry first if necessary using `update_fn`.
     ///
     /// Unlike [`get_or_update_cache_entry`](Self::get_or_update_cache_entry), this method does
@@ -163,14 +156,14 @@ impl<T> ItemCache<T> {
         &self,
         item_rc: &ItemRc,
         update_fn: impl FnOnce() -> T,
-    ) -> std::cell::RefMut<'_, T> {
+    ) -> core::cell::RefMut<'_, T> {
         let component = &(**item_rc.item_tree()) as *const _;
         let index = item_rc.index();
 
         {
             let mut borrowed = self.map.borrow_mut();
             match borrowed.entry(component).or_default().entry(index) {
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                hashbrown::hash_map::Entry::Occupied(mut entry) => {
                     let mut tracker = entry.get_mut().dependency_tracker.take();
                     drop(borrowed);
                     let maybe_new_data = tracker
@@ -184,7 +177,7 @@ impl<T> ItemCache<T> {
                         e.data = new_data;
                     }
                 }
-                std::collections::hash_map::Entry::Vacant(_) => {
+                hashbrown::hash_map::Entry::Vacant(_) => {
                     drop(borrowed);
                     let new_entry = crate::graphics::CachedGraphicsData::new(update_fn);
                     self.map.borrow_mut().get_mut(&component).unwrap().insert(index, new_entry);
@@ -192,7 +185,7 @@ impl<T> ItemCache<T> {
             }
         }
 
-        std::cell::RefMut::map(self.map.borrow_mut(), |map| {
+        core::cell::RefMut::map(self.map.borrow_mut(), |map| {
             &mut map.get_mut(&component).unwrap().get_mut(&index).unwrap().data
         })
     }

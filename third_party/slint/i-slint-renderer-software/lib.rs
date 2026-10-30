@@ -1177,13 +1177,13 @@ impl RendererSealed for SoftwareRenderer {
     fn register_font_from_memory(
         &self,
         data: &'static [u8],
-    ) -> Result<(), std::boxed::Box<dyn std::error::Error>> {
+    ) -> Result<(), alloc::boxed::Box<dyn core::error::Error>> {
         let ctx = self.slint_context().ok_or("slint platform not initialized")?;
         ctx.font_context().borrow_mut().register_static_font(data);
         Ok(())
     }
 
-    #[cfg(all(feature = "systemfonts", not(target_arch = "wasm32")))]
+    #[cfg(all(feature = "systemfonts", feature = "std", not(target_arch = "wasm32")))]
     fn register_font_from_path(
         &self,
         path: &std::path::Path,
@@ -1274,10 +1274,15 @@ impl RendererSealed for SoftwareRenderer {
 /// Read once: this sits on the per-item, per-frame text path, and every other `SLINT_`
 /// switch is resolved once as well. Setting the variable after the first text is laid
 /// out therefore has no effect.
-#[cfg(feature = "systemfonts")]
+#[cfg(all(feature = "systemfonts", feature = "std"))]
 fn parley_disabled() -> bool {
     static DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *DISABLED.get_or_init(|| std::env::var_os("SLINT_SOFTWARE_RENDERER_PARLEY_DISABLED").is_some())
+}
+
+#[cfg(all(feature = "systemfonts", not(feature = "std")))]
+fn parley_disabled() -> bool {
+    false
 }
 
 /// Whether this font is laid out by parley rather than by the local text layout.
@@ -3171,7 +3176,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
             drop(font_ctx);
             sharedparley::draw_text(
                 self,
-                std::pin::pin!((i_slint_core::SharedString::from(string), Brush::from(color))),
+                core::pin::pin!((i_slint_core::SharedString::from(string), Brush::from(color))),
                 None,
                 self.current_state.clip.size.cast(),
                 None,
@@ -3355,7 +3360,7 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
                 .transformed(self.rotation);
 
         for positioned_glyph in glyphs_it {
-            let Some(id) = std::num::NonZero::new(positioned_glyph.id as u16) else {
+            let Some(id) = core::num::NonZero::new(positioned_glyph.id as u16) else {
                 continue;
             };
 
