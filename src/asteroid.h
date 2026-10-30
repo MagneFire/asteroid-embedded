@@ -15,6 +15,12 @@ static inline void dsb(void) { __asm__ volatile("dsb" ::: "memory"); }
 static inline void dmb(void) { __asm__ volatile("dmb" ::: "memory"); }
 static inline void isb(void) { __asm__ volatile("isb" ::: "memory"); }
 static inline void wfi(void) { __asm__ volatile("wfi" ::: "memory"); }
+/* Keeps the compiler from moving memory accesses across it. Interrupts
+ * all run on this one core, so this is enough to order a ring buffer's
+ * data against the index that hands it between a handler and the main
+ * loop: write the data, then the index; read the index, then the data,
+ * then give the slot back. */
+static inline void barrier(void) { __asm__ volatile("" ::: "memory"); }
 
 extern char _start[];
 

@@ -87,6 +87,7 @@ static void push(const struct touch *t)
 	if (next == q_tail)
 		return;
 	queue[q_head] = *t;
+	barrier();
 	q_head = next;
 }
 
@@ -253,7 +254,9 @@ bool touch_poll(struct touch *t)
 		fake_poll();
 	if (q_tail == q_head)
 		return false;
+	barrier();
 	*t = queue[q_tail];
+	barrier();
 	q_tail = (q_tail + 1) % QUEUE_LEN;
 	return true;
 }

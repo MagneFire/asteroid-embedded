@@ -121,6 +121,7 @@ static void put(struct uart *u, uint32_t w, unsigned n)
 			continue;
 		}
 		u->ring[u->ring_head % RING_SIZE] = (uint8_t)w;
+		barrier();
 		u->ring_head++;
 	}
 	u->rx_bytes += n;
@@ -309,7 +310,9 @@ unsigned uart_dm_read(unsigned uart, uint8_t *p, unsigned n)
 	if (!u)
 		return 0;
 	while (k < n && u->ring_tail != u->ring_head) {
+		barrier();
 		p[k++] = u->ring[u->ring_tail % RING_SIZE];
+		barrier();
 		u->ring_tail++;
 	}
 	return k;
