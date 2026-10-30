@@ -71,9 +71,13 @@ component IconButton {
 
 // qml-asteroid's CircularSpinner with its SpinnerDelegate: count two-digit values on a wheel
 // that wraps, one every 48 px, the one in the middle 40 px and opaque, the others 22 px at 60 %,
-// and the top and bottom fifth fading out.
+// and the top and bottom fifth fading out. With labels it shows those instead and stops at both
+// ends, like qml-asteroid's Spinner; twelve shows 0 as 12.
 component Spinner {
     in property <int> count;
+    in property <[string]> labels;
+    in property <bool> twelve;
+    property <bool> wrap: self.labels.length == 0;
     in-out property <int> value;
     property <length> step: 48px;
     property <length> scroll: pager.index * self.step - pager.drag;
@@ -91,13 +95,15 @@ component Spinner {
 
     for k in 9: Text {
         property <int> n: Math.floor(root.scroll / root.step) + k - 4;
+        property <int> v: Math.mod(Math.mod(self.n, root.count) + root.count, root.count);
         property <length> mid: root.height / 2 - root.step / 2 + self.n * root.step - root.scroll;
         property <float> near: Math.max(0, 1 - Math.abs(self.mid + root.step / 2 - root.height / 2) / root.step);
         property <float> fade: Math.clamp(Math.min(self.mid + root.step / 2, root.height - self.mid - root.step / 2) / (root.height * 0.2), 0, 1);
         y: self.mid;
         width: root.width;
         height: root.step;
-        text: Face.two-digits(Math.mod(Math.mod(self.n, root.count) + root.count, root.count));
+        visible: root.wrap || (self.n >= 0 && self.n < root.count);
+        text: !root.wrap ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : Face.two-digits(self.v);
         color: white;
         font-size: Math.round(22 + 17 * self.near) * 1px;
         opacity: (0.6 + 0.4 * self.near) * self.fade;
@@ -107,7 +113,7 @@ component Spinner {
 
     pager := Pager {
         horizontal: false;
-        wrap: true;
+        wrap: root.wrap;
         item: root.step;
         count: root.count;
     }
@@ -186,24 +192,41 @@ export component AlarmApp {
             height: root.height;
             visible: self.x > -root.width && self.x < root.width;
 
-            Text {
+            HorizontalLayout {
                 x: 40px;
                 y: 120px;
                 width: 200px;
-                text: (Face.clock12 ? Face.two-digits(Math.mod(alarm.hour, 12)) : Face.two-digits(alarm.hour)) + ":" + Face.two-digits(alarm.minute) + (Face.clock12 ? (alarm.hour >= 12 ? "PM" : "AM") : "");
-                color: white;
-                opacity: alarm.on ? 1 : 0.7;
-                font-size: Face.clock12 ? 52px : 60px;
-                font-weight: 500;
+                height: 70px;
+                alignment: start;
 
-                TouchArea {
-                    clicked => {
-                        root.index = i;
-                        root.hour = alarm.hour;
-                        root.minute = alarm.minute;
-                        root.days = alarm.days;
-                        root.page = 1;
-                    }
+                Text {
+                    text: (Face.clock12 ? Face.two-digits(Math.mod(alarm.hour, 12)) : Face.two-digits(alarm.hour)) + ":" + Face.two-digits(alarm.minute);
+                    color: white;
+                    opacity: alarm.on ? 1 : 0.7;
+                    font-size: Face.clock12 ? 52px : 60px;
+                    font-weight: 500;
+                }
+
+                if Face.clock12: Text {
+                    text: alarm.hour >= 12 ? "PM" : "AM";
+                    color: white;
+                    opacity: alarm.on ? 1 : 0.7;
+                    font-size: 26px;
+                    vertical-alignment: bottom;
+                }
+            }
+
+            TouchArea {
+                x: 40px;
+                y: 120px;
+                width: 200px;
+                height: 70px;
+                clicked => {
+                    root.index = i;
+                    root.hour = alarm.hour;
+                    root.minute = alarm.minute;
+                    root.days = alarm.days;
+                    root.page = 1;
                 }
             }
 
@@ -330,17 +353,20 @@ export component AlarmApp {
     }
 
     if root.page == 1: Rectangle {
+        property <length> w: Face.clock12 ? 120px : 180px;
+
         hours := Spinner {
             x: 20px;
             y: 80px;
-            width: 180px;
+            width: parent.w;
             height: 240px;
-            count: 24;
-            value: root.hour;
+            count: Face.clock12 ? 12 : 24;
+            twelve: Face.clock12;
+            value: Face.clock12 ? Math.mod(root.hour, 12) : root.hour;
         }
 
         Rectangle {
-            x: 199px;
+            x: 20px + parent.w - 1px;
             y: 80px + 24px;
             width: 1px;
             height: 192px;
@@ -348,12 +374,31 @@ export component AlarmApp {
         }
 
         minutes := Spinner {
-            x: 200px;
+            x: 20px + parent.w;
             y: 80px;
-            width: 180px;
+            width: parent.w;
             height: 240px;
             count: 60;
             value: root.minute;
+        }
+
+        if Face.clock12: Rectangle {
+            x: 20px + 2 * parent.w - 1px;
+            y: 80px + 24px;
+            width: 1px;
+            height: 192px;
+            background: #ffffff88;
+        }
+
+        ampm := Spinner {
+            x: 20px + 2 * parent.w;
+            y: 80px;
+            width: parent.w;
+            height: 240px;
+            visible: Face.clock12;
+            count: 2;
+            labels: ["AM", "PM"];
+            value: root.hour >= 12 ? 1 : 0;
         }
 
         PageHeader {
@@ -367,7 +412,7 @@ export component AlarmApp {
             y: root.height - 12px - self.height;
             icon: root.index < 0 ? @image-url("../icons/ios-arrow-dropright.svg") : @image-url("../icons/ios-checkmark-circle-outline.svg");
             clicked => {
-                root.hour = hours.value;
+                root.hour = hours.value + (Face.clock12 ? ampm.value * 12 : 0);
                 root.minute = minutes.value;
                 if root.index < 0 {
                     root.page = 2;
