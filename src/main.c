@@ -368,7 +368,7 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
-	bool key_was = false, awake = true, ringing = false, ring_timer = false, sw_running = false;
+	bool key_was = false, awake = true, woke = false, ringing = false, ring_timer = false, sw_running = false;
 	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
 	uint32_t shown_timer = 1, shown_sw = 1;
 	int32_t passkey = -1;
@@ -662,8 +662,7 @@ void main(void)
 			asleep_ms += now - asleep_t;
 			last_activity = now = time_ms();
 			last_clock = 0;
-			if (have_ui)
-				stack_indicators();
+			woke = true;
 			log_printf("wake\n");
 		}
 		sleep_request = wake_request = false;
@@ -722,6 +721,10 @@ void main(void)
 				fbcon_draw(buf);
 			}
 			display_flip();
+			/* The indicators pop out once the first frame is on the panel. */
+			if (woke && have_ui)
+				stack_indicators();
+			woke = false;
 		}
 		if (have_ui && awake && (!last_clock || now - last_clock >= 1000)) {
 			last_clock = now;
