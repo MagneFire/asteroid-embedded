@@ -126,7 +126,7 @@ HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fn
                -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c
 
-$(BUILD)/test/%: tests/%.c $(HOST_SRCS) tests/host.h tests/stubs.h src/asteroid.h src/usb/adb.h src/console/console.h src/bt/bt.h
+$(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
