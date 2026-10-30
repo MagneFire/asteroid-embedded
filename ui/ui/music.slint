@@ -1,138 +1,98 @@
-// The music screen: what plays on the phone, with previous, play/pause, next and volume.
+// The music app, laid out as asteroid-music: the title and artist scrolling along the top,
+// previous and next arrows at the edges, a large play/pause button in the middle, and volume
+// buttons around a thin level bar. Without a connected phone it shows a No data page instead.
 import { Face } from "face.slint";
-
-component RoundButton {
-    in property <length> size;
-    in property <length> icon-size;
-    in property <image> icon;
-    in property <length> icon-shift;
-    in property <bool> outlined;
-    callback clicked();
-
-    width: root.size;
-    height: root.size;
-
-    Rectangle {
-        border-radius: root.size / 2;
-        border-width: root.outlined ? 2px : 0;
-        border-color: #ffffffa0;
-        background: touch.pressed ? #ffffff40 : transparent;
-
-        Image {
-            x: (parent.width - root.icon-size) / 2 + root.icon-shift;
-            y: (parent.height - root.icon-size) / 2;
-            width: root.icon-size;
-            height: root.icon-size;
-            source: root.icon;
-            colorize: white;
-        }
-
-        touch := TouchArea {
-            clicked => {
-                root.clicked();
-            }
-        }
-    }
-}
+import { IconButton, Marquee, StatusPage } from "controls.slint";
 
 export component MusicScreen {
     width: 100%;
     height: 100%;
 
-    Text {
-        x: root.width * 0.16;
-        y: root.height * 0.1;
-        width: root.width * 0.68;
-        height: root.height * 0.21;
-        text: Face.media-title == "" ? "Nothing playing" : Face.media-title;
-        color: white;
-        font-size: 28px;
-        font-weight: 400;
-        horizontal-alignment: center;
-        vertical-alignment: bottom;
-        wrap: word-wrap;
-        overflow: elide;
+    if !Face.bluetooth-connected: StatusPage {
+        icon: @image-url("../icons/ios-sync.svg");
+        title: "No data";
+        text: "Sync AsteroidOS with your phone.";
     }
 
-    Text {
-        x: root.width * 0.15;
-        y: root.height * 0.31;
-        width: root.width * 0.7;
-        height: root.height * 0.07;
-        text: Face.media-album == "" ? Face.media-artist : Face.media-artist == "" ? Face.media-album : Face.media-artist + " – " + Face.media-album;
-        color: #ffffffa0;
-        font-size: 20px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-
-    RoundButton {
-        x: root.width / 2 - 150px;
-        y: root.height * 0.53 - 36px;
-        size: 72px;
-        icon-size: 44px;
-        icon: @image-url("../icons/ios-skip-backward.svg");
-        clicked => {
-            Face.media-action(0);
+    if Face.bluetooth-connected: Rectangle {
+        Marquee {
+            x: 80px;
+            y: 28px;
+            width: 240px;
+            height: 40px;
+            text: Face.media-title;
+            font-weight: 700;
         }
-    }
 
-    RoundButton {
-        x: root.width / 2 - 52px;
-        y: root.height * 0.53 - 52px;
-        size: 104px;
-        icon-size: 56px;
-        outlined: true;
-        icon-shift: Face.media-playing ? 0 : 4px;
-        icon: Face.media-playing ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
-        clicked => {
-            Face.media-action(Face.media-playing ? 3 : 2);
+        Marquee {
+            x: 60px;
+            y: 64px;
+            width: 280px;
+            height: 40px;
+            text: Face.media-artist;
         }
-    }
 
-    RoundButton {
-        x: root.width / 2 + 78px;
-        y: root.height * 0.53 - 36px;
-        size: 72px;
-        icon-size: 44px;
-        icon: @image-url("../icons/ios-skip-forward.svg");
-        clicked => {
-            Face.media-action(1);
+        IconButton {
+            x: 12px;
+            y: 160px;
+            icon: @image-url("../icons/ios-arrow-dropleft.svg");
+            clicked => {
+                Face.media-action(0);
+            }
         }
-    }
 
-    RoundButton {
-        x: root.width / 2 - 120px;
-        y: root.height * 0.75 - 32px;
-        size: 64px;
-        icon-size: 52px;
-        icon: @image-url("../icons/ios-volume-down.svg");
-        clicked => {
-            Face.media-action(6);
+        IconButton {
+            x: 120px;
+            y: 120px;
+            size: 160px;
+            icon: Face.media-playing ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
+            clicked => {
+                Face.media-action(Face.media-playing ? 3 : 2);
+            }
         }
-    }
 
-    Text {
-        x: root.width / 2 - 50px;
-        y: root.height * 0.75 - 20px;
-        width: 100px;
-        height: 40px;
-        text: Face.media-volume < 0 ? "" : Face.media-volume + "%";
-        color: #ffffffa0;
-        font-size: 20px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
+        IconButton {
+            x: 308px;
+            y: 160px;
+            icon: @image-url("../icons/ios-arrow-dropright.svg");
+            clicked => {
+                Face.media-action(1);
+            }
+        }
 
-    RoundButton {
-        x: root.width / 2 + 56px;
-        y: root.height * 0.75 - 32px;
-        size: 64px;
-        icon-size: 52px;
-        icon: @image-url("../icons/ios-volume-up.svg");
-        clicked => {
-            Face.media-action(5);
+        IconButton {
+            x: 64px;
+            y: 272px;
+            icon: @image-url("../icons/ios-volume-down.svg");
+            clicked => {
+                Face.media-action(6);
+            }
+        }
+
+        Rectangle {
+            x: 144px;
+            y: 308px;
+            width: 112px;
+            height: 8px;
+            border-radius: 4px;
+            background: #ffffff99;
+            clip: true;
+
+            if Face.media-volume >= 0: Rectangle {
+                x: 0;
+                width: parent.width * Face.media-volume / 100;
+                height: parent.height;
+                background: white;
+            }
+        }
+
+        IconButton {
+            x: 256px;
+            y: 272px;
+            icon: @image-url("../icons/ios-volume-up.svg");
+            clicked => {
+                Face.media-action(5);
+            }
         }
     }
 }

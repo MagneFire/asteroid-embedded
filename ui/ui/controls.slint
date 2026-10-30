@@ -211,7 +211,7 @@ export component PageDot {
 }
 
 // Text centred when it fits, otherwise held for 2 s, scrolled to its end and back, over and over.
-export component Marquee {
+export component Marquee inherits Rectangle {
     in property <string> text;
     in property <length> font-size: 28px;
     in property <int> font-weight: 300;
