@@ -282,6 +282,11 @@ bool bt_host_running(void)
 	return host_on;
 }
 
+bool bt_host_connected(void)
+{
+	return host_on && conn != BLE_HS_CONN_HANDLE_NONE;
+}
+
 void bt_host_status(struct bt_status *s)
 {
 	struct ble_gap_conn_desc d;

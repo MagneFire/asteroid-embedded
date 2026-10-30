@@ -113,6 +113,8 @@ const EVENT_ALARM_RING: u32 = 4;
 const EVENT_ALARM_EDIT: u32 = 5;
 const EVENT_ALARM_DELETE: u32 = 6;
 const EVENT_DISMISS: u32 = 7;
+const EVENT_TIMER_SET: u32 = 8;
+const EVENT_BRIGHTNESS: u32 = 9;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiEvent>() == 12);
@@ -237,6 +239,10 @@ pub unsafe extern "C" fn ui_init(
         face.on_app_opened(move |app| event(&queue, EVENT_APP, app));
         let queue = events.clone();
         face.on_setting_toggled(move |setting| event(&queue, EVENT_SETTING, setting));
+        let queue = events.clone();
+        face.on_timer_set(move |seconds| event(&queue, EVENT_TIMER_SET, seconds));
+        let queue = events.clone();
+        face.on_brightness_set(move |percent| event(&queue, EVENT_BRIGHTNESS, percent));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;
@@ -252,8 +258,9 @@ pub unsafe extern "C" fn ui_init(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32, day: u32, month: u32) {
+pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32, day: u32, month: u32, rtc: u32) {
     each(|face| {
+        face.set_now(rtc as i32);
         face.set_hour(hour.min(23) as i32);
         face.set_minute(minute.min(59) as i32);
         face.set_second(second.min(59) as i32);
@@ -261,6 +268,11 @@ pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32
         face.set_day(day.clamp(1, 31) as i32);
         face.set_month(month.clamp(1, 12) as i32);
     });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_connected(connected: bool) {
+    each(|face| face.set_bluetooth_connected(connected));
 }
 
 #[unsafe(no_mangle)]
@@ -315,6 +327,7 @@ pub unsafe extern "C" fn ui_add_notification(
     body_len: u32,
     icon: *const u8,
     icon_len: u32,
+    time: u32,
 ) {
     let Some(ui) = ui() else { return };
     ui.notes.push(Note {
@@ -323,6 +336,7 @@ pub unsafe extern "C" fn ui_add_notification(
         app: unsafe { text(app, app_len) },
         summary: unsafe { text(summary, summary_len) },
         body: unsafe { text(body, body_len) },
+        time: time as i32,
     });
 }
 
@@ -482,6 +496,13 @@ pub extern "C" fn ui_set_timer(ms: u32, set_ms: u32, running: bool) {
         face.set_timer_set_ms(set_ms as i32);
         face.set_timer_running(running);
     });
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_laps(ms: *const u32, n: u32) {
+    let laps = if ms.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(ms, n as usize) } };
+    let laps: Vec<i32> = laps.iter().map(|&m| m as i32).collect();
+    each(|face| face.set_stopwatch_laps(Rc::new(VecModel::from(laps.clone())).into()));
 }
 
 #[unsafe(no_mangle)]

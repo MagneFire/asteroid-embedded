@@ -64,6 +64,7 @@ int bt_host_start(void);
 void bt_host_stop(void);
 bool bt_host_running(void);
 void bt_host_status(struct bt_status *s);
+bool bt_host_connected(void);
 void bt_poll(void);
 int32_t bt_passkey(void);
 uint32_t bt_idle_ms(void);

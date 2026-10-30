@@ -7,6 +7,8 @@ export struct Note {
     app: string,
     summary: string,
     body: string,
+    // RTC seconds when it arrived.
+    time: int,
 }
 
 export struct Day {
@@ -44,8 +46,13 @@ export global Face {
     // Edges of the launcher leading somewhere (left, right, top, bottom as bits 0-3) and bit 4
     // while it is scrolled to its start.
     in-out property <int> launcher-edges: 4;
+    // The same for the notifications, bit 4 while the newest is on screen.
+    in-out property <int> notes-edges: 18;
     in-out property <int> brightness: 100;
     in-out property <bool> bluetooth-on: true;
+    in-out property <bool> bluetooth-connected;
+    // RTC seconds, for the age of notifications.
+    in-out property <int> now;
     in-out property <bool> vibration-on: true;
     in-out property <bool> aod-on: true;
     in-out property <bool> clock12;
@@ -58,6 +65,8 @@ export global Face {
     in-out property <bool> timer-running;
     in-out property <int> stopwatch-ms;
     in-out property <bool> stopwatch-running;
+    // The stopwatch's laps as its time at each, newest first.
+    in-out property <[int]> stopwatch-laps;
     in-out property <int> passkey: -1;
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
@@ -84,6 +93,8 @@ export global Face {
     callback alarm-deleted(int);
     callback alarm-action(int);
     callback clock-action(int);
+    callback timer-set(int);
+    callback brightness-set(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

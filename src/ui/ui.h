@@ -11,7 +11,10 @@
  * the CPU; ui_repaint repaints a whole panel, on the GPU or the CPU,
  * for measuring. weekday 0 = Sunday, month 1-12;
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
- * code. Notifications are set as a list, newest first; ui_show_notification
+ * code. ui_set_clock also takes the RTC (seconds), against which the
+ * notifications' times (RTC seconds) give their age; ui_set_connected
+ * says whether a phone is connected. Notifications are set as a list,
+ * newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
  * the watchface to its always-on form. The app panel shows the app set
@@ -20,9 +23,12 @@
  * on and in effect, ui_set_launcher the launcher layout.
  * ui_launcher_edges says which edges of the launcher lead somewhere
  * (left, right, top, bottom as bits 0-3) and, in bit 4, whether it is at
- * its start; ui_launcher_colors gives its mesh colours, or false to keep
+ * its start; ui_notes_edges does the same for the notifications, bit 4
+ * meaning the newest is on screen; ui_launcher_colors gives its mesh
+ * colours, or false to keep
  * the mesh grey. ui_set_ringing shows a ringing alarm or timer,
- * ui_set_timer and ui_set_stopwatch their state.
+ * ui_set_timer and ui_set_stopwatch their state, ui_set_laps the
+ * stopwatch's time at each lap, newest first.
  *
  * ui_next_event hands out what the user did, oldest first, one per call,
  * with its value: UI_EVENT_SETTING an enum setting toggled or an enum
@@ -32,7 +38,9 @@
  * button, UI_EVENT_ALARM_RING a button on a ringing alarm or timer,
  * UI_EVENT_ALARM_EDIT the alarm at that index (-1 for a new one) as
  * edited, UI_EVENT_ALARM_DELETE the alarm at that index deleted and
- * UI_EVENT_DISMISS the id of a dismissed notification.
+ * UI_EVENT_DISMISS the id of a dismissed notification, UI_EVENT_TIMER_SET
+ * the timer's new duration in seconds and UI_EVENT_BRIGHTNESS the
+ * brightness in per cent.
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -62,6 +70,7 @@ enum ui_clock_action {
 	UI_TIMER_SECONDS_DOWN,
 	UI_STOPWATCH_START = 30,
 	UI_STOPWATCH_RESET,
+	UI_STOPWATCH_LAP,
 };
 enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
 enum ui_action {
@@ -107,6 +116,8 @@ enum ui_event_kind {
 	UI_EVENT_ALARM_EDIT,
 	UI_EVENT_ALARM_DELETE,
 	UI_EVENT_DISMISS,
+	UI_EVENT_TIMER_SET,
+	UI_EVENT_BRIGHTNESS,
 };
 
 struct ui_event {
@@ -120,14 +131,15 @@ _Static_assert(sizeof(struct ui_event) == 12, "ui_event");
 
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
 	     uint32_t height);
-void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month);
+void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
+		  uint32_t rtc);
+void ui_set_connected(bool connected);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);
 void ui_clear_notifications(void);
 void ui_add_notification(int32_t id, const char *app, uint32_t app_len, const char *summary, uint32_t summary_len,
-			 const char *body, uint32_t body_len, const char *icon,
-			 uint32_t icon_len);
+			 const char *body, uint32_t body_len, const char *icon, uint32_t icon_len, uint32_t time);
 void ui_show_notification(int32_t id);
 void ui_hide_notification(void);
 void ui_set_media(const char *title, uint32_t title_len, const char *artist, uint32_t artist_len, const char *album,
@@ -146,6 +158,7 @@ bool ui_next_event(struct ui_event *e);
 void ui_set_ringing(bool ringing, bool timer);
 void ui_set_timer(uint32_t ms, uint32_t set_ms, bool running);
 void ui_set_stopwatch(uint32_t ms, bool running);
+void ui_set_laps(const uint32_t *ms, uint32_t n);
 void ui_set_app(int app);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,
 		    const int32_t *max_c);

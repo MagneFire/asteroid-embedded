@@ -158,7 +158,7 @@ static void ambient_draw(void)
 	uint32_t rtc = pmic_rtc_read(), x, y, w, h, *buf = display_backbuffer();
 	civil_from_epoch(rtc, &c);
 	ambient_minute = rtc / 60;
-	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
+	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, rtc);
 	ui_set_battery(bms_percent(), pmic_charging());
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
 		    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
@@ -380,6 +380,8 @@ void main(void)
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool key_was = false, awake = true, woke = false, ringing = false, ring_timer = false, sw_running = false;
+	static uint32_t lap_ms[99];
+	unsigned laps = 0;
 	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
 	uint32_t shown_timer = 1, shown_sw = 1;
 	int32_t passkey = -1;
@@ -487,7 +489,7 @@ void main(void)
 				for (unsigned i = n; i--;) {
 					const struct notification *e = notify_get(i);
 					ui_add_notification(e->id, e->app, strlen(e->app), e->summary, strlen(e->summary), e->body,
-							    strlen(e->body), e->icon, strlen(e->icon));
+							    strlen(e->body), e->icon, strlen(e->icon), e->time);
 				}
 			}
 			if (top && top->seq > newest_seq) {
@@ -544,6 +546,19 @@ void main(void)
 			case UI_EVENT_DISMISS:
 				notify_dismiss(a);
 				break;
+			case UI_EVENT_TIMER_SET:
+				if (!timer_end && a >= 1 && a <= 86399) {
+					timer_set = timer_left = (uint32_t)a * 1000;
+					shown_timer = UINT32_MAX;
+				}
+				break;
+			case UI_EVENT_BRIGHTNESS:
+				if (a >= 10 && a <= 100) {
+					setting_set(SETTING_BRIGHTNESS, a);
+					set_brightness();
+					show_settings();
+				}
+				break;
 			case UI_EVENT_ALARM_EDIT:
 			case UI_EVENT_ALARM_DELETE:
 				alarm_edited(&e);
@@ -578,6 +593,12 @@ void main(void)
 				} else if (a == UI_STOPWATCH_RESET) {
 					sw_acc = 0;
 					sw_running = false;
+					laps = 0;
+					ui_set_laps(lap_ms, 0);
+				} else if (a == UI_STOPWATCH_LAP && sw_running && laps < ARRAY_SIZE(lap_ms)) {
+					memmove(lap_ms + 1, lap_ms, laps++ * sizeof lap_ms[0]);
+					lap_ms[0] = sw_acc + now - sw_start;
+					ui_set_laps(lap_ms, laps);
 				}
 				shown_timer = shown_sw = UINT32_MAX;
 				break;
@@ -744,12 +765,13 @@ void main(void)
 			struct civil c;
 			uint32_t rtc = pmic_rtc_read();
 			civil_from_epoch(rtc, &c);
-			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
+			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, rtc);
 			if (rtc / 86400 != weather_day) {
 				weather_day = rtc / 86400;
 				show_weather();
 			}
 			ui_set_battery(bms_percent(), pmic_charging());
+			ui_set_connected(bt_host_connected());
 			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
 				    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
 		}
