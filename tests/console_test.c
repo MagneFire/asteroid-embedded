@@ -37,6 +37,14 @@ int main(void)
 	CHECK(!strcmp(run(""), ""));
 	CHECK(!strcmp(run("frobnicate now"), "unknown command: frobnicate\n"));
 
+	CHECK(!strcmp(run("notify"), "test 1\n"));
+	CHECK(strstr(stub_notify, "<id>-1</id>") && strstr(stub_notify, "<bo>Test notification 1</bo>"));
+	CHECK(!strcmp(run("notify Fish & <chips>"), "test 2\n"));
+	CHECK(strstr(stub_notify, "<bo>Fish &amp; &lt;chips&gt;</bo><vb>normal</vb></insert>"));
+	CHECK(!strcmp(run("notify remove 2"), "removed test 2\n"));
+	CHECK(!strcmp(stub_notify, "<removed><id>-2</id></removed>"));
+	CHECK(!strcmp(run("notify remove"), "usage: notify remove <n>\n"));
+
 	CHECK(!strcmp(run("mem 1000"), "00001000: deadaeef\n"));
 	CHECK(!strcmp(run("mem 0x1000 5"),
 		      "00001000: deadaeef deadaeeb deadaee7 deadaee3\n00001010: deadaeff\n"));

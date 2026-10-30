@@ -47,6 +47,8 @@ void hub_status(void (*say)(const char *fmt, ...)) {}
 int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms) {}
 void screenshot_to_file(int layer) {}
+char stub_notify[1024];
+void notify_feed(const uint8_t *p, unsigned n) { snprintf(stub_notify, sizeof stub_notify, "%.*s", (int)n, (const char *)p); }
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_save(const uint8_t addr[6]) { return -1; }

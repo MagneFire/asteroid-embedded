@@ -11,6 +11,7 @@
 #include "sensors/hub.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
+#include "notify/notify.h"
 #include "ui/ui.h"
 #include "console.h"
 
@@ -688,6 +689,49 @@ static void cmd_buzz(const char *args)
 	say("buzz %u ms\n", ms);
 }
 
+static void xml_text(char *out, size_t size, size_t *len, const char *s)
+{
+	for (; *s && *len + 7 < size; s++) {
+		const char *e = *s == '&' ? "&amp;" : *s == '<' ? "&lt;" : *s == '>' ? "&gt;" : NULL;
+		if (!e) {
+			out[(*len)++] = *s;
+			continue;
+		}
+		memcpy(out + *len, e, strlen(e));
+		*len += strlen(e);
+	}
+}
+
+static void cmd_notify(const char *args)
+{
+	static uint32_t tests;
+	char msg[600];
+	size_t n;
+	uint32_t i;
+	if (!strncmp(args, "remove", 6)) {
+		args += 6;
+		if (!parse_num(&args, 10, &i) || !i) {
+			say("usage: notify remove <n>\n");
+			return;
+		}
+		n = (size_t)snprintf(msg, sizeof msg, "<removed><id>-%lu</id></removed>", (unsigned long)i);
+		notify_feed((const uint8_t *)msg, (unsigned)n);
+		say("removed test %lu\n", (unsigned long)i);
+		return;
+	}
+	i = ++tests;
+	n = (size_t)snprintf(msg, sizeof msg,
+			     "<insert><id>-%lu</id><pn>console</pn><an>Console</an><ai>ios-mail</ai>"
+			     "<su>Test %lu</su><bo>", (unsigned long)i, (unsigned long)i);
+	if (*args)
+		xml_text(msg, sizeof msg - 32, &n, args);
+	else
+		n += (size_t)snprintf(msg + n, sizeof msg - n, "Test notification %lu", (unsigned long)i);
+	n += (size_t)snprintf(msg + n, sizeof msg - n, "</bo><vb>normal</vb></insert>");
+	notify_feed((const uint8_t *)msg, (unsigned)n);
+	say("test %lu\n", (unsigned long)i);
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -719,6 +763,7 @@ static const struct command commands[] = {
 	{ "hub", "[send <hex bytes>]", cmd_hub },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "shot", "[layer [n]]", cmd_shot },
+	{ "notify", "[text] | remove <n>", cmd_notify },
 	{ "echo", "<text>", cmd_echo },
 };
 
