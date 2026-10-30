@@ -53,7 +53,7 @@ LIBS    := -lgcc
 CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
 UI_LIB  := ui/target/armv7a-none-eabihf/release/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
-           $(shell find ui/src ui/ui ui/fonts ui/icons -type f 2>/dev/null)
+           $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
 all: $(BUILD)/asteroid.img
 

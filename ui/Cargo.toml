@@ -28,3 +28,10 @@ incremental = false
 
 [profile.dev]
 panic = "abort"
+
+[patch.crates-io]
+i-slint-common = { path = "../third_party/slint/i-slint-common" }
+i-slint-compiler = { path = "../third_party/slint/i-slint-compiler" }
+i-slint-core = { path = "../third_party/slint/i-slint-core" }
+i-slint-renderer-software = { path = "../third_party/slint/i-slint-renderer-software" }
+slint-build = { path = "../third_party/slint/slint-build" }
