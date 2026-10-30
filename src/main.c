@@ -391,7 +391,7 @@ void main(void)
 				ui_us += time_us() - u0;
 				ui_frames++;
 				stack_offset(&sx, &sy);
-				flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f);
+				flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
 			}
 			if (have_gpu) {
 				gpu_flatmesh(buf, now - t0, have_ui);

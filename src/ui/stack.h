@@ -4,13 +4,13 @@
  * AsteroidOS. Each screen is a Slint panel in its own layer (ui.h); the
  * stack owns where the layers are on the display and draws them on the
  * GPU: a touch that moves past the swipe threshold drags the screens
- * along (the press is cancelled so no click fires), except vertical drags
- * on a screen that scrolls, and letting go slides to the nearest screen
- * over 250 ms. The background is darkened in proportion to how far the
- * watchface is off centre. stack_touch routes everything else to the
- * panel on screen, or to the overlay while it is up (a swipe there closes
- * the notification); stack_update advances the slide; stack_compose draws
- * the darkening, the visible layers and the overlay between
+ * along (the press is cancelled so no click fires), except vertical
+ * drags on a screen that scrolls, and letting go slides to the nearest
+ * screen over 250 ms. stack_dim is how much to darken the background, in
+ * proportion to how far the watchface is off centre. stack_touch routes
+ * everything else to the panel on screen, or to the overlay while it is
+ * up (a swipe there closes the notification); stack_update advances the
+ * slide; stack_compose draws the visible layers and the overlay between
  * gpu_draw_begin and gpu_draw_end; stack_home snaps back to the
  * watchface. */
 #ifndef STACK_H
@@ -26,4 +26,5 @@ void stack_home(void);
 unsigned stack_screen(void);
 bool stack_moving(void);
 void stack_offset(int *x, int *y);
+float stack_dim(void);
 #endif

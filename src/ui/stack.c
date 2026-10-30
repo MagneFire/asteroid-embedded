@@ -201,12 +201,14 @@ static void layer(unsigned panel, int x, int y)
 	gpu_draw_layer_at(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, 1.0f);
 }
 
-void stack_compose(void)
+float stack_dim(void)
 {
 	float ax = (float)absi(fx) / W, ay = (float)absi(fy) / H;
-	float dim = (ax > ay ? ax : ay) * DIM;
-	if (dim > 0.0f)
-		gpu_draw_fill(0, 0, W, H, 0.0f, 0.0f, 0.0f, dim);
+	return (ax > ay ? ax : ay) * DIM;
+}
+
+void stack_compose(void)
+{
 	layer(UI_PANEL_LEFT, fx - W, 0);
 	layer(UI_PANEL_RIGHT, fx + W, 0);
 	layer(UI_PANEL_BOTTOM, 0, fy + H);

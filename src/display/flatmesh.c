@@ -16,13 +16,14 @@
 #define OUTER_B 0x00
 
 static uint32_t colors[FLATMESH_INDICES / 3];
-static float view_scale = 1.0f, view_x, view_y;
+static float view_scale = 1.0f, view_x, view_y, view_shade = 1.0f;
 
-void flatmesh_view(float scale, float dx, float dy)
+void flatmesh_view(float scale, float dx, float dy, float shade)
 {
 	view_scale = scale;
 	view_x = dx;
 	view_y = dy;
+	view_shade = shade;
 }
 static int hashes[FLATMESH_INDICES];
 static bool ready;
@@ -96,6 +97,14 @@ static void animate(uint32_t t_ms, void (*vertex)(int i, float x, float y, void 
 	}
 }
 
+static uint32_t shaded(uint32_t c)
+{
+	if (view_shade >= 1.0f)
+		return c;
+	return (uint32_t)(((c >> 16) & 0xff) * view_shade) << 16 | (uint32_t)(((c >> 8) & 0xff) * view_shade) << 8 |
+	       (uint32_t)((c & 0xff) * view_shade);
+}
+
 struct cpu_ctx { uint32_t *buf; float px[3], py[3]; };
 
 static void cpu_vertex(int i, float x, float y, void *ctx)
@@ -106,7 +115,7 @@ static void cpu_vertex(int i, float x, float y, void *ctx)
 	c->px[i % 3] = x * (float)fb.width;
 	c->py[i % 3] = y * (float)fb.height;
 	if (i % 3 == 2)
-		triangle(c->buf, c->px[0], c->py[0], c->px[1], c->py[1], c->px[2], c->py[2], colors[i / 3]);
+		triangle(c->buf, c->px[0], c->py[0], c->px[1], c->py[1], c->px[2], c->py[2], shaded(colors[i / 3]));
 }
 
 void flatmesh_render(uint32_t *buf, uint32_t t_ms)
@@ -127,9 +136,9 @@ static void gpu_vertex(int i, float x, float y, void *ctx)
 	o[1] = 1.0f - y * 2.0f;
 	o[2] = 0.0f;
 	o[3] = 1.0f;
-	o[4] = (float)((c >> 16) & 0xff) / 255.0f;
-	o[5] = (float)((c >> 8) & 0xff) / 255.0f;
-	o[6] = (float)(c & 0xff) / 255.0f;
+	o[4] = (float)((c >> 16) & 0xff) / 255.0f * view_shade;
+	o[5] = (float)((c >> 8) & 0xff) / 255.0f * view_shade;
+	o[6] = (float)(c & 0xff) / 255.0f * view_shade;
 	o[7] = 1.0f;
 }
 

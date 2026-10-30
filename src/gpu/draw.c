@@ -601,19 +601,6 @@ void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t
 	gpu_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
 }
 
-void gpu_draw_fill(int x, int y, uint32_t width, uint32_t height, float r, float g, float b, float a)
-{
-	float *q = quad(x, y, width, height);
-	if (!q)
-		return;
-	if (!gpu_draw_program(&shader_a_vs, &shader_b_fs))
-		return;
-	gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ r, g, b, a }, 1);
-	gpu_draw_blend(true);
-	gpu_draw_triangles((uint32_t)(uintptr_t)q, 24, 1, (const uint8_t[]){4}, 6);
-	gpu_draw_blend(false);
-}
-
 bool gpu_draw_end(void)
 {
 	if (!fence_ptr)

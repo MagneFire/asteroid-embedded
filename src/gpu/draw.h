@@ -22,8 +22,7 @@
  * set by gpu_draw_blend until the next gpu_draw_begin, which turns it off.
  * gpu_draw_layer_at draws a premultiplied RGBA layer with its top-left
  * corner at pixel (x, y) of the target, source-over blended and faded by
- * alpha (texture unit 0); gpu_draw_layer is the same at (0, 0), opaque.
- * gpu_draw_fill blends a premultiplied colour over a pixel rectangle. */
+ * alpha (texture unit 0); gpu_draw_layer is the same at (0, 0), opaque. */
 #ifndef GPU_DRAW_H
 #define GPU_DRAW_H
 #include <stdint.h>
@@ -70,6 +69,5 @@ void gpu_draw_blend(bool premultiplied_over);
 void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts);
 void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes);
 void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
-void gpu_draw_fill(int x, int y, uint32_t width, uint32_t height, float r, float g, float b, float a);
 bool gpu_draw_end(void);
 #endif
