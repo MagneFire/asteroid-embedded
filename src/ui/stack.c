@@ -20,7 +20,7 @@
 #define FLICK_MS	300
 #define SLIDE_MS	100
 #define DIM		0.4f
-#define FADE_MS		150
+#define FADE_MS		300
 #define APP_FADE_MS	100
 #define APP_SNAP_MS	200
 #define EDGE_PX		40

@@ -17,7 +17,7 @@
  * is up (a swipe there closes the notification); stack_update
  * advances the slide; stack_compose draws the visible layers, an open
  * app over its own background (drawn by background at the app's
- * offset and alpha) and the overlay, which fades in and out over 150
+ * offset and alpha) and the overlay, which fades in and out over 300
  * ms, between gpu_draw_begin and gpu_draw_end; while the overlay
  * fades out, stack_overlay_frozen says to leave its layer as it is;
  * stack_home snaps back to the watchface. */

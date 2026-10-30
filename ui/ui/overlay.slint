@@ -1,6 +1,5 @@
 // Drawn over every screen: a notification that was opened or just came in, the
-// Bluetooth pairing code, or a ringing alarm or timer with Snooze and Dismiss. A tap on the
-// notification dismisses it.
+// Bluetooth pairing code, or a ringing alarm or timer with Snooze and Dismiss.
 import { NoteIcons } from "note_icons.slint";
 import { Face } from "face.slint";
 
@@ -8,64 +7,73 @@ export component Overlay {
     width: 100%;
     height: 100%;
 
+    // NotificationPreview: black at 80 % over the screen with the icon, summary and body as a
+    // centred block; hides itself after 5 s or on a tap, leaving the notification in the list.
     if Face.notification-shown: Rectangle {
-        background: black;
+        background: preview-touch.pressed ? #000000d9 : #000000cc;
 
-        Image {
-            x: (root.width - 36px) / 2;
-            y: 16px;
-            width: 36px;
-            height: 36px;
-            source: Face.notification-icon >= 0 ? NoteIcons.list[Face.notification-icon] : @image-url("../icons/ios-alert-outline.svg");
-            colorize: white;
+        VerticalLayout {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            alignment: center;
+            spacing: 12px;
+
+            HorizontalLayout {
+                alignment: center;
+                padding-top: 12px;
+
+                Image {
+                    width: 80px;
+                    height: 80px;
+                    source: Face.notification-icon >= 0 ? NoteIcons.list[Face.notification-icon] : @image-url("../icons/ios-mail-outline.svg");
+                    colorize: white;
+                }
+            }
+
+            if Face.notification-summary != "": HorizontalLayout {
+                alignment: center;
+
+                Text {
+                    width: 360px;
+                    text: Face.notification-summary;
+                    color: white;
+                    font-size: 24px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+
+                Text {
+                    width: 320px;
+                    max-height: 4 * 33px;
+                    text: Face.notification-body;
+                    color: white;
+                    font-size: 24px;
+                    font-weight: Face.notification-summary == "" ? 700 : 300;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                    overflow: elide;
+                }
+            }
         }
 
-        Text {
-            x: root.width * 0.15;
-            y: root.height * 0.14;
-            width: root.width * 0.7;
-            height: root.height * 0.08;
-            text: Face.notification-app;
-            color: #ffffffa0;
-            font-size: 20px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            overflow: elide;
+        Timer {
+            interval: 5s;
+            running: Face.notification-shown;
+            triggered => {
+                Face.notification-shown = false;
+            }
         }
 
-        Text {
-            x: root.width * 0.12;
-            y: root.height * 0.23;
-            width: root.width * 0.76;
-            height: root.height * 0.16;
-            text: Face.notification-summary;
-            color: white;
-            font-size: 28px;
-            font-weight: 400;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            wrap: word-wrap;
-            overflow: elide;
-        }
-
-        Text {
-            x: root.width * 0.12;
-            y: root.height * 0.41;
-            width: root.width * 0.76;
-            height: root.height * 0.42;
-            text: Face.notification-body;
-            color: white;
-            font-size: 22px;
-            horizontal-alignment: center;
-            vertical-alignment: top;
-            wrap: word-wrap;
-            overflow: elide;
-        }
-
-        TouchArea {
+        preview-touch := TouchArea {
             clicked => {
                 Face.notification-shown = false;
-                Face.notification-dismissed(Face.notification-id);
             }
         }
     }
