@@ -47,7 +47,7 @@ int main(void)
 
 	CHECK(!strncmp(run("uibench 1 1 3"), "panel 1: ", 9) && stub_repaints == 3);
 	CHECK(!strncmp(run("uibench 2 0"), "panel 2: ", 9) && stub_repaints == 13);
-	CHECK(!strcmp(run("uibench 9 1"), "usage: uibench <0-4> <0 cpu | 1 gpu> [times]\n"));
+	CHECK(!strcmp(run("uibench 9 1"), "usage: uibench <0-6> <0 cpu | 1 gpu> [times]\n"));
 
 	CHECK(!strcmp(run("mem 1000"), "00001000: deadaeef\n"));
 	CHECK(!strcmp(run("mem 0x1000 5"),
