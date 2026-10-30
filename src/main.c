@@ -15,6 +15,7 @@
 #include "bt/bt.h"
 #include "notify/notify.h"
 #include "sensors/hub.h"
+#include "weather/weather.h"
 #include "screenshot/screenshot.h"
 #include "gitrev.h"
 #include "config.h"
@@ -197,10 +198,12 @@ void main(void)
 		usb_poll();
 		bt_poll();
 		screenshot_poll();
+		weather_poll();
 		if (!awake)
 			wakeups++;
 		if (bt_start_t && now - bt_start_t < 0x80000000u) {
 			bt_start_t = 0;
+			weather_load();
 			bluetooth_start();
 		}
 		pmic_charger_poll();

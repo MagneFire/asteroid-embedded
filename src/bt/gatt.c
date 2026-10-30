@@ -1,16 +1,17 @@
 /* The GATT services asteroid-btsyncd exposes and AsteroidOSSync talks to:
  * vendor services on the base xxxxxxxx-0000-0000-0000-00a57e401d05 plus
  * the standard Battery service, with btsyncd's properties (writes and
- * reads need an authenticated, encrypted link). Battery, time and
- * screenshots are real; the rest log what the phone sends. A screenshot
- * goes out on 6002 as btsyncd sends it: the size as a little-endian 32-bit
- * notification, then the JPEG file in 20-byte notifications, paced by the
- * free mbufs from bt_poll. */
+ * reads need an authenticated, encrypted link). Media and weather writes
+ * go to their modules; a screenshot goes out on 6002 as btsyncd sends it:
+ * the size as a little-endian 32-bit notification, then the JPEG file in
+ * 20-byte notifications, paced by the free mbufs from bt_poll. */
 #include <string.h>
 #include "asteroid.h"
 #include "host/ble_hs.h"
 #include "bt.h"
 #include "notify/notify.h"
+#include "media/media.h"
+#include "weather/weather.h"
 
 #define ASTEROID_UUID(n) \
 	BLE_UUID128_INIT(0x05, 0x1d, 0x40, 0x7e, 0xa5, 0, 0, 0, 0, 0, 0, 0, (n) & 0xff, (n) >> 8, 0, 0)
@@ -38,7 +39,7 @@ static uint16_t h_time, h_screenshot, h_media, h_weather_city, h_notif_feedback,
 static uint8_t battery_sent = 0xff;
 static uint8_t payload[1024];
 static uint16_t sub_conn = BLE_HS_CONN_HANDLE_NONE;
-static bool sub_screenshot, shot_request, shot_header;
+static bool sub_media, sub_screenshot, shot_request, shot_header;
 static const uint8_t *shot;
 static uint32_t shot_len, shot_off;
 static uint8_t shot_value[SHOT_CHUNK];
@@ -48,22 +49,6 @@ static uint8_t battery_percent(void)
 {
 	uint32_t p = pmic_battery_percent();
 	return (uint8_t)(p > 100 ? 100 : p);
-}
-
-static const char *chr_name(uint16_t id)
-{
-	switch (id) {
-	case 0x7001: return "media title";
-	case 0x7002: return "media album";
-	case 0x7003: return "media artist";
-	case 0x7004: return "media playing";
-	case 0x7006: return "media volume";
-	case 0x8001: return "weather city";
-	case 0x8002: return "weather ids";
-	case 0x8003: return "weather min";
-	case 0x8004: return "weather max";
-	default: return "write";
-	}
 }
 
 static void log_payload(const char *what, const uint8_t *p, unsigned n)
@@ -117,10 +102,14 @@ static int access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctx
 		notify_feed(payload, n);
 		return 0;
 	}
-	if (id == CHR_SCREENSHOT_REQ)
+	if (id >= 0x7001 && id <= 0x7006)
+		media_write(id, payload, n);
+	else if (id >= 0x8001 && id <= 0x8004)
+		weather_write(id, payload, n);
+	else if (id == CHR_SCREENSHOT_REQ)
 		shot_request = true;
 	else
-		log_payload(chr_name(id), payload, n);
+		log_payload("write", payload, n);
 	return 0;
 }
 
@@ -218,6 +207,8 @@ static int notify_value(uint16_t handle, const void *p, unsigned n)
 void bt_gatt_subscribe(uint16_t conn, uint16_t attr, bool on)
 {
 	sub_conn = conn;
+	if (attr == h_media)
+		sub_media = on;
 	if (attr == h_screenshot) {
 		sub_screenshot = on;
 		if (!on && shot) {
@@ -225,6 +216,11 @@ void bt_gatt_subscribe(uint16_t conn, uint16_t attr, bool on)
 			shot = NULL;
 		}
 	}
+}
+
+int bt_gatt_media_command(const uint8_t *v, unsigned n)
+{
+	return sub_media ? notify_value(h_media, v, n) : -1;
 }
 
 bool bt_gatt_screenshot_requested(void)

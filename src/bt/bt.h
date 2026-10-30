@@ -93,6 +93,7 @@ int bt_gatt_init(void);
 void bt_gatt_battery_check(void);
 void bt_gatt_subscribe(uint16_t conn, uint16_t attr, bool on);
 void bt_gatt_poll(void);
+int bt_gatt_media_command(const uint8_t *v, unsigned n);
 bool bt_gatt_screenshot_requested(void);
 void bt_gatt_screenshot_send(const uint8_t *p, uint32_t n);
 bool bt_gatt_screenshot_busy(void);
