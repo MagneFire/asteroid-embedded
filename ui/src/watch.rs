@@ -19,7 +19,7 @@ unsafe extern "C" {
     fn dcache_clean_invalidate_range(addr: *const u8, size: u32);
 }
 
-const SCREENS: usize = 5;
+const SCREENS: usize = 7;
 const OVERLAY: usize = 4;
 
 struct Static<T>(UnsafeCell<T>);
@@ -64,6 +64,7 @@ struct Ui {
     opened: Queue,
     dismissed: Queue,
     actions: Queue,
+    apps: Queue,
     stride: usize,
     width: usize,
     height: usize,
@@ -125,7 +126,7 @@ pub unsafe extern "C" fn ui_init(
     let (stride, width, height) = (stride_px as usize, width as usize, height as usize);
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
-    let (opened, dismissed, actions): (Queue, Queue, Queue) = Default::default();
+    let (opened, dismissed, actions, apps): (Queue, Queue, Queue, Queue) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
     for kind in 0..SCREENS {
@@ -142,6 +143,8 @@ pub unsafe extern "C" fn ui_init(
         face.on_notification_dismissed(move |id| queue.borrow_mut().push(id));
         let queue = actions.clone();
         face.on_media_action(move |action| queue.borrow_mut().push(action));
+        let queue = apps.clone();
+        face.on_app_opened(move |app| queue.borrow_mut().push(app));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;
@@ -151,7 +154,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, opened, dismissed, actions, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, opened, dismissed, actions, apps, stride, width, height });
     }
     true
 }
@@ -279,6 +282,17 @@ pub unsafe extern "C" fn ui_set_media(
         face.set_media_playing(playing);
         face.set_media_volume(volume.clamp(-1, 100));
     });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_app_opened() -> i32 {
+    let Some(ui) = ui() else { return -1 };
+    pop(&ui.apps).unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_app(app: i32) {
+    each(|face| face.set_app(app));
 }
 
 #[unsafe(no_mangle)]

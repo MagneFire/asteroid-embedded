@@ -5,7 +5,8 @@ import "../fonts/NotoSans-Light.ttf";
 import { Face, Note, Day, Watchface } from "face.slint";
 import { NoteList } from "notes.slint";
 import { WeatherScreen } from "weather.slint";
-import { MusicScreen } from "music.slint";
+import { Launcher } from "launcher.slint";
+import { AppScreen } from "apps.slint";
 import { Overlay } from "overlay.slint";
 export { Face, Note, Day }
 
@@ -19,6 +20,7 @@ export component Screen inherits Window {
     if root.kind == 0: Watchface { }
     if root.kind == 1: NoteList { }
     if root.kind == 2: WeatherScreen { }
-    if root.kind == 3: MusicScreen { }
+    if root.kind == 3: Launcher { }
     if root.kind == 4: Overlay { }
+    if root.kind == 6: AppScreen { }
 }

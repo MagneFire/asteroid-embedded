@@ -1,8 +1,8 @@
 /* Screen stack geometry and gestures. The watchface's origin (fx, fy) is
  * the single state the layout follows: at rest it is (0, 0) on the
  * watchface, (W, 0) with the notifications on screen, (-W, 0) for the
- * weather and (0, -H) for the music; the side screens sit one screen
- * away from the watchface. A drag moves the origin with the finger,
+ * weather and (0, -H) for the launcher; the side screens sit one screen
+ * away from the watchface. An open app lies over all of them at ax. A drag moves the origin with the finger,
  * clamped to the screens that exist in that direction, and a release
  * past 30 % or a quick flick switches screens; the slide back to rest is
  * an ease-out over SLIDE_MS. */
@@ -23,11 +23,11 @@
 enum { IDLE, PENDING, SCROLL, SWIPE };
 enum { LEFT, RIGHT, UP, DOWN };
 
-static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true };
+static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] = true };
 
-static int W, H, fx, fy, from_x, from_y;
+static int W, H, fx, fy, from_x, from_y, ax, from_ax;
 static unsigned screen, gesture;
-static bool animating, dragging, horizontal;
+static bool animating, dragging, horizontal, app_open, app_closing;
 static int down_x, down_y;
 static uint32_t down_ms, anim_t0, fade_t;
 static float fade;
@@ -49,9 +49,25 @@ void stack_home(void)
 {
 	screen = UI_PANEL_FACE;
 	fx = fy = 0;
-	animating = dragging = false;
+	animating = dragging = app_open = app_closing = false;
 	gesture = IDLE;
 	fade = 0.0f;
+}
+
+static void slide_app(bool close)
+{
+	from_ax = ax;
+	app_closing = close;
+	anim_t0 = time_ms();
+	animating = true;
+	dragging = false;
+}
+
+void stack_open_app(void)
+{
+	app_open = true;
+	ax = W;
+	slide_app(false);
 }
 
 unsigned stack_screen(void) { return screen; }
@@ -119,7 +135,43 @@ static void release(bool flick)
 
 static void cancel_press(void)
 {
-	ui_touch(screen, UI_TOUCH_UP, -10000, -10000);
+	ui_touch(app_open ? UI_PANEL_APP : screen, UI_TOUCH_UP, -10000, -10000);
+}
+
+/* On an open app only a drag to the right is a swipe: it moves the app. */
+static void touch_app(int kind, int x, int y, int dx, int dy, bool far, bool flick)
+{
+	bool swipe = dx > 0 && absi(dx) > absi(dy);
+	switch (kind) {
+	case UI_TOUCH_DOWN:
+		ui_touch(UI_PANEL_APP, kind, x, y);
+		break;
+	case UI_TOUCH_MOVE:
+		if (gesture == PENDING && far && swipe) {
+			gesture = SWIPE;
+			cancel_press();
+		} else if (gesture == PENDING && far) {
+			gesture = SCROLL;
+		}
+		if (gesture == SWIPE) {
+			ax = clampi(dx, 0, W);
+			animating = false;
+			dragging = true;
+		} else {
+			ui_touch(UI_PANEL_APP, kind, x, y);
+		}
+		break;
+	case UI_TOUCH_UP:
+		if (gesture == SWIPE || (gesture == PENDING && far && swipe)) {
+			if (gesture == PENDING)
+				cancel_press();
+			ax = clampi(dx, 0, W);
+			slide_app(ax * 10 > W * 3 || flick);
+		} else {
+			ui_touch(UI_PANEL_APP, kind, x, y);
+		}
+		break;
+	}
 }
 
 void stack_touch(int kind, int x, int y, uint32_t now_ms)
@@ -145,6 +197,18 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 	}
 	bool scroll = absi(dy) >= absi(dx) && scrolls[screen];
 	bool flick = now_ms - down_ms < FLICK_MS;
+	if (app_open) {
+		if (kind == UI_TOUCH_DOWN) {
+			gesture = PENDING;
+			down_x = x;
+			down_y = y;
+			down_ms = now_ms;
+		}
+		touch_app(kind, x, y, dx, dy, far, flick);
+		if (kind == UI_TOUCH_UP)
+			gesture = IDLE;
+		return;
+	}
 	switch (kind) {
 	case UI_TOUCH_DOWN:
 		gesture = PENDING;
@@ -195,6 +259,16 @@ void stack_update(uint32_t now_ms)
 	if (!animating)
 		return;
 	uint32_t t = now_ms - anim_t0;
+	if (app_open) {
+		float u = t >= SLIDE_MS ? 0.0f : 1.0f - (float)t / SLIDE_MS, p = 1.0f - u * u * u;
+		int to = app_closing ? W : 0;
+		ax = from_ax + (int)((to - from_ax) * p);
+		if (t >= SLIDE_MS) {
+			animating = false;
+			app_open = !app_closing;
+		}
+		return;
+	}
 	if (t >= SLIDE_MS) {
 		fx = rest_x(screen);
 		fy = rest_y(screen);
@@ -267,16 +341,22 @@ static void layer(unsigned panel, int x, int y, float alpha)
 
 float stack_dim(void)
 {
-	float ax = (float)absi(fx) / W, ay = (float)absi(fy) / H;
-	return (ax > ay ? ax : ay) * DIM;
+	float dx = (float)absi(fx) / W, dy = (float)absi(fy) / H, d = dx > dy ? dx : dy;
+	if (app_open && (float)(W - ax) / W > d)
+		d = (float)(W - ax) / W;
+	return d * DIM;
 }
 
 void stack_compose(void)
 {
-	layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
-	layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
-	layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
-	layer(UI_PANEL_FACE, fx, fy, 1.0f);
+	if (!app_open || ax > 0) {
+		layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
+		layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
+		layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
+		layer(UI_PANEL_FACE, fx, fy, 1.0f);
+	}
+	if (app_open)
+		layer(UI_PANEL_APP, ax, 0, 1.0f);
 	if (fade > 0.0f)
 		layer(UI_PANEL_OVERLAY, 0, 0, fade);
 }

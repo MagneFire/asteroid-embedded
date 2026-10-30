@@ -16,7 +16,9 @@
  * per call, the ids the user dismissed. ui_media_action returns the next
  * pressed music button or -1. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
- * the watchface to its always-on form. */
+ * the watchface to its always-on form. The app panel shows the app set
+ * with ui_set_app; ui_app_opened returns the next app picked in the
+ * launcher, or -1. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -27,10 +29,11 @@
 #define UI_HEAP_SIZE 0x04000000u
 #define UI_LAYER_BASE 0x0a000000u
 #define UI_LAYER_STRIDE 0x00100000u
-#define UI_PANELS 5
+#define UI_PANELS 7
 
 enum ui_touch_kind { UI_TOUCH_DOWN, UI_TOUCH_MOVE, UI_TOUCH_UP };
-enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY };
+enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY, UI_PANEL_TOP, UI_PANEL_APP };
+enum ui_app { UI_APP_MUSIC };
 enum ui_media_action {
 	UI_MEDIA_PREVIOUS,
 	UI_MEDIA_NEXT,
@@ -56,6 +59,8 @@ bool ui_notification_dismissed(int32_t *id);
 void ui_set_media(const char *title, uint32_t title_len, const char *artist, uint32_t artist_len, const char *album,
 		  uint32_t album_len, bool playing, int32_t volume);
 int ui_media_action(void);
+int ui_app_opened(void);
+void ui_set_app(int app);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,
 		    const int32_t *max_c);
 bool ui_modal(void);

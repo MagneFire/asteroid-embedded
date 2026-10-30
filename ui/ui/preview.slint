@@ -1,11 +1,12 @@
 // For make preview only: one window that takes the sample data as its own properties and
-// shows the screen chosen by `screen` (0 watchface, 1 notifications, 2 weather, 3 music)
+// shows the screen chosen by `screen` (0 watchface, 1 notifications, 2 weather, 3 launcher, 6 app)
 // with the overlay on top, over a backdrop instead of the FlatMesh.
 import "../fonts/NotoSans-Light.ttf";
 import { Face, Note, Day, Watchface } from "face.slint";
 import { NoteList } from "notes.slint";
 import { WeatherScreen } from "weather.slint";
-import { MusicScreen } from "music.slint";
+import { Launcher } from "launcher.slint";
+import { AppScreen } from "apps.slint";
 import { Overlay } from "overlay.slint";
 
 export component Preview inherits Window {
@@ -46,7 +47,8 @@ export component Preview inherits Window {
     if root.screen == 0: Watchface { }
     if root.screen == 1: NoteList { }
     if root.screen == 2: WeatherScreen { }
-    if root.screen == 3: MusicScreen { }
+    if root.screen == 3: Launcher { }
+    if root.screen == 6: AppScreen { }
     Overlay { }
 
     if root.round-mask: Rectangle {

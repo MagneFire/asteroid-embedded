@@ -376,6 +376,11 @@ void main(void)
 			ui_set_media(m->title, strlen(m->title), m->artist, strlen(m->artist), m->album, strlen(m->album),
 				     m->playing, m->volume);
 		}
+		for (int app; have_ui && (app = ui_app_opened()) >= 0;) {
+			ui_set_app(app);
+			stack_open_app();
+			last_activity = now;
+		}
 		for (int action; have_ui && (action = ui_media_action()) >= 0;) {
 			media_command((unsigned)action);
 			last_activity = now;

@@ -25,6 +25,7 @@ export global Face {
     in-out property <int> battery-percent;
     in-out property <bool> charging;
     in-out property <bool> ambient;
+    in-out property <int> app: -1;
     in-out property <int> passkey: -1;
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
@@ -45,6 +46,7 @@ export global Face {
     callback notification-opened(int);
     callback notification-dismissed(int);
     callback media-action(int);
+    callback app-opened(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;
