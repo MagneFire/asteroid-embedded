@@ -65,6 +65,7 @@ struct Ui {
     dismissed: Queue,
     actions: Queue,
     apps: Queue,
+    toggled: Queue,
     stride: usize,
     width: usize,
     height: usize,
@@ -126,7 +127,7 @@ pub unsafe extern "C" fn ui_init(
     let (stride, width, height) = (stride_px as usize, width as usize, height as usize);
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
-    let (opened, dismissed, actions, apps): (Queue, Queue, Queue, Queue) = Default::default();
+    let (opened, dismissed, actions, apps, toggled): (Queue, Queue, Queue, Queue, Queue) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
     for kind in 0..SCREENS {
@@ -145,6 +146,8 @@ pub unsafe extern "C" fn ui_init(
         face.on_media_action(move |action| queue.borrow_mut().push(action));
         let queue = apps.clone();
         face.on_app_opened(move |app| queue.borrow_mut().push(app));
+        let queue = toggled.clone();
+        face.on_setting_toggled(move |setting| queue.borrow_mut().push(setting));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;
@@ -154,7 +157,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, opened, dismissed, actions, apps, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, opened, dismissed, actions, apps, toggled, stride, width, height });
     }
     true
 }
@@ -288,6 +291,23 @@ pub unsafe extern "C" fn ui_set_media(
 pub extern "C" fn ui_app_opened() -> i32 {
     let Some(ui) = ui() else { return -1 };
     pop(&ui.apps).unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_settings(brightness: u32, bluetooth: bool, vibration: bool, aod: bool, clock12: bool) {
+    each(|face| {
+        face.set_brightness(brightness.min(100) as i32);
+        face.set_bluetooth_on(bluetooth);
+        face.set_vibration_on(vibration);
+        face.set_aod_on(aod);
+        face.set_clock12(clock12);
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_setting_toggled() -> i32 {
+    let Some(ui) = ui() else { return -1 };
+    pop(&ui.toggled).unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]

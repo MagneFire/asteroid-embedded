@@ -18,7 +18,9 @@
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
  * the watchface to its always-on form. The app panel shows the app set
  * with ui_set_app; ui_app_opened returns the next app picked in the
- * launcher, or -1. */
+ * launcher, or -1. ui_set_settings shows the settings (brightness in
+ * per cent) and ui_setting_toggled returns the next one the user
+ * changed, as an enum setting, or -1. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -60,6 +62,8 @@ void ui_set_media(const char *title, uint32_t title_len, const char *artist, uin
 		  uint32_t album_len, bool playing, int32_t volume);
 int ui_media_action(void);
 int ui_app_opened(void);
+void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
+int ui_setting_toggled(void);
 void ui_set_app(int app);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,
 		    const int32_t *max_c);

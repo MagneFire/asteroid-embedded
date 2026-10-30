@@ -147,10 +147,10 @@ static void cmd_wake(const char *args) { power_request(false); }
 static void cmd_aod(const char *args)
 {
 	if (!strcmp(args, "on") || !strcmp(args, "off"))
-		aod_set(!strcmp(args, "on"));
+		setting_set(SETTING_AOD, !strcmp(args, "on"));
 	else if (*args)
 		say("usage: aod [on|off]\n");
-	say("aod %s\n", aod_enabled() ? "on" : "off");
+	say("aod %s\n", setting_get(SETTING_AOD) ? "on" : "off");
 }
 
 static void cmd_rtc(const char *args)

@@ -1,7 +1,8 @@
 /* Screen stack geometry and gestures. The watchface's origin (fx, fy) is
  * the single state the layout follows: at rest it is (0, 0) on the
  * watchface, (W, 0) with the notifications on screen, (-W, 0) for the
- * weather and (0, -H) for the launcher; the side screens sit one screen
+ * weather, (0, -H) for the launcher and (0, H) for the quick settings;
+ * the side screens sit one screen
  * away from the watchface. An open app lies over all of them at ax. A drag moves the origin with the finger,
  * clamped to the screens that exist in that direction, and a release
  * past 30 % or a quick flick switches screens; the slide back to rest is
@@ -34,7 +35,7 @@ static float fade;
 static struct { int x0, x1; } bands[UI_PANELS][BANDS];
 
 static int rest_x(unsigned s) { return s == UI_PANEL_LEFT ? W : s == UI_PANEL_RIGHT ? -W : 0; }
-static int rest_y(unsigned s) { return s == UI_PANEL_BOTTOM ? -H : 0; }
+static int rest_y(unsigned s) { return s == UI_PANEL_BOTTOM ? -H : s == UI_PANEL_TOP ? H : 0; }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int absi(int v) { return v < 0 ? -v : v; }
 
@@ -88,9 +89,9 @@ static void swipe(int dir)
 {
 	unsigned s = screen;
 	if (screen == UI_PANEL_FACE)
-		s = dir == RIGHT ? UI_PANEL_LEFT : dir == LEFT ? UI_PANEL_RIGHT : dir == UP ? UI_PANEL_BOTTOM : UI_PANEL_FACE;
+		s = dir == RIGHT ? UI_PANEL_LEFT : dir == LEFT ? UI_PANEL_RIGHT : dir == UP ? UI_PANEL_BOTTOM : UI_PANEL_TOP;
 	else if ((screen == UI_PANEL_LEFT && dir == LEFT) || (screen == UI_PANEL_RIGHT && dir == RIGHT) ||
-		 (screen == UI_PANEL_BOTTOM && dir == DOWN))
+		 (screen == UI_PANEL_BOTTOM && dir == DOWN) || (screen == UI_PANEL_TOP && dir == UP))
 		s = UI_PANEL_FACE;
 	slide_to(s);
 }
@@ -104,6 +105,10 @@ static void drag(int dx, int dy)
 	switch (screen) {
 	case UI_PANEL_FACE:
 		dx = clampi(dx, -W, W);
+		dy = clampi(dy, -H, H);
+		break;
+	case UI_PANEL_TOP:
+		dx = 0;
 		dy = clampi(dy, -H, 0);
 		break;
 	case UI_PANEL_LEFT:
@@ -353,6 +358,7 @@ void stack_compose(void)
 		layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
 		layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
 		layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
+		layer(UI_PANEL_TOP, 0, fy - H, 1.0f);
 		layer(UI_PANEL_FACE, fx, fy, 1.0f);
 	}
 	if (app_open)

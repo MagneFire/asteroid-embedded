@@ -1,6 +1,7 @@
 /* The screen stack: the watchface with the notifications to its left
- * (swipe right), the weather to its right (swipe left) and the app
- * launcher below it (swipe up), the opposite swipe going back, as on
+ * (swipe right), the weather to its right (swipe left), the app
+ * launcher below it (swipe up) and the quick settings above it (swipe
+ * down), the opposite swipe going back, as on
  * AsteroidOS. stack_open_app slides the app panel in over the stack from
  * the right; a swipe right slides it out again. Each screen is a Slint panel in its own layer (ui.h); the
  * stack owns where the layers are on the display and draws them on the

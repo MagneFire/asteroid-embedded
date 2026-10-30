@@ -106,28 +106,8 @@ void power_request(bool sleep)
 /* The always-on face: shown while asleep unless turned off or the palm
  * covered the screen, drawn on the CPU so the GPU can stay off, with the
  * panel in idle mode. */
-#define KV_AOD "aod"
-static bool aod = true, aod_loaded, ambient;
+static bool ambient;
 static uint32_t ambient_minute;
-
-bool aod_enabled(void)
-{
-	if (!aod_loaded) {
-		uint8_t v;
-		if (kv_get(KV_AOD, &v, 1) == 1)
-			aod = v;
-		aod_loaded = true;
-	}
-	return aod;
-}
-
-void aod_set(bool on)
-{
-	uint8_t v = on;
-	aod = on;
-	aod_loaded = true;
-	kv_set(KV_AOD, &v, 1);
-}
 
 static void ambient_draw(void)
 {
@@ -165,6 +145,39 @@ static void bluetooth_start(void)
 	int r = bt_host_start();
 	if (r)
 		log_printf("bt: host failed (%d)\n", r);
+}
+
+static void show_settings(void)
+{
+	ui_set_settings(setting_get(SETTING_BRIGHTNESS), setting_get(SETTING_BLUETOOTH), setting_get(SETTING_VIBRATION),
+			setting_get(SETTING_AOD), setting_get(SETTING_CLOCK12));
+}
+
+static void set_brightness(void)
+{
+	display_set_brightness((uint8_t)(setting_get(SETTING_BRIGHTNESS) * 255 / 100));
+}
+
+/* A setting changed from the UI: store it and put it into effect. */
+static void setting_toggled(int s)
+{
+	if (s == SETTING_BRIGHTNESS) {
+		int b = setting_get(SETTING_BRIGHTNESS);
+		setting_set(SETTING_BRIGHTNESS, b >= 100 ? 25 : (b / 25 + 1) * 25);
+		set_brightness();
+	} else if (s == SETTING_BLUETOOTH) {
+		bool on = !setting_get(SETTING_BLUETOOTH);
+		setting_set(SETTING_BLUETOOTH, on);
+		if (on) {
+			bluetooth_start();
+		} else {
+			bt_host_stop();
+			bt_stop();
+		}
+	} else if (s >= 0 && s < SETTINGS) {
+		setting_set((enum setting)s, !setting_get((enum setting)s));
+	}
+	show_settings();
 }
 
 static void vibrate(const char *how)
@@ -277,7 +290,12 @@ void main(void)
 		if (bt_start_t && now - bt_start_t < 0x80000000u) {
 			bt_start_t = 0;
 			weather_load();
-			bluetooth_start();
+			if (setting_get(SETTING_BLUETOOTH))
+				bluetooth_start();
+			if (have_display)
+				set_brightness();
+			if (have_ui)
+				show_settings();
 		}
 		pmic_charger_poll();
 		bms_poll();
@@ -363,7 +381,7 @@ void main(void)
 				newest_seq = top->seq;
 				if (have_ui)
 					ui_show_notification(top->id);
-				if (have_haptics)
+				if (have_haptics && setting_get(SETTING_VIBRATION))
 					vibrate(top->vibrate);
 				wake_request = !awake;
 				last_activity = now;
@@ -375,6 +393,10 @@ void main(void)
 			const struct media *m = media_get();
 			ui_set_media(m->title, strlen(m->title), m->artist, strlen(m->artist), m->album, strlen(m->album),
 				     m->playing, m->volume);
+		}
+		for (int s; have_ui && (s = ui_setting_toggled()) >= 0;) {
+			setting_toggled(s);
+			last_activity = now;
 		}
 		for (int app; have_ui && (app = ui_app_opened()) >= 0;) {
 			ui_set_app(app);
@@ -395,7 +417,7 @@ void main(void)
 			console_sleep = console_wake = false;
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
-			ambient = have_ui && !palm && aod_enabled();
+			ambient = have_ui && !palm && setting_get(SETTING_AOD);
 			if (!ambient)
 				display_sleep();
 			if (have_ui) {

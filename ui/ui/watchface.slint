@@ -7,6 +7,7 @@ import { NoteList } from "notes.slint";
 import { WeatherScreen } from "weather.slint";
 import { Launcher } from "launcher.slint";
 import { AppScreen } from "apps.slint";
+import { QuickSettings } from "quick.slint";
 import { Overlay } from "overlay.slint";
 export { Face, Note, Day }
 
@@ -22,5 +23,6 @@ export component Screen inherits Window {
     if root.kind == 2: WeatherScreen { }
     if root.kind == 3: Launcher { }
     if root.kind == 4: Overlay { }
+    if root.kind == 5: QuickSettings { }
     if root.kind == 6: AppScreen { }
 }

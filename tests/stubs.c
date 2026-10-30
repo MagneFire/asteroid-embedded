@@ -43,9 +43,9 @@ void haptics_play(const uint16_t *on_off_ms, unsigned n) {}
 void cpu_clock_slow(bool slow) {}
 bool cpu_clock_is_slow(void) { return false; }
 void power_request(bool sleep) { stub_asleep = sleep; }
-static bool stub_aod = true;
-bool aod_enabled(void) { return stub_aod; }
-void aod_set(bool on) { stub_aod = on; }
+static int stub_settings[SETTINGS] = { [SETTING_AOD] = 1 };
+int setting_get(enum setting s) { return stub_settings[s]; }
+void setting_set(enum setting s, int v) { stub_settings[s] = v; }
 void hub_status(void (*say)(const char *fmt, ...)) {}
 int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms) {}
