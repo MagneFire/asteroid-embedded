@@ -1,46 +1,10 @@
-// The timer, laid out as asteroid-timer, and the stopwatch. The firmware keeps both running, also
-// while the app is closed or the watch sleeps, and shows their state in Face; clock-action takes
-// 20 to start or pause the timer, 30 to start or stop the stopwatch and 31 to reset it, and
-// timer-set the timer's duration in seconds.
+// The timer and the stopwatch, laid out as asteroid-timer and asteroid-stopwatch. The firmware
+// keeps both running, also while the app is closed or the watch sleeps, and shows their state in
+// Face; clock-action takes 20 to start or pause the timer, 30 to start or stop the stopwatch, 31
+// to reset it and 32 to record a lap, and timer-set the timer's duration in seconds.
 import { Face } from "face.slint";
-import { IconButton, Spinner } from "controls.slint";
-
-component Button inherits Rectangle {
-    in property <string> label;
-    in property <image> icon;
-    in property <length> size: 56px;
-    callback clicked();
-
-    width: root.size;
-    height: root.size;
-    border-radius: root.size / 2;
-    background: touch.pressed ? #ffffff70 : #ffffff30;
-
-    if root.label != "": Text {
-        width: parent.width;
-        height: parent.height;
-        text: root.label;
-        color: white;
-        font-size: 20px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    if root.label == "": Image {
-        x: (parent.width - parent.width * 0.5) / 2;
-        y: (parent.height - parent.height * 0.5) / 2;
-        width: parent.width * 0.5;
-        height: parent.height * 0.5;
-        source: root.icon;
-        colorize: white;
-    }
-
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-}
+import { IconButton, Spinner, PageDot } from "controls.slint";
+import { Pager } from "launcher.slint";
 
 // Hours, minutes and seconds on three spinners with their unit raised beside each, and one
 // button to start or pause. While it runs the spinners follow the time left; turned by hand
@@ -127,41 +91,279 @@ export component TimerApp {
     }
 }
 
+// A value with its unit raised after it, as the stopwatch's rich text sets them.
+component Sup {
+    in property <string> value;
+    in property <string> unit;
+    in property <length> size;
+    in property <color> color: white;
+
+    HorizontalLayout {
+        Text {
+            text: root.value;
+            color: root.color;
+            font-size: root.size;
+            vertical-alignment: center;
+        }
+
+        if root.unit != "": Text {
+            text: root.unit;
+            color: root.color;
+            font-size: Math.round(root.size * 0.58 / 1px) * 1px;
+            vertical-alignment: top;
+        }
+    }
+}
+
+// The elapsed time large in the middle, tenths smaller in lavender; a tap starts or stops it.
+// Stopped, it blinks and a reset button shows below. A swipe left shows the laps: the current
+// split on top, tapped to record a lap, and the laps below with how much faster (green) or slower
+// (red) each was than the one before.
 export component StopwatchApp {
-    property <int> tenths: Math.floor(Face.stopwatch-ms / 100);
+    property <int> ms: Face.stopwatch-ms;
+    property <bool> paused: !Face.stopwatch-running && self.ms > 0;
+    property <length> scroll: pages.index * 400px - pages.drag;
+    property <bool> blink;
+    animate scroll {
+        duration: pages.dragging ? 0ms : pages.anim;
+        easing: ease-out;
+    }
 
     width: 100%;
     height: 100%;
 
-    Text {
-        x: 0;
-        y: root.height * 0.3;
-        width: root.width;
-        height: root.height * 0.2;
-        text: Face.two-digits(Math.floor(root.tenths / 600)) + ":" + Face.two-digits(Math.mod(Math.floor(root.tenths / 10), 60)) + "." + Math.mod(root.tenths, 10);
-        color: white;
-        font-size: 64px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    pure function pad(n: int) -> string {
+        return Face.two-digits(n);
+    }
+    pure function lap-text(ms: int) -> string {
+        let m = Math.floor(Math.abs(ms) / 60000);
+        let s = Math.floor(Math.mod(Math.abs(ms), 60000) / 1000);
+        let t = Math.floor(Math.mod(Math.abs(ms), 1000) / 100);
+        return m > 0 ? self.pad(m) + ":" + self.pad(s) + "." + t : self.pad(s) + "." + t + "s";
+    }
+    pure function run-text(ms: int) -> string {
+        let h = Math.floor(ms / 3600000);
+        let m = Math.floor(Math.mod(ms, 3600000) / 60000);
+        let s = Math.floor(Math.mod(ms, 60000) / 1000);
+        return (h > 0 ? self.pad(h) + "h" : "") + (h > 0 || m > 0 ? self.pad(m) + "m" : "") + self.pad(s) + "s";
+    }
+    pure function delta-text(ms: int) -> string {
+        let m = Math.floor(Math.abs(ms) / 60000);
+        let s = Math.floor(Math.mod(Math.abs(ms), 60000) / 1000);
+        let t = Math.floor(Math.mod(Math.abs(ms), 1000) / 100);
+        return (ms >= 0 ? "+" : "-") + (m > 0 ? self.pad(m) + ":" : "") + self.pad(s) + "." + t;
+    }
+    pure function split(i: int) -> int {
+        return Face.stopwatch-laps[i] - (i + 1 < Face.stopwatch-laps.length ? Face.stopwatch-laps[i + 1] : 0);
     }
 
-    Button {
-        x: root.width * 0.5 - 12px - self.width;
-        y: root.height * 0.62;
-        size: 64px;
-        icon: Face.stopwatch-running ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
-        clicked => {
-            Face.clock-action(30);
+    Rectangle {
+        x: -root.scroll;
+        width: 400px;
+        height: 400px;
+
+        VerticalLayout {
+            x: 0;
+            y: 0;
+            width: 400px;
+            height: 400px;
+            alignment: center;
+            opacity: root.paused && root.blink ? 0 : 1;
+            animate opacity {
+                duration: 500ms;
+            }
+
+            if root.ms >= 3600000: HorizontalLayout {
+                alignment: center;
+
+                Sup {
+                    value: Math.floor(root.ms / 3600000);
+                    unit: "h";
+                    size: 100px;
+                }
+            }
+
+            if root.ms >= 3600000: HorizontalLayout {
+                alignment: center;
+
+                Sup {
+                    value: root.pad(Math.floor(Math.mod(root.ms, 3600000) / 60000));
+                    unit: "m";
+                    size: 70px;
+                    color: #CCCCF3;
+                }
+
+                Sup {
+                    value: root.pad(Math.floor(Math.mod(root.ms, 60000) / 1000));
+                    unit: "s";
+                    size: 70px;
+                    color: #CCCCF3;
+                }
+            }
+
+            if root.ms >= 60000 && root.ms < 3600000: HorizontalLayout {
+                alignment: center;
+
+                Sup {
+                    value: root.pad(Math.floor(Math.mod(root.ms, 3600000) / 60000));
+                    unit: "m";
+                    size: 100px;
+                }
+            }
+
+            if root.ms >= 60000 && root.ms < 3600000: HorizontalLayout {
+                alignment: center;
+
+                Sup {
+                    value: root.pad(Math.floor(Math.mod(root.ms, 60000) / 1000));
+                    unit: "s";
+                    size: 70px;
+                    color: #CCCCF3;
+                }
+
+                Sup {
+                    value: Math.floor(Math.mod(root.ms, 1000) / 100);
+                    size: 70px;
+                    color: #CCCCF3;
+                }
+            }
+
+            if root.ms < 60000: HorizontalLayout {
+                alignment: center;
+
+                Sup {
+                    value: root.pad(Math.floor(root.ms / 1000));
+                    unit: "s";
+                    size: 100px;
+                }
+
+                Sup {
+                    value: Math.floor(Math.mod(root.ms, 1000) / 100);
+                    size: 70px;
+                    color: #CCCCF3;
+                }
+            }
+        }
+
+        Timer {
+            interval: 500ms;
+            running: root.paused;
+            triggered => {
+                root.blink = !root.blink;
+            }
+        }
+
+        if root.paused: Image {
+            x: 152px;
+            y: 290px;
+            width: 96px;
+            height: 96px;
+            source: @image-url("../icons/ios-refresh.svg");
+            colorize: white;
         }
     }
 
-    Button {
-        x: root.width * 0.5 + 12px;
-        y: root.height * 0.62;
-        size: 64px;
-        label: "Reset";
-        clicked => {
-            Face.clock-action(31);
+    Rectangle {
+        x: 400px - root.scroll;
+        width: 400px;
+        height: 400px;
+        clip: true;
+
+        for k[i] in Face.stopwatch-laps.length + 1: Rectangle {
+            property <bool> current: i == 0;
+            property <int> lap: i - 1;
+            y: 120px + i * 80px;
+            width: 400px;
+            height: 80px;
+            visible: self.y < 400px;
+
+            Text {
+                x: 60px;
+                width: 60px;
+                height: parent.height;
+                text: "L" + (parent.current ? Face.stopwatch-laps.length + 1 : Face.stopwatch-laps.length - parent.lap);
+                color: #CCCCF3;
+                opacity: 0.6;
+                font-size: 24px;
+                vertical-alignment: center;
+            }
+
+            Text {
+                x: 120px;
+                height: parent.height;
+                text: parent.current ? root.run-text(root.ms - (Face.stopwatch-laps.length > 0 ? Face.stopwatch-laps[0] : 0)) : root.lap-text(root.split(parent.lap));
+                color: white;
+                font-size: 32px;
+                vertical-alignment: center;
+            }
+
+            if i != 0 && i < Face.stopwatch-laps.length: Text {
+                x: 140px;
+                width: 200px;
+                height: 80px;
+                text: root.delta-text(root.split(i - 1) - root.split(i));
+                color: root.split(i - 1) - root.split(i) <= 0 ? #AAEE44 : #FF6644;
+                font-size: 24px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: 400px;
+                height: 1px;
+                background: #ffffff40;
+            }
         }
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: 400px;
+            height: 160px;
+            background: @linear-gradient(180deg, #000000ff 0%, #00000000 100%);
+        }
+
+        Text {
+            x: 0;
+            y: 0;
+            width: 400px;
+            height: 160px;
+            text: Face.stopwatch-laps.length < 2 ? root.lap-text(root.ms - (Face.stopwatch-laps.length > 0 ? Face.stopwatch-laps[0] : 0)) : root.delta-text((root.ms - Face.stopwatch-laps[0]) - root.split(0));
+            color: Face.stopwatch-laps.length < 2 ? #CCCCF3 : (root.ms - Face.stopwatch-laps[0]) - root.split(0) <= 0 ? #AAEE44 : #FF6644;
+            font-size: 48px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+    }
+
+    // The pages take the taps too, so a swipe can start on them: on the time a tap starts or
+    // stops it, on the reset button resets it, on the lap page's header records a lap.
+    pages := Pager {
+        item: 400px;
+        count: 2;
+        tapped(x, y) => {
+            if self.index == 1 {
+                if y < 160px {
+                    Face.clock-action(32);
+                }
+            } else if root.paused && y > 280px && x > 140px && x < 260px {
+                Face.clock-action(31);
+                self.index = 0;
+            } else {
+                Face.clock-action(30);
+                root.blink = false;
+            }
+        }
+    }
+
+    if !(root.paused && pages.index == 0): PageDot {
+        x: (400px - self.width) / 2;
+        y: 384px;
+        count: 2;
+        current: pages.index;
+        size: 8px;
     }
 }
