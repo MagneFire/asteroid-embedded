@@ -56,12 +56,39 @@ static bool have_gpu;
 static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
+static uint32_t mesh_t, app_center = 0x888888, app_outer;
+
+/* An open app's own mesh in its colours, under it as it moves and fades. */
+static void app_background(int x, int y, float alpha)
+{
+	static float *vbo;
+	if (!vbo)
+		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
+	unsigned n = flatmesh_vertices_gpu_look(vbo, mesh_t, app_center, app_outer, (float)x / fb.width,
+						(float)y / fb.height, alpha);
+	gpu_draw_program(&shader_c_vs, &shader_c_fs);
+	gpu_draw_blend(alpha < 1.0f);
+	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
+	gpu_draw_blend(false);
+}
+
+static void open_app(int app)
+{
+	if (!ui_app_colors(app, &app_center, &app_outer)) {
+		app_center = 0x888888;
+		app_outer = 0;
+	}
+	ui_set_app(app);
+	stack_open_app();
+}
+
 static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 {
 	static float *vbo;
 	if (!vbo)
 		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
 	uint32_t t0 = time_us();
+	mesh_t = t_ms;
 	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
 	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4, false };
 	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
@@ -70,7 +97,7 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
 	if (with_layer)
-		stack_compose();
+		stack_compose(app_background);
 	if (!gpu_draw_end()) {
 		if (gpu_fail++ == 0)
 			log_printf("gpu: draw did not complete\n");
@@ -207,8 +234,7 @@ static void setting_toggled(int s)
 	} else if (s == UI_LOCK) {
 		power_request(true);
 	} else if (s == UI_OPEN_SETTINGS) {
-		ui_set_app(UI_APP_SETTINGS);
-		stack_open_app();
+		open_app(UI_APP_SETTINGS);
 	} else if (s == UI_FORGET_PHONE) {
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 	} else if (s == SETTING_BLUETOOTH) {
@@ -562,8 +588,7 @@ void main(void)
 			last_activity = now;
 		}
 		for (int app; have_ui && (app = ui_app_opened()) >= 0;) {
-			ui_set_app(app);
-			stack_open_app();
+			open_app(app);
 			last_activity = now;
 		}
 		for (int action; have_ui && (action = ui_media_action()) >= 0;) {

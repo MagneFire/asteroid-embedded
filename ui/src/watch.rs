@@ -332,6 +332,23 @@ pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) {
     }
 }
 
+/// The background colours of an app, as 0xRRGGBB; false for an unknown app.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_app_colors(app: i32, center: *mut u32, outer: *mut u32) -> bool {
+    let Some(ui) = ui() else { return false };
+    let apps = ui.screens[LAUNCHER].global::<Apps>().get_list();
+    let Some(a) = apps.iter().find(|a| a.id == app) else { return false };
+    if center.is_null() || outer.is_null() {
+        return false;
+    }
+    let rgb = |c: slint::Color| (c.red() as u32) << 16 | (c.green() as u32) << 8 | c.blue() as u32;
+    unsafe {
+        *center = rgb(a.center);
+        *outer = rgb(a.outer);
+    }
+    true
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_opened() -> i32 {
     let Some(ui) = ui() else { return -1 };

@@ -390,20 +390,23 @@ float stack_launcher(void)
 	return fy < 0 ? (float)-fy / H : 0.0f;
 }
 
-void stack_compose(void)
+void stack_compose(void (*background)(int x, int y, float alpha))
 {
-	/* The app has no background of its own: the screens behind fade in
-	 * as it fades out, so it never shows through. */
-	float a = app_open ? app_alpha() : 0.0f, b = 1.0f - a;
-	if (b > 0.0f) {
-		layer(UI_PANEL_LEFT, fx - W, 0, b);
-		layer(UI_PANEL_RIGHT, fx + W, 0, b);
-		layer(UI_PANEL_BOTTOM, 0, fy + H, b);
-		layer(UI_PANEL_TOP, 0, fy - H, b);
-		layer(UI_PANEL_FACE, fx, fy, b);
+	/* An app is drawn over its own mesh (background), both moved and
+	 * faded together over the screens behind. */
+	float a = app_open ? app_alpha() : 0.0f;
+	if (a < 1.0f) {
+		layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
+		layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
+		layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
+		layer(UI_PANEL_TOP, 0, fy - H, 1.0f);
+		layer(UI_PANEL_FACE, fx, fy, 1.0f);
 	}
-	if (app_open)
-		layer(UI_PANEL_APP, app_top ? 0 : off, app_top ? off : 0, a);
+	if (app_open) {
+		int x = app_top ? 0 : off, y = app_top ? off : 0;
+		background(x, y, a);
+		layer(UI_PANEL_APP, x, y, a);
+	}
 	if (fade > 0.0f)
 		layer(UI_PANEL_OVERLAY, 0, 0, fade);
 }

@@ -86,6 +86,7 @@ int ui_app_opened(void);
 bool ui_app_back(void);
 int ui_app_depth(void);
 void ui_launcher_colors(uint32_t *center, uint32_t *outer);
+bool ui_app_colors(int app, uint32_t *center, uint32_t *outer);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);
 void ui_set_face(int watchface, bool nightstand_setting, bool nightstand);

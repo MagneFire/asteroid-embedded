@@ -151,3 +151,32 @@ unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms)
 	animate(t_ms, gpu_vertex, out);
 	return FLATMESH_INDICES;
 }
+
+/* A second mesh, an app's own background: its colours, moved by (dx, dy)
+ * of the screen and premultiplied by alpha for blending over the first. */
+struct look { float *out; uint32_t center, outer; float dx, dy, alpha; };
+
+static void look_vertex(int i, float x, float y, void *ctx)
+{
+	struct look *l = ctx;
+	float *o = l->out + i * 8, m = flatmesh_vertices[flatmesh_indices[i / 3 * 3]][2];
+	x = 0.5f + (x - 0.5f) * view_scale + l->dx;
+	y = 0.5f + (y - 0.5f) * view_scale + l->dy;
+	o[0] = x * 2.0f - 1.0f;
+	o[1] = 1.0f - y * 2.0f;
+	o[2] = 0.0f;
+	o[3] = 1.0f;
+	for (int c = 0; c < 3; c++) {
+		int s = 16 - 8 * c;
+		o[4 + c] = ((float)(l->center >> s & 0xff) * (1 - m) + (float)(l->outer >> s & 0xff) * m) / 255.0f * l->alpha;
+	}
+	o[7] = l->alpha;
+}
+
+unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, uint32_t outer, float dx, float dy,
+				    float alpha)
+{
+	struct look l = { out, center, outer, dx, dy, alpha };
+	animate(t_ms, look_vertex, &l);
+	return FLATMESH_INDICES;
+}
