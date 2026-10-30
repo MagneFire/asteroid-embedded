@@ -91,10 +91,12 @@ shared-parley = [
     "dep:icu_normalizer",
 ]
 shared-swash = ["dep:swash"]
+parley-complex-scripts = ["parley?/complex-scripts"]
 std = [
     "euclid/std",
     "once_cell/std",
     "parley?/std",
+    "parley-complex-scripts",
     "skrifa?/std",
     "swash?/std",
     "i-slint-common/std",
@@ -403,7 +405,6 @@ default-features = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.parley]
 version = "0.11.1"
-features = ["complex-scripts"]
 optional = true
 default-features = false
 
