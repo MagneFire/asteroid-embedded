@@ -593,6 +593,7 @@ impl SoftwareRenderer {
                 dirty_region: Default::default(),
                 scale_factor: factor,
                 clips: Vec::new(),
+                buffer_rounded_clip: None,
             },
             rotation,
             #[cfg(feature = "systemfonts")]
@@ -1658,12 +1659,6 @@ fn shape_clips<'a>(
         .filter(|clip| clip.touches_corner(geometry.size))
 }
 
-/// Whether the `TargetPixelBuffer` hooks may draw a command in `geometry`.
-/// They can't clip to a rounded shape.
-fn hook_can_draw(rounded_clips: &[RoundedClip], geometry: impl FnOnce() -> PhysicalRect) -> bool {
-    rounded_clips.is_empty() || shape_clips(rounded_clips, &geometry()).next().is_none()
-}
-
 fn process_rectangle_impl(
     processor: &mut dyn ProcessScene,
     args: &target_pixel_buffer::DrawRectangleArgs,
@@ -1909,9 +1904,52 @@ struct RenderToBuffer<'a, TargetPixelBuffer> {
     scale_factor: ScaleFactor,
     /// Reused by every command, so drawing doesn't allocate.
     clips: Vec<ShapeClip>,
+    /// The rounded clip last passed to the buffer and whether it accepted it, `None` before the
+    /// first.
+    buffer_rounded_clip: Option<(Option<[f32; 5]>, bool)>,
 }
 
 impl<B: target_pixel_buffer::TargetPixelBuffer> RenderToBuffer<'_, B> {
+    /// Whether the `TargetPixelBuffer` hooks may draw a command in `geometry`: when no rounded
+    /// clip cuts into it, or when one does and the buffer clips to it itself.
+    fn hook_can_draw(
+        &mut self,
+        rounded_clips: &[RoundedClip],
+        geometry: impl FnOnce() -> PhysicalRect,
+    ) -> bool {
+        let mut clip = None;
+        if !rounded_clips.is_empty() {
+            let geometry = geometry();
+            let mut cutting = rounded_clips
+                .iter()
+                .filter(|c| shape_clips(core::slice::from_ref(*c), &geometry).next().is_some());
+            match (cutting.next(), cutting.next()) {
+                (None, _) => {}
+                (Some(c), None) => {
+                    let r = c.radius;
+                    let r = r.top_left.max(r.top_right).max(r.bottom_right).max(r.bottom_left);
+                    clip = Some([
+                        c.rect.min_x() as f32,
+                        c.rect.min_y() as f32,
+                        c.rect.max_x() as f32,
+                        c.rect.max_y() as f32,
+                        r as f32,
+                    ]);
+                }
+                _ => return false,
+            }
+        }
+        let accepted = match self.buffer_rounded_clip {
+            Some((last, accepted)) if last == clip => accepted,
+            _ => {
+                let accepted = self.buffer.set_rounded_clip(clip);
+                self.buffer_rounded_clip = Some((clip, accepted));
+                accepted
+            }
+        };
+        clip.is_none() || accepted
+    }
+
     fn foreach_ranges(
         &mut self,
         geometry: &PhysicalRect,
@@ -2018,7 +2056,7 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         clip: PhysicalRect,
         rounded_clips: &[RoundedClip],
     ) {
-        if hook_can_draw(rounded_clips, || {
+        if self.hook_can_draw(rounded_clips, || {
             let geometry = euclid::rect::<i32, PhysicalPx>(
                 texture.dst_x as _,
                 texture.dst_y as _,
@@ -2044,7 +2082,7 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         clip: PhysicalRect,
         rounded_clips: &[RoundedClip],
     ) {
-        if hook_can_draw(rounded_clips, || {
+        if self.hook_can_draw(rounded_clips, || {
             args.geometry().round_out().cast().intersection(&clip).unwrap_or_default()
         }) && self.buffer.draw_rectangle(args, &self.dirty_region.intersection(&clip))
         {
@@ -3932,6 +3970,7 @@ fn render_region(
         dirty_region: PhysicalRegion { rectangles, count: region.len() },
         scale_factor,
         clips: Vec::new(),
+        buffer_rounded_clip: None,
     };
     draw(&mut processor);
     data

@@ -150,10 +150,11 @@ impl TargetPixelBuffer for GpuLayer<'_> {
         self.height
     }
 
-    fn set_rounded_clip(&mut self, clip: Option<[f32; 5]>) {
+    fn set_rounded_clip(&mut self, clip: Option<[f32; 5]>) -> bool {
         if self.on {
             unsafe { paint_rounded_clip(clip.as_ref().map_or(core::ptr::null(), |c| c.as_ptr())) };
         }
+        self.on
     }
 
     fn fill_background(&mut self, brush: &Brush, region: &PhysicalRegion) -> bool {
