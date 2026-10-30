@@ -1,5 +1,6 @@
 /* The screenshot service: a write to 6001 takes a copy of the frame on
- * screen (the front buffer, as the GPU composed it), encodes it as JPEG a
+ * screen (the front buffer, as the GPU composed it), or of a UI layer,
+ * whose bytes R, G, B, A become XRGB, encodes it as JPEG a
  * few MCU rows per main loop iteration and hands the file to the GATT
  * layer, which sends it on 6002 the way asteroid-btsyncd does. */
 #include <string.h>
@@ -39,7 +40,12 @@ void screenshot_poll(void)
 				bt_gatt_screenshot_send(NULL, 0);
 		} else {
 			uint32_t *copy = (uint32_t *)(uintptr_t)SCREENSHOT_BASE;
-			memcpy(copy, file && from_layer >= 0 ? (const void *)(uintptr_t)(UI_LAYER_BASE + from_layer * UI_LAYER_STRIDE) : fb.buf[fb.back ^ 1], bytes);
+			const uint32_t *layer = (const uint32_t *)(uintptr_t)(UI_LAYER_BASE + from_layer * UI_LAYER_STRIDE);
+			if (file && from_layer >= 0)
+				for (uint32_t i = 0; i < bytes / 4; i++)
+					copy[i] = (layer[i] & 0xff) << 16 | (layer[i] & 0xff00) | (layer[i] >> 16 & 0xff);
+			else
+				memcpy(copy, fb.buf[fb.back ^ 1], bytes);
 			jpeg_begin(&enc, copy, fb.width, fb.height, fb.stride, (uint8_t *)(uintptr_t)(SCREENSHOT_BASE + bytes),
 				   SCREENSHOT_SIZE - bytes, QUALITY);
 			encoding = true;
