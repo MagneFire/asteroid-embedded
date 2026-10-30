@@ -21,12 +21,14 @@
 #include "weather/weather.h"
 #include "screenshot/screenshot.h"
 #include "storage/storage.h"
+#include "alarm.h"
 #include "gitrev.h"
 #include "config.h"
 
 const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
+#define RING_MS 300000
 #define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
 
@@ -186,6 +188,35 @@ static void setting_toggled(int s)
 	show_settings();
 }
 
+static void show_alarms(void)
+{
+	uint8_t rec[ALARMS * 4];
+	unsigned n = alarm_count();
+	for (unsigned i = 0; i < n; i++) {
+		const struct alarm *a = alarm_get(i);
+		rec[i * 4] = a->hour;
+		rec[i * 4 + 1] = a->minute;
+		rec[i * 4 + 2] = a->days;
+		rec[i * 4 + 3] = a->on;
+	}
+	ui_set_alarms(rec, n);
+}
+
+/* A change from the alarm app, packed as ui.h describes. */
+static void alarm_edited(int e)
+{
+	unsigned i = (unsigned)(e & 0xff);
+	if (e & 1 << 27) {
+		if (i)
+			alarm_delete(i - 1);
+	} else {
+		struct alarm a = { (uint8_t)(e >> 8 & 0x1f), (uint8_t)(e >> 13 & 0x3f), (uint8_t)(e >> 19 & 0x7f), e >> 26 & 1 };
+		if (!alarm_set(i ? i - 1 : ALARMS, &a))
+			log_printf("alarm: no room\n");
+	}
+	show_alarms();
+}
+
 static void vibrate(const char *how)
 {
 	static const uint16_t normal[] = { 200 }, strong[] = { 250, 150, 250 },
@@ -273,7 +304,8 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
-	bool key_was = false, awake = true, palm = false;
+	bool key_was = false, awake = true, palm = false, ringing = false;
+	uint32_t alarm_t = 0, ring_t = 0;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
@@ -303,6 +335,7 @@ void main(void)
 			if (have_ui) {
 				show_settings();
 				ui_set_build(build_id);
+				show_alarms();
 			}
 		}
 		pmic_charger_poll();
@@ -402,6 +435,42 @@ void main(void)
 			ui_set_media(m->title, strlen(m->title), m->artist, strlen(m->artist), m->album, strlen(m->album),
 				     m->playing, m->volume);
 		}
+		if (now - alarm_t >= 1000) {
+			alarm_t = now;
+			if (alarm_check(pmic_rtc_read()) && have_ui) {
+				log_printf("alarm: ringing\n");
+				ringing = true;
+				ring_t = now;
+				ui_set_alarm_ringing(true);
+				show_alarms();
+				wake_request = !awake;
+			}
+		}
+		for (int a; have_ui && (a = ui_alarm_action()) >= 0 && ringing;) {
+			if (a == UI_ALARM_SNOOZE)
+				alarm_snooze(pmic_rtc_read());
+			log_printf("alarm: %s\n", a == UI_ALARM_SNOOZE ? "snoozed" : "dismissed");
+			ringing = false;
+		}
+		if (ringing && now - ring_t >= RING_MS) {
+			log_printf("alarm: stopped ringing\n");
+			ringing = false;
+		}
+		if (ringing) {
+			static const uint16_t ring[] = { 500, 500 };
+			last_activity = now;
+			if (have_haptics && !haptics_busy())
+				haptics_play(ring, ARRAY_SIZE(ring));
+		} else if (have_ui && ring_t) {
+			ring_t = 0;
+			ui_set_alarm_ringing(false);
+			if (have_haptics)
+				haptics_play(NULL, 0);
+		}
+		for (int e; have_ui && (e = ui_alarm_edit()) >= 0;) {
+			alarm_edited(e);
+			last_activity = now;
+		}
 		for (int s; have_ui && (s = ui_setting_toggled()) >= 0;) {
 			setting_toggled(s);
 			last_activity = now;
@@ -425,6 +494,11 @@ void main(void)
 			console_sleep = console_wake = false;
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
+			if (ringing) {
+				alarm_snooze(pmic_rtc_read());
+				log_printf("alarm: snoozed\n");
+				ringing = false;
+			}
 			ambient = have_ui && !palm && setting_get(SETTING_AOD);
 			if (!ambient)
 				display_sleep();
@@ -608,9 +682,11 @@ void main(void)
 					next = lpm;
 				if (have_hub && !hub_can_sleep() && next > 50)
 					next = 50;
-				uint32_t minute = (60 - pmic_rtc_read() % 60) * 1000;
+				uint32_t rtc = pmic_rtc_read(), minute = (60 - rtc % 60) * 1000, alarm = alarm_next_s(rtc);
 				if (ambient && minute < next)
 					next = minute;
+				if (alarm < next / 1000)
+					next = alarm ? alarm * 1000 : 1;
 			}
 			bool long_sleep = !awake && next > 1000;
 			if (long_sleep) {

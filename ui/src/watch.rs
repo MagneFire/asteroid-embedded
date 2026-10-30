@@ -61,6 +61,9 @@ struct Ui {
     panels: Vec<Panel>,
     notes: Rc<VecModel<Note>>,
     forecast: Rc<VecModel<Day>>,
+    alarms: Rc<VecModel<AlarmItem>>,
+    alarm_edits: Queue,
+    alarm_actions: Queue,
     opened: Queue,
     dismissed: Queue,
     actions: Queue,
@@ -127,6 +130,8 @@ pub unsafe extern "C" fn ui_init(
     let (stride, width, height) = (stride_px as usize, width as usize, height as usize);
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
+    let alarms = Rc::new(VecModel::default());
+    let (alarm_edits, alarm_actions): (Queue, Queue) = Default::default();
     let (opened, dismissed, actions, apps, toggled): (Queue, Queue, Queue, Queue, Queue) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
@@ -138,6 +143,16 @@ pub unsafe extern "C" fn ui_init(
         let face = screen.global::<Face>();
         face.set_notes(notes.clone().into());
         face.set_weather_forecast(forecast.clone().into());
+        face.set_alarms(alarms.clone().into());
+        let queue = alarm_edits.clone();
+        face.on_alarm_saved(move |index, hour, minute, days, on| {
+            let packed = (index + 1) & 0xff | (hour & 0x1f) << 8 | (minute & 0x3f) << 13 | (days & 0x7f) << 19 | (on as i32) << 26;
+            queue.borrow_mut().push(packed);
+        });
+        let queue = alarm_edits.clone();
+        face.on_alarm_deleted(move |index| queue.borrow_mut().push((index + 1) & 0xff | 1 << 27));
+        let queue = alarm_actions.clone();
+        face.on_alarm_action(move |action| queue.borrow_mut().push(action));
         let queue = opened.clone();
         face.on_notification_opened(move |id| queue.borrow_mut().push(id));
         let queue = dismissed.clone();
@@ -157,7 +172,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, opened, dismissed, actions, apps, toggled, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, alarms, alarm_edits, alarm_actions, opened, dismissed, actions, apps, toggled, stride, width, height });
     }
     true
 }
@@ -317,6 +332,35 @@ pub extern "C" fn ui_setting_toggled() -> i32 {
     pop(&ui.toggled).unwrap_or(-1)
 }
 
+/// rec holds n alarms of 4 bytes: hour, minute, weekdays, on.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_alarms(rec: *const u8, n: u32) {
+    let Some(ui) = ui() else { return };
+    let rec = if rec.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(rec, n as usize * 4) } };
+    let items = rec
+        .chunks(4)
+        .map(|a| AlarmItem { hour: a[0] as i32, minute: a[1] as i32, days: a[2] as i32, on: a[3] != 0 })
+        .collect::<Vec<_>>();
+    ui.alarms.set_vec(items);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_alarm_edit() -> i32 {
+    let Some(ui) = ui() else { return -1 };
+    pop(&ui.alarm_edits).unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_alarm_ringing(ringing: bool) {
+    each(|face| face.set_alarm_ringing(ringing));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_alarm_action() -> i32 {
+    let Some(ui) = ui() else { return -1 };
+    pop(&ui.alarm_actions).unwrap_or(-1)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_app(app: i32) {
     each(|face| face.set_app(app));
@@ -354,7 +398,7 @@ pub unsafe extern "C" fn ui_set_weather(
 pub extern "C" fn ui_modal() -> bool {
     let Some(ui) = ui() else { return false };
     let face = ui.screens[OVERLAY].global::<Face>();
-    face.get_notification_shown() || face.get_passkey() >= 0
+    face.get_notification_shown() || face.get_passkey() >= 0 || face.get_alarm_ringing()
 }
 
 #[unsafe(no_mangle)]

@@ -1,0 +1,269 @@
+// The alarm app: the alarms with a switch each and a button to add one; a tap on an alarm opens
+// the editor (hour and minute up and down, the weekdays it repeats on, none for once). Changes
+// go out through alarm-saved(index, hour, minute, days, on), index -1 for a new alarm.
+import { Face, AlarmItem } from "face.slint";
+
+global Days {
+    out property <[int]> bits: [1, 2, 4, 8, 16, 32, 64];
+    out property <[string]> letters: ["S", "M", "T", "W", "T", "F", "S"];
+    out property <[string]> names: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    public pure function has(days: int, i: int) -> bool {
+        return Math.mod(Math.floor(days / self.bits[i]), 2) == 1;
+    }
+
+    public pure function text(days: int) -> string {
+        if days == 0 {
+            return "Once";
+        }
+        if days == 127 {
+            return "Every day";
+        }
+        if days == 62 {
+            return "Weekdays";
+        }
+        if days == 65 {
+            return "Weekends";
+        }
+        return (self.has(days, 1) ? "M" : "") + (self.has(days, 2) ? " T" : "") + (self.has(days, 3) ? " W" : "") + (self.has(days, 4) ? " T" : "") + (self.has(days, 5) ? " F" : "") + (self.has(days, 6) ? " S" : "") + (self.has(days, 0) ? " S" : "");
+    }
+}
+
+component Round inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> on: true;
+    callback clicked();
+
+    width: 52px;
+    height: 52px;
+    border-radius: self.width / 2;
+    background: touch.pressed ? #ffffff70 : root.on ? #ffffff38 : transparent;
+    border-width: root.on ? 0 : 1px;
+    border-color: #ffffff60;
+
+    if root.label != "": Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: white;
+        font-size: 22px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.label == "": Image {
+        x: (parent.width - 28px) / 2;
+        y: (parent.height - 28px) / 2;
+        width: 28px;
+        height: 28px;
+        source: root.icon;
+        colorize: white;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component AlarmApp {
+    property <int> editing: -2;
+    property <int> hour: 7;
+    property <int> minute: 0;
+    property <int> days: 62;
+
+    width: 100%;
+    height: 100%;
+
+    if root.editing == -2: Rectangle {
+        Text {
+            x: 0;
+            y: root.height * 0.06;
+            width: root.width;
+            height: root.height * 0.1;
+            text: Face.alarms.length == 0 ? "No alarms" : "Alarms";
+            color: white;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Flickable {
+            x: root.width * 0.15;
+            y: root.height * 0.17;
+            width: root.width * 0.7;
+            height: root.height * 0.58;
+            content-height: Face.alarms.length * 64px;
+
+            for alarm[i] in Face.alarms: Rectangle {
+                y: i * 64px;
+                height: 64px;
+                width: parent.width;
+
+                Text {
+                    x: 0;
+                    width: parent.width * 0.4;
+                    height: parent.height;
+                    text: Face.two-digits(alarm.hour) + ":" + Face.two-digits(alarm.minute);
+                    color: alarm.on ? white : #ffffff70;
+                    font-size: 30px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.4;
+                    width: parent.width * 0.38;
+                    height: parent.height;
+                    text: Days.text(alarm.days);
+                    color: alarm.on ? #ffffffc0 : #ffffff60;
+                    font-size: 16px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                TouchArea {
+                    width: parent.width * 0.78;
+                    clicked => {
+                        root.hour = alarm.hour;
+                        root.minute = alarm.minute;
+                        root.days = alarm.days;
+                        root.editing = i;
+                    }
+                }
+
+                Rectangle {
+                    x: parent.width - 44px;
+                    y: (parent.height - 24px) / 2;
+                    width: 44px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: alarm.on ? #ffffffd0 : #ffffff30;
+
+                    Rectangle {
+                        x: alarm.on ? parent.width - 22px : 2px;
+                        y: 2px;
+                        width: 20px;
+                        height: 20px;
+                        border-radius: 10px;
+                        background: alarm.on ? black : white;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            Face.alarm-saved(i, alarm.hour, alarm.minute, alarm.days, !alarm.on);
+                        }
+                    }
+                }
+            }
+        }
+
+        if Face.alarms.length < 8: Round {
+            x: (root.width - self.width) / 2;
+            y: root.height * 0.78;
+            label: "+";
+            clicked => {
+                root.hour = 7;
+                root.minute = 0;
+                root.days = 62;
+                root.editing = -1;
+            }
+        }
+    }
+
+    if root.editing != -2: Rectangle {
+        Round {
+            x: root.width * 0.27 - self.width / 2;
+            y: root.height * 0.1;
+            label: "+";
+            clicked => {
+                root.hour = Math.mod(root.hour + 1, 24);
+            }
+        }
+
+        Round {
+            x: root.width * 0.73 - self.width / 2;
+            y: root.height * 0.1;
+            label: "+";
+            clicked => {
+                root.minute = Math.mod(root.minute + 1, 60);
+            }
+        }
+
+        Text {
+            x: 0;
+            y: root.height * 0.24;
+            width: root.width;
+            height: root.height * 0.2;
+            text: Face.two-digits(root.hour) + " : " + Face.two-digits(root.minute);
+            color: white;
+            font-size: 64px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Round {
+            x: root.width * 0.27 - self.width / 2;
+            y: root.height * 0.44;
+            label: "−";
+            clicked => {
+                root.hour = Math.mod(root.hour + 23, 24);
+            }
+        }
+
+        Round {
+            x: root.width * 0.73 - self.width / 2;
+            y: root.height * 0.44;
+            label: "−";
+            clicked => {
+                root.minute = Math.mod(root.minute + 59, 60);
+            }
+        }
+
+        for day[i] in Days.letters: Rectangle {
+            x: root.width * 0.5 + (i - 3) * 40px - 17px;
+            y: root.height * 0.61;
+            width: 34px;
+            height: 34px;
+            border-radius: 17px;
+            background: Days.has(root.days, i) ? #ffffffd0 : #ffffff28;
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: day;
+                color: Days.has(root.days, i) ? black : white;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            TouchArea {
+                clicked => {
+                    root.days += Days.has(root.days, i) ? -Days.bits[i] : Days.bits[i];
+                }
+            }
+        }
+
+        Round {
+            x: root.editing >= 0 ? root.width * 0.5 - 30px - self.width : (root.width - self.width) / 2;
+            y: root.height * 0.76;
+            icon: @image-url("../icons/ios-checkmark.svg");
+            clicked => {
+                Face.alarm-saved(root.editing, root.hour, root.minute, root.days, true);
+                root.editing = -2;
+            }
+        }
+
+        if root.editing >= 0: Round {
+            x: root.width * 0.5 + 30px;
+            y: root.height * 0.76;
+            icon: @image-url("../icons/ios-trash-outline.svg");
+            clicked => {
+                Face.alarm-deleted(root.editing);
+                root.editing = -2;
+            }
+        }
+    }
+}

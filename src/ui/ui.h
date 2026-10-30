@@ -20,7 +20,12 @@
  * with ui_set_app; ui_app_opened returns the next app picked in the
  * launcher, or -1. ui_set_settings shows the settings (brightness in
  * per cent) and ui_setting_toggled returns the next one the user
- * changed, as an enum setting or enum ui_action, or -1. */
+ * changed, as an enum setting or enum ui_action, or -1. ui_set_alarms
+ * takes 4 bytes per alarm (hour, minute, weekdays, on); ui_alarm_edit
+ * returns the next change made in the alarm app, packed as index + 1
+ * (0 new) in bits 0-7, hour 8-12, minute 13-18, weekdays 19-25, on 26
+ * and bit 27 for a deletion, or -1; ui_alarm_action the next button
+ * pressed on a ringing alarm, or -1. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -35,7 +40,8 @@
 
 enum ui_touch_kind { UI_TOUCH_DOWN, UI_TOUCH_MOVE, UI_TOUCH_UP };
 enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY, UI_PANEL_TOP, UI_PANEL_APP };
-enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS };
+enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS, UI_APP_ALARM };
+enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
 enum ui_action { UI_BRIGHTNESS_DOWN = 10, UI_BRIGHTNESS_UP, UI_FORGET_PHONE };
 enum ui_media_action {
 	UI_MEDIA_PREVIOUS,
@@ -65,6 +71,10 @@ int ui_media_action(void);
 int ui_app_opened(void);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);
+void ui_set_alarms(const uint8_t *rec, uint32_t n);
+int ui_alarm_edit(void);
+void ui_set_alarm_ringing(bool ringing);
+int ui_alarm_action(void);
 int ui_setting_toggled(void);
 void ui_set_app(int app);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,

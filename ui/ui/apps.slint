@@ -2,6 +2,7 @@
 import { Face } from "face.slint";
 import { MusicScreen } from "music.slint";
 import { SettingsApp } from "settings.slint";
+import { AlarmApp } from "alarm.slint";
 
 export component AppScreen {
     width: 100%;
@@ -9,4 +10,5 @@ export component AppScreen {
 
     if Face.app == 0: MusicScreen { }
     if Face.app == 1: SettingsApp { }
+    if Face.app == 2: AlarmApp { }
 }

@@ -1,5 +1,6 @@
-// Drawn over every screen: a notification that was opened or just came in, or the
-// Bluetooth pairing code. A tap on the notification dismisses it.
+// Drawn over every screen: a notification that was opened or just came in, the
+// Bluetooth pairing code, or a ringing alarm with Snooze and Dismiss. A tap on the
+// notification dismisses it.
 import { NoteIcons } from "note_icons.slint";
 import { Face } from "face.slint";
 
@@ -92,6 +93,59 @@ export component Overlay {
             font-size: 64px;
             horizontal-alignment: center;
             vertical-alignment: center;
+        }
+    }
+
+    if Face.alarm-ringing: Rectangle {
+        background: black;
+
+        Text {
+            x: 0;
+            y: root.height * 0.14;
+            width: root.width;
+            height: root.height * 0.1;
+            text: "Alarm";
+            color: #ffffffa0;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            x: 0;
+            y: root.height * 0.25;
+            width: root.width;
+            height: root.height * 0.25;
+            text: Face.two-digits(Face.hour) + ":" + Face.two-digits(Face.minute);
+            color: white;
+            font-size: 80px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        for action[i] in ["Snooze", "Dismiss"]: Rectangle {
+            x: root.width * 0.5 + (i == 0 ? -128px : 8px);
+            y: root.height * 0.6;
+            width: 120px;
+            height: 64px;
+            border-radius: 32px;
+            background: touch.pressed ? #ffffff70 : #ffffff30;
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: action;
+                color: white;
+                font-size: 22px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    Face.alarm-action(i);
+                }
+            }
         }
     }
 }

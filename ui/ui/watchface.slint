@@ -2,14 +2,14 @@
 // the notifications, the weather, the music controls, and the overlay drawn over all of
 // them. A single exported root keeps the font embedded once.
 import "../fonts/NotoSans-Light.ttf";
-import { Face, Note, Day, Watchface } from "face.slint";
+import { Face, Note, Day, AlarmItem, Watchface } from "face.slint";
 import { NoteList } from "notes.slint";
 import { WeatherScreen } from "weather.slint";
 import { Launcher } from "launcher.slint";
 import { AppScreen } from "apps.slint";
 import { QuickSettings } from "quick.slint";
 import { Overlay } from "overlay.slint";
-export { Face, Note, Day }
+export { Face, Note, Day, AlarmItem }
 
 export component Screen inherits Window {
     in property <int> kind;

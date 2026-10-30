@@ -15,6 +15,13 @@ export struct Day {
     max: int,
 }
 
+export struct AlarmItem {
+    hour: int,
+    minute: int,
+    days: int,
+    on: bool,
+}
+
 export global Face {
     in-out property <int> hour;
     in-out property <int> minute;
@@ -32,6 +39,8 @@ export global Face {
     in-out property <bool> aod-on: true;
     in-out property <bool> clock12;
     in-out property <string> build;
+    in-out property <[AlarmItem]> alarms;
+    in-out property <bool> alarm-ringing;
     in-out property <int> passkey: -1;
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
@@ -54,6 +63,9 @@ export global Face {
     callback media-action(int);
     callback app-opened(int);
     callback setting-toggled(int);
+    callback alarm-saved(int, int, int, int, bool);
+    callback alarm-deleted(int);
+    callback alarm-action(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;
