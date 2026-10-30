@@ -1,80 +1,39 @@
-// The Settings app: the quick settings and a few more, in a list that scrolls, and pages that
-// pick the watchface and the launcher from previews of each. Rows call setting-toggled with the
-// firmware's enum setting, or 10/11 to step the brightness down/up, 12 to forget the paired
-// phone, 13 + n to pick watchface n and 20 + n to pick launcher n.
+// The Settings app, laid out as asteroid-settings: a list of icon rows, each opening a page that
+// slides in from the right. The pages are the ones the firmware has settings for: Display
+// (brightness, always on), Nightstand, Watchface and Launcher pickers, Units (12 hour clock),
+// Bluetooth (on/off, connection, forgetting the phone) and About. Rows call setting-toggled with
+// the firmware's enum setting, 12 to forget the paired phone, 13 + n to pick watchface n and
+// 20 + n to pick launcher n, and brightness-set with a brightness in per cent.
 import { Face, Watchface } from "face.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
+import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Pill } from "controls.slint";
 
-component Row {
-    in property <string> label;
-    in property <string> value;
-    in property <bool> enabled: true;
-    callback clicked();
+// A 60 px check badge with a soft shadow, as the pickers mark the current choice.
+component Check {
+    width: 60px;
+    height: 60px;
 
-    height: 56px;
-
-    Rectangle {
-        background: touch.pressed && root.enabled ? #ffffff30 : transparent;
-        border-radius: 12px;
+    Image {
+        x: 2px;
+        y: 2px;
+        width: 60px;
+        height: 60px;
+        source: @image-url("../icons/ios-checkmark-circle.svg");
+        colorize: #00000060;
     }
 
-    Text {
-        x: 12px;
-        width: parent.width * 0.6;
-        height: parent.height;
-        text: root.label;
-        color: white;
-        font-size: 20px;
-        vertical-alignment: center;
-    }
-
-    Text {
-        x: parent.width * 0.6;
-        width: parent.width * 0.4 - 12px;
-        height: parent.height;
-        text: root.value;
-        color: #ffffffb0;
-        font-size: 20px;
-        horizontal-alignment: right;
-        vertical-alignment: center;
-    }
-
-    touch := TouchArea {
-        enabled: root.enabled;
-        clicked => {
-            root.clicked();
-        }
-    }
-}
-
-component Step inherits Rectangle {
-    in property <string> label;
-    callback clicked();
-
-    width: 56px;
-    height: 56px;
-    border-radius: 28px;
-    background: touch.pressed ? #ffffff60 : #ffffff28;
-
-    Text {
-        width: parent.width;
-        height: parent.height;
-        text: root.label;
-        color: white;
-        font-size: 28px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
+    Image {
+        width: 60px;
+        height: 60px;
+        source: @image-url("../icons/ios-checkmark-circle.svg");
+        colorize: white;
     }
 }
 
 export component SettingsApp {
+    // 0 the list, then 1 Display, 2 Nightstand, 3 Watchface, 4 Launcher, 5 Units, 6 Bluetooth,
+    // 7 About.
     in-out property <int> page;
     property <int> back: Face.back-count;
 
@@ -88,33 +47,110 @@ export component SettingsApp {
     width: 100%;
     height: 100%;
 
-    if root.page == 1: Rectangle {
-        Text {
-            x: 0;
-            y: root.height * 0.06;
-            width: root.width;
-            height: root.height * 0.1;
-            text: "Watchface";
-            color: white;
-            font-size: 24px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+    if root.page == 0: Flickable {
+        width: 400px;
+        height: 400px;
+        content-height: list.preferred-height;
+
+        list := VerticalLayout {
+            padding-top: 24px;
+            padding-bottom: 24px;
+
+            for item[i] in [
+                { icon: @image-url("../icons/ios-display-outline.svg"), title: "Display", page: 1 },
+                { icon: @image-url("../icons/ios-moon-outline.svg"), title: "Nightstand", page: 2 },
+                { icon: @image-url("../icons/ios-watchface-outline.svg"), title: "Watchface", page: 3 },
+                { icon: @image-url("../icons/ios-launcher-outline.svg"), title: "Launcher", page: 4 },
+                { icon: @image-url("../icons/ios-units-outline.svg"), title: "Units", page: 5 },
+                { icon: @image-url("../icons/ios-bluetooth-outline.svg"), title: "Bluetooth", page: 6 },
+                { icon: @image-url("../icons/ios-help-circle-outline.svg"), title: "About", page: 7 },
+            ]: ListItem {
+                icon: item.icon;
+                title: item.title;
+                clicked => {
+                    root.page = item.page;
+                }
+            }
+        }
+    }
+
+    if root.page == 1: Page {
+        Flickable {
+            width: 400px;
+            height: 400px;
+            content-height: display.preferred-height;
+
+            display := VerticalLayout {
+                padding-top: 60px;
+                padding-bottom: 60px;
+
+                RowLabel {
+                    text: "Brightness";
+                }
+
+                IntSelector {
+                    value: Face.brightness;
+                    min: 10;
+                    max: 100;
+                    down => {
+                        Face.brightness-set(Math.max(10, Face.brightness - 10));
+                    }
+                    up => {
+                        Face.brightness-set(Math.min(100, Face.brightness + 10));
+                    }
+                }
+
+                RowSeparator { }
+
+                LabeledSwitch {
+                    text: "Always on Display";
+                    checked: Face.aod-on;
+                    clicked => {
+                        Face.setting-toggled(3);
+                    }
+                }
+
+                RowSeparator { }
+            }
         }
 
+        PageHeader {
+            text: "Display";
+        }
+    }
+
+    if root.page == 2: Page {
+        VerticalLayout {
+            padding-top: 140px;
+
+            LabeledSwitch {
+                text: "Enable";
+                checked: Face.nightstand-on;
+                clicked => {
+                    Face.setting-toggled(6);
+                }
+            }
+        }
+
+        PageHeader {
+            text: "Nightstand";
+        }
+    }
+
+    if root.page == 3: Page {
         for name[i] in ["Digital", "Classic"]: Rectangle {
-            x: root.width / 2 + (i == 0 ? -170px : 10px);
-            y: root.height * 0.28;
-            width: 160px;
-            height: 190px;
+            x: Math.mod(i, 2) * 200px;
+            y: 120px;
+            width: 200px;
+            height: 160px;
 
             Rectangle {
+                x: 20px;
                 width: 160px;
                 height: 160px;
                 border-radius: 80px;
                 clip: true;
-                background: #00000060;
-                border-width: Face.watchface == i ? 3px : 0;
-                border-color: white;
+                background: Face.watchface == i ? #00000080 : #00000040;
 
                 if i == 0: DigitalFace {
                     size: 160px;
@@ -125,207 +161,159 @@ export component SettingsApp {
                 }
             }
 
-            Text {
-                y: 164px;
-                width: parent.width;
-                height: 26px;
-                text: name;
-                color: white;
-                font-size: 18px;
-                horizontal-alignment: center;
+            if Face.watchface == i: Check {
+                x: (parent.width - self.width) / 2 + (Math.mod(i, 2) == 0 ? 72px : -72px);
+                y: parent.height - self.height + 5px;
             }
 
             TouchArea {
                 clicked => {
                     Face.setting-toggled(13 + i);
-                    root.page = 0;
                 }
             }
         }
     }
 
-    if root.page == 2: Rectangle {
+    if root.page == 4: Page {
         Flickable {
-            width: root.width;
-            height: root.height;
-            content-height: 90px + Math.ceil(Apps.layouts.length / 2) * 176px + 60px;
-
-            Text {
-                y: root.height * 0.06;
-                width: root.width;
-                height: root.height * 0.1;
-                text: "Launcher";
-                color: white;
-                font-size: 24px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
+            width: 400px;
+            height: 400px;
+            content-height: Math.ceil(Apps.layouts.length / 2) * 160px + 80px;
 
             for name[i] in Apps.layouts: Rectangle {
-                x: root.width / 2 + (Math.mod(i, 2) == 0 ? -150px : 10px);
-                y: 90px + Math.floor(i / 2) * 176px;
-                width: 140px;
-                height: 170px;
+                x: Math.mod(i, 2) * 200px;
+                y: 40px + Math.floor(i / 2) * 160px;
+                width: 200px;
+                height: 160px;
+                clip: true;
 
-                Rectangle {
-                    width: 140px;
-                    height: 140px;
-                    border-radius: 70px;
-                    clip: true;
-                    background: #00000060;
-                    border-width: Face.launcher == i ? 3px : 0;
-                    border-color: white;
-
-                    LauncherView {
-                        size: 140px;
-                        layout: i;
-                        preview: true;
-                    }
+                LauncherView {
+                    x: 20px;
+                    size: 160px;
+                    layout: i;
+                    preview: true;
                 }
 
-                Text {
-                    y: 144px;
-                    width: parent.width;
-                    height: 24px;
-                    text: name;
-                    color: white;
-                    font-size: 16px;
-                    horizontal-alignment: center;
+                if Face.launcher == i: Rectangle {
+                    background: #00000066;
+                }
+
+                if Face.launcher == i: Check {
+                    x: parent.width - self.width - 20px;
+                    y: parent.height - self.height;
                 }
 
                 TouchArea {
                     clicked => {
                         Face.setting-toggled(20 + i);
-                        root.page = 0;
                     }
                 }
             }
         }
     }
 
-    if root.page == 0: Rectangle {
+    if root.page == 5: Page {
+        VerticalLayout {
+            padding-top: 100px;
 
-    Text {
-        x: 0;
-        y: root.height * 0.06;
-        width: root.width;
-        height: root.height * 0.1;
-        text: "Settings";
-        color: white;
-        font-size: 24px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    Flickable {
-        x: root.width * 0.12;
-        y: root.height * 0.17;
-        width: root.width * 0.76;
-        height: root.height * 0.74;
-        content-height: list.preferred-height + 40px;
-
-        list := VerticalLayout {
-            spacing: 4px;
-
-            HorizontalLayout {
-                height: 64px;
-                alignment: space-between;
-                Step {
-                    label: "−";
-                    clicked => {
-                        Face.setting-toggled(10);
-                    }
-                }
-                Text {
-                    text: "Brightness " + Face.brightness + "%";
-                    color: white;
-                    font-size: 20px;
-                    vertical-alignment: center;
-                }
-                Step {
-                    label: "+";
-                    clicked => {
-                        Face.setting-toggled(11);
-                    }
-                }
-            }
-
-            Row {
-                label: "Bluetooth";
-                value: Face.bluetooth-on ? "On" : "Off";
-                clicked => {
-                    Face.setting-toggled(1);
-                }
-            }
-
-            Row {
-                label: "Forget phone";
-                value: "";
-                clicked => {
-                    Face.setting-toggled(12);
-                }
-            }
-
-            Row {
-                label: "Vibration";
-                value: Face.vibration-on ? "On" : "Off";
-                clicked => {
-                    Face.setting-toggled(2);
-                }
-            }
-
-            Row {
-                label: "Always on";
-                value: Face.aod-on ? "On" : "Off";
-                clicked => {
-                    Face.setting-toggled(3);
-                }
-            }
-
-            Row {
-                label: "Watchface";
-                value: Face.watchface == 0 ? "Digital" : "Classic";
-                clicked => {
-                    root.page = 1;
-                }
-            }
-
-            Row {
-                label: "Launcher";
-                value: Apps.layouts[Face.launcher];
-                clicked => {
-                    root.page = 2;
-                }
-            }
-
-            Row {
-                label: "Nightstand";
-                value: Face.nightstand-on ? "On" : "Off";
-                clicked => {
-                    Face.setting-toggled(6);
-                }
-            }
-
-            Row {
-                label: "Clock";
-                value: Face.clock12 ? "12 hour" : "24 hour";
+            LabeledSwitch {
+                text: "Use 12H format:";
+                checked: Face.clock12;
                 clicked => {
                     Face.setting-toggled(4);
                 }
             }
+        }
 
-            Row {
-                label: "Battery";
-                value: Face.battery-percent + "%";
-                enabled: false;
+        PageHeader {
+            text: "Units";
+        }
+    }
+
+    if root.page == 6: Page {
+        StatusPage {
+            icon: Face.bluetooth-on ? @image-url("../icons/ios-bluetooth-outline.svg") : @image-url("../icons/ios-bluetooth-off-outline.svg");
+            active: Face.bluetooth-on;
+            title: Face.bluetooth-on ? "Bluetooth on" : "Bluetooth off";
+            text: Face.bluetooth-connected ? "Connected" : "Not connected";
+            clicked => {
+                Face.setting-toggled(1);
             }
+        }
 
-            Row {
-                label: "Build";
-                value: Face.build;
-                enabled: false;
+        Pill {
+            x: 90px;
+            y: 300px;
+            text: "Forget phone";
+            clicked => {
+                Face.setting-toggled(12);
             }
         }
     }
+
+    if root.page == 7: Page {
+        Flickable {
+            width: 400px;
+            height: 400px;
+            content-height: about.preferred-height;
+
+            about := VerticalLayout {
+                padding-top: 40px;
+                padding-bottom: 40px;
+                padding-left: 40px;
+                padding-right: 40px;
+
+                HorizontalLayout {
+                    alignment: center;
+
+                    Image {
+                        width: 160px;
+                        height: 160px;
+                        source: @image-url("../icons/logo-asteroidos.svg");
+                        colorize: white;
+                    }
+                }
+
+                Text {
+                    text: "AsteroidOS";
+                    color: white;
+                    font-size: 28px;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "asteroid-embedded";
+                    color: white;
+                    opacity: 0.8;
+                    font-size: 28px;
+                    horizontal-alignment: center;
+                }
+
+                for item in [
+                    { label: "Build ID", value: Face.build },
+                    { label: "Codename", value: "sturgeon" },
+                    { label: "Display size", value: "400W x 400H" },
+                    { label: "Battery", value: Face.battery-percent + "%" },
+                ]: VerticalLayout {
+                    padding-top: 20px;
+
+                    Text {
+                        text: item.label;
+                        color: white;
+                        font-size: 28px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: item.value;
+                        color: white;
+                        font-size: 28px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
     }
 }
