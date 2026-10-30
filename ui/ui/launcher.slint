@@ -38,7 +38,7 @@ global Preview {
 // the last moves projected over a deceleration of 0.0015 px/ms^2, then rounded to a step. offset
 // is where the content is, animate it with anim unless dragging. tapped fires for a press that
 // did not move.
-component Pager inherits TouchArea {
+export component Pager inherits TouchArea {
     in property <bool> horizontal: true;
     in property <length> item: 400px;
     in property <int> count: 1;
