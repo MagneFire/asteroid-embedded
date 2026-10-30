@@ -25,7 +25,7 @@ pub fn create_collection(shared: bool) -> Collection {
     let mut source_cache =
         if shared { fontique::SourceCache::new_shared() } else { fontique::SourceCache::default() };
     #[cfg(not(feature = "std"))]
-    let mut source_cache = fontique::SourceCache::default();
+    let source_cache = fontique::SourceCache::default();
 
     // Preserves insertion order — the primary (SLINT_DEFAULT_FONT) lands first, fallbacks
     // (SLINT_FONT_PATH) follow. The runtime bitmap-font fallback and the compile-time
