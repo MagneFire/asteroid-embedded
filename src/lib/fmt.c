@@ -45,9 +45,10 @@ int vsnprintf(char *buf, size_t n, const char *fmt, va_list ap)
 		case 'c': num[0] = (char)va_arg(ap, int); num[1] = 0; break;
 		case 's': s = va_arg(ap, const char *); if (!s) s = "(null)"; break;
 		case 'd': case 'i': {
-			long v = va_arg(ap, int);
-			if (v < 0) { neg = 1; v = -v; }
-			utoa_base(num, (unsigned long)v, 10, 0); break; }
+			int v = va_arg(ap, int);
+			unsigned long u = (unsigned long)v;
+			if (v < 0) { neg = 1; u = 0 - u; }
+			utoa_base(num, u, 10, 0); break; }
 		case 'u': utoa_base(num, va_arg(ap, unsigned), 10, 0); break;
 		case 'x': utoa_base(num, va_arg(ap, unsigned), 16, 0); break;
 		case 'X': utoa_base(num, va_arg(ap, unsigned), 16, 1); break;
