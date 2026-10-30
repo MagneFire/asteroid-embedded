@@ -63,7 +63,7 @@ static void app_background(int x, int y, float alpha)
 {
 	static float *vbo;
 	if (!vbo)
-		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
+		vbo = gpu_alloc(FLATMESH_GPU_ROUND_VERTICES * 32, 64);
 	unsigned n = flatmesh_vertices_gpu_look(vbo, mesh_t, app_center, app_outer, (float)x / fb.width,
 						(float)y / fb.height, alpha);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);

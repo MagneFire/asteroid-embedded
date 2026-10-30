@@ -153,30 +153,103 @@ unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms)
 }
 
 /* A second mesh, an app's own background: its colours, moved by (dx, dy)
- * of the screen and premultiplied by alpha for blending over the first. */
-struct look { float *out; uint32_t center, outer; float dx, dy, alpha; };
+ * of the screen, premultiplied by alpha for blending over the first, and
+ * cut to the round window (a 64-gon) around its moved centre. Triangles
+ * inside it pass whole, those across its edge are clipped polygon by
+ * polygon and fanned out again. */
+#define ROUND_SIDES 64
+
+struct look { float pos[FLATMESH_INDICES][2]; float dx, dy; };
 
 static void look_vertex(int i, float x, float y, void *ctx)
 {
 	struct look *l = ctx;
-	float *o = l->out + i * 8, m = flatmesh_vertices[flatmesh_indices[i / 3 * 3]][2];
-	x = 0.5f + (x - 0.5f) * view_scale + l->dx;
-	y = 0.5f + (y - 0.5f) * view_scale + l->dy;
+	l->pos[i][0] = 0.5f + (x - 0.5f) * view_scale + l->dx;
+	l->pos[i][1] = 0.5f + (y - 0.5f) * view_scale + l->dy;
+}
+
+static unsigned clip_round(float (*p)[2], unsigned n, float cx, float cy)
+{
+	/* cos and sin of 2 pi / 64, stepped around from (0.5, 0). */
+	static float edge[ROUND_SIDES][2];
+	if (!edge[0][0]) {
+		const float c = 0.99518473f, s = 0.09801714f;
+		edge[0][0] = 0.5f;
+		for (int k = 1; k < ROUND_SIDES; k++) {
+			edge[k][0] = edge[k - 1][0] * c - edge[k - 1][1] * s;
+			edge[k][1] = edge[k - 1][0] * s + edge[k - 1][1] * c;
+		}
+	}
+	float tmp[ROUND_SIDES + 3][2];
+	for (int k = 0; k < ROUND_SIDES && n; k++) {
+		float ax = cx + edge[k][0], ay = cy + edge[k][1];
+		float bx = cx + edge[(k + 1) % ROUND_SIDES][0], by = cy + edge[(k + 1) % ROUND_SIDES][1];
+		unsigned m = 0;
+		for (unsigned j = 0; j < n; j++) {
+			float *u = p[j], *v = p[(j + 1) % n];
+			float su = (bx - ax) * (u[1] - ay) - (by - ay) * (u[0] - ax);
+			float sv = (bx - ax) * (v[1] - ay) - (by - ay) * (v[0] - ax);
+			if (su >= 0) {
+				tmp[m][0] = u[0];
+				tmp[m++][1] = u[1];
+			}
+			if ((su >= 0) != (sv >= 0)) {
+				float t = su / (su - sv);
+				tmp[m][0] = u[0] + (v[0] - u[0]) * t;
+				tmp[m++][1] = u[1] + (v[1] - u[1]) * t;
+			}
+		}
+		for (unsigned j = 0; j < m; j++) {
+			p[j][0] = tmp[j][0];
+			p[j][1] = tmp[j][1];
+		}
+		n = m;
+	}
+	return n;
+}
+
+static float *emit(float *o, float x, float y, const float rgb[3], float alpha)
+{
 	o[0] = x * 2.0f - 1.0f;
 	o[1] = 1.0f - y * 2.0f;
 	o[2] = 0.0f;
 	o[3] = 1.0f;
-	for (int c = 0; c < 3; c++) {
-		int s = 16 - 8 * c;
-		o[4 + c] = ((float)(l->center >> s & 0xff) * (1 - m) + (float)(l->outer >> s & 0xff) * m) / 255.0f * l->alpha;
-	}
-	o[7] = l->alpha;
+	o[4] = rgb[0];
+	o[5] = rgb[1];
+	o[6] = rgb[2];
+	o[7] = alpha;
+	return o + 8;
 }
 
 unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, uint32_t outer, float dx, float dy,
 				    float alpha)
 {
-	struct look l = { out, center, outer, dx, dy, alpha };
+	static struct look l;
+	l.dx = dx;
+	l.dy = dy;
 	animate(t_ms, look_vertex, &l);
-	return FLATMESH_INDICES;
+	float cx = 0.5f + dx, cy = 0.5f + dy, inner = 0.5f * 0.99879546f;
+	float *o = out;
+	for (int t = 0; t < FLATMESH_INDICES / 3; t++) {
+		float m = flatmesh_vertices[flatmesh_indices[3 * t]][2], rgb[3];
+		for (int c = 0; c < 3; c++) {
+			int s = 16 - 8 * c;
+			rgb[c] = ((float)(center >> s & 0xff) * (1 - m) + (float)(outer >> s & 0xff) * m) / 255.0f * alpha;
+		}
+		float p[ROUND_SIDES + 3][2];
+		bool inside = true;
+		for (int k = 0; k < 3; k++) {
+			p[k][0] = l.pos[3 * t + k][0];
+			p[k][1] = l.pos[3 * t + k][1];
+			float ex = p[k][0] - cx, ey = p[k][1] - cy;
+			inside &= ex * ex + ey * ey <= inner * inner;
+		}
+		unsigned n = inside ? 3 : clip_round(p, 3, cx, cy);
+		for (unsigned k = 1; k + 1 < n; k++) {
+			o = emit(o, p[0][0], p[0][1], rgb, alpha);
+			o = emit(o, p[k][0], p[k][1], rgb, alpha);
+			o = emit(o, p[k + 1][0], p[k + 1][1], rgb, alpha);
+		}
+	}
+	return (unsigned)((o - out) / 8);
 }
