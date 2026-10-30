@@ -8,12 +8,12 @@
 #include "flatmesh_geometry.h"
 
 #define SCALE 1.2f
-#define CENTER_R 0xff
-#define CENTER_G 0xaa
-#define CENTER_B 0x39
-#define OUTER_R 0xdf
-#define OUTER_G 0x48
-#define OUTER_B 0x29
+#define CENTER_R 0x88
+#define CENTER_G 0x88
+#define CENTER_B 0x88
+#define OUTER_R 0x00
+#define OUTER_G 0x00
+#define OUTER_B 0x00
 
 static uint32_t colors[FLATMESH_INDICES / 3];
 static int hashes[FLATMESH_INDICES];
