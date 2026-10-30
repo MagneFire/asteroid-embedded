@@ -110,6 +110,9 @@ pub enum EmbedResourcesKind {
     /// Useful for MCUs with no file system and little RAM.
     /// Only the Slint software renderer can use these resources; Skia and FemtoVG can't.
     EmbedTextures,
+    #[cfg(feature = "renderer-software")]
+    /// Embed raw texture (process images)
+    EmbedTexturesOnly,
 }
 
 /// This enum specifies the default translation context when no context is explicitly
@@ -438,7 +441,9 @@ fn prepare_for_compile(
         compiler_config.project_roots.push(root_file.parent());
     }
     #[cfg(feature = "renderer-software")]
-    if compiler_config.embed_resources == EmbedResourcesKind::EmbedTextures {
+    if compiler_config.embed_resources == EmbedResourcesKind::EmbedTextures
+        || compiler_config.embed_resources == EmbedResourcesKind::EmbedTexturesOnly
+    {
         // HACK: disable accessibility when compiling for the software renderer
         // accessibility is not supported with backend that support software renderer anyway
         compiler_config.accessibility = false;

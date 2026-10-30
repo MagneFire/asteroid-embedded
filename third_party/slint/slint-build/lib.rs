@@ -106,6 +106,9 @@ pub enum EmbedResourcesKind {
     ///
     /// Animated images keep only their first frame.
     EmbedForSoftwareRenderer,
+    #[cfg(feature = "renderer-software")]
+    /// Same as EmbedForSoftwareRenderer, except fonts are not embedded.
+    EmbedForSoftwareRendererNoFonts,
 }
 
 impl CompilerConfiguration {
@@ -197,6 +200,10 @@ impl CompilerConfiguration {
             #[cfg(feature = "renderer-software")]
             EmbedResourcesKind::EmbedForSoftwareRenderer => {
                 i_slint_compiler::EmbedResourcesKind::EmbedTextures
+            }
+            #[cfg(feature = "renderer-software")]
+            EmbedResourcesKind::EmbedForSoftwareRendererNoFonts => {
+                i_slint_compiler::EmbedResourcesKind::EmbedTexturesOnly
             }
         });
         self

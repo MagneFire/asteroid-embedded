@@ -288,7 +288,9 @@ fn embed_image(
     }
 
     #[cfg(feature = "renderer-software")]
-    if embed_files == EmbedResourcesKind::EmbedTextures {
+    if embed_files == EmbedResourcesKind::EmbedTextures
+        || embed_files == EmbedResourcesKind::EmbedTexturesOnly
+    {
         let loaded = _file.read().map_err(image::ImageError::IoError).and_then(|data| {
             load_image_from_bytes(&data, _file.extension(), _scale_factor, _font_collection)
                 .map(|loaded| (loaded, is_animated(&data)))
@@ -672,7 +674,9 @@ fn embed_data_uri(
     };
 
     #[cfg(feature = "renderer-software")]
-    if _embed_files == EmbedResourcesKind::EmbedTextures {
+    if _embed_files == EmbedResourcesKind::EmbedTextures
+        || _embed_files == EmbedResourcesKind::EmbedTexturesOnly
+    {
         match load_image_from_bytes(
             &decoded_data,
             Some(&extension),
