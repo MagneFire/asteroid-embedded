@@ -14,6 +14,7 @@
 #include "ui/ui.h"
 #include "bt/bt.h"
 #include "notify/notify.h"
+#include "sensors/hub.h"
 #include "gitrev.h"
 #include "config.h"
 
@@ -167,6 +168,7 @@ void main(void)
 	pmic_power_key_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
+	bool have_hub = hub_init();
 	console_init();
 	usb_init("asteroid-sturgeon");
 	if (have_display)
@@ -199,6 +201,11 @@ void main(void)
 			bluetooth_start();
 		}
 		pmic_charger_poll();
+		if (have_hub) {
+			hub_poll();
+			if (hub_tilted() && !awake)
+				wake_request = true;
+		}
 		if (have_haptics)
 			haptics_poll();
 		while (have_touch && touch_poll(&t)) {
@@ -400,16 +407,18 @@ void main(void)
 		}
 #endif
 		if ((!have_display || !awake) && !haptics_busy() && timer_ticks()) {
-			bool cluster = !awake && !usb_connected() && bt_can_sleep();
+			bool cluster = !awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
 			if (!awake)
 				cpu_clock_slow(true);
 			if (cluster) {
 				bt_sleep(true);
+				hub_sleep(true);
 				cpu_clock_park();
 			}
 			spm_idle(cluster);
 			if (cluster) {
 				cpu_clock_unpark();
+				hub_sleep(false);
 				bt_sleep(false);
 				cpu_clock_slow(false);
 			}

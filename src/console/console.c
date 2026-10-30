@@ -8,6 +8,7 @@
 #include "display/display.h"
 #include "bt/bt.h"
 #include "storage/storage.h"
+#include "sensors/hub.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -615,6 +616,20 @@ static void cmd_btinfo(const char *args)
 	ext4_list(fs, &in, bt_adapter_fn, &b);
 }
 
+static void cmd_hub(const char *args)
+{
+	uint8_t buf[36];
+	unsigned n = 0;
+	if (strncmp(args, "send ", 5)) {
+		hub_status(say);
+		return;
+	}
+	args += 5;
+	for (uint32_t v; n < sizeof buf && parse_num(&args, 16, &v) && v < 256; n++)
+		buf[n] = (uint8_t)v;
+	say("hub: send %u bytes: %d\n", n, hub_send(buf, n));
+}
+
 static void cmd_buzz(const char *args)
 {
 	static uint16_t ms;
@@ -656,6 +671,7 @@ static const struct command commands[] = {
 	{ "kv", "[set <key> <text> | del <key>]", cmd_kv },
 	{ "btinfo", "", cmd_btinfo },
 	{ "buzz", "[ms]", cmd_buzz },
+	{ "hub", "[send <hex bytes>]", cmd_hub },
 	{ "echo", "<text>", cmd_echo },
 };
 

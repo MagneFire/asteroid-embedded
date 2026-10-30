@@ -43,6 +43,8 @@ void haptics_play(const uint16_t *on_off_ms, unsigned n) {}
 void cpu_clock_slow(bool slow) {}
 bool cpu_clock_is_slow(void) { return false; }
 void power_request(bool sleep) { stub_asleep = sleep; }
+void hub_status(void (*say)(const char *fmt, ...)) {}
+int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_save(const uint8_t addr[6]) { return -1; }
