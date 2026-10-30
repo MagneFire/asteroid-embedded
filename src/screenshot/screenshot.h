@@ -6,6 +6,6 @@
 #define SCREENSHOT_SIZE 0x00200000u
 
 void screenshot_poll(void);
-void screenshot_to_file(bool layer);
+void screenshot_to_file(int layer);
 bool screenshot_busy(void);
 #endif

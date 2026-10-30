@@ -11,6 +11,7 @@
 #include "sensors/hub.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
+#include "ui/ui.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -644,7 +645,19 @@ static void cmd_touch(const char *args)
 
 static void cmd_shot(const char *args)
 {
-	screenshot_to_file(!strcmp(args, "layer"));
+	uint32_t n = 0;
+	if (strncmp(args, "layer", 5)) {
+		screenshot_to_file(-1);
+	} else {
+		args += 5;
+		while (*args == ' ')
+			args++;
+		if (*args && (!parse_num(&args, 10, &n) || n >= UI_PANELS)) {
+			say("usage: shot [layer [0-%u]]\n", UI_PANELS - 1);
+			return;
+		}
+		screenshot_to_file((int)n);
+	}
 	say("encoding, then adb pull screen.jpg\n");
 }
 
@@ -705,7 +718,7 @@ static const struct command commands[] = {
 	{ "buzz", "[ms]", cmd_buzz },
 	{ "hub", "[send <hex bytes>]", cmd_hub },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
-	{ "shot", "[layer]", cmd_shot },
+	{ "shot", "[layer [n]]", cmd_shot },
 	{ "echo", "<text>", cmd_echo },
 };
 

@@ -15,10 +15,11 @@
 #define STEP_US 4000
 
 static struct jpeg enc;
-static bool encoding, to_file, file_requested, from_layer;
+static bool encoding, to_file, file_requested;
+static int from_layer;
 static uint32_t started;
 
-void screenshot_to_file(bool layer)
+void screenshot_to_file(int layer)
 {
 	from_layer = layer;
 	file_requested = true;
@@ -38,7 +39,7 @@ void screenshot_poll(void)
 				bt_gatt_screenshot_send(NULL, 0);
 		} else {
 			uint32_t *copy = (uint32_t *)(uintptr_t)SCREENSHOT_BASE;
-			memcpy(copy, file && from_layer ? (const void *)(uintptr_t)UI_LAYER_BASE : fb.buf[fb.back ^ 1], bytes);
+			memcpy(copy, file && from_layer >= 0 ? (const void *)(uintptr_t)(UI_LAYER_BASE + from_layer * UI_LAYER_STRIDE) : fb.buf[fb.back ^ 1], bytes);
 			jpeg_begin(&enc, copy, fb.width, fb.height, fb.stride, (uint8_t *)(uintptr_t)(SCREENSHOT_BASE + bytes),
 				   SCREENSHOT_SIZE - bytes, QUALITY);
 			encoding = true;
