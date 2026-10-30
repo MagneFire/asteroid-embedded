@@ -30,6 +30,15 @@ unsafe impl<T> Sync for Static<T> {}
 static WINDOWS: Static<RefCell<Vec<Rc<MinimalSoftwareWindow>>>> = Static(UnsafeCell::new(RefCell::new(Vec::new())));
 static UI: Static<Option<Ui>> = Static(UnsafeCell::new(None));
 
+/// The fonts text is drawn with, scaled to whatever size it asks for, registered in the font
+/// context all windows share before any text is laid out.
+static FONTS: [&[u8]; 4] = [
+    include_bytes!("../fonts/NotoSans-Light.ttf"),
+    include_bytes!("../fonts/Roboto-Medium.ttf"),
+    include_bytes!("../fonts/Roboto-Light.ttf"),
+    include_bytes!("../fonts/Raleway-Light.ttf"),
+];
+
 struct Firmware {
     last_ms: Cell<u32>,
     elapsed_ms: Cell<u64>,
@@ -128,6 +137,13 @@ pub unsafe extern "C" fn ui_init(
     unsafe { crate::heap_init(heap, heap_size as usize) };
     let platform = Firmware { last_ms: Cell::new(unsafe { time_ms() }), elapsed_ms: Cell::new(0) };
     if slint::platform::set_platform(Box::new(platform)).is_err() {
+        return false;
+    }
+    let fonts = i_slint_core::context::with_global_context(
+        || Err(PlatformError::NoPlatform),
+        |ctx| FONTS.iter().for_each(|font| ctx.font_context().borrow_mut().register_static_font(font)),
+    );
+    if fonts.is_err() {
         return false;
     }
     let (stride, width, height) = (stride_px as usize, width as usize, height as usize);

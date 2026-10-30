@@ -34,7 +34,7 @@ SECTIONS
         . += 1024;  __stack_und_top = .;
         . += 4096;  __stack_abt_top = .;
         . += 4096;  __stack_irq_top = .;
-        . += 32768; __stack_svc_top = .;
+        . += 131072; __stack_svc_top = .;
     } > IMG
     __ram_end = .;
     /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
