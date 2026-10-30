@@ -25,7 +25,7 @@ enum { IDLE, PENDING, SCROLL, SWIPE };
 enum { LEFT, RIGHT, UP, DOWN };
 
 static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] = true };
-static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true };
+static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
 static int W, H, fx, fy, from_x, from_y, ax, from_ax;
 static unsigned screen, gesture;

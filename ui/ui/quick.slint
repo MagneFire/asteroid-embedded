@@ -1,118 +1,199 @@
-// The quick settings, above the watchface: the battery level and toggles for brightness (a tap
-// steps through 25, 50, 75 and 100 %), Bluetooth, vibration and the always-on face. The
-// numbers passed to setting-toggled are the firmware's enum setting.
+// The quick settings above the watchface, laid out as AsteroidOS's quick panel: a fixed row with
+// lock (to the always-on face) and Settings, a row of toggles three to a page, paged sideways,
+// with dots for the pages, and the battery level as a bar and a number. An enabled toggle is a
+// darker disc with a bright icon, a disabled one a faint disc with a faint icon. The numbers
+// passed to setting-toggled are the firmware's enum setting, 15 to lock and 16 for Settings.
 import { Face } from "face.slint";
 
 component Toggle {
     in property <image> icon;
     in property <bool> on;
-    in property <string> label;
+    in property <bool> button;
+    in property <length> size: 112px;
     callback clicked();
 
-    width: 76px;
-    height: 100px;
+    width: root.size;
+    height: root.size;
 
     Rectangle {
-        x: 4px;
-        y: 0;
-        width: 68px;
-        height: 68px;
-        border-radius: 34px;
-        background: touch.pressed ? #ffffff80 : root.on ? #ffffffd8 : #ffffff28;
-
-        Image {
-            x: (parent.width - 36px) / 2;
-            y: (parent.height - 36px) / 2;
-            width: 36px;
-            height: 36px;
-            source: root.icon;
-            colorize: root.on ? black : white;
-        }
-
-        touch := TouchArea {
-            clicked => {
-                root.clicked();
-            }
-        }
+        border-radius: root.size / 2;
+        background: #222222;
+        opacity: touch.pressed ? 1 : root.button ? 1 : root.on ? 0.75 : 0.2;
     }
 
-    Text {
-        x: 0;
-        y: 72px;
-        width: parent.width;
-        height: 24px;
-        text: root.label;
-        color: white;
-        font-size: 16px;
-        horizontal-alignment: center;
+    Image {
+        x: (root.size - root.size / 2) / 2;
+        y: (root.size - root.size / 2) / 2;
+        width: root.size / 2;
+        height: root.size / 2;
+        source: root.icon;
+        colorize: white;
+        opacity: root.button || root.on ? 1 : 0.3;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
     }
 }
 
 export component QuickSettings {
+    property <int> pages: 2;
+    in-out property <int> page;
+    property <length> drag;
+    property <bool> dragging;
+    property <length> strip: 3 * 112px + 2 * 16px;
+
     width: 100%;
     height: 100%;
 
+    Toggle {
+        x: root.width / 2 - 16px - self.width;
+        y: 38px;
+        size: 96px;
+        button: true;
+        icon: @image-url("../icons/ios-unlock.svg");
+        clicked => {
+            Face.setting-toggled(15);
+        }
+    }
+
+    Toggle {
+        x: root.width / 2 + 16px;
+        y: 38px;
+        size: 96px;
+        button: true;
+        icon: @image-url("../icons/ios-settings.svg");
+        clicked => {
+            Face.setting-toggled(16);
+        }
+    }
+
+    Rectangle {
+        x: (root.width - root.strip) / 2;
+        y: 144px;
+        width: root.strip;
+        height: 112px;
+        clip: true;
+
+        Rectangle {
+            x: -root.page * (root.strip + 16px) + root.drag;
+            width: root.pages * (root.strip + 16px);
+            animate x {
+                duration: root.dragging ? 0ms : 150ms;
+                easing: ease-out;
+            }
+
+            HorizontalLayout {
+                x: 0;
+                width: root.strip;
+                spacing: 16px;
+
+                Toggle {
+                    icon: @image-url("../icons/ios-sunny.svg");
+                    on: true;
+                    clicked => {
+                        Face.setting-toggled(0);
+                    }
+                }
+
+                Toggle {
+                    icon: Face.bluetooth-on ? @image-url("../icons/ios-bluetooth.svg") : @image-url("../icons/ios-bluetooth-off-outline.svg");
+                    on: Face.bluetooth-on;
+                    clicked => {
+                        Face.setting-toggled(1);
+                    }
+                }
+
+                Toggle {
+                    icon: @image-url("../icons/ios-watch-vibrating.svg");
+                    on: Face.vibration-on;
+                    clicked => {
+                        Face.setting-toggled(2);
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                x: root.strip + 16px;
+                width: root.strip;
+                spacing: 16px;
+                alignment: center;
+
+                Toggle {
+                    icon: Face.aod-on ? @image-url("../icons/ios-watch-aod-on.svg") : @image-url("../icons/ios-watch-aod-off.svg");
+                    on: Face.aod-on;
+                    clicked => {
+                        Face.setting-toggled(3);
+                    }
+                }
+            }
+        }
+
+        TouchArea {
+            moved => {
+                if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 10px {
+                    root.dragging = true;
+                }
+                if root.dragging {
+                    root.drag = self.mouse-x - self.pressed-x;
+                }
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) && root.dragging {
+                    root.page = Math.clamp(root.page + (root.drag < -40px ? 1 : root.drag > 40px ? -1 : 0), 0, root.pages - 1);
+                    root.drag = 0;
+                    root.dragging = false;
+                }
+            }
+        }
+    }
+
+    for i in root.pages: Rectangle {
+        x: root.width / 2 + (i - (root.pages - 1) / 2) * 22px - 8px;
+        y: 272px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: white;
+        opacity: i == root.page ? 0.6 : 0.3;
+    }
+
+    Rectangle {
+        x: (root.width - 202px) / 2;
+        y: 304px;
+        width: 202px;
+        height: 32px;
+        border-radius: 16px;
+        background: #ffffff33;
+        clip: true;
+
+        Rectangle {
+            width: parent.width * Face.battery-percent / 100;
+            height: parent.height;
+            background: #ffffff4d;
+        }
+
+        if Face.charging: Image {
+            x: (parent.width - 32px) / 2;
+            width: 32px;
+            height: 32px;
+            source: @image-url("../icons/ios-flash.svg");
+            colorize: white;
+        }
+    }
+
     Text {
         x: 0;
-        y: root.height * 0.12;
+        y: 340px;
         width: root.width;
-        height: root.height * 0.1;
-        text: (Face.charging ? "Charging, " : "Battery ") + Face.battery-percent + "%";
+        height: 50px;
+        text: Face.battery-percent + "%";
         color: white;
-        font-size: 22px;
+        font-size: 36px;
+        font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
-    }
-
-    HorizontalLayout {
-        x: (root.width - 2 * 76px - 16px) / 2;
-        y: root.height * 0.26;
-        width: 2 * 76px + 16px;
-        height: 100px;
-        spacing: 16px;
-
-        Toggle {
-            icon: @image-url("../icons/ios-sunny.svg");
-            on: true;
-            label: Face.brightness + "%";
-            clicked => {
-                Face.setting-toggled(0);
-            }
-        }
-
-        Toggle {
-            icon: Face.bluetooth-on ? @image-url("../icons/ios-bluetooth.svg") : @image-url("../icons/ios-bluetooth-off-outline.svg");
-            on: Face.bluetooth-on;
-            label: "Bluetooth";
-            clicked => {
-                Face.setting-toggled(1);
-            }
-        }
-    }
-
-    HorizontalLayout {
-        x: (root.width - 2 * 76px - 16px) / 2;
-        y: root.height * 0.55;
-        width: 2 * 76px + 16px;
-        height: 100px;
-        spacing: 16px;
-
-        Toggle {
-            icon: @image-url("../icons/ios-watch-vibrating.svg");
-            on: Face.vibration-on;
-            label: "Vibration";
-            clicked => {
-                Face.setting-toggled(2);
-            }
-        }
-
-        Toggle {
-            icon: Face.aod-on ? @image-url("../icons/ios-watch-aod-on.svg") : @image-url("../icons/ios-watch-aod-off.svg");
-            on: Face.aod-on;
-            label: "Always on";
-            clicked => {
-                Face.setting-toggled(3);
-            }
-        }
     }
 }

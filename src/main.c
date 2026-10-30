@@ -204,6 +204,11 @@ static void setting_toggled(int s)
 		set_brightness();
 	} else if (s >= UI_WATCHFACE_FIRST && s < UI_WATCHFACE_FIRST + 2) {
 		setting_set(SETTING_WATCHFACE, s - UI_WATCHFACE_FIRST);
+	} else if (s == UI_LOCK) {
+		power_request(true);
+	} else if (s == UI_OPEN_SETTINGS) {
+		ui_set_app(UI_APP_SETTINGS);
+		stack_open_app();
 	} else if (s == UI_FORGET_PHONE) {
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 	} else if (s == SETTING_BLUETOOTH) {
