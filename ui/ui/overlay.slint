@@ -1,5 +1,5 @@
 // Drawn over every screen: a notification that was opened or just came in, the
-// Bluetooth pairing code, or a ringing alarm with Snooze and Dismiss. A tap on the
+// Bluetooth pairing code, or a ringing alarm or timer with Snooze and Dismiss. A tap on the
 // notification dismisses it.
 import { NoteIcons } from "note_icons.slint";
 import { Face } from "face.slint";
@@ -104,7 +104,7 @@ export component Overlay {
             y: root.height * 0.14;
             width: root.width;
             height: root.height * 0.1;
-            text: "Alarm";
+            text: Face.ringing-timer ? "Timer" : "Alarm";
             color: #ffffffa0;
             font-size: 24px;
             horizontal-alignment: center;
@@ -124,7 +124,8 @@ export component Overlay {
         }
 
         for action[i] in ["Snooze", "Dismiss"]: Rectangle {
-            x: root.width * 0.5 + (i == 0 ? -128px : 8px);
+            visible: i == 1 || !Face.ringing-timer;
+            x: Face.ringing-timer ? (root.width - self.width) / 2 : root.width * 0.5 + (i == 0 ? -128px : 8px);
             y: root.height * 0.6;
             width: 120px;
             height: 64px;

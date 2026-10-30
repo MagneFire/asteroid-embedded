@@ -64,6 +64,7 @@ struct Ui {
     alarms: Rc<VecModel<AlarmItem>>,
     alarm_edits: Queue,
     alarm_actions: Queue,
+    clock_actions: Queue,
     opened: Queue,
     dismissed: Queue,
     actions: Queue,
@@ -131,7 +132,7 @@ pub unsafe extern "C" fn ui_init(
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
     let alarms = Rc::new(VecModel::default());
-    let (alarm_edits, alarm_actions): (Queue, Queue) = Default::default();
+    let (alarm_edits, alarm_actions, clock_actions): (Queue, Queue, Queue) = Default::default();
     let (opened, dismissed, actions, apps, toggled): (Queue, Queue, Queue, Queue, Queue) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
@@ -153,6 +154,8 @@ pub unsafe extern "C" fn ui_init(
         face.on_alarm_deleted(move |index| queue.borrow_mut().push((index + 1) & 0xff | 1 << 27));
         let queue = alarm_actions.clone();
         face.on_alarm_action(move |action| queue.borrow_mut().push(action));
+        let queue = clock_actions.clone();
+        face.on_clock_action(move |action| queue.borrow_mut().push(action));
         let queue = opened.clone();
         face.on_notification_opened(move |id| queue.borrow_mut().push(id));
         let queue = dismissed.clone();
@@ -172,7 +175,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, alarms, alarm_edits, alarm_actions, opened, dismissed, actions, apps, toggled, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, alarms, alarm_edits, alarm_actions, clock_actions, opened, dismissed, actions, apps, toggled, stride, width, height });
     }
     true
 }
@@ -351,8 +354,34 @@ pub extern "C" fn ui_alarm_edit() -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_set_alarm_ringing(ringing: bool) {
-    each(|face| face.set_alarm_ringing(ringing));
+pub extern "C" fn ui_set_ringing(ringing: bool, timer: bool) {
+    each(|face| {
+        face.set_ringing_timer(timer);
+        face.set_alarm_ringing(ringing);
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_timer(ms: u32, set_ms: u32, running: bool) {
+    each(|face| {
+        face.set_timer_ms(ms as i32);
+        face.set_timer_set_ms(set_ms as i32);
+        face.set_timer_running(running);
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_stopwatch(ms: u32, running: bool) {
+    each(|face| {
+        face.set_stopwatch_ms(ms as i32);
+        face.set_stopwatch_running(running);
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_clock_action() -> i32 {
+    let Some(ui) = ui() else { return -1 };
+    pop(&ui.clock_actions).unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]

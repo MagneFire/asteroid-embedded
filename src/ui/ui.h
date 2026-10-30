@@ -25,7 +25,9 @@
  * returns the next change made in the alarm app, packed as index + 1
  * (0 new) in bits 0-7, hour 8-12, minute 13-18, weekdays 19-25, on 26
  * and bit 27 for a deletion, or -1; ui_alarm_action the next button
- * pressed on a ringing alarm, or -1. */
+ * pressed on a ringing alarm or timer (ui_set_ringing), or -1.
+ * ui_set_timer and ui_set_stopwatch show their state, ui_clock_action
+ * returns the next button pressed in those apps, or -1. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -40,7 +42,17 @@
 
 enum ui_touch_kind { UI_TOUCH_DOWN, UI_TOUCH_MOVE, UI_TOUCH_UP };
 enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY, UI_PANEL_TOP, UI_PANEL_APP };
-enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS, UI_APP_ALARM };
+enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS, UI_APP_ALARM, UI_APP_TIMER, UI_APP_STOPWATCH };
+enum ui_clock_action {
+	UI_TIMER_START = 20,
+	UI_TIMER_RESET,
+	UI_TIMER_MINUTE_UP,
+	UI_TIMER_MINUTE_DOWN,
+	UI_TIMER_SECONDS_UP,
+	UI_TIMER_SECONDS_DOWN,
+	UI_STOPWATCH_START = 30,
+	UI_STOPWATCH_RESET,
+};
 enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
 enum ui_action { UI_BRIGHTNESS_DOWN = 10, UI_BRIGHTNESS_UP, UI_FORGET_PHONE };
 enum ui_media_action {
@@ -73,7 +85,10 @@ void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool a
 void ui_set_build(const char *build);
 void ui_set_alarms(const uint8_t *rec, uint32_t n);
 int ui_alarm_edit(void);
-void ui_set_alarm_ringing(bool ringing);
+void ui_set_ringing(bool ringing, bool timer);
+void ui_set_timer(uint32_t ms, uint32_t set_ms, bool running);
+void ui_set_stopwatch(uint32_t ms, bool running);
+int ui_clock_action(void);
 int ui_alarm_action(void);
 int ui_setting_toggled(void);
 void ui_set_app(int app);

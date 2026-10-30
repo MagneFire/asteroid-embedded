@@ -41,6 +41,12 @@ export global Face {
     in-out property <string> build;
     in-out property <[AlarmItem]> alarms;
     in-out property <bool> alarm-ringing;
+    in-out property <bool> ringing-timer;
+    in-out property <int> timer-ms: 300000;
+    in-out property <int> timer-set-ms: 300000;
+    in-out property <bool> timer-running;
+    in-out property <int> stopwatch-ms;
+    in-out property <bool> stopwatch-running;
     in-out property <int> passkey: -1;
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
@@ -66,6 +72,7 @@ export global Face {
     callback alarm-saved(int, int, int, int, bool);
     callback alarm-deleted(int);
     callback alarm-action(int);
+    callback clock-action(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

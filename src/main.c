@@ -304,8 +304,9 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
-	bool key_was = false, awake = true, palm = false, ringing = false;
-	uint32_t alarm_t = 0, ring_t = 0;
+	bool key_was = false, awake = true, palm = false, ringing = false, ring_timer = false, sw_running = false;
+	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
+	uint32_t shown_timer = 1, shown_sw = 1;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
@@ -440,14 +441,61 @@ void main(void)
 			if (alarm_check(pmic_rtc_read()) && have_ui) {
 				log_printf("alarm: ringing\n");
 				ringing = true;
+				ring_timer = false;
 				ring_t = now;
-				ui_set_alarm_ringing(true);
+				ui_set_ringing(true, false);
 				show_alarms();
 				wake_request = !awake;
 			}
 		}
+		if (timer_end && (int32_t)(now - timer_end) >= 0 && have_ui) {
+			log_printf("timer: done\n");
+			timer_end = 0;
+			timer_left = timer_set;
+			ringing = ring_timer = true;
+			ring_t = now;
+			ui_set_ringing(true, true);
+			wake_request = !awake;
+		}
+		for (int a; have_ui && (a = ui_clock_action()) >= 0;) {
+			if (a == UI_TIMER_START && timer_end) {
+				timer_left = timer_end - now;
+				timer_end = 0;
+			} else if (a == UI_TIMER_START && timer_left) {
+				timer_end = now + timer_left;
+			} else if (a == UI_TIMER_RESET) {
+				timer_end = 0;
+				timer_left = timer_set;
+			} else if (a >= UI_TIMER_MINUTE_UP && a <= UI_TIMER_SECONDS_DOWN && !timer_end) {
+				int32_t step = a <= UI_TIMER_MINUTE_DOWN ? 60000 : 10000, t = (int32_t)timer_set;
+				t += a == UI_TIMER_MINUTE_UP || a == UI_TIMER_SECONDS_UP ? step : -step;
+				timer_set = timer_left = (uint32_t)(t < 10000 ? 10000 : t > 5940000 ? 5940000 : t);
+			} else if (a == UI_STOPWATCH_START) {
+				if (sw_running)
+					sw_acc += now - sw_start;
+				else
+					sw_start = now;
+				sw_running = !sw_running;
+			} else if (a == UI_STOPWATCH_RESET) {
+				sw_acc = 0;
+				sw_running = false;
+			}
+			shown_timer = shown_sw = UINT32_MAX;
+			last_activity = now;
+		}
+		if (have_ui && awake) {
+			uint32_t t = timer_end ? timer_end - now : timer_left, sw = sw_acc + (sw_running ? now - sw_start : 0);
+			if (t / 100 != shown_timer) {
+				shown_timer = t / 100;
+				ui_set_timer(t, timer_set, timer_end);
+			}
+			if (sw / 100 != shown_sw) {
+				shown_sw = sw / 100;
+				ui_set_stopwatch(sw, sw_running);
+			}
+		}
 		for (int a; have_ui && (a = ui_alarm_action()) >= 0 && ringing;) {
-			if (a == UI_ALARM_SNOOZE)
+			if (a == UI_ALARM_SNOOZE && !ring_timer)
 				alarm_snooze(pmic_rtc_read());
 			log_printf("alarm: %s\n", a == UI_ALARM_SNOOZE ? "snoozed" : "dismissed");
 			ringing = false;
@@ -463,7 +511,7 @@ void main(void)
 				haptics_play(ring, ARRAY_SIZE(ring));
 		} else if (have_ui && ring_t) {
 			ring_t = 0;
-			ui_set_alarm_ringing(false);
+			ui_set_ringing(false, false);
 			if (have_haptics)
 				haptics_play(NULL, 0);
 		}
@@ -495,8 +543,9 @@ void main(void)
 		}
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 			if (ringing) {
-				alarm_snooze(pmic_rtc_read());
-				log_printf("alarm: snoozed\n");
+				if (!ring_timer)
+					alarm_snooze(pmic_rtc_read());
+				log_printf("alarm: %s\n", ring_timer ? "dismissed" : "snoozed");
 				ringing = false;
 			}
 			ambient = have_ui && !palm && setting_get(SETTING_AOD);
@@ -687,6 +736,8 @@ void main(void)
 					next = minute;
 				if (alarm < next / 1000)
 					next = alarm ? alarm * 1000 : 1;
+				if (timer_end && timer_end - time_ms() < next)
+					next = (int32_t)(timer_end - time_ms()) > 0 ? timer_end - time_ms() : 1;
 			}
 			bool long_sleep = !awake && next > 1000;
 			if (long_sleep) {

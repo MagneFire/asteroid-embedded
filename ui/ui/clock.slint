@@ -1,0 +1,157 @@
+// The timer and the stopwatch. The firmware keeps both running, also while the app is closed or
+// the watch sleeps, and shows their state in Face; the buttons call clock-action with 20 start or
+// pause the timer, 21 reset it, 22/23 one minute more/less, 24/25 ten seconds more/less, 30
+// start or stop the stopwatch and 31 reset it.
+import { Face } from "face.slint";
+
+component Button inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <length> size: 56px;
+    callback clicked();
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: touch.pressed ? #ffffff70 : #ffffff30;
+
+    if root.label != "": Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: white;
+        font-size: 20px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.label == "": Image {
+        x: (parent.width - parent.width * 0.5) / 2;
+        y: (parent.height - parent.height * 0.5) / 2;
+        width: parent.width * 0.5;
+        height: parent.height * 0.5;
+        source: root.icon;
+        colorize: white;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component TimerApp {
+    property <int> seconds: Math.ceil(Face.timer-ms / 1000);
+    property <bool> idle: !Face.timer-running && Face.timer-ms == Face.timer-set-ms;
+
+    width: 100%;
+    height: 100%;
+
+    if root.idle: Button {
+        x: root.width * 0.3 - self.width / 2;
+        y: root.height * 0.13;
+        label: "+1m";
+        clicked => {
+            Face.clock-action(22);
+        }
+    }
+
+    if root.idle: Button {
+        x: root.width * 0.7 - self.width / 2;
+        y: root.height * 0.13;
+        label: "+10s";
+        clicked => {
+            Face.clock-action(24);
+        }
+    }
+
+    Text {
+        x: 0;
+        y: root.height * 0.3;
+        width: root.width;
+        height: root.height * 0.2;
+        text: Face.two-digits(Math.floor(root.seconds / 60)) + ":" + Face.two-digits(Math.mod(root.seconds, 60));
+        color: white;
+        font-size: 72px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.idle: Button {
+        x: root.width * 0.3 - self.width / 2;
+        y: root.height * 0.52;
+        label: "−1m";
+        clicked => {
+            Face.clock-action(23);
+        }
+    }
+
+    if root.idle: Button {
+        x: root.width * 0.7 - self.width / 2;
+        y: root.height * 0.52;
+        label: "−10s";
+        clicked => {
+            Face.clock-action(25);
+        }
+    }
+
+    Button {
+        x: root.idle ? (root.width - self.width) / 2 : root.width * 0.5 - 12px - self.width;
+        y: root.height * 0.72;
+        size: 64px;
+        icon: Face.timer-running ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
+        clicked => {
+            Face.clock-action(20);
+        }
+    }
+
+    if !root.idle: Button {
+        x: root.width * 0.5 + 12px;
+        y: root.height * 0.72;
+        size: 64px;
+        label: "Reset";
+        clicked => {
+            Face.clock-action(21);
+        }
+    }
+}
+
+export component StopwatchApp {
+    property <int> tenths: Math.floor(Face.stopwatch-ms / 100);
+
+    width: 100%;
+    height: 100%;
+
+    Text {
+        x: 0;
+        y: root.height * 0.3;
+        width: root.width;
+        height: root.height * 0.2;
+        text: Face.two-digits(Math.floor(root.tenths / 600)) + ":" + Face.two-digits(Math.mod(Math.floor(root.tenths / 10), 60)) + "." + Math.mod(root.tenths, 10);
+        color: white;
+        font-size: 64px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Button {
+        x: root.width * 0.5 - 12px - self.width;
+        y: root.height * 0.62;
+        size: 64px;
+        icon: Face.stopwatch-running ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
+        clicked => {
+            Face.clock-action(30);
+        }
+    }
+
+    Button {
+        x: root.width * 0.5 + 12px;
+        y: root.height * 0.62;
+        size: 64px;
+        label: "Reset";
+        clicked => {
+            Face.clock-action(31);
+        }
+    }
+}
