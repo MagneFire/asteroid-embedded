@@ -204,13 +204,13 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	tx_t = time_ms();
 	tlmm_irq_config(GPIO_BT_HOST_WAKE, TLMM_IRQ_EDGE_FALLING, host_wake_irq);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, true);
-	spm_wake_pin(MPM_PIN_HOST_WAKE, true);
+	spm_wake_pin(MPM_PIN_HOST_WAKE, true, false);
 	return 0;
 }
 
 void bt_stop(void)
 {
-	spm_wake_pin(MPM_PIN_HOST_WAKE, false);
+	spm_wake_pin(MPM_PIN_HOST_WAKE, false, false);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, false);
 	uart_dm_stop(BT_UART);
 	power(false);

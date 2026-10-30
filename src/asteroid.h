@@ -36,7 +36,7 @@ enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
 bool spm_init(void);
 void spm_cpu_mode(enum spm_mode mode);
 void spm_idle(bool cluster);
-void spm_wake_pin(unsigned pin, bool on);
+void spm_wake_pin(unsigned pin, bool on, bool high);
 void spm_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
 void dcache_clean_range(const void *addr, uint32_t size);
 void dcache_invalidate_range(const void *addr, uint32_t size);
