@@ -305,6 +305,13 @@ pub extern "C" fn ui_set_settings(brightness: u32, bluetooth: bool, vibration: b
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_build(build: *const u8) {
+    let len = if build.is_null() { 0 } else { unsafe { core::ffi::CStr::from_ptr(build as *const core::ffi::c_char) }.count_bytes() };
+    let build = unsafe { text(build, len as u32) };
+    each(|face| face.set_build(build.clone()));
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_setting_toggled() -> i32 {
     let Some(ui) = ui() else { return -1 };
     pop(&ui.toggled).unwrap_or(-1)

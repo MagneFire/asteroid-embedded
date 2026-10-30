@@ -31,6 +31,7 @@ export global Face {
     in-out property <bool> vibration-on: true;
     in-out property <bool> aod-on: true;
     in-out property <bool> clock12;
+    in-out property <string> build;
     in-out property <int> passkey: -1;
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
@@ -93,7 +94,7 @@ export component Watchface {
         y: root.show-seconds && !Face.ambient ? root.height * 0.17 : root.height * 0.22;
         width: root.width;
         height: root.height * 0.36;
-        text: Face.two-digits(Face.hour) + ":" + Face.two-digits(Face.minute);
+        text: (Face.clock12 ? (Math.mod(Face.hour + 11, 12) + 1) + "" : Face.two-digits(Face.hour)) + ":" + Face.two-digits(Face.minute);
         color: white;
         font-size: 110px;
         horizontal-alignment: center;

@@ -20,7 +20,7 @@
  * with ui_set_app; ui_app_opened returns the next app picked in the
  * launcher, or -1. ui_set_settings shows the settings (brightness in
  * per cent) and ui_setting_toggled returns the next one the user
- * changed, as an enum setting, or -1. */
+ * changed, as an enum setting or enum ui_action, or -1. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -35,7 +35,8 @@
 
 enum ui_touch_kind { UI_TOUCH_DOWN, UI_TOUCH_MOVE, UI_TOUCH_UP };
 enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY, UI_PANEL_TOP, UI_PANEL_APP };
-enum ui_app { UI_APP_MUSIC };
+enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS };
+enum ui_action { UI_BRIGHTNESS_DOWN = 10, UI_BRIGHTNESS_UP, UI_FORGET_PHONE };
 enum ui_media_action {
 	UI_MEDIA_PREVIOUS,
 	UI_MEDIA_NEXT,
@@ -63,6 +64,7 @@ void ui_set_media(const char *title, uint32_t title_len, const char *artist, uin
 int ui_media_action(void);
 int ui_app_opened(void);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
+void ui_set_build(const char *build);
 int ui_setting_toggled(void);
 void ui_set_app(int app);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,

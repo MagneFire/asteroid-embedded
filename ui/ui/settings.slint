@@ -1,0 +1,176 @@
+// The Settings app: the quick settings and a few more, in a list that scrolls. Rows call
+// setting-toggled with the firmware's enum setting, or 10/11 to step the brightness down/up
+// and 12 to forget the paired phone.
+import { Face } from "face.slint";
+
+component Row {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 56px;
+
+    Rectangle {
+        background: touch.pressed && root.enabled ? #ffffff30 : transparent;
+        border-radius: 12px;
+    }
+
+    Text {
+        x: 12px;
+        width: parent.width * 0.6;
+        height: parent.height;
+        text: root.label;
+        color: white;
+        font-size: 20px;
+        vertical-alignment: center;
+    }
+
+    Text {
+        x: parent.width * 0.6;
+        width: parent.width * 0.4 - 12px;
+        height: parent.height;
+        text: root.value;
+        color: #ffffffb0;
+        font-size: 20px;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Step inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    background: touch.pressed ? #ffffff60 : #ffffff28;
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: white;
+        font-size: 28px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component SettingsApp {
+    width: 100%;
+    height: 100%;
+
+    Text {
+        x: 0;
+        y: root.height * 0.06;
+        width: root.width;
+        height: root.height * 0.1;
+        text: "Settings";
+        color: white;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Flickable {
+        x: root.width * 0.12;
+        y: root.height * 0.17;
+        width: root.width * 0.76;
+        height: root.height * 0.74;
+        content-height: list.preferred-height + 40px;
+
+        list := VerticalLayout {
+            spacing: 4px;
+
+            HorizontalLayout {
+                height: 64px;
+                alignment: space-between;
+                Step {
+                    label: "−";
+                    clicked => {
+                        Face.setting-toggled(10);
+                    }
+                }
+                Text {
+                    text: "Brightness " + Face.brightness + "%";
+                    color: white;
+                    font-size: 20px;
+                    vertical-alignment: center;
+                }
+                Step {
+                    label: "+";
+                    clicked => {
+                        Face.setting-toggled(11);
+                    }
+                }
+            }
+
+            Row {
+                label: "Bluetooth";
+                value: Face.bluetooth-on ? "On" : "Off";
+                clicked => {
+                    Face.setting-toggled(1);
+                }
+            }
+
+            Row {
+                label: "Forget phone";
+                value: "";
+                clicked => {
+                    Face.setting-toggled(12);
+                }
+            }
+
+            Row {
+                label: "Vibration";
+                value: Face.vibration-on ? "On" : "Off";
+                clicked => {
+                    Face.setting-toggled(2);
+                }
+            }
+
+            Row {
+                label: "Always on";
+                value: Face.aod-on ? "On" : "Off";
+                clicked => {
+                    Face.setting-toggled(3);
+                }
+            }
+
+            Row {
+                label: "Clock";
+                value: Face.clock12 ? "12 hour" : "24 hour";
+                clicked => {
+                    Face.setting-toggled(4);
+                }
+            }
+
+            Row {
+                label: "Battery";
+                value: Face.battery-percent + "%";
+                enabled: false;
+            }
+
+            Row {
+                label: "Build";
+                value: Face.build;
+                enabled: false;
+            }
+        }
+    }
+}

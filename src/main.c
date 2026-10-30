@@ -161,10 +161,16 @@ static void set_brightness(void)
 /* A setting changed from the UI: store it and put it into effect. */
 static void setting_toggled(int s)
 {
-	if (s == SETTING_BRIGHTNESS) {
+	if (s == SETTING_BRIGHTNESS || s == UI_BRIGHTNESS_DOWN || s == UI_BRIGHTNESS_UP) {
 		int b = setting_get(SETTING_BRIGHTNESS);
-		setting_set(SETTING_BRIGHTNESS, b >= 100 ? 25 : (b / 25 + 1) * 25);
+		if (s == SETTING_BRIGHTNESS)
+			b = b >= 100 ? 25 : (b / 25 + 1) * 25;
+		else
+			b = s == UI_BRIGHTNESS_UP ? (b + 10 > 100 ? 100 : b + 10) : (b - 10 < 10 ? 10 : b - 10);
+		setting_set(SETTING_BRIGHTNESS, b);
 		set_brightness();
+	} else if (s == UI_FORGET_PHONE) {
+		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 	} else if (s == SETTING_BLUETOOTH) {
 		bool on = !setting_get(SETTING_BLUETOOTH);
 		setting_set(SETTING_BLUETOOTH, on);
@@ -294,8 +300,10 @@ void main(void)
 				bluetooth_start();
 			if (have_display)
 				set_brightness();
-			if (have_ui)
+			if (have_ui) {
 				show_settings();
+				ui_set_build(build_id);
+			}
 		}
 		pmic_charger_poll();
 		bms_poll();
