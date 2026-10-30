@@ -21,6 +21,7 @@
 const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
+#define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
 
 #ifndef REBOOT_AFTER_MS
@@ -353,7 +354,7 @@ void main(void)
 			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month);
 			ui_set_battery(pmic_battery_percent(), pmic_charging());
 		}
-		if (!awake && now - last >= 10000) {
+		if (!awake && now - last >= ASLEEP_STATS_MS) {
 			last = now;
 			uint32_t pc, pcc, pcb;
 			spm_stats(&pc, &pcc, &pcb);
@@ -415,7 +416,29 @@ void main(void)
 				hub_sleep(true);
 				cpu_clock_park();
 			}
+			uint32_t next = 1000;
+			if (!awake && !usb_connected()) {
+				uint32_t bt = bt_idle_ms(), lpm = bt_lpm_next_ms(), stats = ASLEEP_STATS_MS - (time_ms() - last);
+				next = stats > ASLEEP_STATS_MS ? 1 : stats;
+				if (bt < next)
+					next = bt;
+				if (lpm < next)
+					next = lpm;
+				if (have_hub && !hub_can_sleep() && next > 50)
+					next = 50;
+			}
+			bool long_sleep = !awake && next > 1000;
+			if (long_sleep) {
+				timer_set_period(next);
+				timer_next(next);
+				wdt_stop();
+			}
 			spm_idle(cluster);
+			if (long_sleep) {
+				wdt_arm(3000, 4000, NULL);
+				timer_set_period(1000);
+				timer_next(1);
+			}
 			if (cluster) {
 				cpu_clock_unpark();
 				hub_sleep(false);

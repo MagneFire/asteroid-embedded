@@ -248,6 +248,14 @@ void bt_lpm_poll(void)
 	}
 }
 
+uint32_t bt_lpm_next_ms(void)
+{
+	if (!running || !dev_awake)
+		return UINT32_MAX;
+	uint32_t idle = time_ms() - tx_t;
+	return idle >= DEV_WAKE_IDLE_MS ? 1 : DEV_WAKE_IDLE_MS - idle;
+}
+
 bool bt_can_sleep(void)
 {
 	return !running || (!dev_awake && bt_host_wake() && uart_dm_idle(BT_UART));

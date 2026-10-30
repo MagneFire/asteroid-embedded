@@ -38,6 +38,7 @@ bool bt_running(void);
 bool bt_host_wake(void);
 void bt_tx_activity(void);
 void bt_lpm_poll(void);
+uint32_t bt_lpm_next_ms(void);
 bool bt_can_sleep(void);
 void bt_sleep(bool asleep);
 

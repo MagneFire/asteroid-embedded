@@ -36,6 +36,12 @@ void timer_set_period(uint32_t ms)
 	period_ms = ms ? ms : 1;
 }
 
+void timer_next(uint32_t ms)
+{
+	uint32_t tval = hz / 1000 * (ms ? ms : 1);
+	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));	/* CNTP_TVAL */
+}
+
 static void tick_irq(void)
 {
 	uint32_t tval = hz / 1000 * period_ms;
