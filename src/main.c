@@ -377,7 +377,7 @@ void main(void)
 					last_activity = now;
 				ui_tick();
 				for (unsigned p = 0; p < UI_PANELS; p++)
-					if (ui_update(p, &x, &y, &w, &h)) {
+					if ((p != UI_PANEL_OVERLAY || !stack_overlay_frozen()) && ui_update(p, &x, &y, &w, &h)) {
 						uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
 						stack_damage(p, x, y, w, h);
 						if (have_gpu)

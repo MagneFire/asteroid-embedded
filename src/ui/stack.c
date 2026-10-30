@@ -16,6 +16,7 @@
 #define FLICK_MS	300
 #define SLIDE_MS	250
 #define DIM		0.4f
+#define FADE_MS		150
 #define BAND		16
 #define BANDS		32
 
@@ -28,7 +29,8 @@ static int W, H, fx, fy, from_x, from_y;
 static unsigned screen, gesture;
 static bool animating, dragging, horizontal;
 static int down_x, down_y;
-static uint32_t down_ms, anim_t0;
+static uint32_t down_ms, anim_t0, fade_t;
+static float fade;
 static struct { int x0, x1; } bands[UI_PANELS][BANDS];
 
 static int rest_x(unsigned s) { return s == UI_PANEL_LEFT ? W : s == UI_PANEL_RIGHT ? -W : 0; }
@@ -49,6 +51,7 @@ void stack_home(void)
 	fx = fy = 0;
 	animating = dragging = false;
 	gesture = IDLE;
+	fade = 0.0f;
 }
 
 unsigned stack_screen(void) { return screen; }
@@ -183,6 +186,12 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 
 void stack_update(uint32_t now_ms)
 {
+	float step = (float)(now_ms - fade_t) / FADE_MS;
+	fade_t = now_ms;
+	if (ui_modal())
+		fade = fade + step < 1.0f ? fade + step : 1.0f;
+	else
+		fade = fade - step > 0.0f ? fade - step : 0.0f;
 	if (!animating)
 		return;
 	uint32_t t = now_ms - anim_t0;
@@ -231,7 +240,12 @@ void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h
 	}
 }
 
-static void layer(unsigned panel, int x, int y)
+bool stack_overlay_frozen(void)
+{
+	return !ui_modal() && fade > 0.0f;
+}
+
+static void layer(unsigned panel, int x, int y, float alpha)
 {
 	if (x <= -W || x >= W || y <= -H || y >= H)
 		return;
@@ -248,7 +262,7 @@ static void layer(unsigned panel, int x, int y)
 		else
 			parts[n++] = (struct gpu_rect){ x0, b * BAND, x1 - x0, r1 - b * BAND };
 	}
-	gpu_draw_layer_parts(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, 1.0f, parts, n);
+	gpu_draw_layer_parts(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, alpha, parts, n);
 }
 
 float stack_dim(void)
@@ -259,10 +273,10 @@ float stack_dim(void)
 
 void stack_compose(void)
 {
-	layer(UI_PANEL_LEFT, fx - W, 0);
-	layer(UI_PANEL_RIGHT, fx + W, 0);
-	layer(UI_PANEL_BOTTOM, 0, fy + H);
-	layer(UI_PANEL_FACE, fx, fy);
-	if (ui_modal())
-		layer(UI_PANEL_OVERLAY, 0, 0);
+	layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
+	layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
+	layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
+	layer(UI_PANEL_FACE, fx, fy, 1.0f);
+	if (fade > 0.0f)
+		layer(UI_PANEL_OVERLAY, 0, 0, fade);
 }

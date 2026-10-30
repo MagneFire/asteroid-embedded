@@ -10,9 +10,10 @@
  * proportion to how far the watchface is off centre. stack_touch routes
  * everything else to the panel on screen, or to the overlay while it is
  * up (a swipe there closes the notification); stack_update advances the
- * slide; stack_compose draws the visible layers and the overlay between
- * gpu_draw_begin and gpu_draw_end; stack_home snaps back to the
- * watchface. */
+ * slide; stack_compose draws the visible layers and the overlay, which
+ * fades in and out over 150 ms, between gpu_draw_begin and gpu_draw_end;
+ * while the overlay fades out, stack_overlay_frozen says to leave its
+ * layer as it is; stack_home snaps back to the watchface. */
 #ifndef STACK_H
 #define STACK_H
 #include <stdint.h>
@@ -27,5 +28,6 @@ unsigned stack_screen(void);
 bool stack_moving(void);
 void stack_offset(int *x, int *y);
 float stack_dim(void);
+bool stack_overlay_frozen(void);
 void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 #endif
