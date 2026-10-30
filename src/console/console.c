@@ -144,6 +144,31 @@ static void cmd_bright(const char *args)
 static void cmd_sleep(const char *args) { power_request(true); }
 static void cmd_wake(const char *args) { power_request(false); }
 
+static void cmd_set(const char *args)
+{
+	bool found = false;
+	for (unsigned i = 0; i < SETTINGS; i++) {
+		const char *name = setting_name((enum setting)i);
+		size_t n = strlen(name);
+		uint32_t v;
+		if (*args && (strncmp(args, name, n) || (args[n] && args[n] != ' ')))
+			continue;
+		const char *p = args + n;
+		if (*args && *p) {
+			if (!parse_num(&p, 10, &v) || v > 255) {
+				say("usage: set [name [value]]\n");
+				return;
+			}
+			setting_set((enum setting)i, (int)v);
+			settings_changed();
+		}
+		say("%s %d\n", name, setting_get((enum setting)i));
+		found = true;
+	}
+	if (!found)
+		say("set: no setting %s\n", args);
+}
+
 static void cmd_aod(const char *args)
 {
 	if (!strcmp(args, "on") || !strcmp(args, "off"))
@@ -769,6 +794,7 @@ static const struct command commands[] = {
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
 	{ "aod", "[on|off]", cmd_aod },
+	{ "set", "[name [value]]", cmd_set },
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes]", cmd_pmic },

@@ -46,6 +46,8 @@ void power_request(bool sleep) { stub_asleep = sleep; }
 static int stub_settings[SETTINGS] = { [SETTING_AOD] = 1 };
 int setting_get(enum setting s) { return stub_settings[s]; }
 void setting_set(enum setting s, int v) { stub_settings[s] = v; }
+const char *setting_name(enum setting s) { return "x"; }
+void settings_changed(void) {}
 void hub_status(void (*say)(const char *fmt, ...)) {}
 int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms) {}

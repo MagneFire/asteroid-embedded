@@ -95,7 +95,12 @@ static void draw_dot(uint32_t *buf)
 		}
 }
 
-static volatile bool console_sleep, console_wake;
+static volatile bool console_sleep, console_wake, console_settings;
+
+void settings_changed(void)
+{
+	console_settings = true;
+}
 
 void power_request(bool sleep)
 {
@@ -537,6 +542,13 @@ void main(void)
 		if (have_ui && weather_serial() != weather_seen) {
 			weather_seen = weather_serial();
 			show_weather();
+		}
+		if (console_settings) {
+			console_settings = false;
+			if (have_display)
+				set_brightness();
+			if (have_ui)
+				show_settings();
 		}
 		if (console_sleep || console_wake) {
 			sleep_request |= console_sleep && awake;

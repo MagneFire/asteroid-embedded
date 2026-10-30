@@ -34,6 +34,8 @@ void power_request(bool sleep);
 enum setting { SETTING_BRIGHTNESS, SETTING_BLUETOOTH, SETTING_VIBRATION, SETTING_AOD, SETTING_CLOCK12, SETTINGS };
 int setting_get(enum setting s);
 void setting_set(enum setting s, int v);
+const char *setting_name(enum setting s);
+void settings_changed(void);
 
 enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
 bool spm_init(void);

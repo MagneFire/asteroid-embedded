@@ -17,6 +17,11 @@ static const struct {
 static uint8_t values[SETTINGS];
 static bool loaded;
 
+const char *setting_name(enum setting s)
+{
+	return table[s].key;
+}
+
 int setting_get(enum setting s)
 {
 	if (!loaded) {
