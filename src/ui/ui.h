@@ -8,7 +8,8 @@
  * repaints its layer where it changed, on the GPU while it is on, and
  * returns the bounding box of the change; ui_render blends the
  * watchface and overlay layers over a finished XRGB8888 background on
- * the CPU. weekday 0 = Sunday, month 1-12;
+ * the CPU; ui_repaint repaints a whole panel, on the GPU or the CPU,
+ * for measuring. weekday 0 = Sunday, month 1-12;
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
  * code. Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id, and ui_notification_dismissed hands out, one
@@ -60,5 +61,6 @@ void ui_touch(uint32_t panel, int kind, int x, int y);
 void ui_tick(void);
 bool ui_update(uint32_t panel, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h);
 void ui_render(uint32_t *buf, uint32_t stride_px);
+void ui_repaint(uint32_t panel, bool gpu);
 void ui_panic(const char *msg, size_t len) __attribute__((noreturn));
 #endif

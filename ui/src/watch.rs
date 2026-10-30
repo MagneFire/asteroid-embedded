@@ -412,3 +412,20 @@ pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32) {
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_repaint(panel: u32, gpu: bool) {
+    let Some(ui) = ui() else { return };
+    let Some(panel) = ui.panels.get_mut(panel as usize) else { return };
+    let (layer, stride, width, height) = (&mut *panel.layer, ui.stride, ui.width, ui.height);
+    panel.window.request_redraw();
+    panel.window.draw_if_needed(|renderer| {
+        renderer.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
+        if gpu {
+            renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height));
+        } else {
+            renderer.render(layer, stride);
+        }
+        renderer.set_repaint_buffer_type(RepaintBufferType::ReusedBuffer);
+    });
+}

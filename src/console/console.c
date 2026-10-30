@@ -732,6 +732,20 @@ static void cmd_notify(const char *args)
 	say("test %lu\n", (unsigned long)i);
 }
 
+static void cmd_uibench(const char *args)
+{
+	uint32_t p = 0, gpu = 0, n = 10;
+	if (!parse_num(&args, 10, &p) || p >= UI_PANELS || !parse_num(&args, 10, &gpu) ||
+	    (*skip_spaces(args) && !parse_num(&args, 10, &n)) || !n) {
+		say("usage: uibench <0-%u> <0 cpu | 1 gpu> [times]\n", UI_PANELS - 1);
+		return;
+	}
+	uint32_t t0 = time_us();
+	for (uint32_t i = 0; i < n; i++)
+		ui_repaint(p, gpu);
+	say("panel %lu: %lu us per repaint\n", p, (time_us() - t0) / n);
+}
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -764,6 +778,7 @@ static const struct command commands[] = {
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "shot", "[layer [n]]", cmd_shot },
 	{ "notify", "[text] | remove <n>", cmd_notify },
+	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 	{ "echo", "<text>", cmd_echo },
 };
 
