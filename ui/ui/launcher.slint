@@ -26,14 +26,6 @@ export global Apps {
     out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
 }
 
-// The software renderer clips to rectangles only, so the round previews show just the items that
-// fit: a disc of radius r centred dx, dy from the middle of a preview of size s, give or take.
-global Preview {
-    public pure function fits(dx: length, dy: length, r: length, s: length) -> bool {
-        return Math.sqrt(Math.pow(dx / 1px, 2) + Math.pow(dy / 1px, 2)) * 1px + r * 0.7 <= s / 2;
-    }
-}
-
 // Scrolling along one axis in steps of item, count steps, with a flick that coasts: the speed of
 // the last moves projected over a deceleration of 0.0015 px/ms^2, then rounded to a step. offset
 // is where the content is, animate it with anim unless dragging. tapped fires for a press that
@@ -203,7 +195,6 @@ component ThreeIcons {
         y: (root.size - root.cell) / 2;
         width: root.cell;
         height: root.cell;
-        visible: !root.preview || Preview.fits(self.x + root.cell / 2 - root.size / 2, 0, root.cell * 0.4, root.size);
 
         Rectangle {
             x: parent.width * 0.1;
@@ -281,7 +272,6 @@ component TwoColumns {
         y: root.size / 2 - root.cell / 2 + Math.floor(i / 2) * root.cell - root.scroll;
         width: root.cell;
         height: root.cell;
-        visible: !root.preview || Preview.fits(self.x + root.cell / 2 - root.size / 2, self.y + root.cell / 2 - root.size / 2, root.cell * 0.38, root.size);
 
         Rectangle {
             x: parent.width * 0.12;
@@ -364,7 +354,7 @@ component TurboList {
         width: root.size - self.x;
         height: root.line;
         opacity: self.n;
-        visible: self.n > 0.1 && (!root.preview || Math.abs(self.d) < root.line * 1.5);
+        visible: self.n > 0.1;
 
         Rectangle {
             x: 0;
@@ -453,7 +443,6 @@ component ThreeByThree {
         y: root.spacer + Math.floor(i / 3) * root.cell - root.scroll;
         width: root.cell;
         height: root.cell;
-        visible: !root.preview || Preview.fits(self.x + root.cell / 2 - root.size / 2, self.y + root.cell / 2 - root.size / 2, root.cell * 0.43, root.size);
 
         Rectangle {
             x: parent.width * 0.07;
