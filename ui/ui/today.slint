@@ -1,0 +1,52 @@
+// The Today screen, right of the watchface, as AsteroidOS's: today's weather on top (icon left
+// of the middle, lowest and highest temperature to its right) and today's agenda, which is
+// always empty here as nothing provides one.
+import { Face } from "face.slint";
+
+export component TodayScreen {
+    width: 100%;
+    height: 100%;
+
+    if Face.weather-valid: Image {
+        x: root.width / 2 - 60px;
+        y: 70px - 30px;
+        width: 60px;
+        height: 60px;
+        source: Face.weather-icon(Face.weather-today.id);
+        colorize: white;
+        opacity: 0.8;
+    }
+
+    if Face.weather-valid: Text {
+        x: root.width * 0.55;
+        y: 0;
+        width: root.width * 0.45;
+        height: 140px;
+        text: Face.weather-today.min + "°C\n" + Face.weather-today.max + "°C";
+        color: white;
+        opacity: 0.8;
+        font-size: 20px;
+        vertical-alignment: center;
+    }
+
+    Image {
+        x: (root.width - 108px) / 2;
+        y: (root.height - 108px) / 2 + (Face.weather-valid ? 4px : -36px);
+        width: 108px;
+        height: 108px;
+        source: @image-url("../icons/ios-calendar-outline.svg");
+        colorize: white;
+        opacity: 0.8;
+    }
+
+    Text {
+        x: 0;
+        y: (root.height + 108px) / 2 + (Face.weather-valid ? 4px : -36px) + 16px;
+        width: root.width;
+        text: "No events today";
+        color: white;
+        opacity: 0.8;
+        font-size: 24px;
+        horizontal-alignment: center;
+    }
+}

@@ -1,6 +1,7 @@
 // The app panel: whichever app the launcher opened, full screen over the screen stack.
 import { Face } from "face.slint";
 import { MusicScreen } from "music.slint";
+import { WeatherScreen } from "weather.slint";
 import { SettingsApp } from "settings.slint";
 import { AlarmApp } from "alarm.slint";
 import { TimerApp, StopwatchApp } from "clock.slint";
@@ -14,4 +15,5 @@ export component AppScreen {
     if Face.app == 2: AlarmApp { }
     if Face.app == 3: TimerApp { }
     if Face.app == 4: StopwatchApp { }
+    if Face.app == 5: WeatherScreen { }
 }

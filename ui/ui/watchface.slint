@@ -1,7 +1,7 @@
 // One Screen window per layer (see stack.h for how the layers are placed): the watchface
-// (AsteroidOS's default digital one or the classic one),
-// the notifications, the weather, the music controls, and the overlay drawn over all of
-// them. A single exported root keeps the font embedded once.
+// (AsteroidOS's default digital one or the classic one), the notifications, Today, the
+// launcher, the quick settings, the open app, and the overlay drawn over all of them. A
+// single exported root keeps the fonts embedded once.
 import "../fonts/NotoSans-Light.ttf";
 import "../fonts/Roboto-Medium.ttf";
 import "../fonts/Roboto-Light.ttf";
@@ -9,7 +9,7 @@ import "../fonts/Raleway-Light.ttf";
 import { DigitalFace } from "digital.slint";
 import { Face, Note, Day, AlarmItem, Watchface } from "face.slint";
 import { NoteList } from "notes.slint";
-import { WeatherScreen } from "weather.slint";
+import { TodayScreen } from "today.slint";
 import { Launcher } from "launcher.slint";
 import { AppScreen } from "apps.slint";
 import { QuickSettings } from "quick.slint";
@@ -27,7 +27,7 @@ export component Screen inherits Window {
     if root.kind == 0 && Face.watchface == 0: DigitalFace { }
     if root.kind == 0 && Face.watchface == 1: Watchface { }
     if root.kind == 1: NoteList { }
-    if root.kind == 2: WeatherScreen { }
+    if root.kind == 2: TodayScreen { }
     if root.kind == 3: Launcher { }
     if root.kind == 4: Overlay { }
     if root.kind == 5: QuickSettings { }

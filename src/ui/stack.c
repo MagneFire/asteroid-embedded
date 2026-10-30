@@ -1,9 +1,9 @@
 /* Screen stack geometry and gestures. The watchface's origin (fx, fy) is
  * the single state the layout follows: at rest it is (0, 0) on the
- * watchface, (W, 0) with the notifications on screen, (-W, 0) for the
- * weather, (0, -H) for the launcher and (0, H) for the quick settings;
- * the side screens sit one screen
- * away from the watchface. An open app lies over all of them at ax. A drag moves the origin with the finger,
+ * watchface, (W, 0) with the notifications on screen, (-W, 0) for
+ * Today, (0, -H) for the launcher and (0, H) for the quick settings; the
+ * side screens sit one screen away from the watchface. An open app lies
+ * over all of them at ax. A drag moves the origin with the finger,
  * clamped to the screens that exist in that direction, and a release
  * past 30 % or a quick flick switches screens; the slide back to rest is
  * an ease-out over SLIDE_MS. */

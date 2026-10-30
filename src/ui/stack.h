@@ -1,5 +1,5 @@
 /* The screen stack: the watchface with the notifications to its left
- * (swipe right), the weather to its right (swipe left), the app
+ * (swipe right), Today to its right (swipe left), the app
  * launcher below it (swipe up) and the quick settings above it (swipe
  * down), the opposite swipe going back, as on
  * AsteroidOS. stack_open_app slides the app panel in over the stack from
