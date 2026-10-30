@@ -1,124 +1,142 @@
-// The Weather app: today in the middle, the next days below it.
-import { Face } from "face.slint";
+// The weather app, laid out as asteroid-weather: one day per page, swiped sideways with dots
+// below, each with the day's name on top, its icon in the middle between the minimum and the
+// maximum temperature, and the city at the bottom. Without data it shows a No data page.
+import { Face, Day } from "face.slint";
+import { PageDot, StatusPage } from "controls.slint";
+import { Pager } from "launcher.slint";
 
-export component WeatherScreen {
-    property <[string]> short-weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// A temperature in a 120 px circle, its caption and arrow above and below: Min: over a
+// downward arrow, an upward arrow over Max:.
+component Temperature {
+    in property <int> degrees;
+    in property <bool> high;
 
-    width: 100%;
-    height: 100%;
+    width: 120px;
+    height: 120px;
 
-    if !Face.weather-valid: Text {
-        width: root.width;
-        height: root.height;
-        text: "No weather data";
-        color: #ffffffa0;
-        font-size: 24px;
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.degrees + "°C";
+        color: white;
+        font-size: 50px;
+        font-weight: 200;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
+    Text {
+        y: root.high ? 40px : -40px;
+        width: parent.width;
+        height: parent.height;
+        text: root.high ? "Max:" : "Min:";
+        color: #ffffff99;
+        font-size: 20px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Image {
+        x: 48px;
+        y: root.high ? 8px : 88px;
+        width: 24px;
+        height: 24px;
+        source: root.high ? @image-url("../icons/triangle-up.svg") : @image-url("../icons/triangle-down.svg");
+        colorize: #ffffff88;
+    }
+}
+
+export component WeatherScreen {
+    property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    property <int> pages: 1 + Face.weather-forecast.length;
+    width: 100%;
+    height: 100%;
+
+    pure function day(i: int) -> Day {
+        return i == 0 ? Face.weather-today : Face.weather-forecast[i - 1];
+    }
+
+    if !Face.weather-valid: StatusPage {
+        icon: @image-url("../icons/ios-sync.svg");
+        title: "No data";
+        text: "Sync AsteroidOS with your phone.";
+    }
+
     if Face.weather-valid: Rectangle {
-        Text {
-            x: root.width * 0.2;
-            y: root.height * 0.08;
-            width: root.width * 0.6;
-            height: root.height * 0.08;
-            text: Face.weather-city;
-            color: #ffffffa0;
-            font-size: 22px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            overflow: elide;
+        property <length> scroll: pager.index * 400px - pager.drag;
+        animate scroll {
+            duration: pager.dragging ? 0ms : pager.anim;
+            easing: ease-out;
         }
 
-        Image {
-            x: (root.width - 88px) / 2;
-            y: root.height * 0.17;
-            width: 88px;
-            height: 88px;
-            source: Face.weather-icon(Face.weather-today.id);
-            colorize: white;
+        pager := Pager {
+            item: 400px;
+            count: root.pages;
         }
 
-        Text {
-            y: root.height * 0.4;
-            width: root.width;
-            height: root.height * 0.07;
-            text: Face.condition(Face.weather-today.id);
-            color: white;
-            font-size: 22px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-
-        HorizontalLayout {
-            y: root.height * 0.47;
-            width: root.width;
-            height: root.height * 0.13;
-            alignment: center;
-            spacing: 18px;
+        for i in root.pages: Rectangle {
+            x: i * 400px - parent.scroll;
+            y: 0;
+            width: 400px;
+            height: 400px;
+            visible: self.x > -400px && self.x < 400px;
 
             Text {
-                text: Face.weather-today.max + "°";
+                x: 0;
+                y: 0;
+                width: 400px;
+                height: 168px;
+                text: i == 0 ? "Today" : i == 1 ? "Tomorrow" : root.weekdays[Math.mod(Face.weekday + i, 7)];
                 color: white;
-                font-size: 36px;
+                font-size: 40px;
+                font-weight: 200;
+                horizontal-alignment: center;
                 vertical-alignment: center;
             }
 
-            Text {
-                text: Face.weather-today.min + "°";
-                color: #ffffffa0;
-                font-size: 36px;
-                vertical-alignment: center;
+            Image {
+                x: 152px;
+                y: 152px;
+                width: 96px;
+                height: 96px;
+                source: Face.weather-icon(root.day(i).id);
+                colorize: white;
+            }
+
+            Temperature {
+                x: 20px;
+                y: 140px;
+                degrees: root.day(i).min;
+            }
+
+            Temperature {
+                x: 260px;
+                y: 140px;
+                degrees: root.day(i).max;
+                high: true;
             }
         }
 
-        HorizontalLayout {
-            y: root.height * 0.62;
-            width: root.width;
-            height: root.height * 0.22;
-            alignment: center;
-            spacing: 4px;
+        Text {
+            x: 76px;
+            y: 224px;
+            width: 248px;
+            height: 176px;
+            text: Face.weather-city;
+            color: white;
+            font-size: Face.weather-city.character-count > 16 ? 34px : Face.weather-city.character-count > 14 ? 36px : 40px;
+            font-weight: 200;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
 
-            for day[i] in Face.weather-forecast: VerticalLayout {
-                width: 72px;
-                alignment: start;
-
-                Text {
-                    text: root.short-weekdays[Math.mod(Face.weekday + i + 1, 7)];
-                    color: #ffffffa0;
-                    font-size: 20px;
-                    horizontal-alignment: center;
-                }
-
-                HorizontalLayout {
-                    alignment: center;
-
-                    Image {
-                        width: 36px;
-                        height: 36px;
-                        source: Face.weather-icon(day.id);
-                        colorize: white;
-                    }
-                }
-
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 4px;
-
-                    Text {
-                        text: day.max + "°";
-                        color: white;
-                        font-size: 20px;
-                    }
-
-                    Text {
-                        text: day.min + "°";
-                        color: #ffffffa0;
-                        font-size: 20px;
-                    }
-                }
-            }
+        if root.pages > 1: PageDot {
+            x: (400px - self.width) / 2;
+            y: 400px - 15px - 12px;
+            count: root.pages;
+            current: pager.index;
         }
     }
 }
