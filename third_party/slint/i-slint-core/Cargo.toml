@@ -68,6 +68,10 @@ image-pixel-format-rgb565 = ["i-slint-common/image-pixel-format-rgb565"]
 libm = [
     "num-traits/libm",
     "euclid/libm",
+    "parley?/libm",
+    "skrifa?/libm",
+    "swash?/libm",
+    "i-slint-common/libm",
 ]
 log = ["dep:log"]
 owned-pre-rendered-resources = []
@@ -90,6 +94,10 @@ shared-swash = ["dep:swash"]
 std = [
     "euclid/std",
     "once_cell/std",
+    "parley?/std",
+    "skrifa?/std",
+    "swash?/std",
+    "i-slint-common/std",
     "dep:web-time",
     "path",
     "raw-window-handle-06?/std",
@@ -287,6 +295,12 @@ default-features = false
 [dependencies.skrifa]
 version = "0.44"
 optional = true
+default-features = false
+
+[dependencies.hashbrown]
+version = "0.16"
+default-features = false
+features = ["default-hasher", "inline-more"]
 
 [dependencies.slab]
 version = "0.4.3"
@@ -426,6 +440,7 @@ features = [
     "complex-scripts",
 ]
 optional = true
+default-features = false
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.parley]
 version = "0.12.0"

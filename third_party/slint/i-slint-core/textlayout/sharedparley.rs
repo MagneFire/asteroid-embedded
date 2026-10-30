@@ -25,9 +25,9 @@ use core::pin::Pin;
 use euclid::num::Zero;
 use i_slint_common::sharedfontique;
 use skrifa::MetadataProvider as _;
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use alloc::sync::Arc;
+use core::cell::RefCell;
+use hashbrown::{HashMap, HashSet};
 
 #[derive(derive_more::Deref, derive_more::DerefMut)]
 pub struct FontContext {
@@ -351,7 +351,6 @@ fn with_render_text_layout<R>(
     )
 }
 
-#[cfg(feature = "std")]
 pub fn link_under_cursor(
     scale_factor: ScaleFactor,
     text: Pin<&dyn crate::item_rendering::RenderText>,
@@ -360,7 +359,7 @@ pub fn link_under_cursor(
     cursor: PhysicalPoint,
     window: &crate::api::Window,
     cache: Option<&TextLayoutCache>,
-) -> Option<std::string::String> {
+) -> Option<alloc::string::String> {
     with_render_text_layout(scale_factor, text, Some(item_rc), size, window, cache, |layout| {
         link_in_layout(layout, cursor)
     })
@@ -370,7 +369,6 @@ pub fn link_under_cursor(
 /// The byte offset into the raw text of the character under `cursor`,
 /// or of the nearest one on that line.
 /// `None` when nothing is laid out there.
-#[cfg(feature = "std")]
 pub fn byte_offset_under_cursor(
     scale_factor: ScaleFactor,
     text: Pin<&dyn crate::item_rendering::RenderText>,
@@ -419,7 +417,7 @@ fn draw_selection_background<'a, R: GlyphRenderer>(
     Some(SelectionRendering { spans, foreground })
 }
 
-fn link_in_layout(layout: &Layout, cursor: PhysicalPoint) -> Option<std::string::String> {
+fn link_in_layout(layout: &Layout, cursor: PhysicalPoint) -> Option<alloc::string::String> {
     layout.paragraph_by_y(cursor.y_length()).and_then(|paragraph| {
         // Where the paragraph is drawn: `y_offset` carries the vertical alignment.
         let paragraph_y: f64 = (layout.y_offset + paragraph.y).cast::<f64>().get();

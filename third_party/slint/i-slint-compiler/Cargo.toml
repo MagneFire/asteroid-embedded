@@ -257,6 +257,7 @@ optional = true
 
 [dependencies.i-slint-common]
 version = "=1.19.0"
+features = ["std"]
 default-features = false
 
 [dependencies.icu_normalizer]

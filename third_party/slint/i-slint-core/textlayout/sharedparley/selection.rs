@@ -8,6 +8,8 @@
 //! The same span edges fill the highlight and clip the glyph runs; see [`SelectionSpan`].
 
 use super::*;
+#[allow(unused_imports)]
+use num_traits::Float as _;
 
 /// One contiguous run of selected text on a single line.
 ///

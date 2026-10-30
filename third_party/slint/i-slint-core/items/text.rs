@@ -649,7 +649,7 @@ impl StyledTextItem {
     fn selection_mouse_event(
         self: Pin<&Self>,
         event: &MouseEvent,
-        find_link: &dyn Fn(&LogicalPoint) -> Option<std::string::String>,
+        find_link: &dyn Fn(&LogicalPoint) -> Option<alloc::string::String>,
         offset_at: &dyn Fn(&LogicalPoint) -> Option<usize>,
         cursor: &mut super::MouseCursorInner,
         window_adapter: &Rc<dyn WindowAdapter>,

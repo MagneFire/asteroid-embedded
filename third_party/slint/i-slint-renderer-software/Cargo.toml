@@ -50,6 +50,7 @@ experimental = []
 image-pixel-format-gray8 = ["i-slint-core/image-pixel-format-gray8"]
 image-pixel-format-rgb565 = ["i-slint-core/image-pixel-format-rgb565"]
 libm = [
+    "skrifa?/libm",
     "zeno?/libm",
     "num-traits/libm",
     "euclid/libm",
@@ -63,6 +64,7 @@ path = [
     "i-slint-core/path",
 ]
 std = [
+    "skrifa?/std",
     "zeno?/std",
     "num-traits/std",
     "euclid/std",
@@ -78,8 +80,7 @@ systemfonts = [
     "dep:swash",
     "i-slint-core/shared-parley",
     "i-slint-core/shared-swash",
-    "std",
-    "dep:clru",
+    "dep:hashbrown",
 ]
 testing = ["i-slint-core/testing"]
 
@@ -135,6 +136,13 @@ default-features = false
 [dependencies.skrifa]
 version = "0.44"
 optional = true
+default-features = false
+
+[dependencies.hashbrown]
+version = "0.16"
+optional = true
+default-features = false
+features = ["default-hasher", "inline-more"]
 
 [dependencies.swash]
 version = "0.2.7"

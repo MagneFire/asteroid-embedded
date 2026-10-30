@@ -1318,6 +1318,7 @@ checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
+ "core_maths",
  "read-fonts",
  "smallvec",
 ]
@@ -1476,6 +1477,7 @@ dependencies = [
  "derive_more",
  "euclid",
  "fontique",
+ "hashbrown 0.16.1",
  "htmlparser",
  "icu_decimal",
  "icu_locale_core",
@@ -1534,6 +1536,7 @@ dependencies = [
  "const-field-offset",
  "derive_more",
  "euclid",
+ "hashbrown 0.16.1",
  "i-slint-common",
  "i-slint-core-macros",
  "icu_normalizer",
@@ -1627,9 +1630,9 @@ name = "i-slint-renderer-software"
 version = "1.19.0"
 dependencies = [
  "bytemuck",
- "clru",
  "derive_more",
  "euclid",
+ "hashbrown 0.16.1",
  "i-slint-common",
  "i-slint-core",
  "lyon_path",
@@ -2828,6 +2831,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61bd0c0c1737f0b3d3726dc06b225083af213b61913e4fbae1670613a106c6ce"
 dependencies = [
+ "core_maths",
  "fontique",
  "hashbrown 0.17.1",
  "linebender_resource_handle",

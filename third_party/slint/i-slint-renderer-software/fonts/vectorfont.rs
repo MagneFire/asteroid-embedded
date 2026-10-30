@@ -6,6 +6,8 @@
 use core::num::NonZeroU16;
 
 use alloc::vec::Vec;
+#[allow(unused_imports)]
+use num_traits::Float as _;
 use skrifa::MetadataProvider;
 
 use crate::fixed::Fixed;
@@ -75,28 +77,48 @@ struct GlyphCacheKey {
     color: Option<[u8; 3]>,
 }
 
-struct RenderableGlyphWeightScale;
+/// Least recently used glyph cache bounded by the alpha map bytes it holds.
+struct GlyphCache {
+    map: hashbrown::HashMap<GlyphCacheKey, (RenderableVectorGlyph, u64)>,
+    weight: usize,
+    limit: usize,
+    tick: u64,
+}
 
-impl clru::WeightScale<GlyphCacheKey, RenderableVectorGlyph> for RenderableGlyphWeightScale {
-    fn weight(&self, _: &GlyphCacheKey, value: &RenderableVectorGlyph) -> usize {
-        value.byte_size()
+impl GlyphCache {
+    fn new(limit: usize) -> Self {
+        Self { map: Default::default(), weight: 0, limit, tick: 0 }
+    }
+
+    fn get(&mut self, key: &GlyphCacheKey) -> Option<&RenderableVectorGlyph> {
+        self.tick += 1;
+        let tick = self.tick;
+        self.map.get_mut(key).map(|entry| {
+            entry.1 = tick;
+            &entry.0
+        })
+    }
+
+    fn put(&mut self, key: GlyphCacheKey, glyph: RenderableVectorGlyph) {
+        let weight = glyph.byte_size();
+        if weight > self.limit {
+            return;
+        }
+        while self.weight + weight > self.limit {
+            let Some((&oldest, _)) = self.map.iter().min_by_key(|(_, entry)| entry.1) else { break };
+            if let Some((removed, _)) = self.map.remove(&oldest) {
+                self.weight -= removed.byte_size();
+            }
+        }
+        self.tick += 1;
+        if self.map.insert(key, (glyph, self.tick)).is_none() {
+            self.weight += weight;
+        }
     }
 }
 
-type GlyphCache = clru::CLruCache<
-    GlyphCacheKey,
-    RenderableVectorGlyph,
-    std::collections::hash_map::RandomState,
-    RenderableGlyphWeightScale,
->;
-
 i_slint_core::thread_local!(static GLYPH_CACHE: core::cell::RefCell<GlyphCache>  =
-    core::cell::RefCell::new(
-        clru::CLruCache::with_config(
-            clru::CLruCacheConfig::new(core::num::NonZeroUsize::new(1024 * 1024).unwrap())
-                .with_scale(RenderableGlyphWeightScale)
-        )
-    )
+    core::cell::RefCell::new(GlyphCache::new(1024 * 1024))
 );
 
 pub struct VectorFont {
@@ -121,10 +143,8 @@ pub struct VectorFont {
 }
 
 fn hash_coords(coords: &[i16]) -> u64 {
-    use core::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    coords.hash(&mut hasher);
-    hasher.finish()
+    use core::hash::BuildHasher;
+    hashbrown::DefaultHashBuilder::default().hash_one(coords)
 }
 
 impl VectorFont {
@@ -255,6 +275,7 @@ impl VectorFont {
                 return Some(entry.clone());
             }
 
+
             let subpixel_offset_x = subpixel_bin as f32 / SUBPIXEL_BIN_COUNT as f32;
 
             let glyph = {
@@ -346,7 +367,7 @@ impl VectorFont {
             };
 
             if let Some(ref glyph) = glyph {
-                cache.put_with_weight(cache_key, glyph.clone()).ok();
+                cache.put(cache_key, glyph.clone());
             }
             glyph
         })

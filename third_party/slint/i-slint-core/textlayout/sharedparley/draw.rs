@@ -8,6 +8,8 @@ use super::layout::ElisionCut;
 use super::selection::{RunCoverage, SelectionSpan, run_coverage};
 use super::shaping::{Brush, TextParagraph};
 use super::*;
+#[allow(unused_imports)]
+use num_traits::Float as _;
 
 /// Outline drawn around a rectangle filled via [`GlyphRenderer::fill_rectangle`].
 #[derive(Clone)]
