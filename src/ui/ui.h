@@ -21,8 +21,13 @@
  * launcher, or -1. ui_set_settings shows the settings (brightness in
  * per cent) and ui_setting_toggled returns the next one the user
  * changed, as an enum setting or enum ui_action (UI_WATCHFACE_FIRST + n
- * picks watchface n), or -1. ui_set_face selects the watchface and
- * whether nightstand mode is on and in effect. ui_set_alarms
+ * picks watchface n, UI_LAUNCHER_FIRST + n launcher layout n), or -1.
+ * ui_set_face selects the watchface and whether nightstand mode is on
+ * and in effect, ui_set_launcher the launcher layout. ui_launcher_edges
+ * says which edges of the launcher lead somewhere (left, right, top,
+ * bottom as bits 0-3) and, in bit 4, whether it is at its start;
+ * ui_launcher_colors gives its mesh colours, or false to keep the
+ * mesh grey. ui_set_alarms
  * takes 4 bytes per alarm (hour, minute, weekdays, on); ui_alarm_edit
  * returns the next change made in the alarm app, packed as index + 1
  * (0 new) in bits 0-7, hour 8-12, minute 13-18, weekdays 19-25, on 26
@@ -56,7 +61,16 @@ enum ui_clock_action {
 	UI_STOPWATCH_RESET,
 };
 enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
-enum ui_action { UI_BRIGHTNESS_DOWN = 10, UI_BRIGHTNESS_UP, UI_FORGET_PHONE, UI_WATCHFACE_FIRST, UI_LOCK = 15, UI_OPEN_SETTINGS };
+enum ui_action {
+	UI_BRIGHTNESS_DOWN = 10,
+	UI_BRIGHTNESS_UP,
+	UI_FORGET_PHONE,
+	UI_WATCHFACE_FIRST,
+	UI_LOCK = 15,
+	UI_OPEN_SETTINGS,
+	UI_LAUNCHER_FIRST = 20
+};
+#define UI_LAUNCHERS 7
 enum ui_media_action {
 	UI_MEDIA_PREVIOUS,
 	UI_MEDIA_NEXT,
@@ -85,7 +99,9 @@ int ui_media_action(void);
 int ui_app_opened(void);
 bool ui_app_back(void);
 int ui_app_depth(void);
-void ui_launcher_colors(uint32_t *center, uint32_t *outer);
+bool ui_launcher_colors(uint32_t *center, uint32_t *outer);
+void ui_set_launcher(int layout);
+unsigned ui_launcher_edges(void);
 bool ui_app_colors(int app, uint32_t *center, uint32_t *outer);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);

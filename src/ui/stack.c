@@ -33,6 +33,7 @@ enum { LEFT, RIGHT, UP, DOWN };
 static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] = true };
 static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
+static unsigned launcher;
 static int W, H, fx, fy, from_x, from_y, off, from_off;
 static unsigned screen, gesture;
 static bool animating, dragging, horizontal, app_open, app_closing, app_top;
@@ -151,6 +152,28 @@ static void drag(int dx, int dy)
 	dragging = true;
 }
 
+void stack_set_launcher(unsigned layout)
+{
+	launcher = layout;
+}
+
+/* Whether a drag on the launcher is its own. The horizontal layouts
+ * take sideways drags. The vertical ones take vertical drags, except a
+ * drag down from their start or from the top edge, which goes back to
+ * the watchface. The speed dial takes drags that start on its wheel. */
+static bool launcher_scroll(int dx, int dy)
+{
+	if (launcher == 0 || launcher == 2)
+		return absi(dx) > absi(dy);
+	if (launcher == 6) {
+		int x = down_x - W / 2, y = down_y - H / 2, r2 = x * x + y * y, lo = W * 24 / 100, hi = W * 47 / 100;
+		return r2 > lo * lo && r2 < hi * hi;
+	}
+	if (absi(dx) > absi(dy))
+		return false;
+	return !(dy > 0 && (down_y < EDGE_PX || ui_launcher_edges() & 16));
+}
+
 static void release(bool flick)
 {
 	int x = fx - rest_x(screen), y = fy - rest_y(screen);
@@ -232,6 +255,8 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 		return;
 	}
 	bool scroll = (absi(dy) >= absi(dx) && scrolls[screen]) || (absi(dx) > absi(dy) && pages[screen]);
+	if (screen == UI_PANEL_BOTTOM)
+		scroll = launcher_scroll(dx, dy);
 	bool flick = now_ms - down_ms < FLICK_MS;
 	if (app_open) {
 		if (kind == UI_TOUCH_DOWN) {
@@ -455,7 +480,7 @@ static unsigned ind_edges(void)
 	case UI_PANEL_RIGHT:
 		return 1;
 	case UI_PANEL_BOTTOM:
-		return 4;
+		return ui_launcher_edges() & 0xf;
 	case UI_PANEL_TOP:
 		return 8;
 	}

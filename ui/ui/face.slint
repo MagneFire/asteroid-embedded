@@ -39,7 +39,11 @@ export global Face {
     // How many pages deep the open app is, and a count it watches to go one back.
     in-out property <int> app-depth;
     in-out property <int> back-count;
+    in-out property <int> launcher;
     in-out property <float> launcher-position;
+    // Edges of the launcher leading somewhere (left, right, top, bottom as bits 0-3) and bit 4
+    // while it is scrolled to its start.
+    in-out property <int> launcher-edges: 4;
     in-out property <int> brightness: 100;
     in-out property <bool> bluetooth-on: true;
     in-out property <bool> vibration-on: true;

@@ -52,8 +52,11 @@ fn main() {
 
     ring(&out);
     // Sizes only known at run time: the digital watchface's at full size and in nightstand
-    // mode (86 %), and the hour in its 160 px preview.
-    unsafe { std::env::set_var("SLINT_FONT_SIZES", "144,124,72,62,58,30,26,22") };
+    // mode (86 %), the hour in its 160 px preview, the launchers' at full size and in their
+    // 140 px previews, and the turbo list's names, in steps of 4 px.
+    unsafe {
+        std::env::set_var("SLINT_FONT_SIZES", "144,124,72,62,58,30,26,22,48,36,20,17,13,7,4,8,12,16,24,28,32,40")
+    };
 
     let config = slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRenderer)

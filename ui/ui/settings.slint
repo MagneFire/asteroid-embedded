@@ -1,8 +1,9 @@
-// The Settings app: the quick settings and a few more, in a list that scrolls, and a page that
-// picks the watchface from previews of each. Rows call setting-toggled with the firmware's enum
-// setting, or 10/11 to step the brightness down/up, 12 to forget the paired phone and 13 + n to
-// pick watchface n.
+// The Settings app: the quick settings and a few more, in a list that scrolls, and pages that
+// pick the watchface and the launcher from previews of each. Rows call setting-toggled with the
+// firmware's enum setting, or 10/11 to step the brightness down/up, 12 to forget the paired
+// phone, 13 + n to pick watchface n and 20 + n to pick launcher n.
 import { Face, Watchface } from "face.slint";
+import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
 
 component Row {
@@ -143,6 +144,65 @@ export component SettingsApp {
         }
     }
 
+    if root.page == 2: Rectangle {
+        Flickable {
+            width: root.width;
+            height: root.height;
+            content-height: 90px + Math.ceil(Apps.layouts.length / 2) * 176px + 60px;
+
+            Text {
+                y: root.height * 0.06;
+                width: root.width;
+                height: root.height * 0.1;
+                text: "Launcher";
+                color: white;
+                font-size: 24px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            for name[i] in Apps.layouts: Rectangle {
+                x: root.width / 2 + (Math.mod(i, 2) == 0 ? -150px : 10px);
+                y: 90px + Math.floor(i / 2) * 176px;
+                width: 140px;
+                height: 170px;
+
+                Rectangle {
+                    width: 140px;
+                    height: 140px;
+                    border-radius: 70px;
+                    clip: true;
+                    background: #00000060;
+                    border-width: Face.launcher == i ? 3px : 0;
+                    border-color: white;
+
+                    LauncherView {
+                        size: 140px;
+                        layout: i;
+                        preview: true;
+                    }
+                }
+
+                Text {
+                    y: 144px;
+                    width: parent.width;
+                    height: 24px;
+                    text: name;
+                    color: white;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => {
+                        Face.setting-toggled(20 + i);
+                        root.page = 0;
+                    }
+                }
+            }
+        }
+    }
+
     if root.page == 0: Rectangle {
 
     Text {
@@ -227,6 +287,14 @@ export component SettingsApp {
                 value: Face.watchface == 0 ? "Digital" : "Classic";
                 clicked => {
                     root.page = 1;
+                }
+            }
+
+            Row {
+                label: "Launcher";
+                value: Apps.layouts[Face.launcher];
+                clicked => {
+                    root.page = 2;
                 }
             }
 

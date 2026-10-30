@@ -32,6 +32,7 @@ void stack_update(uint32_t now_ms);
 void stack_compose(void (*background)(int x, int y, float alpha));
 void stack_home(void);
 void stack_open_app(void);
+void stack_set_launcher(unsigned layout);
 void stack_indicators(void);
 void stack_pending(bool on);
 void stack_indicators_cpu(uint32_t *buf, uint32_t stride);

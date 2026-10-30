@@ -209,6 +209,8 @@ static void show_settings(void)
 {
 	ui_set_settings(setting_get(SETTING_BRIGHTNESS), setting_get(SETTING_BLUETOOTH), setting_get(SETTING_VIBRATION),
 			setting_get(SETTING_AOD), setting_get(SETTING_CLOCK12));
+	ui_set_launcher(setting_get(SETTING_LAUNCHER));
+	stack_set_launcher(setting_get(SETTING_LAUNCHER));
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
 		    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
 }
@@ -231,6 +233,8 @@ static void setting_toggled(int s)
 		set_brightness();
 	} else if (s >= UI_WATCHFACE_FIRST && s < UI_WATCHFACE_FIRST + 2) {
 		setting_set(SETTING_WATCHFACE, s - UI_WATCHFACE_FIRST);
+	} else if (s >= UI_LAUNCHER_FIRST && s < UI_LAUNCHER_FIRST + UI_LAUNCHERS) {
+		setting_set(SETTING_LAUNCHER, s - UI_LAUNCHER_FIRST);
 	} else if (s == UI_LOCK) {
 		power_request(true);
 	} else if (s == UI_OPEN_SETTINGS) {

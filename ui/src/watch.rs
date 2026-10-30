@@ -307,16 +307,28 @@ pub unsafe extern "C" fn ui_set_media(
     });
 }
 
-/// The mesh colours of the launcher page on screen, blended between the two pages it is between,
-/// as 0xRRGGBB.
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) {
-    let Some(ui) = ui() else { return };
+pub extern "C" fn ui_set_launcher(layout: i32) {
+    each(|face| face.set_launcher(layout));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_launcher_edges() -> u32 {
+    let Some(ui) = ui() else { return 4 };
+    ui.screens[LAUNCHER].global::<Face>().get_launcher_edges() as u32
+}
+
+/// The mesh colours of the launcher page on screen, blended between the two pages it is between,
+/// as 0xRRGGBB; false for the layouts that keep the mesh grey.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) -> bool {
+    let Some(ui) = ui() else { return false };
     let screen = &ui.screens[LAUNCHER];
     let apps = screen.global::<Apps>().get_list();
     let n = apps.row_count();
-    if n == 0 || center.is_null() || outer.is_null() {
-        return;
+    let layout = screen.global::<Face>().get_launcher();
+    if n == 0 || center.is_null() || outer.is_null() || layout == 4 || layout == 5 {
+        return false;
     }
     let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, (n - 1) as f32);
     let (i, t) = (pos as usize, pos - (pos as usize) as f32);
@@ -330,6 +342,7 @@ pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) {
         *center = mix(a.center, b.center);
         *outer = mix(a.outer, b.outer);
     }
+    true
 }
 
 /// The background colours of an app, as 0xRRGGBB; false for an unknown app.

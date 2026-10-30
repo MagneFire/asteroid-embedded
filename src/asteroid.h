@@ -39,6 +39,7 @@ enum setting {
 	SETTING_CLOCK12,
 	SETTING_WATCHFACE,
 	SETTING_NIGHTSTAND,
+	SETTING_LAUNCHER,
 	SETTINGS
 };
 int setting_get(enum setting s);

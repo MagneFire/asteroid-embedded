@@ -14,6 +14,7 @@ static const struct {
 	[SETTING_CLOCK12] = { "clock12", 0 },
 	[SETTING_WATCHFACE] = { "watchface", 0 },
 	[SETTING_NIGHTSTAND] = { "nightstand", 1 },
+	[SETTING_LAUNCHER] = { "launcher", 0 },
 };
 
 static uint8_t values[SETTINGS];
