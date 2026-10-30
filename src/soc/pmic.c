@@ -130,9 +130,9 @@ void pmic_rtc_write(uint32_t secs)
 	pmic_write(RTC_CTRL, ctrl | RTC_ENABLE);
 }
 
-/* Battery voltage through the voltage ADC: VBAT_SNS is the pack voltage
- * divided by three; the 0.625 V and 1.25 V references give the absolute
- * calibration. */
+/* Voltage ADC: VBAT_SNS is the pack voltage divided by three; the
+ * 0.625 V and 1.25 V references give the absolute calibration. settle is
+ * the hardware settling time code, in steps of 100 us. */
 #define VADC			0x003100
 #define VADC_STATUS		(VADC + 0x08)
 #define VADC_MODE_CTRL		(VADC + 0x40)
@@ -147,12 +147,12 @@ void pmic_rtc_write(uint32_t secs)
 #define CHAN_REF_625MV		9
 #define CHAN_REF_1250MV		10
 
-static int vadc_raw(uint8_t chan)
+int pmic_vadc_raw(uint8_t chan, uint8_t settle)
 {
 	pmic_write(VADC_MODE_CTRL, 0);
 	pmic_write(VADC_CHAN_SEL, chan);
 	pmic_write(VADC_DIG_PARAM, 1 << 2);
-	pmic_write(VADC_HW_SETTLE, 0);
+	pmic_write(VADC_HW_SETTLE, settle);
 	pmic_write(VADC_FAST_AVG_CTL, 0);
 	pmic_write(VADC_EN_CTL, BIT(7));
 	pmic_write(VADC_CONV_REQ, BIT(7));
@@ -171,7 +171,8 @@ static int vadc_raw(uint8_t chan)
 
 uint32_t pmic_battery_mv(void)
 {
-	int r = vadc_raw(CHAN_VBAT_SNS), c625 = vadc_raw(CHAN_REF_625MV), c1250 = vadc_raw(CHAN_REF_1250MV);
+	int r = pmic_vadc_raw(CHAN_VBAT_SNS, 0), c625 = pmic_vadc_raw(CHAN_REF_625MV, 0);
+	int c1250 = pmic_vadc_raw(CHAN_REF_1250MV, 0);
 	if (r < 0 || c625 < 0 || c1250 <= c625)
 		return 0;
 	int32_t mv = 625 + (int32_t)(r - c625) * 625 / (c1250 - c625);
@@ -364,6 +365,18 @@ bool pmic_charging(void)
 	return charging_now(pmic_read(SMBB_CHGR + SMBB_RT_STS), pmic_read(SMBB_BAT_IF + SMBB_RT_STS));
 }
 
+bool pmic_usb_present(void)
+{
+	return pmic_read(SMBB_USB + SMBB_RT_STS) & USB_RT_VALID;
+}
+
+int pmic_battery_status(void)
+{
+	if (pmic_charging())
+		return BAT_CHARGING;
+	return pmic_usb_present() && chg_done ? BAT_FULL : BAT_DISCHARGING;
+}
+
 void pmic_charger_configure(void)
 {
 	smbb_update(CHGR_VIN_MIN, 0x3f, (uint8_t)(0x0c + (VINMIN_MV - 4000) / 50));
@@ -406,44 +419,6 @@ void pmic_charger_configure(void)
 		   pmic_read(MISC_REVISION2), pmic_read(MISC_BOOT_DONE), pmic_read(CHGR_CHG_CTRL), pmic_read(CHGR_VDD_MAX),
 		   pmic_read(CHGR_VDD_SAFE), pmic_read(CHGR_VBAT_DET), pmic_read(CHGR_IBAT_MAX), pmic_read(CHGR_IBAT_SAFE),
 		   pmic_read(CHGR_VIN_MIN), pmic_read(USB_IMAX), trim_center);
-}
-
-/* Rough state of charge from the resting voltage of a 4.35 V cell, until
- * the fuel gauge is read: linear between 3.45 V (0 %) and 4.30 V (100 %). */
-/* State of charge of the HB442528EBC cell from its open circuit voltage:
- * the measured voltage plus the drop over its 496 mOhm internal
- * resistance, smoothed, looked up in the cell's 25 C table. */
-#define RBATT_MOHM		496
-
-static const struct { uint16_t mv; uint8_t pc; } ocv_table[] = {
-	{ 4344, 100 }, { 4279, 95 }, { 4222, 90 }, { 4166, 85 }, { 4112, 80 }, { 4062, 75 }, { 4014, 70 },
-	{ 3970, 65 }, { 3922, 60 }, { 3878, 55 }, { 3846, 50 }, { 3822, 45 }, { 3802, 40 }, { 3784, 35 },
-	{ 3769, 30 }, { 3750, 25 }, { 3728, 20 }, { 3704, 16 }, { 3685, 13 }, { 3682, 11 }, { 3679, 10 },
-	{ 3676, 9 }, { 3672, 8 }, { 3660, 7 }, { 3627, 6 }, { 3586, 5 }, { 3539, 4 }, { 3484, 3 },
-	{ 3406, 2 }, { 3283, 1 }, { 3000, 0 },
-};
-
-static uint32_t ocv_percent(int32_t v)
-{
-	if (v >= ocv_table[0].mv)
-		return 100;
-	for (unsigned i = 1; i < ARRAY_SIZE(ocv_table); i++)
-		if (v >= ocv_table[i].mv) {
-			int32_t hi = ocv_table[i - 1].mv, lo = ocv_table[i].mv;
-			return ocv_table[i].pc + (uint32_t)((v - lo) * (ocv_table[i - 1].pc - ocv_table[i].pc) / (hi - lo));
-		}
-	return 0;
-}
-
-uint32_t pmic_battery_percent(void)
-{
-	static int32_t ocv16;
-	uint32_t mv = pmic_battery_mv();
-	if (!mv)
-		return 0;
-	int32_t ocv = (int32_t)mv + pmic_battery_ua() / 1000 * RBATT_MOHM / 1000;
-	ocv16 = ocv16 ? ocv16 + (ocv * 16 - ocv16) / 8 : ocv * 16;
-	return ocv_percent(ocv16 / 16);
 }
 
 /* Charger upkeep, at most once a second: follows USB plug and unplug,
@@ -551,9 +526,8 @@ void pmic_charger_poll(void)
 		resuming = false;
 	if (charging_now(chg, bat) || resuming || done_wait || arb_wait || !(bat & BAT_IF_RT_PRESENT))
 		return;
-	int32_t ua = pmic_battery_ua(), mv = (int32_t)pmic_battery_mv();
-	if (mv && ocv_percent(mv + ua / 1000 * RBATT_MOHM / 1000) <= RESUME_PERCENT) {
-		log_printf("charger: resuming at %ld mV\n", mv);
+	if (bms_soc() <= RESUME_PERCENT) {
+		log_printf("charger: resuming at %lu%%\n", bms_soc());
 		resuming = true;
 		vbatdet_set(VDDMAX_MV + RESUME_DELTA_MV);
 		charge_enable(true);
@@ -602,6 +576,13 @@ static int iadc_raw(uint8_t chan)
 	return -1;
 }
 
+/* Gain conversion minus offset conversion, or 0. */
+int pmic_iadc_gain(void)
+{
+	int gain = iadc_raw(IADC_CH_GAIN), off = iadc_raw(IADC_CH_EXT_OFFSET);
+	return gain < 0 || off < 0 || gain <= off ? 0 : gain - off;
+}
+
 /* Positive while the battery discharges. */
 int32_t pmic_battery_ua(void)
 {
@@ -612,12 +593,14 @@ int32_t pmic_battery_ua(void)
 	return -(int32_t)(uv * 1000000 / RSENSE_UOHM);
 }
 
-/* Coulomb counter of the battery monitor: a 36-bit signed sum of the
- * sense resistor voltage that the PMIC keeps up on its own, also while
- * the SoC sleeps. One count is 5.42535 uV over 56 sleep clock cycles. The
- * output registers are held while they are read. */
+/* Shadow coulomb counter of the battery monitor: a 36-bit signed sum of
+ * the sense resistor voltage that the PMIC keeps up on its own, also
+ * while the SoC sleeps. One count is 5.42535 uV over 56 sleep clock
+ * cycles. Unlike the main counter, which the fuel gauge restarts, only
+ * software clears it. The output registers are held while they are
+ * read. */
 #define BMS_CC_DATA_CTL		0x004042
-#define BMS_CC_DATA0		0x00408a
+#define BMS_SW_CC_DATA0		0x0040a8
 #define BMS_HOLD_OREG_DATA	BIT(0)
 
 static int64_t cc_raw(void)
@@ -625,7 +608,7 @@ static int64_t cc_raw(void)
 	uint8_t d[5];
 	pmic_write(BMS_CC_DATA_CTL, BMS_HOLD_OREG_DATA);
 	delay_us(100);
-	spmi_read(BMS_CC_DATA0, d, 5);
+	spmi_read(BMS_SW_CC_DATA0, d, 5);
 	pmic_write(BMS_CC_DATA_CTL, 0);
 	uint64_t v = d[0] | (uint64_t)d[1] << 8 | (uint64_t)d[2] << 16 | (uint64_t)d[3] << 24 | (uint64_t)(d[4] & 0xf) << 32;
 	return (int64_t)(v << 28) >> 28;

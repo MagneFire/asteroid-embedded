@@ -175,6 +175,7 @@ void main(void)
 		log_printf("no fault record from the previous boot\n");
 
 	pmic_charger_configure();
+	bms_init();
 	spm_init();
 	have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
@@ -227,6 +228,7 @@ void main(void)
 			bluetooth_start();
 		}
 		pmic_charger_poll();
+		bms_poll();
 		if (have_hub) {
 			hub_poll();
 			if (hub_tilted() && !awake)
@@ -417,7 +419,7 @@ void main(void)
 				weather_day = rtc / 86400;
 				show_weather();
 			}
-			ui_set_battery(pmic_battery_percent(), pmic_charging());
+			ui_set_battery(bms_percent(), pmic_charging());
 		}
 		if (!awake && now - last >= ASLEEP_STATS_MS) {
 			last = now;

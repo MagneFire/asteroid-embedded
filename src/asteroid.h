@@ -119,13 +119,21 @@ bool pmic_power_key_irq(void);
 uint32_t pmic_rtc_read(void);
 void pmic_rtc_write(uint32_t secs);
 uint32_t pmic_battery_mv(void);
+int pmic_vadc_raw(uint8_t chan, uint8_t settle);
+int pmic_iadc_gain(void);
 const char *pmic_charger_status(void);
 bool pmic_charging(void);
+bool pmic_usb_present(void);
+enum { BAT_DISCHARGING, BAT_CHARGING, BAT_FULL };
+int pmic_battery_status(void);
 int32_t pmic_battery_ua(void);
 int32_t pmic_battery_avg_ua(void);
-uint32_t pmic_battery_percent(void);
 void pmic_charger_configure(void);
 void pmic_charger_poll(void);
+void bms_init(void);
+void bms_poll(void);
+uint32_t bms_soc(void);
+uint32_t bms_percent(void);
 #define RPM_LDOA 0x616f646cu
 #define RPM_SMPA 0x61706d73u
 #define RPM_VSA 0x00617376u
