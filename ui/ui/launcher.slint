@@ -1,7 +1,8 @@
 // The app launcher, below the watchface, as AsteroidOS's default one: a horizontal carousel of one
-// app per page, a white disc with the app's icon and name in grey, snapping to the nearest page.
-// Each app has the background colours AsteroidOS gives it; position is the page as a fraction,
-// from which the firmware blends the mesh colours. A tap opens the app over the screen stack.
+// app per page, a white disc with the app's icon and name in grey. A flick coasts like a Qt
+// ListView (1500 px/s/s) before snapping to the nearest page. Each app has the background colours
+// AsteroidOS gives it; position is the page as a fraction, from which the firmware blends the
+// mesh colours. A tap opens the app over the screen stack.
 import { Face } from "face.slint";
 
 export struct App {
@@ -23,82 +24,120 @@ export global Apps {
     ];
 }
 
-export component Launcher {
+// Scrolling along one axis in steps of item, count steps, with a flick that coasts: the speed of
+// the last moves projected over a deceleration of 0.0015 px/ms^2, then rounded to a step. offset
+// is where the content is, animate it with anim unless dragging. tapped fires for a press that
+// did not move.
+component Pager inherits TouchArea {
+    in property <bool> horizontal: true;
+    in property <length> item: 400px;
+    in property <int> count: 1;
+    in property <bool> wrap;
     in-out property <int> index;
-    property <length> drag;
-    property <bool> dragging;
-    out property <float> position: (self.index * self.width - self.drag) / self.width;
+    out property <length> drag;
+    out property <bool> dragging;
+    out property <duration> anim: 150ms;
+    property <float> vel;
+    property <length> last;
+    property <duration> last-t;
+    property <length> pos: self.horizontal ? self.mouse-x : self.mouse-y;
+    property <length> start: self.horizontal ? self.pressed-x : self.pressed-y;
+    callback tapped(length, length);
 
-    width: 100%;
-    height: 100%;
-
-    changed position => {
-        Face.launcher-position = self.position;
-    }
-
-    Rectangle {
-        x: -root.index * root.width + root.drag;
-        width: Apps.list.length * root.width;
-        animate x {
-            duration: root.dragging ? 0ms : 150ms;
-            easing: ease-out;
+    moved => {
+        if !self.dragging && Math.abs(self.pos - self.start) > 10px {
+            self.dragging = true;
+            self.vel = 0;
+            self.last = self.pos;
+            self.last-t = animation-tick();
         }
-
-        for app[i] in Apps.list: Rectangle {
-            x: i * root.width;
-            width: root.width;
-            height: root.height;
-
-            Rectangle {
-                x: (parent.width - 260px) / 2;
-                y: (parent.height - 260px) / 2;
-                width: 260px;
-                height: 260px;
-                border-radius: 130px;
-                background: touch.pressed && !root.dragging && root.index == i ? #dddddd99 : #f8f8f8;
-            }
-
-            Image {
-                x: (parent.width - 120px) / 2;
-                y: (parent.height - 120px) / 2 - 12px;
-                width: 120px;
-                height: 120px;
-                source: app.icon;
-                colorize: touch.pressed && !root.dragging && root.index == i ? #333 : #666;
-            }
-
-            Text {
-                x: (parent.width - 200px) / 2;
-                y: (parent.height + 120px) / 2 - 12px + 10px;
-                width: 200px;
-                text: app.name.to-uppercase();
-                color: touch.pressed && !root.dragging && root.index == i ? #333 : #666;
-                font-size: 20px;
-                font-weight: 600;
-                horizontal-alignment: center;
+        if self.dragging {
+            self.drag = self.wrap ? self.pos - self.start : Math.clamp(self.pos - self.start, (self.index + 1 - self.count) * self.item, self.index * self.item);
+            let dt = (animation-tick() - self.last-t) / 1ms;
+            if dt > 0 {
+                self.vel = self.vel * 0.4 + (self.pos - self.last) / 1px / dt * 0.6;
+                self.last = self.pos;
+                self.last-t = animation-tick();
             }
         }
     }
-
-    touch := TouchArea {
-        moved => {
-            if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 10px {
-                root.dragging = true;
-            }
-            if root.dragging {
-                root.drag = Math.clamp(self.mouse-x - self.pressed-x, (root.index + 1 - Apps.list.length) * root.width, root.index * root.width);
-            }
+    pointer-event(e) => {
+        if e.kind == PointerEventKind.down {
+            self.dragging = false;
+            self.drag = 0;
         }
-        pointer-event(e) => {
-            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-                if root.dragging {
-                    root.index = Math.clamp(root.index - Math.round(root.drag / root.width + (root.drag > root.width * 0.15 ? 0.35 : root.drag < -root.width * 0.15 ? -0.35 : 0)), 0, Apps.list.length - 1);
-                } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
-                    Face.app-opened(Apps.list[root.index].id);
-                }
-                root.drag = 0;
-                root.dragging = false;
+        if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+            if self.dragging && self.mouse-x > -1000px {
+                let v = animation-tick() - self.last-t > 100ms ? 0 : Math.clamp(self.vel, -2.5, 2.5);
+                let projected = (self.index * self.item - self.drag) / 1px - v * Math.abs(v) / 0.003;
+                let n = Math.round(projected / (self.item / 1px));
+                self.index = self.wrap ? n : Math.clamp(n, 0, self.count - 1);
+                self.anim = Math.clamp(Math.abs(v) / 0.0015, 150, 900) * 1ms;
+            } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
+                self.tapped(self.mouse-x, self.mouse-y);
             }
+            self.drag = 0;
+            self.dragging = false;
+        }
+    }
+}
+
+export component Launcher {
+    property <length> size: 400px;
+    property <length> scroll: pager.index * self.size - pager.drag;
+    animate scroll {
+        duration: pager.dragging ? 0ms : pager.anim;
+        easing: ease-out;
+    }
+
+    width: self.size;
+    height: self.size;
+
+    changed scroll => {
+        Face.launcher-position = root.scroll / root.size;
+    }
+
+    for app[i] in Apps.list: Rectangle {
+        x: i * root.size - root.scroll;
+        width: root.size;
+        height: root.size;
+        visible: self.x > -root.size && self.x < root.size;
+
+        Rectangle {
+            x: (parent.width - 260px) / 2;
+            y: (parent.height - 260px) / 2;
+            width: 260px;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: pager.pressed && !pager.dragging && pager.index == i ? #dddddd99 : #f8f8f8;
+        }
+
+        Image {
+            x: (parent.width - 120px) / 2;
+            y: (parent.height - 120px) / 2 - 12px;
+            width: 120px;
+            height: self.width;
+            source: app.icon;
+            colorize: pager.pressed && !pager.dragging && pager.index == i ? #333 : #666;
+        }
+
+        Text {
+            x: (parent.width - 200px) / 2;
+            y: (parent.height + 120px) / 2 - 2px;
+            width: 200px;
+            text: app.name.to-uppercase();
+            color: pager.pressed && !pager.dragging && pager.index == i ? #333 : #666;
+            font-size: 20px;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+    }
+
+    pager := Pager {
+        item: root.size;
+        count: Apps.list.length;
+        tapped => {
+            Face.app-opened(Apps.list[self.index].id);
         }
     }
 }
