@@ -72,11 +72,19 @@ static void app_background(int x, int y, float alpha)
 	gpu_draw_blend(false);
 }
 
+static uint32_t rgb(struct ui_rgb c)
+{
+	return (uint32_t)c.r << 16 | (uint32_t)c.g << 8 | c.b;
+}
+
 static void open_app(int app)
 {
-	if (!ui_app_colors(app, &app_center, &app_outer)) {
-		app_center = 0x888888;
-		app_outer = 0;
+	struct ui_colors c;
+	app_center = 0x888888;
+	app_outer = 0;
+	if (ui_app_colors(app, &c)) {
+		app_center = rgb(c.center);
+		app_outer = rgb(c.outer);
 	}
 	ui_set_app(app);
 	stack_open_app();
@@ -192,8 +200,11 @@ static void mesh_colors(float t)
 {
 	static uint32_t shown_center = 0x888888, shown_outer;
 	uint32_t lc = 0x888888, lo = 0, c = 0, o = 0;
-	if (t > 0.0f)
-		ui_launcher_colors(&lc, &lo);
+	struct ui_colors lcs;
+	if (t > 0.0f && ui_launcher_colors(&lcs)) {
+		lc = rgb(lcs.center);
+		lo = rgb(lcs.outer);
+	}
 	for (int s = 0; s < 24; s += 8) {
 		c |= (uint32_t)((float)(lc >> s & 0xff) * t + (float)(0x88) * (1 - t)) << s;
 		o |= (uint32_t)((float)(lo >> s & 0xff) * t) << s;
@@ -258,28 +269,24 @@ static void setting_toggled(int s)
 
 static void show_alarms(void)
 {
-	uint8_t rec[ALARMS * 4];
+	struct ui_alarm list[ALARMS];
 	unsigned n = alarm_count();
 	for (unsigned i = 0; i < n; i++) {
 		const struct alarm *a = alarm_get(i);
-		rec[i * 4] = a->hour;
-		rec[i * 4 + 1] = a->minute;
-		rec[i * 4 + 2] = a->days;
-		rec[i * 4 + 3] = a->on;
+		list[i] = (struct ui_alarm){ a->hour, a->minute, a->days, a->on };
 	}
-	ui_set_alarms(rec, n);
+	ui_set_alarms(list, n);
 }
 
-/* A change from the alarm app, packed as ui.h describes. */
-static void alarm_edited(int e)
+/* A change from the alarm app: an alarm edited or deleted. */
+static void alarm_edited(const struct ui_event *e)
 {
-	unsigned i = (unsigned)(e & 0xff);
-	if (e & 1 << 27) {
-		if (i)
-			alarm_delete(i - 1);
-	} else {
-		struct alarm a = { (uint8_t)(e >> 8 & 0x1f), (uint8_t)(e >> 13 & 0x3f), (uint8_t)(e >> 19 & 0x7f), e >> 26 & 1 };
-		if (!alarm_set(i ? i - 1 : ALARMS, &a))
+	if (e->kind == UI_EVENT_ALARM_DELETE) {
+		if (e->value >= 0)
+			alarm_delete((unsigned)e->value);
+	} else if (e->alarm.hour < 24 && e->alarm.minute < 60) {
+		struct alarm a = { e->alarm.hour, e->alarm.minute, (uint8_t)(e->alarm.days & 0x7f), e->alarm.on };
+		if (!alarm_set(e->value >= 0 ? (unsigned)e->value : ALARMS, &a))
 			log_printf("alarm: no room\n");
 	}
 	show_alarms();
@@ -378,7 +385,6 @@ void main(void)
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
-	int32_t dismissed_id;
 	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
 	struct touch t;
 	int down_x = 0, down_y = 0;
@@ -468,10 +474,6 @@ void main(void)
 				wake_request = !awake;
 			last_activity = now;
 		}
-		while (have_ui && ui_notification_dismissed(&dismissed_id)) {
-			notify_dismiss(dismissed_id);
-			last_activity = now;
-		}
 		if (notify_serial() != notify_seen) {
 			notify_seen = notify_serial();
 			unsigned n = notify_count();
@@ -526,31 +528,60 @@ void main(void)
 			ui_set_ringing(true, true);
 			wake_request = !awake;
 		}
-		for (int a; have_ui && (a = ui_clock_action()) >= 0;) {
-			if (a == UI_TIMER_START && timer_end) {
-				timer_left = timer_end - now;
-				timer_end = 0;
-			} else if (a == UI_TIMER_START && timer_left) {
-				timer_end = now + timer_left;
-			} else if (a == UI_TIMER_RESET) {
-				timer_end = 0;
-				timer_left = timer_set;
-			} else if (a >= UI_TIMER_MINUTE_UP && a <= UI_TIMER_SECONDS_DOWN && !timer_end) {
-				int32_t step = a <= UI_TIMER_MINUTE_DOWN ? 60000 : 10000, t = (int32_t)timer_set;
-				t += a == UI_TIMER_MINUTE_UP || a == UI_TIMER_SECONDS_UP ? step : -step;
-				timer_set = timer_left = (uint32_t)(t < 10000 ? 10000 : t > 5940000 ? 5940000 : t);
-			} else if (a == UI_STOPWATCH_START) {
-				if (sw_running)
-					sw_acc += now - sw_start;
-				else
-					sw_start = now;
-				sw_running = !sw_running;
-			} else if (a == UI_STOPWATCH_RESET) {
-				sw_acc = 0;
-				sw_running = false;
-			}
-			shown_timer = shown_sw = UINT32_MAX;
+		for (struct ui_event e; have_ui && ui_next_event(&e);) {
+			int a = e.value;
 			last_activity = now;
+			switch (e.kind) {
+			case UI_EVENT_SETTING:
+				setting_toggled(a);
+				break;
+			case UI_EVENT_APP:
+				open_app(a);
+				break;
+			case UI_EVENT_MEDIA:
+				media_command((unsigned)a);
+				break;
+			case UI_EVENT_DISMISS:
+				notify_dismiss(a);
+				break;
+			case UI_EVENT_ALARM_EDIT:
+			case UI_EVENT_ALARM_DELETE:
+				alarm_edited(&e);
+				break;
+			case UI_EVENT_ALARM_RING:
+				if (!ringing)
+					break;
+				if (a == UI_ALARM_SNOOZE && !ring_timer)
+					alarm_snooze(pmic_rtc_read());
+				log_printf("alarm: %s\n", a == UI_ALARM_SNOOZE ? "snoozed" : "dismissed");
+				ringing = false;
+				break;
+			case UI_EVENT_CLOCK:
+				if (a == UI_TIMER_START && timer_end) {
+					timer_left = timer_end - now;
+					timer_end = 0;
+				} else if (a == UI_TIMER_START && timer_left) {
+					timer_end = now + timer_left;
+				} else if (a == UI_TIMER_RESET) {
+					timer_end = 0;
+					timer_left = timer_set;
+				} else if (a >= UI_TIMER_MINUTE_UP && a <= UI_TIMER_SECONDS_DOWN && !timer_end) {
+					int32_t step = a <= UI_TIMER_MINUTE_DOWN ? 60000 : 10000, t = (int32_t)timer_set;
+					t += a == UI_TIMER_MINUTE_UP || a == UI_TIMER_SECONDS_UP ? step : -step;
+					timer_set = timer_left = (uint32_t)(t < 10000 ? 10000 : t > 5940000 ? 5940000 : t);
+				} else if (a == UI_STOPWATCH_START) {
+					if (sw_running)
+						sw_acc += now - sw_start;
+					else
+						sw_start = now;
+					sw_running = !sw_running;
+				} else if (a == UI_STOPWATCH_RESET) {
+					sw_acc = 0;
+					sw_running = false;
+				}
+				shown_timer = shown_sw = UINT32_MAX;
+				break;
+			}
 		}
 		if (have_ui && awake) {
 			uint32_t t = timer_end ? timer_end - now : timer_left, sw = sw_acc + (sw_running ? now - sw_start : 0);
@@ -562,12 +593,6 @@ void main(void)
 				shown_sw = sw / 100;
 				ui_set_stopwatch(sw, sw_running);
 			}
-		}
-		for (int a; have_ui && (a = ui_alarm_action()) >= 0 && ringing;) {
-			if (a == UI_ALARM_SNOOZE && !ring_timer)
-				alarm_snooze(pmic_rtc_read());
-			log_printf("alarm: %s\n", a == UI_ALARM_SNOOZE ? "snoozed" : "dismissed");
-			ringing = false;
 		}
 		if (ringing && now - ring_t >= RING_MS) {
 			log_printf("alarm: stopped ringing\n");
@@ -583,22 +608,6 @@ void main(void)
 			ui_set_ringing(false, false);
 			if (have_haptics)
 				haptics_play(NULL, 0);
-		}
-		for (int e; have_ui && (e = ui_alarm_edit()) >= 0;) {
-			alarm_edited(e);
-			last_activity = now;
-		}
-		for (int s; have_ui && (s = ui_setting_toggled()) >= 0;) {
-			setting_toggled(s);
-			last_activity = now;
-		}
-		for (int app; have_ui && (app = ui_app_opened()) >= 0;) {
-			open_app(app);
-			last_activity = now;
-		}
-		for (int action; have_ui && (action = ui_media_action()) >= 0;) {
-			media_command((unsigned)action);
-			last_activity = now;
 		}
 		if (have_ui && weather_serial() != weather_seen) {
 			weather_seen = weather_serial();

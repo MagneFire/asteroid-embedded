@@ -4,6 +4,7 @@
 // the GPU. All screens get the same state through their Face global.
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::time::Duration;
@@ -67,20 +68,72 @@ struct Panel {
 
 type Queue = Rc<RefCell<Vec<i32>>>;
 
+/// The types shared with C, laid out as ui.h declares them.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct UiAlarm {
+    hour: u8,
+    minute: u8,
+    days: u8,
+    on: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct UiRgb {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct UiColors {
+    center: UiRgb,
+    outer: UiRgb,
+}
+
+/// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
+/// the setting, action, app, notification or alarm index it is about, and alarm the alarm as
+/// edited.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct UiEvent {
+    kind: u32,
+    value: i32,
+    alarm: UiAlarm,
+}
+
+const EVENT_SETTING: u32 = 0;
+const EVENT_APP: u32 = 1;
+const EVENT_MEDIA: u32 = 2;
+const EVENT_CLOCK: u32 = 3;
+const EVENT_ALARM_RING: u32 = 4;
+const EVENT_ALARM_EDIT: u32 = 5;
+const EVENT_ALARM_DELETE: u32 = 6;
+const EVENT_DISMISS: u32 = 7;
+
+const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 12);
+
+type Events = Rc<RefCell<VecDeque<UiEvent>>>;
+
+fn event(events: &Events, kind: u32, value: i32) {
+    events.borrow_mut().push_back(UiEvent { kind, value, alarm: UiAlarm::default() });
+}
+
+fn rgb(c: slint::Color) -> UiRgb {
+    UiRgb { r: c.red(), g: c.green(), b: c.blue() }
+}
+
 struct Ui {
     screens: Vec<Screen>,
     panels: Vec<Panel>,
     notes: Rc<VecModel<Note>>,
     forecast: Rc<VecModel<Day>>,
     alarms: Rc<VecModel<AlarmItem>>,
-    alarm_edits: Queue,
-    alarm_actions: Queue,
-    clock_actions: Queue,
     opened: Queue,
-    dismissed: Queue,
-    actions: Queue,
-    apps: Queue,
-    toggled: Queue,
+    events: Events,
     stride: usize,
     width: usize,
     height: usize,
@@ -150,8 +203,7 @@ pub unsafe extern "C" fn ui_init(
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
     let alarms = Rc::new(VecModel::default());
-    let (alarm_edits, alarm_actions, clock_actions): (Queue, Queue, Queue) = Default::default();
-    let (opened, dismissed, actions, apps, toggled): (Queue, Queue, Queue, Queue, Queue) = Default::default();
+    let (opened, events): (Queue, Events) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
     for kind in 0..SCREENS {
@@ -163,27 +215,27 @@ pub unsafe extern "C" fn ui_init(
         face.set_notes(notes.clone().into());
         face.set_weather_forecast(forecast.clone().into());
         face.set_alarms(alarms.clone().into());
-        let queue = alarm_edits.clone();
+        let queue = events.clone();
         face.on_alarm_saved(move |index, hour, minute, days, on| {
-            let packed = (index + 1) & 0xff | (hour & 0x1f) << 8 | (minute & 0x3f) << 13 | (days & 0x7f) << 19 | (on as i32) << 26;
-            queue.borrow_mut().push(packed);
+            let alarm = UiAlarm { hour: hour as u8, minute: minute as u8, days: days as u8, on };
+            queue.borrow_mut().push_back(UiEvent { kind: EVENT_ALARM_EDIT, value: index, alarm });
         });
-        let queue = alarm_edits.clone();
-        face.on_alarm_deleted(move |index| queue.borrow_mut().push((index + 1) & 0xff | 1 << 27));
-        let queue = alarm_actions.clone();
-        face.on_alarm_action(move |action| queue.borrow_mut().push(action));
-        let queue = clock_actions.clone();
-        face.on_clock_action(move |action| queue.borrow_mut().push(action));
+        let queue = events.clone();
+        face.on_alarm_deleted(move |index| event(&queue, EVENT_ALARM_DELETE, index));
+        let queue = events.clone();
+        face.on_alarm_action(move |action| event(&queue, EVENT_ALARM_RING, action));
+        let queue = events.clone();
+        face.on_clock_action(move |action| event(&queue, EVENT_CLOCK, action));
         let queue = opened.clone();
         face.on_notification_opened(move |id| queue.borrow_mut().push(id));
-        let queue = dismissed.clone();
-        face.on_notification_dismissed(move |id| queue.borrow_mut().push(id));
-        let queue = actions.clone();
-        face.on_media_action(move |action| queue.borrow_mut().push(action));
-        let queue = apps.clone();
-        face.on_app_opened(move |app| queue.borrow_mut().push(app));
-        let queue = toggled.clone();
-        face.on_setting_toggled(move |setting| queue.borrow_mut().push(setting));
+        let queue = events.clone();
+        face.on_notification_dismissed(move |id| event(&queue, EVENT_DISMISS, id));
+        let queue = events.clone();
+        face.on_media_action(move |action| event(&queue, EVENT_MEDIA, action));
+        let queue = events.clone();
+        face.on_app_opened(move |app| event(&queue, EVENT_APP, app));
+        let queue = events.clone();
+        face.on_setting_toggled(move |setting| event(&queue, EVENT_SETTING, setting));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;
@@ -193,7 +245,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, alarms, alarm_edits, alarm_actions, clock_actions, opened, dismissed, actions, apps, toggled, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, alarms, opened, events, stride, width, height });
     }
     true
 }
@@ -292,15 +344,6 @@ pub extern "C" fn ui_hide_notification() {
     each(|face| face.set_notification_shown(false));
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_notification_dismissed(id: *mut i32) -> bool {
-    let Some(ui) = ui() else { return false };
-    let Some(first) = pop(&ui.dismissed) else { return false };
-    if !id.is_null() {
-        unsafe { *id = first };
-    }
-    true
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_set_media(
@@ -334,16 +377,16 @@ pub extern "C" fn ui_launcher_edges() -> u32 {
     ui.screens[LAUNCHER].global::<Face>().get_launcher_edges() as u32
 }
 
-/// The mesh colours of the launcher page on screen, blended between the two pages it is between,
-/// as 0xRRGGBB; false for the layouts that keep the mesh grey.
+/// The mesh colours of the launcher page on screen, blended between the two pages it is between;
+/// false for the layouts that keep the mesh grey.
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) -> bool {
+pub unsafe extern "C" fn ui_launcher_colors(out: *mut UiColors) -> bool {
     let Some(ui) = ui() else { return false };
     let screen = &ui.screens[LAUNCHER];
     let apps = screen.global::<Apps>().get_list();
     let n = apps.row_count();
     let layout = screen.global::<Face>().get_launcher();
-    if n == 0 || center.is_null() || outer.is_null() || layout == 4 || layout == 5 {
+    if n == 0 || out.is_null() || layout == 4 || layout == 5 {
         return false;
     }
     let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, (n - 1) as f32);
@@ -351,38 +394,26 @@ pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) -> bool 
     let a = apps.row_data(i).unwrap();
     let b = apps.row_data((i + 1).min(n - 1)).unwrap();
     let mix = |x: slint::Color, y: slint::Color| {
-        let c = |p: u8, q: u8| (p as f32 * (1.0 - t) + q as f32 * t) as u32;
-        c(x.red(), y.red()) << 16 | c(x.green(), y.green()) << 8 | c(x.blue(), y.blue())
+        let c = |p: u8, q: u8| (p as f32 * (1.0 - t) + q as f32 * t) as u8;
+        UiRgb { r: c(x.red(), y.red()), g: c(x.green(), y.green()), b: c(x.blue(), y.blue()) }
     };
-    unsafe {
-        *center = mix(a.center, b.center);
-        *outer = mix(a.outer, b.outer);
-    }
+    unsafe { *out = UiColors { center: mix(a.center, b.center), outer: mix(a.outer, b.outer) } };
     true
 }
 
-/// The background colours of an app, as 0xRRGGBB; false for an unknown app.
+/// The background colours of an app; false for an unknown app.
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_app_colors(app: i32, center: *mut u32, outer: *mut u32) -> bool {
+pub unsafe extern "C" fn ui_app_colors(app: i32, out: *mut UiColors) -> bool {
     let Some(ui) = ui() else { return false };
     let apps = ui.screens[LAUNCHER].global::<Apps>().get_list();
     let Some(a) = apps.iter().find(|a| a.id == app) else { return false };
-    if center.is_null() || outer.is_null() {
+    if out.is_null() {
         return false;
     }
-    let rgb = |c: slint::Color| (c.red() as u32) << 16 | (c.green() as u32) << 8 | c.blue() as u32;
-    unsafe {
-        *center = rgb(a.center);
-        *outer = rgb(a.outer);
-    }
+    unsafe { *out = UiColors { center: rgb(a.center), outer: rgb(a.outer) } };
     true
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn ui_app_opened() -> i32 {
-    let Some(ui) = ui() else { return -1 };
-    pop(&ui.apps).unwrap_or(-1)
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_settings(brightness: u32, bluetooth: bool, vibration: bool, aod: bool, clock12: bool) {
@@ -411,28 +442,28 @@ pub extern "C" fn ui_set_face(watchface: i32, nightstand_setting: bool, nightsta
     });
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn ui_setting_toggled() -> i32 {
-    let Some(ui) = ui() else { return -1 };
-    pop(&ui.toggled).unwrap_or(-1)
-}
 
-/// rec holds n alarms of 4 bytes: hour, minute, weekdays, on.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_set_alarms(rec: *const u8, n: u32) {
+pub unsafe extern "C" fn ui_set_alarms(alarms: *const UiAlarm, n: u32) {
     let Some(ui) = ui() else { return };
-    let rec = if rec.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(rec, n as usize * 4) } };
-    let items = rec
-        .chunks(4)
-        .map(|a| AlarmItem { hour: a[0] as i32, minute: a[1] as i32, days: a[2] as i32, on: a[3] != 0 })
+    let alarms = if alarms.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(alarms, n as usize) } };
+    let items = alarms
+        .iter()
+        .map(|a| AlarmItem { hour: a.hour as i32, minute: a.minute as i32, days: a.days as i32, on: a.on })
         .collect::<Vec<_>>();
     ui.alarms.set_vec(items);
 }
 
+
+/// The next thing the user did, oldest first; false when there is none.
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_alarm_edit() -> i32 {
-    let Some(ui) = ui() else { return -1 };
-    pop(&ui.alarm_edits).unwrap_or(-1)
+pub unsafe extern "C" fn ui_next_event(out: *mut UiEvent) -> bool {
+    let Some(ui) = ui() else { return false };
+    let Some(e) = ui.events.borrow_mut().pop_front() else { return false };
+    if !out.is_null() {
+        unsafe { *out = e };
+    }
+    true
 }
 
 #[unsafe(no_mangle)]
@@ -460,17 +491,7 @@ pub extern "C" fn ui_set_stopwatch(ms: u32, running: bool) {
     });
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn ui_clock_action() -> i32 {
-    let Some(ui) = ui() else { return -1 };
-    pop(&ui.clock_actions).unwrap_or(-1)
-}
 
-#[unsafe(no_mangle)]
-pub extern "C" fn ui_alarm_action() -> i32 {
-    let Some(ui) = ui() else { return -1 };
-    pop(&ui.alarm_actions).unwrap_or(-1)
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_app(app: i32) {
@@ -498,11 +519,6 @@ pub extern "C" fn ui_app_back() -> bool {
     true
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn ui_media_action() -> i32 {
-    let Some(ui) = ui() else { return -1 };
-    pop(&ui.actions).unwrap_or(-1)
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_set_weather(

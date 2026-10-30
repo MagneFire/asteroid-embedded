@@ -12,29 +12,27 @@
  * for measuring. weekday 0 = Sunday, month 1-12;
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
  * code. Notifications are set as a list, newest first; ui_show_notification
- * pops one of them up by id, and ui_notification_dismissed hands out, one
- * per call, the ids the user dismissed. ui_media_action returns the next
- * pressed music button or -1. Weather days start today, temperatures in
+ * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
  * the watchface to its always-on form. The app panel shows the app set
- * with ui_set_app; ui_app_opened returns the next app picked in the
- * launcher, or -1. ui_set_settings shows the settings (brightness in
- * per cent) and ui_setting_toggled returns the next one the user
- * changed, as an enum setting or enum ui_action (UI_WATCHFACE_FIRST + n
- * picks watchface n, UI_LAUNCHER_FIRST + n launcher layout n), or -1.
- * ui_set_face selects the watchface and whether nightstand mode is on
- * and in effect, ui_set_launcher the launcher layout. ui_launcher_edges
- * says which edges of the launcher lead somewhere (left, right, top,
- * bottom as bits 0-3) and, in bit 4, whether it is at its start;
- * ui_launcher_colors gives its mesh colours, or false to keep the
- * mesh grey. ui_set_alarms
- * takes 4 bytes per alarm (hour, minute, weekdays, on); ui_alarm_edit
- * returns the next change made in the alarm app, packed as index + 1
- * (0 new) in bits 0-7, hour 8-12, minute 13-18, weekdays 19-25, on 26
- * and bit 27 for a deletion, or -1; ui_alarm_action the next button
- * pressed on a ringing alarm or timer (ui_set_ringing), or -1.
- * ui_set_timer and ui_set_stopwatch show their state, ui_clock_action
- * returns the next button pressed in those apps, or -1. */
+ * with ui_set_app. ui_set_settings shows the settings (brightness in per
+ * cent), ui_set_face selects the watchface and whether nightstand mode is
+ * on and in effect, ui_set_launcher the launcher layout.
+ * ui_launcher_edges says which edges of the launcher lead somewhere
+ * (left, right, top, bottom as bits 0-3) and, in bit 4, whether it is at
+ * its start; ui_launcher_colors gives its mesh colours, or false to keep
+ * the mesh grey. ui_set_ringing shows a ringing alarm or timer,
+ * ui_set_timer and ui_set_stopwatch their state.
+ *
+ * ui_next_event hands out what the user did, oldest first, one per call,
+ * with its value: UI_EVENT_SETTING an enum setting toggled or an enum
+ * ui_action (UI_WATCHFACE_FIRST + n picks watchface n, UI_LAUNCHER_FIRST
+ * + n launcher layout n), UI_EVENT_APP the app picked in the launcher,
+ * UI_EVENT_MEDIA a music button, UI_EVENT_CLOCK a timer or stopwatch
+ * button, UI_EVENT_ALARM_RING a button on a ringing alarm or timer,
+ * UI_EVENT_ALARM_EDIT the alarm at that index (-1 for a new one) as
+ * edited, UI_EVENT_ALARM_DELETE the alarm at that index deleted and
+ * UI_EVENT_DISMISS the id of a dismissed notification. */
 #ifndef UI_H
 #define UI_H
 #include <stddef.h>
@@ -80,6 +78,41 @@ enum ui_media_action {
 	UI_MEDIA_VOLUME_DOWN,
 };
 
+/* Shared with the Rust side (ui/src/watch.rs), which lays them out the
+ * same way and checks their sizes. */
+struct ui_alarm {
+	uint8_t hour, minute, days;
+	bool on;
+};
+
+struct ui_rgb {
+	uint8_t r, g, b;
+};
+
+struct ui_colors {
+	struct ui_rgb center, outer;
+};
+
+enum ui_event_kind {
+	UI_EVENT_SETTING,
+	UI_EVENT_APP,
+	UI_EVENT_MEDIA,
+	UI_EVENT_CLOCK,
+	UI_EVENT_ALARM_RING,
+	UI_EVENT_ALARM_EDIT,
+	UI_EVENT_ALARM_DELETE,
+	UI_EVENT_DISMISS,
+};
+
+struct ui_event {
+	uint32_t kind;
+	int32_t value;
+	struct ui_alarm alarm;
+};
+
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6, "ui types");
+_Static_assert(sizeof(struct ui_event) == 12, "ui_event");
+
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
 	     uint32_t height);
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month);
@@ -92,28 +125,22 @@ void ui_add_notification(int32_t id, const char *app, uint32_t app_len, const ch
 			 uint32_t icon_len);
 void ui_show_notification(int32_t id);
 void ui_hide_notification(void);
-bool ui_notification_dismissed(int32_t *id);
 void ui_set_media(const char *title, uint32_t title_len, const char *artist, uint32_t artist_len, const char *album,
 		  uint32_t album_len, bool playing, int32_t volume);
-int ui_media_action(void);
-int ui_app_opened(void);
 bool ui_app_back(void);
 int ui_app_depth(void);
-bool ui_launcher_colors(uint32_t *center, uint32_t *outer);
+bool ui_launcher_colors(struct ui_colors *out);
 void ui_set_launcher(int layout);
 unsigned ui_launcher_edges(void);
-bool ui_app_colors(int app, uint32_t *center, uint32_t *outer);
+bool ui_app_colors(int app, struct ui_colors *out);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);
 void ui_set_face(int watchface, bool nightstand_setting, bool nightstand);
-void ui_set_alarms(const uint8_t *rec, uint32_t n);
-int ui_alarm_edit(void);
+void ui_set_alarms(const struct ui_alarm *alarms, uint32_t n);
+bool ui_next_event(struct ui_event *e);
 void ui_set_ringing(bool ringing, bool timer);
 void ui_set_timer(uint32_t ms, uint32_t set_ms, bool running);
 void ui_set_stopwatch(uint32_t ms, bool running);
-int ui_clock_action(void);
-int ui_alarm_action(void);
-int ui_setting_toggled(void);
 void ui_set_app(int app);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,
 		    const int32_t *max_c);
