@@ -8,8 +8,8 @@
  * page back, or closes onto the watchface from its first page or from
  * the top edge. A drag moves the origin with the finger,
  * clamped to the screens that exist in that direction, and a release
- * past 30 % or a quick flick switches screens; the slide back to rest is
- * an ease-out over SLIDE_MS. */
+ * past half the screen or a quick flick switches screens; the slide back
+ * to rest is an ease-out over SLIDE_MS. */
 #include "asteroid.h"
 #include "display/display.h"
 #include "gpu/draw.h"
@@ -18,7 +18,7 @@
 
 #define SWIPE_PX	40
 #define FLICK_MS	300
-#define SLIDE_MS	250
+#define SLIDE_MS	100
 #define DIM		0.4f
 #define FADE_MS		150
 #define APP_FADE_MS	100
@@ -154,7 +154,7 @@ static void drag(int dx, int dy)
 static void release(bool flick)
 {
 	int x = fx - rest_x(screen), y = fy - rest_y(screen);
-	if (absi(x) * 10 > W * 3 || absi(y) * 10 > H * 3 || (flick && (x || y)))
+	if (absi(x) * 2 > W || absi(y) * 2 > H || (flick && (x || y)))
 		swipe(absi(x) >= absi(y) ? (x > 0 ? RIGHT : LEFT) : (y < 0 ? UP : DOWN));
 	else
 		slide_to(screen);

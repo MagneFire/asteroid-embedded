@@ -9,7 +9,7 @@
  * GPU: a touch that moves past the swipe threshold drags the screens
  * along (the press is cancelled so no click fires), except vertical
  * drags on a screen that scrolls, and letting go slides to the nearest
- * screen over 250 ms. stack_dim is how much to darken the background, in
+ * screen over 100 ms. stack_dim is how much to darken the background, in
  * proportion to how far the watchface is off centre, and stack_launcher
  * how far the launcher is in, for the mesh to take on its colours. stack_touch routes
  * everything else to the panel on screen, or to the overlay while it is
