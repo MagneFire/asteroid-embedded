@@ -125,6 +125,11 @@ void gpu_ring_reserve(uint32_t n)
 		gpu_ring_flush(1000);
 }
 
+bool gpu_ready(void)
+{
+	return ready;
+}
+
 bool gpu_ring_flush(uint32_t timeout_ms)
 {
 	return ready && flush(timeout_ms);

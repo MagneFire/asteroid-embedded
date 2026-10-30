@@ -8,8 +8,12 @@
  *    tex on sampler 0.
  * e: FS for d's VS, gl_FragColor = texture2D(tex, uv) * tint with tint
  *    a uniform vec4 in c0.
+ * f: VS + FS, gl_Position = pos (attribute 0), texcoord (attribute 1,
+ *    vec2) and colour (attribute 2) passed as varyings 1 and 0,
+ *    gl_FragColor = texture2D(tex, uv) * colour.
  * a + b draw a solid triangle, c a per-vertex coloured one, d a textured
- * one and d's VS + e a textured one scaled by a colour. */
+ * one, d's VS + e a textured one scaled by a colour and f one scaled by
+ * a per-vertex colour. */
 #ifndef GPU_SHADERS_H
 #define GPU_SHADERS_H
 #include "asteroid.h"
@@ -88,6 +92,31 @@ static const uint32_t shader_e_fs_code[] = {
 	0x00000000, 0x00000000,
 };
 
+static const uint32_t shader_f_vs_code[] = {
+	0x00000000, 0x03000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+};
+
+static const uint32_t shader_f_fs_code[] = {
+	0x00002004, 0x47300002,
+	0x00002005, 0x47300003,
+	0x00002000, 0x47300004,
+	0x00002001, 0x47300005,
+	0x00002002, 0x47300006,
+	0x00002003, 0x47308007,
+	0x00000000, 0x00000100,
+	0x00000005, 0xa0c01f08,
+	0x00040008, 0x50780b0c,
+	0x00000000, 0x03000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+};
+
 static struct gpu_shader shader_a_vs __attribute__((unused)) = {
 	.code = shader_a_vs_code, .ndwords = ARRAY_SIZE(shader_a_vs_code),
 	.instrlen = 1, .constlen = 0, .max_reg = 0, .max_half_reg = -1,
@@ -151,6 +180,27 @@ static struct gpu_shader shader_e_fs __attribute__((unused)) = {
 	.nvar = 1, .var = { { .regid = GPU_REG_NONE, .compmask = 0x3, .inloc = 0 } },
 	.pos_regid = GPU_REG_NONE,
 	.ij_regid = GPU_REG(0, 0), .color_regid = GPU_REG(2, 0),
+	.pixlod = true,
+};
+
+static struct gpu_shader shader_f_vs __attribute__((unused)) = {
+	.code = shader_f_vs_code, .ndwords = ARRAY_SIZE(shader_f_vs_code),
+	.instrlen = 1, .constlen = 0, .max_reg = 2, .max_half_reg = -1,
+	.total_in = 10, .sysval_in = 0, .varying_in = 0,
+	.nattr = 3, .attr = { { GPU_REG(0, 0), 0xf }, { GPU_REG(1, 0), 0x3 }, { GPU_REG(1, 2), 0xf } },
+	.nvar = 2, .var = { { .regid = GPU_REG(1, 2), .compmask = 0xf }, { .regid = GPU_REG(1, 0), .compmask = 0x3 } },
+	.pos_regid = GPU_REG(0, 0),
+	.ij_regid = GPU_REG_NONE, .color_regid = GPU_REG_NONE,
+};
+
+static struct gpu_shader shader_f_fs __attribute__((unused)) = {
+	.code = shader_f_fs_code, .ndwords = ARRAY_SIZE(shader_f_fs_code),
+	.instrlen = 3, .constlen = 0, .max_reg = 3, .max_half_reg = -1,
+	.total_in = 6, .sysval_in = 2, .varying_in = 2,
+	.nvar = 2, .var = { { .regid = GPU_REG_NONE, .compmask = 0xf, .inloc = 0 },
+			    { .regid = GPU_REG_NONE, .compmask = 0x3, .inloc = 4 } },
+	.pos_regid = GPU_REG_NONE,
+	.ij_regid = GPU_REG(0, 0), .color_regid = GPU_REG(3, 0),
 	.pixlod = true,
 };
 #endif

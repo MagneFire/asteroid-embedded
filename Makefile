@@ -24,7 +24,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/boot.c src/civil.c \
         src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/input/touch.c src/input/haptics.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/ui/ui.c src/ui/stack.c \
-        src/gpu/a3xx.c src/gpu/draw.c \
+        src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
         src/bt/hci.c src/bt/bcm.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         src/notify/notify.c src/sensors/hub.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
