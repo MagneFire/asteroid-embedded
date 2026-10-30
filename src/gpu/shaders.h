@@ -6,8 +6,10 @@
  * d: VS + FS, gl_Position = pos (attribute 0), texcoord (attribute 1,
  *    vec2) passed as varying 0, gl_FragColor = texture2D(tex, uv) with
  *    tex on sampler 0.
+ * e: FS for d's VS, gl_FragColor = texture2D(tex, uv) * tint with tint
+ *    a uniform vec4 in c0.
  * a + b draw a solid triangle, c a per-vertex coloured one, d a textured
- * one. */
+ * one and d's VS + e a textured one scaled by a colour. */
 #ifndef GPU_SHADERS_H
 #define GPU_SHADERS_H
 #include "asteroid.h"
@@ -73,6 +75,19 @@ static const uint32_t shader_d_fs_code[] = {
 	0x00000000, 0x00000000,
 };
 
+static const uint32_t shader_e_fs_code[] = {
+	0x00002000, 0x47300002,
+	0x00002001, 0x47308003,
+	0x00000000, 0x00000500,
+	0x00000005, 0xa0c01f04,
+	0x10000004, 0x50780b08,
+	0x00000000, 0x03000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+};
+
 static struct gpu_shader shader_a_vs __attribute__((unused)) = {
 	.code = shader_a_vs_code, .ndwords = ARRAY_SIZE(shader_a_vs_code),
 	.instrlen = 1, .constlen = 0, .max_reg = 0, .max_half_reg = -1,
@@ -126,6 +141,16 @@ static struct gpu_shader shader_d_fs __attribute__((unused)) = {
 	.nvar = 1, .var = { { .regid = GPU_REG_NONE, .compmask = 0x3, .inloc = 0 } },
 	.pos_regid = GPU_REG_NONE,
 	.ij_regid = GPU_REG(0, 0), .color_regid = GPU_REG(1, 0),
+	.pixlod = true,
+};
+
+static struct gpu_shader shader_e_fs __attribute__((unused)) = {
+	.code = shader_e_fs_code, .ndwords = ARRAY_SIZE(shader_e_fs_code),
+	.instrlen = 2, .constlen = 1, .max_reg = 2, .max_half_reg = -1,
+	.total_in = 2, .sysval_in = 2, .varying_in = 1,
+	.nvar = 1, .var = { { .regid = GPU_REG_NONE, .compmask = 0x3, .inloc = 0 } },
+	.pos_regid = GPU_REG_NONE,
+	.ij_regid = GPU_REG(0, 0), .color_regid = GPU_REG(2, 0),
 	.pixlod = true,
 };
 #endif

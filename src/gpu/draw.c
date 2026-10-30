@@ -189,8 +189,13 @@
 #define VPC_PACK(n)			((n) << 8 | (n) << 16)
 #define UCHE_INVALIDATE_ENTIRE		(1u << 28 | BIT(31))
 
+#define QUADS				16
+#define QUAD_FLOATS			(6 * 6)
+
 static struct gpu_shader *cur_vs;
-static uint32_t fs_total_in, pvt_mem, fence, seqno;
+static uint32_t fs_total_in, pvt_mem, fence, seqno, target_w, target_h;
+static float *quads;
+static unsigned quad_i;
 static bool drawn;
 static volatile uint32_t *fence_ptr;
 
@@ -309,6 +314,9 @@ void gpu_draw_begin(const struct gpu_target *t)
 		fence = (uint32_t)(uintptr_t)fence_ptr;
 	}
 	uint32_t w = t->width, h = t->height, pitch_px = t->pitch_bytes / 4;
+	target_w = w;
+	target_h = h;
+	quad_i = 0;
 	if ((t->base & 31) || (pitch_px & 31))
 		log_printf("gpu: target %08lx pitch %lu not 32-byte / 32-pixel aligned\n", t->base, t->pitch_bytes);
 	gpu_ring_reserve(512);
@@ -548,28 +556,61 @@ void gpu_draw_blend(bool premultiplied_over)
 	    (premultiplied_over ? RB_MRT_BLEND(FACTOR_ONE, FACTOR_ONE_MINUS_SRC_ALPHA) : RB_MRT_BLEND(FACTOR_ONE, FACTOR_ZERO)));
 }
 
-void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+static float *quad(int x, int y, uint32_t width, uint32_t height)
 {
-	static const float quad[] = {
-		-1, 1, 0, 1, 0, 0,
-		1, 1, 0, 1, 1, 0,
-		-1, -1, 0, 1, 0, 1,
-		1, 1, 0, 1, 1, 0,
-		1, -1, 0, 1, 1, 1,
-		-1, -1, 0, 1, 0, 1,
-	};
-	static float *vbo;
-	if (!vbo) {
-		vbo = gpu_alloc(sizeof quad, 64);
-		if (!vbo)
-			return;
-		memcpy(vbo, quad, sizeof quad);
+	if (!quads)
+		quads = gpu_alloc(QUADS * QUAD_FLOATS * 4, 64);
+	if (!quads || quad_i == QUADS) {
+		if (quads)
+			log_printf("gpu: more than %u quads in a frame\n", QUADS);
+		return NULL;
 	}
-	if (!gpu_draw_program(&shader_d_vs, &shader_d_fs))
+	float x0 = 2.0f * x / target_w - 1.0f, x1 = 2.0f * (x + (int)width) / target_w - 1.0f;
+	float y0 = 1.0f - 2.0f * y / target_h, y1 = 1.0f - 2.0f * (y + (int)height) / target_h;
+	float v[QUAD_FLOATS] = {
+		x0, y0, 0, 1, 0, 0,
+		x1, y0, 0, 1, 1, 0,
+		x0, y1, 0, 1, 0, 1,
+		x1, y0, 0, 1, 1, 0,
+		x1, y1, 0, 1, 1, 1,
+		x0, y1, 0, 1, 0, 1,
+	};
+	float *q = quads + quad_i++ * QUAD_FLOATS;
+	memcpy(q, v, sizeof v);
+	return q;
+}
+
+void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+{
+	float *q = quad(x, y, width, height);
+	if (!q)
 		return;
+	bool faded = alpha < 1.0f;
+	if (!gpu_draw_program(&shader_d_vs, faded ? &shader_e_fs : &shader_d_fs))
+		return;
+	if (faded)
+		gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ alpha, alpha, alpha, alpha }, 1);
 	gpu_draw_texture(0, tex_addr, width, height, pitch_bytes);
 	gpu_draw_blend(true);
-	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 24, 2, (const uint8_t[]){4, 2}, 6);
+	gpu_draw_triangles((uint32_t)(uintptr_t)q, 24, 2, (const uint8_t[]){4, 2}, 6);
+	gpu_draw_blend(false);
+}
+
+void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+{
+	gpu_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
+}
+
+void gpu_draw_fill(int x, int y, uint32_t width, uint32_t height, float r, float g, float b, float a)
+{
+	float *q = quad(x, y, width, height);
+	if (!q)
+		return;
+	if (!gpu_draw_program(&shader_a_vs, &shader_b_fs))
+		return;
+	gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ r, g, b, a }, 1);
+	gpu_draw_blend(true);
+	gpu_draw_triangles((uint32_t)(uintptr_t)q, 24, 1, (const uint8_t[]){4}, 6);
 	gpu_draw_blend(false);
 }
 
