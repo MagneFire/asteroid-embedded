@@ -21,6 +21,7 @@ unsafe extern "C" {
 }
 
 const SCREENS: usize = 7;
+const NOTES: usize = 1;
 const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
 const APP: usize = 6;
@@ -384,6 +385,12 @@ pub unsafe extern "C" fn ui_set_media(
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_launcher(layout: i32) {
     each(|face| face.set_launcher(layout));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_notes_edges() -> u32 {
+    let Some(ui) = ui() else { return 2 | 16 };
+    ui.screens[NOTES].global::<Face>().get_notes_edges() as u32
 }
 
 #[unsafe(no_mangle)]

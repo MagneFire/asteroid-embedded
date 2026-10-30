@@ -149,6 +149,7 @@ int ui_app_depth(void);
 bool ui_launcher_colors(struct ui_colors *out);
 void ui_set_launcher(int layout);
 unsigned ui_launcher_edges(void);
+unsigned ui_notes_edges(void);
 bool ui_app_colors(int app, struct ui_colors *out);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);

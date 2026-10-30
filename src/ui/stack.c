@@ -257,6 +257,8 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 	bool scroll = (absi(dy) >= absi(dx) && scrolls[screen]) || (absi(dx) > absi(dy) && pages[screen]);
 	if (screen == UI_PANEL_BOTTOM)
 		scroll = launcher_scroll(dx, dy);
+	else if (screen == UI_PANEL_LEFT && absi(dx) > absi(dy))
+		scroll = !(dx < 0 && ui_notes_edges() & 16);
 	bool flick = now_ms - down_ms < FLICK_MS;
 	if (app_open) {
 		if (kind == UI_TOUCH_DOWN) {
@@ -476,7 +478,7 @@ static unsigned ind_edges(void)
 	case UI_PANEL_FACE:
 		return 0xf;
 	case UI_PANEL_LEFT:
-		return 2;
+		return ui_notes_edges() & 0xf;
 	case UI_PANEL_RIGHT:
 		return 1;
 	case UI_PANEL_BOTTOM:

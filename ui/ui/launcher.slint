@@ -35,6 +35,8 @@ export component Pager inherits TouchArea {
     in property <length> item: 400px;
     in property <int> count: 1;
     in property <bool> wrap;
+    // At most this many items per flick, 0 for no limit.
+    in property <int> limit;
     in-out property <int> index;
     out property <length> drag;
     out property <bool> dragging;
@@ -72,7 +74,8 @@ export component Pager inherits TouchArea {
             if self.dragging && self.mouse-x > -1000px {
                 let v = animation-tick() - self.last-t > 100ms ? 0 : Math.clamp(self.vel, -2.5, 2.5);
                 let projected = (self.index * self.item - self.drag) / 1px - v * Math.abs(v) / 0.003;
-                let n = Math.round(projected / (self.item / 1px));
+                let free = Math.round(projected / (self.item / 1px));
+                let n = self.limit > 0 ? Math.clamp(free, self.index - self.limit, self.index + self.limit) : free;
                 self.index = self.wrap ? n : Math.clamp(n, 0, self.count - 1);
                 self.anim = Math.clamp(Math.abs(v) / 0.0015, 150, 900) * 1ms;
             } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
