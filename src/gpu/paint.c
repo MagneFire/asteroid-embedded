@@ -10,7 +10,9 @@
  * coverage masks made once per radius and border, and plain rectangles
  * for the rest. The layer is cached memory: rows the CPU wrote are
  * cleaned before the GPU blends over them, and the rows the GPU drew are
- * invalidated once it is done. */
+ * invalidated once it is done. paint_end does not wait for that: the
+ * rows are noted and invalidated by paint_finish, or by the next wait,
+ * and the vertices of submissions in flight are kept until then. */
 #include <string.h>
 #include "asteroid.h"
 #include "a3xx.h"
@@ -54,6 +56,8 @@ static unsigned nverts, first;
 static int kind = NONE;
 static bool copy_mode, begun, drawn, ready;
 static int dirty_y0, dirty_y1;
+static struct { uint32_t *layer; uint32_t pitch; int y0, y1; } pending[8];
+static unsigned npending;
 
 static bool setup(void)
 {
@@ -111,24 +115,44 @@ static void flush(void)
 	first = nverts;
 }
 
-void paint_sync(void)
+/* Ends the layer's submission and notes the rows it draws. */
+static void submit(void)
 {
 	flush();
-	if (begun && !gpu_draw_end())
-		log_printf("paint: draw did not complete\n");
+	if (begun)
+		gpu_draw_submit();
 	begun = false;
-	nverts = first = 0;
 	if (dirty_y0 < dirty_y1)
-		dcache_invalidate_range(layer + dirty_y0 * (target.pitch_bytes / 4),
-					(uint32_t)(dirty_y1 - dirty_y0) * target.pitch_bytes);
+		pending[npending++] = (typeof(pending[0])){ layer, target.pitch_bytes, dirty_y0, dirty_y1 };
 	dirty_y0 = (int)target.height;
 	dirty_y1 = 0;
+}
+
+void paint_finish(void)
+{
+	if (!npending && nverts == 0)
+		return;
+	if (!gpu_draw_wait())
+		log_printf("paint: draw did not complete\n");
+	for (unsigned i = 0; i < npending; i++)
+		dcache_invalidate_range(pending[i].layer + pending[i].y0 * (pending[i].pitch / 4),
+					(uint32_t)(pending[i].y1 - pending[i].y0) * pending[i].pitch);
+	npending = 0;
+	nverts = first = 0;
+}
+
+void paint_sync(void)
+{
+	submit();
+	paint_finish();
 }
 
 bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride_px)
 {
 	if (!gpu_ready() || !setup())
 		return false;
+	if (npending == ARRAY_SIZE(pending))
+		paint_finish();
 	if (!atlases[0].row_h)
 		reset();
 	layer = buf;
@@ -141,7 +165,7 @@ bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride
 
 void paint_end(void)
 {
-	paint_sync();
+	submit();
 	layer = NULL;
 }
 

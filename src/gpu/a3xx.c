@@ -7,13 +7,16 @@
  * prefetch parser, the first word of each file being a version), the micro engine is released and
  * initialised with CP_ME_INIT, and commands flow through a ring buffer
  * in uncached DRAM: type-0 packets write registers, type-3 packets carry
- * an opcode. */
+ * an opcode. Commands are submitted without waiting; new ones only
+ * overwrite words the command processor has read. Its ring interrupt
+ * wakes the CPU out of WFI while it waits for the GPU. */
 #include <string.h>
 #include "asteroid.h"
 #include "a3xx.h"
 #include "a3xx_ring.h"
 
 #define GPU_BASE		0xfdb00000u
+#define IRQ_GPU			(32 + 33)
 #define MMSS_OXILI_GFX3D_CBCR	(MMSS_CC_BASE + 0x4028)
 #define MMSS_OXILICX_BCR	(MMSS_CC_BASE + 0x4030)
 #define MMSS_OXILICX_GDSCR	(MMSS_CC_BASE + 0x4034)
@@ -78,6 +81,7 @@
 #define CP_DEBUG_MIU_128BIT_WRITE	BIT(25)
 #define CP_DEBUG_DYNAMIC_CLK_DISABLE	BIT(27)
 #define CP_ME_CNTL_HALT			BIT(28)
+#define RBBM_INT_CP_RB			BIT(15)
 
 #define RING_WORDS		(32768 / 4)
 
@@ -96,11 +100,16 @@ static void emit(uint32_t v)
 	wptr = (wptr + 1) % RING_WORDS;
 }
 
-static bool flush(uint32_t timeout_ms)
+static void submit(void)
 {
 	dsb();
 	gpu_write(REG_CP_RB_WPTR, wptr);
 	submitted = wptr;
+}
+
+static bool flush(uint32_t timeout_ms)
+{
+	submit();
 	uint32_t t0 = time_ms();
 	while (gpu_read(REG_CP_RB_RPTR) != wptr || (gpu_read(REG_RBBM_STATUS) & RBBM_STATUS_GPU_BUSY)) {
 		if (time_ms() - t0 > timeout_ms) {
@@ -121,8 +130,20 @@ void gpu_ring_emit(uint32_t v)
 
 void gpu_ring_reserve(uint32_t n)
 {
-	if ((wptr - submitted) % RING_WORDS + n >= RING_WORDS - 16)
+	uint32_t rptr = gpu_read(REG_CP_RB_RPTR);
+	if ((rptr + RING_WORDS - wptr - 1) % RING_WORDS < n + 16)
 		gpu_ring_flush(1000);
+}
+
+void gpu_ring_submit(void)
+{
+	if (ready)
+		submit();
+}
+
+static void gpu_irq(void)
+{
+	gpu_write(REG_RBBM_INT_CLEAR_CMD, gpu_read(REG_RBBM_INT_0_STATUS));
 }
 
 bool gpu_ready(void)
@@ -202,7 +223,9 @@ bool gpu_init(void)
 	gpu_write(REG_UCHE_CACHE_MODE_CONTROL, 0x00000001);
 	gpu_write(REG_RBBM_CLOCK_CTL, 0xaaaaaaaa);
 	gpu_write(REG_RBBM_PERFCTR_CTL, 0x01);
-	gpu_write(REG_RBBM_INT_0_MASK, 0);
+	gpu_write(REG_RBBM_INT_CLEAR_CMD, 0xffffffff);
+	gpu_write(REG_RBBM_INT_0_MASK, RBBM_INT_CP_RB);
+	gic_enable(IRQ_GPU, gpu_irq);
 
 	memset((void *)ring, 0, RING_WORDS * 4);
 	wptr = submitted = 0;
@@ -266,6 +289,9 @@ void gpu_suspend(void)
 	uint32_t t0 = time_ms();
 	while ((gpu_read(REG_RBBM_STATUS) & RBBM_STATUS_GPU_BUSY) && time_ms() - t0 < 50)
 		;
+	gpu_write(REG_RBBM_INT_0_MASK, 0);
+	gpu_write(REG_RBBM_INT_CLEAR_CMD, 0xffffffff);
+	gic_mask(IRQ_GPU);
 	gpu_write(REG_CP_ME_CNTL, CP_ME_CNTL_HALT);
 	ready = false;
 	writel(readl(MMSS_OXILI_GFX3D_CBCR) & ~CBCR_ENABLE, MMSS_OXILI_GFX3D_CBCR);

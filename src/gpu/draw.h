@@ -21,7 +21,9 @@
  * linearly. The texture cache is invalidated at gpu_draw_begin, so the
  * CPU only has to clean the D-cache over the texels it wrote before
  * gpu_draw_end, and must not write them again until gpu_draw_end has
- * returned; texels written after a draw of the same submission need
+ * returned. gpu_draw_submit ends a submission without waiting and
+ * gpu_draw_wait sleeps until the last one is done; gpu_draw_end is both.
+ * Texels written after a draw of the same submission need
  * gpu_draw_invalidate_textures before the next. Blending stays as set by
  * gpu_draw_blend until the next gpu_draw_begin, which turns it off.
  * gpu_draw_layer_at draws a premultiplied RGBA layer with its top-left
@@ -87,5 +89,7 @@ void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t
 void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
 void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
 			  const struct gpu_rect *parts, unsigned n);
+void gpu_draw_submit(void);
+bool gpu_draw_wait(void);
 bool gpu_draw_end(void);
 #endif

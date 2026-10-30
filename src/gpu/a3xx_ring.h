@@ -16,6 +16,7 @@
 #define CP_LOAD_STATE		0x30
 #define CP_INVALIDATE_STATE	0x3b
 #define CP_MEM_WRITE		0x3d
+#define CP_INTERRUPT		0x40
 #define CP_EVENT_WRITE		0x46
 #define CP_ME_INIT		0x48
 
@@ -24,4 +25,5 @@
 void gpu_ring_emit(uint32_t v);
 void gpu_ring_reserve(uint32_t n);
 bool gpu_ring_flush(uint32_t timeout_ms);
+void gpu_ring_submit(void);
 #endif

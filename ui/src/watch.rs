@@ -7,7 +7,7 @@ use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::time::Duration;
-use crate::paint::GpuLayer;
+use crate::paint::{self, GpuLayer};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError, VecModel};
@@ -423,6 +423,7 @@ pub extern "C" fn ui_repaint(panel: u32, gpu: bool) {
         renderer.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
         if gpu {
             renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height));
+            paint::finish();
         } else {
             renderer.render(layer, stride);
         }

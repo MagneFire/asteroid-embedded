@@ -10,6 +10,7 @@
 #include "console/console.h"
 #include "gpu/a3xx.h"
 #include "gpu/draw.h"
+#include "gpu/paint.h"
 #include "gpu/shaders.h"
 #include "ui/ui.h"
 #include "ui/stack.h"
@@ -378,15 +379,24 @@ void main(void)
 				if (stack_moving())
 					last_activity = now;
 				ui_tick();
+				uint32_t damage[UI_PANELS][4];
+				bool damaged[UI_PANELS] = { false };
 				for (unsigned p = 0; p < UI_PANELS; p++)
-					if ((p != UI_PANEL_OVERLAY || !stack_overlay_frozen()) && ui_update(p, &x, &y, &w, &h)) {
-						uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
-						stack_damage(p, x, y, w, h);
-						if (have_gpu)
-							for (uint32_t r = y; r < y + h; r++)
-								dcache_clean_range(layer + r * fb.stride + x, w * 4);
-						repainted = true;
-					}
+					if ((p != UI_PANEL_OVERLAY || !stack_overlay_frozen()) &&
+					    ui_update(p, &damage[p][0], &damage[p][1], &damage[p][2], &damage[p][3]))
+						damaged[p] = repainted = true;
+				if (repainted)
+					paint_finish();
+				for (unsigned p = 0; p < UI_PANELS; p++) {
+					if (!damaged[p])
+						continue;
+					uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
+					x = damage[p][0], y = damage[p][1], w = damage[p][2], h = damage[p][3];
+					stack_damage(p, x, y, w, h);
+					if (have_gpu)
+						for (uint32_t r = y; r < y + h; r++)
+							dcache_clean_range(layer + r * fb.stride + x, w * 4);
+				}
 				if (repainted) {
 					ui_repaints++;
 					ui_repaint_us += time_us() - u0;

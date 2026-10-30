@@ -12,6 +12,7 @@
  * same submission first waits for the GPU to go idle. */
 #include <string.h>
 #include "asteroid.h"
+#include "a3xx.h"
 #include "a3xx_ring.h"
 #include "draw.h"
 #include "shaders.h"
@@ -204,6 +205,8 @@ static volatile uint32_t *fence_ptr;
 
 static void out(uint32_t v) { gpu_ring_emit(v); }
 static void pkt3(uint32_t op, unsigned n) { out(CP_TYPE3(op, n)); }
+#define CP_INTERRUPT_RB		0x80000000u
+
 static void cp_wfi(void) { pkt3(CP_WAIT_FOR_IDLE, 1); out(0); }
 static void event(uint32_t ev) { pkt3(CP_EVENT_WRITE, 1); out(ev); }
 static uint32_t fui(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
@@ -638,24 +641,49 @@ void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t
 	gpu_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
 }
 
-bool gpu_draw_end(void)
+void gpu_draw_submit(void)
 {
 	if (!fence_ptr)
-		return false;
-	uint32_t seq = ++seqno;
+		return;
 	gpu_ring_reserve(16);
 	event(EV_HLSQ_FLUSH);
 	cp_wfi();
 	pkt3(CP_EVENT_WRITE, 3);
 	out(EV_CACHE_FLUSH_TS);
 	out(fence);
-	out(seq);
-	bool ok = gpu_ring_flush(1000);
+	out(++seqno);
+	cp_wfi();
+	pkt3(CP_INTERRUPT, 1);
+	out(CP_INTERRUPT_RB);
+	gpu_ring_submit();
+}
+
+/* Sleeps until the last submission's fence is written; the interrupts
+ * stay off between the check and WFI, so the GPU's interrupt still
+ * wakes it. */
+bool gpu_draw_wait(void)
+{
+	if (!fence_ptr || !gpu_ready())
+		return false;
 	uint32_t t0 = time_ms();
-	while (ok && *fence_ptr != seq)
+	for (;;) {
+		irq_disable();
+		if (*fence_ptr == seqno)
+			break;
 		if (time_ms() - t0 > 100) {
-			log_printf("gpu: cache flush fence %lu, expected %lu\n", *fence_ptr, seq);
-			ok = false;
+			irq_enable();
+			log_printf("gpu: cache flush fence %lu, expected %lu\n", *fence_ptr, seqno);
+			return false;
 		}
-	return ok;
+		wfi();
+		irq_enable();
+	}
+	irq_enable();
+	return true;
+}
+
+bool gpu_draw_end(void)
+{
+	gpu_draw_submit();
+	return gpu_draw_wait();
 }

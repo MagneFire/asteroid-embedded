@@ -40,6 +40,7 @@ unsafe extern "C" {
     fn paint_cpu(y0: u32, y1: u32);
     fn paint_sync();
     fn paint_end();
+    fn paint_finish();
 }
 
 const PAINT_RGB: i32 = 0;
@@ -87,6 +88,11 @@ impl Drop for GpuLayer<'_> {
         }
         unsafe { paint_end() };
     }
+}
+
+/// Waits for the GPU to finish every layer drawn so far.
+pub fn finish() {
+    unsafe { paint_finish() };
 }
 
 fn premultiplied(c: Color, alpha: u8) -> u32 {

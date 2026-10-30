@@ -13,8 +13,9 @@
  * copied into atlases on first use and found again by their address, so
  * they must not change. paint_cpu says the CPU has written rows y0 to y1
  * of the layer since the last call; paint_sync finishes the GPU's work
- * so the CPU can read and write the layer; paint_end does that and ends
- * the layer. */
+ * so the CPU can read and write the layer. paint_end ends the layer
+ * without waiting for the GPU; paint_finish waits for all layers ended
+ * so far, after which the CPU may read them. */
 #ifndef GPU_PAINT_H
 #define GPU_PAINT_H
 #include <stdint.h>
@@ -31,4 +32,5 @@ bool paint_rounded(float x0, float y0, float x1, float y1, const float radii[4],
 void paint_cpu(uint32_t y0, uint32_t y1);
 void paint_sync(void);
 void paint_end(void);
+void paint_finish(void);
 #endif
