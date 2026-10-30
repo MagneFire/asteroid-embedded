@@ -16,6 +16,8 @@
 #define FLICK_MS	300
 #define SLIDE_MS	250
 #define DIM		0.4f
+#define BAND		16
+#define BANDS		32
 
 enum { IDLE, PENDING, SCROLL, SWIPE };
 enum { LEFT, RIGHT, UP, DOWN };
@@ -27,6 +29,7 @@ static unsigned screen, gesture;
 static bool animating, dragging, horizontal;
 static int down_x, down_y;
 static uint32_t down_ms, anim_t0;
+static struct { int x0, x1; } bands[UI_PANELS][BANDS];
 
 static int rest_x(unsigned s) { return s == UI_PANEL_LEFT ? W : s == UI_PANEL_RIGHT ? -W : 0; }
 static int rest_y(unsigned s) { return s == UI_PANEL_BOTTOM ? -H : 0; }
@@ -194,11 +197,58 @@ void stack_update(uint32_t now_ms)
 	fy = from_y + (int)((rest_y(screen) - from_y) * p);
 }
 
+/* Each band of BAND rows keeps the columns that may hold content: what
+ * a repaint covering the whole band found, widened by later repaints of
+ * part of it. */
+void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h)
+{
+	const uint32_t *px = (const uint32_t *)(uintptr_t)(UI_LAYER_BASE + panel * UI_LAYER_STRIDE);
+	for (uint32_t b = y / BAND; b < BANDS && b * BAND < y + h && b * BAND < (uint32_t)H; b++) {
+		uint32_t r0 = b * BAND, r1 = r0 + BAND < (uint32_t)H ? r0 + BAND : (uint32_t)H;
+		bool whole = x == 0 && w >= (uint32_t)W && y <= r0 && y + h >= r1;
+		int x0 = W, x1 = 0;
+		for (uint32_t r = r0 > y ? r0 : y; r < r1 && r < y + h; r++) {
+			const uint32_t *row = px + r * fb.stride;
+			for (uint32_t c = x; c < x + w && (int)c < x0; c++)
+				if (row[c]) {
+					x0 = c;
+					break;
+				}
+			for (uint32_t c = x + w; c > x && (int)c > x1; c--)
+				if (row[c - 1]) {
+					x1 = c;
+					break;
+				}
+		}
+		if (!whole && bands[panel][b].x0 < bands[panel][b].x1) {
+			if (bands[panel][b].x0 < x0)
+				x0 = bands[panel][b].x0;
+			if (bands[panel][b].x1 > x1)
+				x1 = bands[panel][b].x1;
+		}
+		bands[panel][b].x0 = x0;
+		bands[panel][b].x1 = x1;
+	}
+}
+
 static void layer(unsigned panel, int x, int y)
 {
 	if (x <= -W || x >= W || y <= -H || y >= H)
 		return;
-	gpu_draw_layer_at(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, 1.0f);
+	struct gpu_rect parts[BANDS];
+	unsigned n = 0;
+	for (int b = 0; b < BANDS && b * BAND < H; b++) {
+		int x0 = bands[panel][b].x0, x1 = bands[panel][b].x1;
+		if (x0 >= x1)
+			continue;
+		int r1 = (b + 1) * BAND < H ? (b + 1) * BAND : H;
+		if (n && parts[n - 1].x == x0 && parts[n - 1].x + (int)parts[n - 1].width == x1 &&
+		    parts[n - 1].y + (int)parts[n - 1].height == b * BAND)
+			parts[n - 1].height = r1 - parts[n - 1].y;
+		else
+			parts[n++] = (struct gpu_rect){ x0, b * BAND, x1 - x0, r1 - b * BAND };
+	}
+	gpu_draw_layer_parts(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, 1.0f, parts, n);
 }
 
 float stack_dim(void)

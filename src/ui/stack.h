@@ -27,4 +27,5 @@ unsigned stack_screen(void);
 bool stack_moving(void);
 void stack_offset(int *x, int *y);
 float stack_dim(void);
+void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 #endif
