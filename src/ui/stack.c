@@ -185,6 +185,10 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 			if (gesture == SWIPE) {
 				app_top = down;
 				cancel_press();
+				if (down || !ui_app_depth()) {
+					screen = UI_PANEL_FACE;
+					fx = fy = 0;
+				}
 			}
 		}
 		if (gesture != SWIPE) {
@@ -388,13 +392,15 @@ float stack_launcher(void)
 
 void stack_compose(void)
 {
-	float a = app_open ? app_alpha() : 0.0f;
-	if (a < 1.0f) {
-		layer(UI_PANEL_LEFT, fx - W, 0, 1.0f);
-		layer(UI_PANEL_RIGHT, fx + W, 0, 1.0f);
-		layer(UI_PANEL_BOTTOM, 0, fy + H, 1.0f);
-		layer(UI_PANEL_TOP, 0, fy - H, 1.0f);
-		layer(UI_PANEL_FACE, fx, fy, 1.0f);
+	/* The app has no background of its own: the screens behind fade in
+	 * as it fades out, so it never shows through. */
+	float a = app_open ? app_alpha() : 0.0f, b = 1.0f - a;
+	if (b > 0.0f) {
+		layer(UI_PANEL_LEFT, fx - W, 0, b);
+		layer(UI_PANEL_RIGHT, fx + W, 0, b);
+		layer(UI_PANEL_BOTTOM, 0, fy + H, b);
+		layer(UI_PANEL_TOP, 0, fy - H, b);
+		layer(UI_PANEL_FACE, fx, fy, b);
 	}
 	if (app_open)
 		layer(UI_PANEL_APP, app_top ? 0 : off, app_top ? off : 0, a);

@@ -434,6 +434,12 @@ pub extern "C" fn ui_set_app(app: i32) {
     });
 }
 
+/// How many pages deep the open app is.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_app_depth() -> i32 {
+    ui().map_or(0, |ui| ui.screens[APP].global::<Face>().get_app_depth())
+}
+
 /// Takes the open app one page back; false when it is on its first page.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_back() -> bool {
