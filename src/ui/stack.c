@@ -268,6 +268,7 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 		}
 		break;
 	case UI_TOUCH_UP:
+		stack_indicators();
 		if (gesture == SWIPE) {
 			drag(dx, dy);
 			release(flick);
@@ -390,6 +391,131 @@ float stack_launcher(void)
 	return fy < 0 ? (float)-fy / H : 0.0f;
 }
 
+/* Edge indicators, AsteroidOS's: a light square turned 45 degrees,
+ * centred on the middle of each edge with a screen beyond it, 7.2 px wide
+ * at 60 % opacity. Each swipe and each wake they grow to 12 px and 80 %
+ * and move 12 px in over 300 ms, then settle back over 400 ms. While
+ * notifications are waiting the left one stays out, on the watchface and
+ * on the always-on face. Drawn from a 32 px texture made as they change. */
+#define IND_TEX		32
+#define IND_LOW_W	7.2f
+#define IND_HIGH_W	12.0f
+#define IND_LOW_A	0.6f
+#define IND_HIGH_A	0.8f
+#define IND_FAR		12.0f
+#define IND_OUT_MS	300
+#define IND_BACK_MS	400
+
+static uint32_t ind_t0 = 0x80000000u;
+static bool pending;
+
+void stack_indicators(void)
+{
+	ind_t0 = time_ms();
+}
+
+void stack_pending(bool on)
+{
+	pending = on;
+}
+
+/* How far into the pop-out animation, 0 at rest and 1 at its peak. */
+static float ind_phase(void)
+{
+	uint32_t t = time_ms() - ind_t0;
+	if (t < IND_OUT_MS)
+		return (float)t / IND_OUT_MS;
+	if (t < IND_OUT_MS + IND_BACK_MS)
+		return 1.0f - (float)(t - IND_OUT_MS) / IND_BACK_MS;
+	return 0.0f;
+}
+
+static void diamond(uint32_t *tex, unsigned stride, float w, float alpha)
+{
+	float h = w * 0.70710678f;
+	for (int y = 0; y < IND_TEX; y++)
+		for (int x = 0; x < IND_TEX; x++) {
+			float dx = x + 0.5f - IND_TEX / 2, dy = y + 0.5f - IND_TEX / 2;
+			float c = h - ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy)) + 0.5f;
+			uint32_t v = (uint32_t)((c < 0 ? 0 : c > 1 ? 1 : c) * alpha * 255.0f + 0.5f);
+			tex[y * stride + x] = v * 0x01010101u;
+		}
+}
+
+/* Edges to show: left, right, top, bottom as bits 0-3. */
+static unsigned ind_edges(void)
+{
+	if (app_open)
+		return 0;
+	switch (screen) {
+	case UI_PANEL_FACE:
+		return 0xf;
+	case UI_PANEL_LEFT:
+		return 2;
+	case UI_PANEL_RIGHT:
+		return 1;
+	case UI_PANEL_BOTTOM:
+		return 4;
+	case UI_PANEL_TOP:
+		return 8;
+	}
+	return 0;
+}
+
+static void indicators(void)
+{
+	static uint32_t *tex[2];
+	static float shown[2][2];
+	if (!tex[0])
+		for (int i = 0; i < 2; i++)
+			tex[i] = gpu_alloc(IND_TEX * IND_TEX * 4, 64);
+	if (!tex[1])
+		return;
+	unsigned edges = ind_edges();
+	if (!edges || fade > 0.0f)
+		return;
+	float p = ind_phase();
+	for (int e = 0; e < 4; e++) {
+		if (!(edges & 1u << e))
+			continue;
+		bool kept = e == 0 && pending && screen == UI_PANEL_FACE;
+		float q = kept ? 1.0f : p;
+		float w = IND_LOW_W + (IND_HIGH_W - IND_LOW_W) * q, a = IND_LOW_A + (IND_HIGH_A - IND_LOW_A) * q;
+		float in = (kept ? IND_FAR : IND_FAR * p);
+		int k = kept ? 1 : 0;
+		if (shown[k][0] != w || shown[k][1] != a) {
+			diamond(tex[k], IND_TEX, w, a);
+			shown[k][0] = w;
+			shown[k][1] = a;
+		}
+		int cx = e == 0 ? (int)in : e == 1 ? W - (int)in : W / 2;
+		int cy = e == 2 ? (int)in : e == 3 ? H - (int)in : H / 2;
+		gpu_draw_layer_at((uint32_t)(uintptr_t)tex[k], IND_TEX, IND_TEX, IND_TEX * 4, cx - IND_TEX / 2, cy - IND_TEX / 2,
+				  1.0f);
+	}
+}
+
+/* The left indicator on the always-on face, drawn on the CPU into an
+ * XRGB8888 buffer, while notifications are waiting. */
+void stack_indicators_cpu(uint32_t *buf, uint32_t stride)
+{
+	static uint32_t tex[IND_TEX * IND_TEX];
+	if (!pending)
+		return;
+	diamond(tex, IND_TEX, IND_HIGH_W, IND_HIGH_A);
+	int x0 = (int)IND_FAR - IND_TEX / 2, y0 = H / 2 - IND_TEX / 2;
+	for (int y = 0; y < IND_TEX; y++)
+		for (int x = 0; x < IND_TEX; x++) {
+			int px = x0 + x;
+			if (px < 0)
+				continue;
+			uint32_t a = tex[y * IND_TEX + x] & 0xff, d = buf[(y0 + y) * stride + px], o = 0;
+			for (int s = 0; s < 24; s += 8)
+				o |= ((d >> s & 0xff) * (255 - a) / 255 + a) << s;
+			buf[(y0 + y) * stride + px] = o;
+		}
+}
+
 void stack_compose(void (*background)(int x, int y, float alpha))
 {
 	/* An app is drawn over its own mesh (background), both moved and
@@ -407,6 +533,7 @@ void stack_compose(void (*background)(int x, int y, float alpha))
 		background(x, y, a);
 		layer(UI_PANEL_APP, x, y, a);
 	}
+	indicators();
 	if (fade > 0.0f)
 		layer(UI_PANEL_OVERLAY, 0, 0, fade);
 }

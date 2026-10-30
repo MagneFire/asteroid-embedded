@@ -168,6 +168,7 @@ static void ambient_draw(void)
 	}
 	memset(buf, 0, fb.stride * fb.height * 4);
 	ui_render(buf, fb.stride);
+	stack_indicators_cpu(buf, fb.stride);
 	display_flip();
 }
 
@@ -472,6 +473,8 @@ void main(void)
 		if (notify_serial() != notify_seen) {
 			notify_seen = notify_serial();
 			unsigned n = notify_count();
+			if (have_ui)
+				stack_pending(n > 0);
 			const struct notification *top = n ? notify_get(n - 1) : NULL;
 			if ((top ? top->seq : 0) != shown_seq && have_haptics)
 				haptics_play(NULL, 0);
@@ -661,6 +664,8 @@ void main(void)
 			asleep_ms += now - asleep_t;
 			last_activity = now = time_ms();
 			last_clock = 0;
+			if (have_ui)
+				stack_indicators();
 			log_printf("wake\n");
 		}
 		sleep_request = wake_request = palm = false;

@@ -17,20 +17,6 @@ import { Overlay } from "overlay.slint";
 import { Apps } from "launcher.slint";
 export { Face, Note, Day, AlarmItem, Apps }
 
-// A small chevron at the middle of an edge, where a swipe leads to another screen.
-component Edge inherits Image {
-    in property <int> side;
-    in property <length> area;
-    property <length> s: 14px;
-    x: self.side == 0 ? 2px : self.side == 1 ? self.area - self.s - 2px : (self.area - self.s) / 2;
-    y: self.side == 2 ? 2px : self.side == 3 ? self.area - self.s - 2px : (self.area - self.s) / 2;
-    width: self.s;
-    height: self.s;
-    source: self.side == 0 ? @image-url("../icons/edge-left.svg") : self.side == 1 ? @image-url("../icons/edge-right.svg") : self.side == 2 ? @image-url("../icons/edge-up.svg") : @image-url("../icons/edge-down.svg");
-    opacity: 0.6;
-    visible: !Face.ambient;
-}
-
 export component Screen inherits Window {
     in property <int> kind;
 
@@ -46,10 +32,4 @@ export component Screen inherits Window {
     if root.kind == 4: Overlay { }
     if root.kind == 5: QuickSettings { }
     if root.kind == 6: AppScreen { }
-
-    // Edges with a screen beyond them: left 0, right 1, top 2, bottom 3.
-    for side in root.kind == 0 ? [0, 1, 2, 3] : root.kind == 1 ? [1] : root.kind == 2 ? [0] : root.kind == 3 ? [2] : root.kind == 5 ? [3] : []: Edge {
-        side: side;
-        area: root.width;
-    }
 }
