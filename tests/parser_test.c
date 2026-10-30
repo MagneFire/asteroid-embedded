@@ -217,8 +217,12 @@ static void walk_fs(bool expect)
 		CHECK(!"big.txt");
 	}
 	unsigned entries = 0;
-	if (!ext4_lookup(&fs, "/dir", &in))
+	if (!ext4_lookup(&fs, "/dir", &in)) {
 		ext4_list(&fs, &in, list_fn, &entries);
+		in.size = (uint64_t)1 << 40;
+		if (expect)
+			CHECK(ext4_list(&fs, &in, list_fn, &entries) < 0);
+	}
 	if (expect)
 		CHECK(entries >= 60);
 	ext4_lookup(&fs, "/dir/file-with-a-longer-name-42", &in);

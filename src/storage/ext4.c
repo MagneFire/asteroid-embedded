@@ -327,6 +327,8 @@ static int scan_dir(struct ext4 *fs, const struct ext4_inode *dir, dirent_fn fn,
 {
 	if ((dir->mode & EXT4_S_IFMT) != EXT4_S_IFDIR)
 		return E_NOTDIR;
+	if (dir->size > fs->bytes)
+		return E_DIRENT;
 	uint64_t nblocks = (dir->size + fs->bs - 1) / fs->bs;
 	for (uint64_t lblk = 0; lblk < nblocks; lblk++) {
 		uint64_t pblk, count;
@@ -334,8 +336,10 @@ static int scan_dir(struct ext4 *fs, const struct ext4_inode *dir, dirent_fn fn,
 		int r = ext4_map(fs, dir, lblk, &pblk, &count, &flags);
 		if (r)
 			return r;
-		if (flags)
+		if (flags) {
+			lblk += count - 1;
 			continue;
+		}
 		if ((r = vol_read(fs, pblk * fs->bs, fs->bs, fs->blk)))
 			return r;
 		for (uint32_t o = 0; o + 8 <= fs->bs;) {
