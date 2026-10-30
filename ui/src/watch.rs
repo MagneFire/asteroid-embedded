@@ -33,8 +33,9 @@ static UI: Static<Option<Ui>> = Static(UnsafeCell::new(None));
 
 /// The fonts text is drawn with, scaled to whatever size it asks for, registered in the font
 /// context all windows share before any text is laid out.
-static FONTS: [&[u8]; 4] = [
+static FONTS: [&[u8]; 5] = [
     include_bytes!("../fonts/NotoSans-Light.ttf"),
+    include_bytes!("../fonts/NotoSans-Bold.ttf"),
     include_bytes!("../fonts/Roboto-Medium.ttf"),
     include_bytes!("../fonts/Roboto-Light.ttf"),
     include_bytes!("../fonts/Raleway-Light.ttf"),

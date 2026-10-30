@@ -1,0 +1,491 @@
+// qml-asteroid's controls as the apps use them, at their sizes on this 400 px screen (Dims.l(x) is
+// 4x px): PageHeader, IconButton, Spinner and CircularSpinner, StatusPage, PageDot, Marquee,
+// ListItem, the ListRow family (LabeledSwitch, LabeledActionButton, IntSelector), RowSeparator,
+// the notification pill button, and Page, which slides a pushed page in like LayerStack.
+import { Face } from "face.slint";
+import { Pager } from "launcher.slint";
+
+// A title over a band that fades out downwards, 80 px tall.
+export component PageHeader {
+    in property <string> text;
+
+    x: 0;
+    y: 0;
+    width: 400px;
+    height: 80px;
+
+    Rectangle {
+        background: @linear-gradient(180deg, #000000dd 20%, #00000055 80%, #00000000 100%);
+    }
+
+    Text {
+        x: 100px;
+        width: parent.width - 200px;
+        height: parent.height;
+        text: root.text;
+        color: white;
+        font-size: 28px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+// An icon, 80 px by default, dimmed while pressed.
+export component IconButton {
+    in property <image> icon;
+    in property <length> size: 80px;
+    callback clicked();
+
+    width: self.size;
+    height: self.size;
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.icon;
+        colorize: white;
+        opacity: touch.pressed ? 0.7 : 1;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// CircularSpinner (wrap) or Spinner with its SpinnerDelegate: count two-digit values or labels,
+// one every 48 px, the one in the middle 39 px and opaque, the others 22 px at 60 %, and the top
+// and bottom fifth fading out. twelve shows 0 as 12. show(v) turns it to v from outside.
+export component Spinner {
+    in property <int> count;
+    in property <[string]> labels;
+    in property <bool> twelve;
+    in property <bool> wrap: true;
+    in property <bool> interactive: true;
+    in-out property <int> value;
+    property <length> step: 48px;
+    property <length> scroll: pager.index * self.step - pager.drag;
+    animate scroll {
+        duration: pager.dragging ? 0ms : pager.anim;
+        easing: ease-out;
+    }
+
+    public function show(v: int) {
+        pager.index = v;
+    }
+
+    changed scroll => {
+        self.value = Math.mod(Math.mod(Math.round(self.scroll / self.step), self.count) + self.count, self.count);
+    }
+    init => {
+        pager.index = self.value;
+    }
+
+    for k in 9: Text {
+        property <int> n: Math.floor(root.scroll / root.step) + k - 4;
+        property <int> v: Math.mod(Math.mod(self.n, root.count) + root.count, root.count);
+        property <length> mid: root.height / 2 - root.step / 2 + self.n * root.step - root.scroll;
+        property <float> near: Math.max(0, 1 - Math.abs(self.mid + root.step / 2 - root.height / 2) / root.step);
+        property <float> fade: Math.clamp(Math.min(self.mid + root.step / 2, root.height - self.mid - root.step / 2) / (root.height * 0.2), 0, 1);
+        y: self.mid;
+        width: root.width;
+        height: root.step;
+        visible: root.wrap || (self.n >= 0 && self.n < root.count);
+        text: root.labels.length > 0 ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : Face.two-digits(self.v);
+        color: white;
+        font-size: Math.round(22 + 17 * self.near) * 1px;
+        opacity: (0.6 + 0.4 * self.near) * self.fade;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    pager := Pager {
+        enabled: root.interactive;
+        horizontal: false;
+        wrap: root.wrap;
+        item: root.step;
+        count: root.count;
+    }
+}
+
+// A 100 px dark disc with an icon at (200, 148), tappable, and a title line (bigger, as the
+// <h3> of the original) with a second line below at y ~ 260.
+export component StatusPage {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> text;
+    in property <bool> active;
+    callback clicked();
+
+    x: 0;
+    y: 0;
+    width: 400px;
+    height: 400px;
+
+    Rectangle {
+        x: 150px;
+        y: 98px;
+        width: 100px;
+        height: 100px;
+        border-radius: 50px;
+        background: black;
+        opacity: root.active ? 0.4 : 0.2;
+    }
+
+    Image {
+        x: 162px;
+        y: 110px;
+        width: 76px;
+        height: 76px;
+        source: root.icon;
+        colorize: white;
+    }
+
+    TouchArea {
+        x: 150px;
+        y: 98px;
+        width: 100px;
+        height: 100px;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        x: 16px;
+        y: 214px;
+        width: 368px;
+        height: 32px;
+        text: root.title;
+        color: white;
+        font-size: 24px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Text {
+        x: 16px;
+        y: 248px;
+        width: 368px;
+        text: root.text;
+        color: white;
+        font-size: 20px;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+// Dots of diameter size, a quarter apart, the current one opaque; extra adds a "+" at the end.
+export component PageDot {
+    in property <int> count;
+    in property <int> current;
+    in property <bool> extra;
+    in property <length> size: 12px;
+
+    width: (self.count + (self.extra ? 1 : 0)) * self.size * 1.25 - self.size * 0.25;
+    height: self.size;
+
+    for i in root.count: Rectangle {
+        x: i * root.size * 1.25;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: white;
+        opacity: i == root.current ? 1 : 0.5;
+    }
+
+    if root.extra: Text {
+        x: root.count * root.size * 1.25;
+        width: root.size;
+        height: root.size;
+        text: "+";
+        color: white;
+        opacity: root.current == root.count ? 1 : 0.5;
+        font-size: Math.round(root.size / 1px * 1.4) * 1px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Text centred when it fits, otherwise held for 2 s, scrolled to its end and back, over and over.
+export component Marquee {
+    in property <string> text;
+    in property <length> font-size: 28px;
+    in property <int> font-weight: 300;
+    property <length> over: Math.max(0, label.preferred-width - self.width);
+    property <length> shift;
+    property <int> phase;
+
+    clip: true;
+
+    label := Text {
+        x: root.over > 0 ? -root.shift : (root.width - self.preferred-width) / 2;
+        width: self.preferred-width;
+        height: root.height;
+        text: root.text;
+        color: white;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        vertical-alignment: center;
+    }
+
+    animate shift {
+        duration: root.phase == 1 || root.phase == 3 ? Math.max(1000, root.over / root.width * 1000) * 1ms : 0ms;
+        easing: ease-in-out;
+    }
+
+    Timer {
+        interval: root.phase == 0 ? 2000ms : root.phase == 2 ? 400ms : Math.max(1000, root.over / root.width * 1000) * 1ms;
+        running: root.over > 0;
+        triggered => {
+            root.phase = Math.mod(root.phase + 1, 4);
+            root.shift = root.phase == 1 || root.phase == 2 ? root.over : 0;
+        }
+    }
+
+    changed text => {
+        self.phase = 0;
+        self.shift = 0;
+    }
+}
+
+// A row of the settings list: 84 px, a 60 px icon at x = 72, the title from x = 156 at 36 px,
+// the whole row lit while pressed.
+export component ListItem {
+    in property <image> icon;
+    in property <string> title;
+    callback clicked();
+
+    width: 400px;
+    height: 84px;
+
+    Rectangle {
+        background: touch.pressed ? #ffffff33 : #ffffff00;
+        animate background {
+            duration: 150ms;
+            easing: ease-out;
+        }
+    }
+
+    Image {
+        x: 72px;
+        y: 12px;
+        width: 60px;
+        height: 60px;
+        source: root.icon;
+        colorize: white;
+    }
+
+    Text {
+        x: 156px;
+        width: parent.width - self.x - 8px;
+        height: parent.height;
+        text: root.title;
+        color: white;
+        font-size: 36px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The ListRow family: a 100 px row with a 24 px label from x = 60 to 236 and an 80 px action
+// centred at x = 300, the whole row lit while pressed. LabeledSwitch shows a check circle,
+// LabeledActionButton an icon; dim greys a row that does not apply.
+export component LabeledSwitch {
+    in property <string> text;
+    in property <bool> checked;
+    in property <image> icon;
+    in property <bool> dim;
+    callback clicked();
+
+    width: 400px;
+    height: 100px;
+    opacity: self.dim ? 0.4 : 1;
+    animate opacity {
+        duration: 200ms;
+    }
+
+    Rectangle {
+        background: touch.pressed ? #ffffff33 : #ffffff00;
+    }
+
+    Text {
+        x: 60px;
+        width: 176px;
+        height: parent.height;
+        text: root.text;
+        color: white;
+        font-size: 24px;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+
+    Image {
+        x: 260px;
+        y: 10px;
+        width: 80px;
+        height: 80px;
+        source: root.icon.width > 0 ? root.icon : root.checked ? @image-url("../icons/ios-checkmark-circle-outline.svg") : @image-url("../icons/ios-circle-outline.svg");
+        colorize: white;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// IntSelector: a 100 px row with a pill from x = 7 to 333, its fill showing value between min
+// and max, "-" and "+" buttons at its ends, dimmed at the limits, and the value with its unit
+// in the middle.
+export component IntSelector {
+    in property <int> value;
+    in property <int> min;
+    in property <int> max: 100;
+    in property <string> unit: "%";
+    callback down();
+    callback up();
+
+    width: 400px;
+    height: 100px;
+
+    Rectangle {
+        x: 7px;
+        y: 17px;
+        width: 326px;
+        height: 66px;
+        border-radius: 33px;
+        border-width: 2.5px;
+        border-color: white;
+        clip: true;
+
+        Rectangle {
+            x: 0;
+            width: parent.width * (root.value - root.min) / Math.max(1, root.max - root.min);
+            height: parent.height;
+            background: #00000066;
+            animate width {
+                duration: 120ms;
+                easing: ease-out;
+            }
+        }
+    }
+
+    Text {
+        x: 7px;
+        y: 17px;
+        width: 326px;
+        height: 66px;
+        text: root.value + root.unit;
+        color: white;
+        font-size: 26px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    IconButton {
+        x: 1px;
+        y: 10px;
+        icon: @image-url("../icons/ios-remove.svg");
+        opacity: root.value <= root.min ? 0.3 : 1;
+        clicked => {
+            root.down();
+        }
+    }
+
+    IconButton {
+        x: 259px;
+        y: 10px;
+        icon: @image-url("../icons/ios-add.svg");
+        opacity: root.value >= root.max ? 0.3 : 1;
+        clicked => {
+            root.up();
+        }
+    }
+}
+
+// A label over a ListRow, as the settings pages title their selectors: 24 px, 48 px tall,
+// bottom-aligned and centred.
+export component RowLabel {
+    in property <string> text;
+
+    width: 400px;
+    height: 48px;
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: white;
+        font-size: 24px;
+        horizontal-alignment: center;
+        vertical-alignment: bottom;
+    }
+}
+
+export component RowSeparator inherits Rectangle {
+    width: 400px;
+    height: 1px;
+    background: #ffffff40;
+}
+
+// NotificationButton: a dark pill with a 32 px label.
+export component Pill {
+    in property <string> text;
+    callback clicked();
+
+    width: 220px;
+    height: 80px;
+
+    Rectangle {
+        border-radius: self.height / 2;
+        background: touch.pressed ? #22222299 : #222222bb;
+    }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: white;
+        font-size: 32px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A page pushed on top of another, sliding in from the right over 200 ms like LayerStack.
+export component Page {
+    property <length> offset: 400px;
+
+    x: self.offset;
+    y: 0;
+    width: 400px;
+    height: 400px;
+    animate x {
+        duration: 200ms;
+        easing: ease-out-quint;
+    }
+
+    init => {
+        self.offset = 0;
+    }
+
+    @children
+}

@@ -6,6 +6,7 @@
 // alarm-saved(index, hour, minute, days, on), index -1 for a new alarm, and alarm-deleted(index).
 import { Face, AlarmItem } from "face.slint";
 import { Pager } from "launcher.slint";
+import { PageHeader, IconButton, Spinner } from "controls.slint";
 
 global Days {
     // Monday first, as the bits of days (bit 0 Sunday) and their names.
@@ -19,103 +20,6 @@ global Days {
 
     public pure function named(days: int) -> string {
         return days == 0 ? "Once" : days == 62 ? "Weekdays" : days == 65 ? "Weekends" : days == 127 ? "Every day" : "";
-    }
-}
-
-// qml-asteroid's PageHeader: a title over a band that fades out downwards.
-component PageHeader {
-    in property <string> text;
-
-    width: 400px;
-    height: 80px;
-
-    Rectangle {
-        background: @linear-gradient(180deg, #000000dd 20%, #00000055 80%, #00000000 100%);
-    }
-
-    Text {
-        x: 100px;
-        width: parent.width - 200px;
-        height: parent.height;
-        text: root.text;
-        color: white;
-        font-size: 28px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        wrap: word-wrap;
-    }
-}
-
-// qml-asteroid's IconButton: an 80 px icon, dimmed while pressed.
-component IconButton {
-    in property <image> icon;
-    callback clicked();
-
-    width: 80px;
-    height: 80px;
-
-    Image {
-        width: parent.width;
-        height: parent.height;
-        source: root.icon;
-        colorize: white;
-        opacity: touch.pressed ? 0.7 : 1;
-    }
-
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-}
-
-// qml-asteroid's CircularSpinner with its SpinnerDelegate: count two-digit values on a wheel
-// that wraps, one every 48 px, the one in the middle 40 px and opaque, the others 22 px at 60 %,
-// and the top and bottom fifth fading out. With labels it shows those instead and stops at both
-// ends, like qml-asteroid's Spinner; twelve shows 0 as 12.
-component Spinner {
-    in property <int> count;
-    in property <[string]> labels;
-    in property <bool> twelve;
-    property <bool> wrap: self.labels.length == 0;
-    in-out property <int> value;
-    property <length> step: 48px;
-    property <length> scroll: pager.index * self.step - pager.drag;
-    animate scroll {
-        duration: pager.dragging ? 0ms : pager.anim;
-        easing: ease-out;
-    }
-
-    changed scroll => {
-        self.value = Math.mod(Math.mod(Math.round(self.scroll / self.step), self.count) + self.count, self.count);
-    }
-    init => {
-        pager.index = self.value;
-    }
-
-    for k in 9: Text {
-        property <int> n: Math.floor(root.scroll / root.step) + k - 4;
-        property <int> v: Math.mod(Math.mod(self.n, root.count) + root.count, root.count);
-        property <length> mid: root.height / 2 - root.step / 2 + self.n * root.step - root.scroll;
-        property <float> near: Math.max(0, 1 - Math.abs(self.mid + root.step / 2 - root.height / 2) / root.step);
-        property <float> fade: Math.clamp(Math.min(self.mid + root.step / 2, root.height - self.mid - root.step / 2) / (root.height * 0.2), 0, 1);
-        y: self.mid;
-        width: root.width;
-        height: root.step;
-        visible: root.wrap || (self.n >= 0 && self.n < root.count);
-        text: !root.wrap ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : Face.two-digits(self.v);
-        color: white;
-        font-size: Math.round(22 + 17 * self.near) * 1px;
-        opacity: (0.6 + 0.4 * self.near) * self.fade;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    pager := Pager {
-        horizontal: false;
-        wrap: root.wrap;
-        item: root.step;
-        count: root.count;
     }
 }
 
@@ -397,6 +301,7 @@ export component AlarmApp {
             height: 240px;
             visible: Face.clock12;
             count: 2;
+            wrap: false;
             labels: ["AM", "PM"];
             value: root.hour >= 12 ? 1 : 0;
         }
