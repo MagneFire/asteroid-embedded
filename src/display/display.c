@@ -5,7 +5,8 @@
  * the GPU's render target pitch requires. A frame is pushed by flushing the pipe and
  * kicking CTL_START; the ping-pong block waits for the panel's tearing
  * effect line, so kicks are paced by waiting for the previous frame's
- * PP_DONE before the next one. */
+ * PP_DONE before the next one. Nothing is kicked until the first frame, so
+ * the panel keeps showing the bootloader's splash until then. */
 #include <string.h>
 #include "asteroid.h"
 #include "display.h"
@@ -110,7 +111,6 @@ bool display_init(void)
 	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | PIPE_FLIP_UD, PIPE + PIPE_SRC_OP_MODE);
 	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
-	kick();
 	return true;
 }
 

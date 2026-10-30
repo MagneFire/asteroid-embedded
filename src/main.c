@@ -144,11 +144,8 @@ void main(void)
 	}
 	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), pmic_pon_reason());
 	bool have_display = display_init();
-	if (have_display) {
+	if (have_display)
 		fbcon_init();
-		log_set_sink(sink_fbcon);
-	}
-	fbcon_printf("asteroid-embedded %s\n", build_id);
 	const char *prev = log_previous_record();
 	if (prev) {
 		log_puts("previous boot ended with:\n");
@@ -164,6 +161,8 @@ void main(void)
 	if (have_ui)
 		dcache_clean_range(layer, fb.stride * fb.height * 4);
 	log_printf("ui: %s\n", have_ui ? "ready" : "not started");
+	if (have_display && !have_ui)
+		log_set_sink(sink_fbcon);
 	tlmm_irq_init();
 	pmic_power_key_irq_init();
 	bool have_touch = touch_init();
