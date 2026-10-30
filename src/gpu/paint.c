@@ -156,7 +156,7 @@ bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride
 	if (!atlases[0].row_h)
 		reset();
 	layer = buf;
-	target = (struct gpu_target){ (uint32_t)(uintptr_t)buf, width, height, stride_px * 4 };
+	target = (struct gpu_target){ (uint32_t)(uintptr_t)buf, width, height, stride_px * 4, true };
 	kind = NONE;
 	dirty_y0 = (int)height;
 	dirty_y1 = 0;

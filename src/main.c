@@ -60,7 +60,7 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
 	uint32_t t0 = time_us();
 	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
-	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4 };
+	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4, false };
 	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
 	uint32_t t1 = time_us();
 	gpu_draw_begin(&t);

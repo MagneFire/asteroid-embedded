@@ -1,4 +1,5 @@
-/* Triangle drawing on the Adreno 305B into a linear XRGB8888 buffer. A
+/* Triangle drawing on the Adreno 305B into a linear XRGB8888 buffer, or
+ * with rgba set into one with bytes R, G, B, A in memory. A
  * shader stage is an ir3 binary plus what the hardware has to be told
  * about it, all printed by the compiler: instrlen (units of 8 dwords),
  * constlen (vec4s), max_reg / max_half_reg (-1 for none), total_in,
@@ -68,6 +69,7 @@ enum gpu_tex { GPU_TEX_RGBA, GPU_TEX_ALPHA, GPU_TEX_RGBA_ALPHA, GPU_TEX_LINEAR =
 struct gpu_target {
 	uint32_t base;
 	uint32_t width, height, pitch_bytes;
+	bool rgba;
 };
 
 struct gpu_rect {

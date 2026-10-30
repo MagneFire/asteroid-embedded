@@ -332,7 +332,7 @@ void gpu_draw_begin(const struct gpu_target *t)
 	reg(REG_RB_FRAME_BUFFER_DIMENSION, 1, w | h << 14);
 	for (int i = 0; i < 4; i++) {
 		if (i == 0)
-			reg(REG_RB_MRT_BUF_INFO(0), 2, RB_R8G8B8A8_UNORM | RB_MRT_BUF_INFO_SWAP(SWAP_WXYZ) |
+			reg(REG_RB_MRT_BUF_INFO(0), 2, RB_R8G8B8A8_UNORM | RB_MRT_BUF_INFO_SWAP(t->rgba ? SWAP_WZYX : SWAP_WXYZ) |
 			    RB_MRT_BUF_INFO_PITCH(t->pitch_bytes), RB_MRT_BUF_BASE(t->base));
 		else
 			reg(REG_RB_MRT_BUF_INFO(i), 2, 0, 0);
