@@ -112,6 +112,12 @@ $(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt-$(WATCH).img $(BUILD)
 run: $(BUILD)/asteroid.img
 	python3 tools/run.py $(RUNFLAGS)
 
+SLINT_VIEWER ?= $(or $(shell command -v slint-viewer 2>/dev/null),$(HOME)/.cargo/bin/slint-viewer)
+
+preview: $(UI_LIB)
+	$(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/note_icons.slint)))) \
+		--auto-reload --load-data tools/preview/watchface.json ui/ui/watchface.slint
+
 disasm: $(BUILD)/asteroid.elf
 	$(OBJDUMP) -d $< > $(BUILD)/asteroid.dis
 
@@ -132,4 +138,4 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(OBJS:.o=.d)
-.PHONY: all run disasm test clean FORCE
+.PHONY: all run preview disasm test clean FORCE

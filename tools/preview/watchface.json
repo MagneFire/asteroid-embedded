@@ -1,0 +1,76 @@
+{
+    "hour": 10,
+    "minute": 42,
+    "second": 7,
+    "weekday": 3,
+    "day": 29,
+    "month": 10,
+    "battery-percent": 81,
+    "charging": false,
+    "passkey": -1,
+    "notification-shown": false,
+    "notification-app": "Messages",
+    "notification-summary": "Alice",
+    "notification-body": "Are we still on for lunch at noon? I can bring the notes from yesterday.",
+    "backdrop": "#1d2a3a",
+    "screen": 0,
+    "notes": [
+        {
+            "id": 1,
+            "app": "Messages",
+            "summary": "Alice",
+            "body": "Are we still on for lunch at noon?",
+            "icon": 569
+        },
+        {
+            "id": 2,
+            "app": "Mail",
+            "summary": "Build finished",
+            "body": "asteroid-embedded: all checks passed",
+            "icon": 299
+        },
+        {
+            "id": 3,
+            "app": "Calendar",
+            "summary": "Standup",
+            "body": "In 10 minutes",
+            "icon": 96
+        }
+    ],
+    "media-title": "Song Title",
+    "media-artist": "Artist",
+    "media-album": "Album",
+    "media-playing": true,
+    "media-volume": 60,
+    "weather-valid": true,
+    "weather-city": "Amsterdam",
+    "weather-today": {
+        "id": 801,
+        "min": 9,
+        "max": 14
+    },
+    "weather-forecast": [
+        {
+            "id": 500,
+            "min": 8,
+            "max": 12
+        },
+        {
+            "id": 800,
+            "min": 7,
+            "max": 15
+        },
+        {
+            "id": 803,
+            "min": 10,
+            "max": 13
+        },
+        {
+            "id": 600,
+            "min": -1,
+            "max": 3
+        }
+    ],
+    "round-mask": true,
+    "notification-icon": 569
+}
