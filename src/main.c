@@ -107,7 +107,9 @@ void power_request(bool sleep)
 
 /* The always-on face: shown while asleep unless turned off or the palm
  * covered the screen, drawn on the CPU so the GPU can stay off, with the
- * panel in idle mode. */
+ * panel in idle mode at 18 % brightness, AsteroidOS's low power mode
+ * level on this watch. */
+#define AOD_BRIGHTNESS 18
 static bool ambient;
 static uint32_t ambient_minute;
 
@@ -562,6 +564,7 @@ void main(void)
 			if (ambient) {
 				ui_set_ambient(true);
 				ambient_draw();
+				display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
 				display_idle(true);
 			}
 			timer_set_period(1000);
@@ -581,6 +584,7 @@ void main(void)
 			if (ambient) {
 				ui_set_ambient(false);
 				display_idle(false);
+				set_brightness();
 				ambient = false;
 			} else {
 				display_wake();
