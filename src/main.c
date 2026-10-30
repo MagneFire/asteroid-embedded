@@ -159,6 +159,25 @@ static void bluetooth_start(void)
 }
 
 /* Nightstand mode is in effect while the watch is on its charger. */
+/* The mesh fades from its grey to the colours of the launcher page on
+ * screen as the launcher comes in, t from 0 to 1. */
+static void mesh_colors(float t)
+{
+	static uint32_t shown_center = 0x888888, shown_outer;
+	uint32_t lc = 0x888888, lo = 0, c = 0, o = 0;
+	if (t > 0.0f)
+		ui_launcher_colors(&lc, &lo);
+	for (int s = 0; s < 24; s += 8) {
+		c |= (uint32_t)((float)(lc >> s & 0xff) * t + (float)(0x88) * (1 - t)) << s;
+		o |= (uint32_t)((float)(lo >> s & 0xff) * t) << s;
+	}
+	if (c != shown_center || o != shown_outer) {
+		shown_center = c;
+		shown_outer = o;
+		flatmesh_colors(c, o);
+	}
+}
+
 static void show_settings(void)
 {
 	ui_set_settings(setting_get(SETTING_BRIGHTNESS), setting_get(SETTING_BLUETOOTH), setting_get(SETTING_VIBRATION),
@@ -656,6 +675,7 @@ void main(void)
 				ui_frames++;
 				stack_offset(&sx, &sy);
 				flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
+				mesh_colors(stack_launcher());
 			}
 			if (have_gpu) {
 				gpu_flatmesh(buf, now - t0, have_ui);

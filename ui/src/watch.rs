@@ -20,6 +20,7 @@ unsafe extern "C" {
 }
 
 const SCREENS: usize = 7;
+const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
 
 struct Static<T>(UnsafeCell<T>);
@@ -303,6 +304,31 @@ pub unsafe extern "C" fn ui_set_media(
         face.set_media_playing(playing);
         face.set_media_volume(volume.clamp(-1, 100));
     });
+}
+
+/// The mesh colours of the launcher page on screen, blended between the two pages it is between,
+/// as 0xRRGGBB.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_launcher_colors(center: *mut u32, outer: *mut u32) {
+    let Some(ui) = ui() else { return };
+    let screen = &ui.screens[LAUNCHER];
+    let apps = screen.global::<Apps>().get_list();
+    let n = apps.row_count();
+    if n == 0 || center.is_null() || outer.is_null() {
+        return;
+    }
+    let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, (n - 1) as f32);
+    let (i, t) = (pos as usize, pos - (pos as usize) as f32);
+    let a = apps.row_data(i).unwrap();
+    let b = apps.row_data((i + 1).min(n - 1)).unwrap();
+    let mix = |x: slint::Color, y: slint::Color| {
+        let c = |p: u8, q: u8| (p as f32 * (1.0 - t) + q as f32 * t) as u32;
+        c(x.red(), y.red()) << 16 | c(x.green(), y.green()) << 8 | c(x.blue(), y.blue())
+    };
+    unsafe {
+        *center = mix(a.center, b.center);
+        *outer = mix(a.outer, b.outer);
+    }
 }
 
 #[unsafe(no_mangle)]

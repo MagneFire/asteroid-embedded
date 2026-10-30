@@ -8,14 +8,10 @@
 #include "flatmesh_geometry.h"
 
 #define SCALE 1.2f
-#define CENTER_R 0x88
-#define CENTER_G 0x88
-#define CENTER_B 0x88
-#define OUTER_R 0x00
-#define OUTER_G 0x00
-#define OUTER_B 0x00
+#define DEFAULT_CENTER 0x888888u
+#define DEFAULT_OUTER 0x000000u
 
-static uint32_t colors[FLATMESH_INDICES / 3];
+static uint32_t colors[FLATMESH_INDICES / 3], center = DEFAULT_CENTER, outer = DEFAULT_OUTER;
 static float view_scale = 1.0f, view_x, view_y, view_shade = 1.0f;
 
 void flatmesh_view(float scale, float dx, float dy, float shade)
@@ -34,14 +30,22 @@ static void prepare(void)
 		const float *v = flatmesh_vertices[flatmesh_indices[i]];
 		hashes[i] = (int)(v[0] * 100.0f) + (int)(v[1] * 100.0f);
 	}
+	ready = true;
+	flatmesh_colors(center, outer);
+}
+
+/* The centre and outer colours, 0xRRGGBB. */
+void flatmesh_colors(uint32_t c, uint32_t o)
+{
+	center = c;
+	outer = o;
 	for (int t = 0; t < FLATMESH_INDICES / 3; t++) {
 		float m = flatmesh_vertices[flatmesh_indices[3 * t]][2];
-		int r = (int)(CENTER_R * (1 - m) + OUTER_R * m);
-		int g = (int)(CENTER_G * (1 - m) + OUTER_G * m);
-		int b = (int)(CENTER_B * (1 - m) + OUTER_B * m);
-		colors[t] = (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
+		uint32_t rgb = 0;
+		for (int s = 0; s < 24; s += 8)
+			rgb |= (uint32_t)((float)(c >> s & 0xff) * (1 - m) + (float)(o >> s & 0xff) * m) << s;
+		colors[t] = rgb;
 	}
-	ready = true;
 }
 
 static void span(uint32_t *row, int x0, int x1, uint32_t c)

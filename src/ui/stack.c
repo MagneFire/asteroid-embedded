@@ -25,6 +25,7 @@ enum { IDLE, PENDING, SCROLL, SWIPE };
 enum { LEFT, RIGHT, UP, DOWN };
 
 static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] = true };
+static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true };
 
 static int W, H, fx, fy, from_x, from_y, ax, from_ax;
 static unsigned screen, gesture;
@@ -200,7 +201,7 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 			gesture = IDLE;
 		return;
 	}
-	bool scroll = absi(dy) >= absi(dx) && scrolls[screen];
+	bool scroll = (absi(dy) >= absi(dx) && scrolls[screen]) || (absi(dx) > absi(dy) && pages[screen]);
 	bool flick = now_ms - down_ms < FLICK_MS;
 	if (app_open) {
 		if (kind == UI_TOUCH_DOWN) {
@@ -344,12 +345,19 @@ static void layer(unsigned panel, int x, int y, float alpha)
 	gpu_draw_layer_parts(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, alpha, parts, n);
 }
 
+/* Towards the launcher the mesh takes the launcher's colours instead of
+ * darkening (stack_launcher). */
 float stack_dim(void)
 {
-	float dx = (float)absi(fx) / W, dy = (float)absi(fy) / H, d = dx > dy ? dx : dy;
+	float dx = (float)absi(fx) / W, dy = fy > 0 ? (float)fy / H : 0.0f, d = dx > dy ? dx : dy;
 	if (app_open && (float)(W - ax) / W > d)
 		d = (float)(W - ax) / W;
 	return d * DIM;
+}
+
+float stack_launcher(void)
+{
+	return fy < 0 ? (float)-fy / H : 0.0f;
 }
 
 void stack_compose(void)

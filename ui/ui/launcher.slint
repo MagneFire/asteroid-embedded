@@ -1,70 +1,102 @@
-// The app launcher, below the watchface: the apps as round icons with their names, two to a
-// row, centred. A tap opens the app over the screen stack.
+// The app launcher, below the watchface, as AsteroidOS's default one: a horizontal carousel of one
+// app per page, a white disc with the app's icon and name in grey, snapping to the nearest page.
+// Each app has the background colours AsteroidOS gives it; position is the page as a fraction,
+// from which the firmware blends the mesh colours. A tap opens the app over the screen stack.
 import { Face } from "face.slint";
 
 export struct App {
     id: int,
     name: string,
     icon: image,
+    center: color,
+    outer: color,
 }
 
 export global Apps {
     out property <[App]> list: [
-        { id: 0, name: "Music", icon: @image-url("../icons/ios-musical-notes.svg") },
-        { id: 2, name: "Alarm", icon: @image-url("../icons/ios-alarm.svg") },
-        { id: 3, name: "Timer", icon: @image-url("../icons/ios-timer.svg") },
-        { id: 4, name: "Stopwatch", icon: @image-url("../icons/ios-stopwatch.svg") },
-        { id: 1, name: "Settings", icon: @image-url("../icons/ios-settings.svg") },
+        { id: 2, name: "Alarm Clock", icon: @image-url("../icons/ios-alarm-outline.svg"), center: #CC9800, outer: #0C0500 },
+        { id: 0, name: "Music", icon: @image-url("../icons/ios-musical-notes-outline.svg"), center: #2577B3, outer: #000619 },
+        { id: 1, name: "Settings", icon: @image-url("../icons/ios-settings-outline.svg"), center: #0044A6, outer: #00010C },
+        { id: 4, name: "Stopwatch", icon: @image-url("../icons/ios-stopwatch-outline.svg"), center: #9800A6, outer: #0C0009 },
+        { id: 3, name: "Timer", icon: @image-url("../icons/ios-timer-outline.svg"), center: #A6005F, outer: #0C0003 },
     ];
 }
 
 export component Launcher {
-    property <length> cell: 120px;
-    property <int> rows: (Apps.list.length + 1) / 2;
+    in-out property <int> index;
+    property <length> drag;
+    property <bool> dragging;
+    out property <float> position: (self.index * self.width - self.drag) / self.width;
 
     width: 100%;
     height: 100%;
 
-    for app[i] in Apps.list: Rectangle {
-        property <int> line: i / 2;
-        property <bool> alone: Math.mod(i, 2) == 0 && i == Apps.list.length - 1;
-        x: alone ? (root.width - root.cell) / 2 : root.width / 2 + (Math.mod(i, 2) == 0 ? -root.cell : 0);
-        y: (root.height - root.rows * root.cell) / 2 + self.line * root.cell;
-        width: root.cell;
-        height: root.cell;
+    changed position => {
+        Face.launcher-position = self.position;
+    }
 
-        Rectangle {
-            x: (parent.width - 72px) / 2;
-            y: 8px;
-            width: 72px;
-            height: 72px;
-            border-radius: 36px;
-            background: touch.pressed ? #ffffff60 : #ffffff28;
+    Rectangle {
+        x: -root.index * root.width + root.drag;
+        width: Apps.list.length * root.width;
+        animate x {
+            duration: root.dragging ? 0ms : 150ms;
+            easing: ease-out;
+        }
+
+        for app[i] in Apps.list: Rectangle {
+            x: i * root.width;
+            width: root.width;
+            height: root.height;
+
+            Rectangle {
+                x: (parent.width - 260px) / 2;
+                y: (parent.height - 260px) / 2;
+                width: 260px;
+                height: 260px;
+                border-radius: 130px;
+                background: touch.pressed && !root.dragging && root.index == i ? #dddddd99 : #f8f8f8;
+            }
 
             Image {
-                x: (parent.width - 40px) / 2;
-                y: (parent.height - 40px) / 2;
-                width: 40px;
-                height: 40px;
+                x: (parent.width - 120px) / 2;
+                y: (parent.height - 120px) / 2 - 12px;
+                width: 120px;
+                height: 120px;
                 source: app.icon;
-                colorize: white;
+                colorize: touch.pressed && !root.dragging && root.index == i ? #333 : #666;
+            }
+
+            Text {
+                x: (parent.width - 200px) / 2;
+                y: (parent.height + 120px) / 2 - 12px + 10px;
+                width: 200px;
+                text: app.name.to-uppercase();
+                color: touch.pressed && !root.dragging && root.index == i ? #333 : #666;
+                font-size: 20px;
+                font-weight: 600;
+                horizontal-alignment: center;
             }
         }
+    }
 
-        Text {
-            x: 0;
-            y: 84px;
-            width: parent.width;
-            height: 28px;
-            text: app.name;
-            color: white;
-            font-size: 18px;
-            horizontal-alignment: center;
+    touch := TouchArea {
+        moved => {
+            if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 10px {
+                root.dragging = true;
+            }
+            if root.dragging {
+                root.drag = Math.clamp(self.mouse-x - self.pressed-x, (root.index + 1 - Apps.list.length) * root.width, root.index * root.width);
+            }
         }
-
-        touch := TouchArea {
-            clicked => {
-                Face.app-opened(app.id);
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                if root.dragging {
+                    root.index = Math.clamp(root.index - Math.round(root.drag / root.width + (root.drag > root.width * 0.15 ? 0.35 : root.drag < -root.width * 0.15 ? -0.35 : 0)), 0, Apps.list.length - 1);
+                } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
+                    Face.app-opened(Apps.list[root.index].id);
+                }
+                root.drag = 0;
+                root.dragging = false;
             }
         }
     }

@@ -83,6 +83,7 @@ void ui_set_media(const char *title, uint32_t title_len, const char *artist, uin
 		  uint32_t album_len, bool playing, int32_t volume);
 int ui_media_action(void);
 int ui_app_opened(void);
+void ui_launcher_colors(uint32_t *center, uint32_t *outer);
 void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
 void ui_set_build(const char *build);
 void ui_set_face(int watchface, bool nightstand_setting, bool nightstand);
