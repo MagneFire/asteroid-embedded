@@ -9,6 +9,7 @@
 #include "bt/bt.h"
 #include "storage/storage.h"
 #include "sensors/hub.h"
+#include "input/touch.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -616,6 +617,30 @@ static void cmd_btinfo(const char *args)
 	ext4_list(fs, &in, bt_adapter_fn, &b);
 }
 
+static void cmd_touch(const char *args)
+{
+	uint32_t v[5] = { 0, 0, 0, 0, 0 };
+	bool swipe = !strncmp(args, "swipe ", 6), tap = !strncmp(args, "tap ", 4);
+	const char *p = args + (swipe ? 6 : 4);
+	unsigned need = swipe ? 4 : 2, n = 0;
+	while (n < need + (swipe ? 1 : 0)) {
+		while (*p == ' ')
+			p++;
+		if (!*p || !parse_num(&p, 10, &v[n]))
+			break;
+		n++;
+	}
+	if ((!swipe && !tap) || n < need) {
+		say("usage: touch tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]\n");
+		return;
+	}
+	if (tap)
+		touch_inject((int)v[0], (int)v[1], (int)v[0], (int)v[1], 60);
+	else
+		touch_inject((int)v[0], (int)v[1], (int)v[2], (int)v[3], n > 4 ? v[4] : 200);
+	say("touch %s\n", swipe ? "swipe" : "tap");
+}
+
 static void cmd_hub(const char *args)
 {
 	uint8_t buf[36];
@@ -672,6 +697,7 @@ static const struct command commands[] = {
 	{ "btinfo", "", cmd_btinfo },
 	{ "buzz", "[ms]", cmd_buzz },
 	{ "hub", "[send <hex bytes>]", cmd_hub },
+	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "echo", "<text>", cmd_echo },
 };
 

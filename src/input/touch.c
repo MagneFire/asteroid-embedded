@@ -206,10 +206,51 @@ static void attention(unsigned pin)
 	}
 }
 
+static struct {
+	bool active, down;
+	int x0, y0, x1, y1;
+	uint32_t t0, ms, last;
+} fake;
+
+void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms)
+{
+	fake.x0 = x0;
+	fake.y0 = y0;
+	fake.x1 = x1;
+	fake.y1 = y1;
+	fake.ms = ms ? ms : 1;
+	fake.down = false;
+	fake.active = true;
+}
+
+static void fake_poll(void)
+{
+	uint32_t now = time_ms();
+	struct touch t = { TOUCH_DOWN, fake.x0, fake.y0, true };
+	if (!fake.down) {
+		fake.down = true;
+		fake.t0 = fake.last = now;
+	} else if (now - fake.t0 >= fake.ms) {
+		t = (struct touch){ TOUCH_UP, fake.x1, fake.y1, false };
+		fake.active = false;
+	} else if (now - fake.last >= 16) {
+		int32_t f = (int32_t)((now - fake.t0) * 1024 / fake.ms);
+		t = (struct touch){ TOUCH_MOVE, fake.x0 + (fake.x1 - fake.x0) * f / 1024, fake.y0 + (fake.y1 - fake.y0) * f / 1024,
+				    true };
+		fake.last = now;
+	} else {
+		return;
+	}
+	irq_disable();
+	push(&t);
+	irq_enable();
+}
 
 bool touch_poll(struct touch *t)
 {
 	i2c_qup_poll(QUP);
+	if (fake.active)
+		fake_poll();
 	if (q_tail == q_head)
 		return false;
 	*t = queue[q_tail];
