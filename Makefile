@@ -18,7 +18,7 @@ MBEDTLS := third_party/mbedtls
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/settings.c src/alarm.c src/civil.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
         src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/input/touch.c src/input/haptics.c src/audio/speaker.c \
@@ -77,7 +77,9 @@ $(BUILD)/%.S.o: %.S
 THIRD_PARTY_CFLAGS ?= -w
 $(BUILD)/$(NIMBLE)/%.c.o $(BUILD)/$(MBEDTLS)/%.c.o: CFLAGS += $(THIRD_PARTY_CFLAGS)
 
-$(BUILD)/%.c.o: %.c $(BUILD)/gitrev.h $(BUILD)/config.h
+$(BUILD)/src/version.c.o: $(BUILD)/gitrev.h
+$(BUILD)/src/%.c.o: CFLAGS += -Werror
+$(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 

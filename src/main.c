@@ -23,10 +23,7 @@
 #include "screenshot/screenshot.h"
 #include "storage/storage.h"
 #include "alarm.h"
-#include "gitrev.h"
 #include "config.h"
-
-const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
 #define MESH_STEP_MS 90
