@@ -262,9 +262,11 @@ component ThreeIcons {
         enabled: !root.preview;
         item: root.cell;
         count: Apps.list.length;
-        tapped(x) => {
-            let i = Math.clamp(self.index + Math.round((x - root.size / 2) / root.cell), 0, Apps.list.length - 1);
-            Face.app-opened(Apps.list[i].id);
+        tapped(x, y) => {
+            let i = self.index + Math.round((x - root.size / 2) / root.cell);
+            if i >= 0 && i < Apps.list.length && Math.abs(y - root.size / 2) < root.cell / 2 {
+                Face.app-opened(Apps.list[i].id);
+            }
         }
     }
 }
@@ -316,7 +318,7 @@ component TwoColumns {
             width: parent.width * 0.76;
             height: self.width;
             border-radius: self.width / 2;
-            background: pager.pressed && !pager.dragging && touched == i ? #cccccc : #f4f4f4;
+            background: pager.pressed && !pager.dragging && root.touched == i ? #cccccc : #f4f4f4;
         }
 
         Image {
@@ -340,7 +342,10 @@ component TwoColumns {
         }
     }
 
-    property <int> touched: Math.clamp(pager.index * 2 + Math.floor((pager.pressed-y - root.size / 2 + root.cell / 2) / root.cell) * 2 + (pager.pressed-x > root.size / 2 ? 1 : 0), 0, Apps.list.length - 1);
+    // The disc pressed, -1 for the space around them.
+    property <int> touch-row: pager.index + Math.floor((pager.pressed-y - root.size / 2 + root.cell / 2) / root.cell);
+    property <int> pick: self.touch-row * 2 + (pager.pressed-x > root.size / 2 ? 1 : 0);
+    property <int> touched: self.touch-row >= 0 && self.pick < Apps.list.length ? self.pick : -1;
 
     pager := Pager {
         enabled: !root.preview;
@@ -348,7 +353,9 @@ component TwoColumns {
         item: root.cell;
         count: root.rows;
         tapped => {
-            Face.app-opened(Apps.list[root.touched].id);
+            if root.touched >= 0 {
+                Face.app-opened(Apps.list[root.touched].id);
+            }
         }
     }
 }
@@ -436,15 +443,18 @@ component TurboList {
         item: root.line;
         count: Apps.list.length;
         tapped(x, y) => {
-            let i = Math.clamp(self.index + Math.round((y - root.size / 2) / root.line), 0, Apps.list.length - 1);
-            Face.app-opened(Apps.list[i].id);
+            let i = self.index + Math.round((y - root.size / 2) / root.line);
+            if i >= 0 && i < Apps.list.length {
+                Face.app-opened(Apps.list[i].id);
+            }
         }
     }
 }
 
 // 004-three-by-three: a grid of discs three to a row, icons only, scrolling by rows between half
-// a row of space at both ends. Holding a disc for 200 ms shows the app's name on a band in its
-// colour for a second. No mesh colours.
+// a row of space at both ends. Holding a disc for 200 ms slides the app's name in on a band in its
+// colour, 144 px above the centre when held in the lower half, otherwise below, for a second;
+// letting go still opens the app. No mesh colours.
 component ThreeByThree {
     in property <length> size: 400px;
     in property <bool> preview;
@@ -459,6 +469,17 @@ component ThreeByThree {
     property <int> stops: Math.max(1, Math.ceil((self.content - self.size) / self.cell) + 1);
     property <length> scroll: Math.min(pager.index * self.cell, Math.max(0, self.content - self.size)) - pager.drag;
     property <int> held: -1;
+    // The title: 0 hidden, 1 sliding in and shown, 2 sliding out; away is where it slides from.
+    property <int> title;
+    property <length> away: (self.held-y > self.size * 0.48 ? -248px : 248px) * self.k;
+    property <length> held-y;
+    property <bool> titled;
+    property <bool> pressed: pager.pressed;
+    changed pressed => {
+        if self.pressed {
+            self.titled = false;
+        }
+    }
     animate scroll {
         duration: pager.dragging ? 0ms : pager.anim;
         easing: ease-out;
@@ -482,7 +503,10 @@ component ThreeByThree {
         self.report();
     }
 
-    property <int> touched: Math.clamp(Math.floor((pager.pressed-y + root.scroll - root.spacer) / root.cell) * 3 + Math.floor((pager.pressed-x - root.margin) / root.cell), 0, Apps.list.length - 1);
+    // The disc pressed, -1 for the space around them.
+    property <int> touch-row: Math.floor((pager.pressed-y + root.scroll - root.spacer) / root.cell);
+    property <int> touch-column: Math.floor((pager.pressed-x - root.margin) / root.cell);
+    property <int> touched: self.touch-row >= 0 && self.touch-column >= 0 && self.touch-column < 3 && self.touch-row * 3 + self.touch-column < Apps.list.length ? self.touch-row * 3 + self.touch-column : -1;
 
     for app[i] in Apps.list: Rectangle {
         property <bool> down: pager.pressed && !pager.dragging && root.touched == i && !hold.running;
@@ -512,30 +536,47 @@ component ThreeByThree {
 
     hold := Timer {
         interval: 200ms;
-        running: pager.pressed && !pager.dragging && root.held < 0;
+        running: pager.pressed && !pager.dragging && root.touched >= 0 && !root.titled;
         triggered => {
+            root.titled = true;
             root.held = root.touched;
+            root.held-y = pager.pressed-y;
+            root.title = 1;
         }
     }
 
     Timer {
-        interval: 1300ms;
-        running: root.held >= 0 && !pager.pressed;
+        interval: root.title == 1 ? 1100ms : 200ms;
+        running: root.title > 0;
         triggered => {
-            root.held = -1;
+            root.title = root.title == 1 ? 2 : 0;
         }
     }
 
     if root.held >= 0: Rectangle {
-        y: (root.size - 80px * root.k) / 2;
-        height: 80px * root.k;
-        background: Apps.list[root.held].center;
-        opacity: 0.85;
+        property <length> offset: root.title == 1 ? root.away * 0.58 : root.away;
+        animate offset {
+            duration: root.title == 1 ? 100ms : root.title == 2 ? 200ms : 0ms;
+            easing: ease-in-sine;
+        }
+        y: root.size / 2 + self.offset - self.height / 2;
+        height: 96px * root.k;
+        opacity: root.title == 1 ? 1 : 0;
+        animate opacity {
+            duration: root.title == 2 ? 200ms : 0ms;
+            easing: ease-in-sine;
+        }
+
+        Rectangle {
+            y: (root.held-y > root.size * 0.48 ? -8px : 8px) * root.k;
+            background: Apps.list[root.held].center;
+            opacity: 0.85;
+        }
 
         Text {
             width: parent.width;
             height: parent.height;
-            text: Apps.list[root.held].name;
+            text: Apps.list[root.held].name.to-uppercase();
             color: white;
             font-size: Math.round(36 * root.k) * 1px;
             font-weight: 500;
@@ -550,10 +591,10 @@ component ThreeByThree {
         item: root.cell;
         count: root.stops;
         tapped => {
-            if root.held < 0 {
+            root.title = 0;
+            if root.touched >= 0 {
                 Face.app-opened(Apps.list[root.touched].id);
             }
-            root.held = -1;
         }
     }
 }
