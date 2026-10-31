@@ -53,12 +53,12 @@ static struct {
 } job;
 static bool running;
 
-static void emit(const char *s, size_t n)
+static void emit_to(out_fn out, void *ctx, bool crlf, const char *s, size_t n)
 {
-	if (!cur_out)
+	if (!out)
 		return;
-	if (!cur_crlf) {
-		cur_out(s, n, cur_ctx);
+	if (!crlf) {
+		out(s, n, ctx);
 		return;
 	}
 	while (n) {
@@ -66,13 +66,26 @@ static void emit(const char *s, size_t n)
 		while (k < n && s[k] != '\n')
 			k++;
 		if (k)
-			cur_out(s, k, cur_ctx);
+			out(s, k, ctx);
 		if (k == n)
 			break;
-		cur_out("\r\n", 2, cur_ctx);
+		out("\r\n", 2, ctx);
 		s += k + 1;
 		n -= k + 1;
 	}
+}
+
+/* Command output goes to the sink of the command being run. */
+static void emit(const char *s, size_t n)
+{
+	emit_to(cur_out, cur_ctx, cur_crlf, s, n);
+}
+
+/* Echo and prompts go to the terminal, whatever is running: input can
+ * arrive while a command runs from the main loop. */
+static void term_emit(const char *s, size_t n)
+{
+	emit_to(term_out, term_ctx, term_echo, s, n);
 }
 
 static void say(const char *fmt, ...)
@@ -918,7 +931,7 @@ static void use_terminal(void)
 static void prompt(void)
 {
 	if (term_echo)
-		emit(PROMPT, sizeof PROMPT - 1);
+		term_emit(PROMPT, sizeof PROMPT - 1);
 }
 
 void console_init(void)
@@ -947,7 +960,6 @@ static void queue(const char *text)
 
 void console_input(const char *buf, size_t n)
 {
-	use_terminal();
 	for (size_t i = 0; i < n; i++) {
 		char c = buf[i];
 		if (c == '\r' || c == '\n') {
@@ -956,11 +968,11 @@ void console_input(const char *buf, size_t n)
 			if (skip)
 				continue;
 			if (term_echo)
-				emit("\n", 1);
+				term_emit("\n", 1);
 			line[line_len] = 0;
 			line_len = 0;
 			if (busy()) {
-				say("busy\n");
+				term_emit("busy\n", 5);
 				prompt();
 			} else {
 				job.terminal = true;
@@ -973,17 +985,17 @@ void console_input(const char *buf, size_t n)
 			if (line_len) {
 				line_len--;
 				if (term_echo)
-					emit("\b \b", 3);
+					term_emit("\b \b", 3);
 			}
 		} else if (c == 0x03) {
 			line_len = 0;
 			if (term_echo)
-				emit("^C\n", 3);
+				term_emit("^C\n", 3);
 			prompt();
 		} else if (c >= 0x20 && c < 0x7f && line_len < LINE_LEN - 1) {
 			line[line_len++] = c;
 			if (term_echo)
-				emit(&c, 1);
+				term_emit(&c, 1);
 		}
 	}
 }
@@ -1047,7 +1059,8 @@ void console_attach(out_fn out, void *ctx, bool echo)
 	last_cr = false;
 	if (job.terminal)
 		job.pending = false;
-	use_terminal();
+	if (!running)
+		use_terminal();
 	prompt();
 }
 
@@ -1059,5 +1072,6 @@ void console_detach(void)
 	line_len = 0;
 	if (job.terminal)
 		job.pending = false;
-	use_terminal();
+	if (!running || job.terminal)
+		use_terminal();
 }

@@ -12,9 +12,13 @@
 
 /* send() hands one bulk-IN transfer to the USB side, which is done with
  * buf when it returns. It returns false while the previous transfer is
- * still in flight; adb retries the same transfer on a later adb_poll(). */
+ * still in flight; adb retries the same transfer on a later adb_poll().
+ * pump(), if given, runs the USB side once (transfers both ways): a
+ * console command running from the main loop waits in it for the host
+ * to take its output when a stream's ring is full. */
 struct adb_transport {
 	bool (*send)(const void *buf, uint32_t len);
+	void (*pump)(void);
 };
 
 void adb_init(const struct adb_transport *t, const char *banner_props);

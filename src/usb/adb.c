@@ -158,9 +158,35 @@ static void drop_all(void)
 	cnxn_pending = false;
 }
 
+/* Output that does not fit a stream's ring waits for the host to take
+ * some, as long as the stream lives, the transport can be pumped, we
+ * are not inside adb_rx (a shell's echo: the USB side is running) and
+ * the host answers within DRAIN_MS. Otherwise the rest is dropped. */
+#define DRAIN_MS 2000
+
+static unsigned in_rx;
+
+static bool drain(struct stream *s)
+{
+	uint32_t local = s->local, t0 = time_ms();
+	while (s->kind != FREE && s->local == local && !ring_free(s)) {
+		if (!transport->pump || in_rx || time_ms() - t0 > DRAIN_MS)
+			return false;
+		transport->pump();
+	}
+	return s->kind != FREE && s->local == local;
+}
+
 static void stream_out(const char *s, size_t n, void *ctx)
 {
-	ring_put(ctx, s, (uint32_t)n);
+	struct stream *st = ctx;
+	while (n) {
+		uint32_t k = ring_put(st, s, (uint32_t)n);
+		s += k;
+		n -= k;
+		if (n && !drain(st))
+			return;
+	}
 }
 
 static void sync_status(struct stream *s, uint32_t id, const char *msg)
@@ -569,6 +595,7 @@ uint32_t adb_rx_expected(void)
 void adb_rx(const void *buf, uint32_t len)
 {
 	const uint8_t *p = buf;
+	in_rx++;
 	while (len) {
 		uint32_t k;
 		if (!rx_payload) {
@@ -611,6 +638,7 @@ void adb_rx(const void *buf, uint32_t len)
 		}
 	}
 	step();
+	in_rx--;
 }
 
 void adb_poll(void)

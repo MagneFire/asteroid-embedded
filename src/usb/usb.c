@@ -293,7 +293,7 @@ bool usb_connected(void)
 	return (readl(USB_PORTSC) & (PORTSC_CCS | PORTSC_SUSP)) == PORTSC_CCS;
 }
 
-static const struct adb_transport transport = { .send = adb_send };
+static const struct adb_transport transport = { .send = adb_send, .pump = usb_poll };
 
 void usb_init(const char *serialno)
 {

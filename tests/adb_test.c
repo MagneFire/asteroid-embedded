@@ -253,6 +253,58 @@ static void test_shell_exec(void)
 	expect_none();
 }
 
+/* A fake host that takes everything the device sends while a command
+ * runs: the pump of a transport, called from inside the console output. */
+static char drained[65536];
+static size_t drained_len;
+static uint32_t drain_dev;
+static bool drain_closed;
+
+static void fake_pump(void)
+{
+	struct msg m;
+	adb_poll();
+	while (pop(&m)) {
+		if (m.cmd == A_WRTE && m.arg0 == drain_dev) {
+			CHECK(drained_len + m.len <= sizeof drained);
+			memcpy(drained + drained_len, m.data, m.len);
+			drained_len += m.len;
+			host_send(A_OKAY, m.arg1, m.arg0, NULL, 0);
+		} else if (m.cmd == A_CLSE && m.arg0 == drain_dev) {
+			drain_closed = true;
+		}
+	}
+}
+
+static void test_long_output(void)
+{
+	static const struct adb_transport pumped = { fake_send, fake_pump };
+	adb_init(&pumped, PROPS);
+	connect(4096);
+	struct msg m;
+	host_send(A_OPEN, 50, 0, "shell:mem 0 1024", 17);
+	CHECK(pop(&m) && m.cmd == A_OKAY && m.arg1 == 50);
+	drain_dev = m.arg0;
+	console_poll();
+	fake_pump();
+	CHECK(drain_closed);
+	/* 256 lines of 46 bytes, far more than a stream's ring holds. */
+	CHECK(drained_len == 256 * 46);
+	CHECK(!memcmp(drained, "00000000: deadbeef deadbeeb deadbee7 deadbee3\n", 46));
+	CHECK(!memcmp(drained + drained_len - 46, "00000ff0: deadb11f deadb11b deadb117 deadb113\n", 46));
+	/* Without a pump the output is cut at the ring, as before. */
+	adb_init(&transport, PROPS);
+	connect(4096);
+	drained_len = 0;
+	drain_closed = false;
+	host_send(A_OPEN, 51, 0, "shell:mem 0 1024", 17);
+	CHECK(pop(&m) && m.cmd == A_OKAY && m.arg1 == 51);
+	drain_dev = m.arg0;
+	console_poll();
+	fake_pump();
+	CHECK(drain_closed && drained_len == 4096);
+}
+
 static void test_interactive(void)
 {
 	connect(4096);
@@ -423,6 +475,7 @@ int main(void)
 	adb_init(&transport, PROPS);
 	test_handshake();
 	test_shell_exec();
+	test_long_output();
 	test_interactive();
 	test_sync();
 	test_reboot();
