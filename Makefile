@@ -47,7 +47,7 @@ CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -ffreestanding
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
           -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"'
-LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,ld/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack
+LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,$(BUILD)/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack
 LIBS    := -lgcc
 
 CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
@@ -87,7 +87,11 @@ $(UI_LIB): $(UI_SRCS)
 	cd ui && PATH="$(dir $(CARGO)):$$PATH" $(CARGO) build --release --target armv7a-none-eabihf
 	@touch $@
 
-$(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) ld/asteroid.ld
+$(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/memmap.h
+	@mkdir -p $(BUILD)
+	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc $< -o $@
+
+$(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/asteroid.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
 	$(SIZE) $@
 

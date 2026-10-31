@@ -1,6 +1,7 @@
 /* APQ8026 / MSM8226 register map used by the firmware. */
 #ifndef MSM8226_H
 #define MSM8226_H
+#include "soc/memmap.h"
 
 #define GICD_BASE		0xf9000000u
 #define GICC_BASE		0xf9002000u
@@ -92,9 +93,6 @@
 #define DSI_PLL_LKDET_CFG2	0xfd922a64u
 #define DSI_PLL_STATUS		0xfd922ac0u
 
-#define FB_BASE			0x05000000u
-#define GPU_MEM_BASE		0x1e000000u
-#define GPU_MEM_SIZE		0x00f00000u
 
 #define USB_HS_BASE		0xf9a55000u
 #define USB_SBUSCFG		(USB_HS_BASE + 0x090)
@@ -114,8 +112,6 @@
 #define IRQ_PPI_TIMER		19
 #define IRQ_WDT_BARK		(32 + 3)
 
-#define RAMOOPS_BASE		0x1ef80000u
-#define RAMOOPS_SIZE		0x80000u
 #define RAMOOPS_RECORD_SIZE	0x2000u
 #define RAMOOPS_CONSOLE_SIZE	0x40000u
 

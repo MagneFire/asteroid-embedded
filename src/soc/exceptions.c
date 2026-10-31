@@ -8,7 +8,7 @@ static const char *const names[] = { "?", "undef", "svc", "pabt", "dabt", "fiq" 
 static void stack_words(char *buf, size_t n, uint32_t sp)
 {
 	size_t len = 0;
-	if (sp < (uint32_t)(uintptr_t)_start || sp >= 0x02f00000u)
+	if (sp < (uint32_t)(uintptr_t)_start || sp >= DRAM0_END)
 		return;
 	const uint32_t *w = (const uint32_t *)(uintptr_t)sp;
 	for (int i = 0; i < 32 && len < n; i++)

@@ -1,9 +1,9 @@
-/* Flat 1:1 map with 1 MiB sections.
- *   DRAM bank 0 (0 - 0x02f00000)             normal, write-back
- *   0x02f00000 - 0x04700000 (framebuffer, SMEM) normal, uncached
- *   DRAM bank 1 (0x04700000 - 0x20000000)    normal, write-back, except the
- *                                            the GPU's ring buffer and command memory
- *                                            (0x1e000000) and the section holding the
+/* Flat 1:1 map with 1 MiB sections, from the regions in memmap.h:
+ *   DRAM bank 0                              normal, write-back
+ *   the gap between the banks (SMEM)         normal, uncached
+ *   DRAM bank 1                              normal, write-back, except the
+ *                                            GPU's ring buffer and command memory
+ *                                            and the section holding the
  *                                            persistent log
  *   peripherals (APCS, clock/PMIC arbiter, TLMM, hardware mutexes, multimedia,
  *   IMEM) device, XN
@@ -26,9 +26,9 @@ void mmu_init(void)
 {
 	for (int i = 0; i < 4096; i++)
 		__mmu_l1[i] = 0;
-	map(0x00000000, 0x02f00000, SEC_WB);
-	map(0x02f00000, 0x04700000, SEC_NC);
-	map(0x04700000, 0x20000000, SEC_WB);
+	map(DRAM0_BASE, DRAM0_END, SEC_WB);
+	map(DRAM0_END, DRAM1_BASE, SEC_NC);
+	map(DRAM1_BASE, DRAM_END, SEC_WB);
 	map(GPU_MEM_BASE, GPU_MEM_BASE + GPU_MEM_SIZE, SEC_NC);
 	map(RAMOOPS_BASE & ~0xfffffu, (RAMOOPS_BASE + RAMOOPS_SIZE + 0xfffffu) & ~0xfffffu, SEC_NC);
 	map(0xf9000000, 0xfa000000, SEC_DEV);

@@ -58,11 +58,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define UI_HEAP_BASE 0x06000000u
-#define UI_HEAP_SIZE 0x04000000u
-#define UI_LAYER_BASE 0x0a000000u
-#define UI_LAYER_STRIDE 0x00100000u
+#include "soc/memmap.h"
+
 #define UI_PANELS 7
+_Static_assert(UI_PANELS * UI_LAYER_STRIDE <= UI_LAYER_SIZE, "more panels than layers");
 
 enum ui_touch_kind { UI_TOUCH_DOWN, UI_TOUCH_MOVE, UI_TOUCH_UP };
 enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY, UI_PANEL_TOP, UI_PANEL_APP };

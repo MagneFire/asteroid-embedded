@@ -9,7 +9,6 @@
 #include <string.h>
 #include "asteroid.h"
 
-#define SMEM_BASE		0x03000000u
 #define SMEM_ALLOC_TABLE	(SMEM_BASE + 0xd0)
 #define SMEM_CHANNEL_ALLOC_TBL	13
 #define SMEM_SMD_BASE_ID	14
@@ -59,7 +58,7 @@ bool rpm_init(void)
 	uint32_t size;
 	volatile struct chan_alloc *tbl = smem_item(SMEM_CHANNEL_ALLOC_TBL, &size);
 	if (!tbl) {
-		for (uint32_t base = 0x03000000; base <= 0x0fa00000; base += 0x0ca00000) {
+		for (uint32_t base = SMEM_BASE; base <= 0x0fa00000; base += 0x0ca00000) {
 			volatile uint32_t *w = (volatile uint32_t *)(uintptr_t)base;
 			log_printf("smem %08lx: ver %08lx %08lx heap %lu/%08lx/%08lx item13 %08lx %08lx %08lx item14 %08lx %08lx %08lx\n",
 				   base, w[16], w[17], w[48], w[49], w[50], w[52 + 13 * 4], w[53 + 13 * 4], w[54 + 13 * 4],

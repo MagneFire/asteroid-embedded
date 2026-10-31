@@ -1,11 +1,12 @@
-/* The bootloader copies the image to 0x8000 and jumps to its first word.
- * Everything the firmware owns sits in the first DRAM bank (0 - 0x02f00000);
- * the inherited framebuffer and the persistent log are fixed addresses
- * elsewhere (src/soc/msm8226.h). Code, data, bss and stacks must end below
- * 0x01e00000, where the bootloader puts the device tree. */
+/* The bootloader copies the image to IMG_BASE and jumps to its first word.
+ * Everything the firmware owns sits in the first DRAM bank; the inherited
+ * framebuffer and the persistent log are fixed addresses elsewhere. Code,
+ * data, bss and stacks must end below IMG_END, where the bootloader puts the
+ * device tree. The Makefile runs this through the C preprocessor. */
+#include "soc/memmap.h"
 MEMORY
 {
-    IMG (rwx) : ORIGIN = 0x00008000, LENGTH = 0x01e00000 - 0x00008000
+    IMG (rwx) : ORIGIN = IMG_BASE, LENGTH = IMG_END - IMG_BASE
 }
 ENTRY(_start)
 SECTIONS
