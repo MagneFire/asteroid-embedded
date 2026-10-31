@@ -28,8 +28,8 @@ export global Apps {
 
 // Scrolling along one axis in steps of item, count steps, with a flick that coasts: the speed of
 // the last moves projected over a deceleration of 0.0015 px/ms^2, then rounded to a step. offset
-// is where the content is, animate it with anim unless dragging. tapped fires for a press that
-// did not move.
+// is where the content is, animate it with anim unless dragging: long enough for the ease-out to
+// start at the finger's speed (at least 1 px/ms). tapped fires for a press that did not move.
 export component Pager inherits TouchArea {
     in property <bool> horizontal: true;
     in property <length> item: 400px;
@@ -76,8 +76,9 @@ export component Pager inherits TouchArea {
                 let projected = (self.index * self.item - self.drag) / 1px - v * Math.abs(v) / 0.003;
                 let free = Math.round(projected / (self.item / 1px));
                 let n = self.limit > 0 ? Math.clamp(free, self.index - self.limit, self.index + self.limit) : free;
+                let from = self.index * self.item - self.drag;
                 self.index = self.wrap ? n : Math.clamp(n, 0, self.count - 1);
-                self.anim = Math.clamp(Math.abs(v) / 0.0015, 150, 900) * 1ms;
+                self.anim = Math.clamp(1.7 * Math.abs(self.index * self.item - from) / 1px / Math.max(Math.abs(v), 1), 150, 600) * 1ms;
             } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
                 self.tapped(self.mouse-x, self.mouse-y);
             }
