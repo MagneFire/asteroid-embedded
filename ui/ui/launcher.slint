@@ -626,17 +626,22 @@ component ThreeByThree {
     }
 }
 
-// The discs of the speed dial, spread evenly around the wheel, pos turning it.
+// The discs of the speed dial, 45 degrees apart, or spread evenly around the wheel when there are
+// fewer than eight, pos turning it. Only the eight nearest the selected one are shown, the seam
+// at 9 o'clock being behind the bar.
 component Wheel {
     in property <length> size;
     in property <float> pos;
     in property <int> selected;
     property <int> n: Apps.list.length;
+    property <int> slots: Math.min(self.n, 8);
     property <length> orbit: self.size * 0.355;
     property <length> disc: self.size / 3.5 * 0.8;
 
     for app[i] in Apps.list: Rectangle {
-        property <angle> a: (i - root.pos) * 360deg / root.n;
+        property <float> d: Math.mod(Math.mod(i - root.pos + 4, root.n) + root.n, root.n) - 4;
+        property <angle> a: self.d * 360deg / root.slots;
+        visible: self.d < root.slots - 4;
         x: root.size / 2 + root.orbit * Math.cos(self.a) - root.disc / 2;
         y: root.size / 2 + root.orbit * Math.sin(self.a) - root.disc / 2;
         width: root.disc;
@@ -669,7 +674,7 @@ component SpeedDial {
     in property <bool> last;
     property <float> k: self.size / 400px;
     property <int> n: Apps.list.length;
-    property <angle> step: 360deg / self.n;
+    property <angle> step: 360deg / Math.min(self.n, 8);
     property <length> bar: self.size * 0.26;
     property <length> orbit: self.size * 0.355;
     property <length> disc: self.size / 3.5 * 0.8;
