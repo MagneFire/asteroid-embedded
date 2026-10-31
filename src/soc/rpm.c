@@ -196,6 +196,12 @@ int rpm_regulator_enable(uint32_t type, uint32_t id, bool on)
 	return rpm_request(type, id, kvp, 1);
 }
 
+int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv)
+{
+	uint32_t kvp[3] = { 0x00007675, 4, uv };
+	return rpm_request(type, id, kvp, 1);
+}
+
 /* Bus and memory clocks: an RPM vote outlives a warm reset, so set the
  * apps processor's votes explicitly at boot. */
 #define RPM_CLK1		0x316b6c63u
