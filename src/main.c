@@ -511,6 +511,7 @@ void main(void)
 		}
 		if (now - alarm_t >= 1000) {
 			alarm_t = now;
+			notify_tick(pmic_rtc_read());
 			if (alarm_check(pmic_rtc_read()) && have_ui) {
 				log_printf("alarm: ringing\n");
 				ringing = true;
@@ -545,6 +546,12 @@ void main(void)
 				break;
 			case UI_EVENT_DISMISS:
 				notify_dismiss(a);
+				break;
+			case UI_EVENT_DISMISS_ALL:
+				notify_dismiss_all();
+				break;
+			case UI_EVENT_SNOOZE:
+				notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);
 				break;
 			case UI_EVENT_TIMER_SET:
 				if (!timer_end && a >= 1 && a <= 86399) {

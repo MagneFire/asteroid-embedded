@@ -15,5 +15,8 @@ void notify_feed(const uint8_t *p, unsigned n);
 unsigned notify_count(void);
 const struct notification *notify_get(unsigned i);
 void notify_dismiss(int32_t id);
+void notify_dismiss_all(void);
+void notify_snooze(int32_t id, uint32_t until);
+void notify_tick(uint32_t now);
 uint32_t notify_serial(void);
 #endif

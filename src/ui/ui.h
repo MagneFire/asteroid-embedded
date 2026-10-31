@@ -40,8 +40,10 @@
  * UI_EVENT_ALARM_EDIT the alarm at that index (-1 for a new one) as
  * edited, UI_EVENT_ALARM_DELETE the alarm at that index deleted and
  * UI_EVENT_DISMISS the id of a dismissed notification, UI_EVENT_TIMER_SET
- * the timer's new duration in seconds and UI_EVENT_BRIGHTNESS the
- * brightness in per cent.
+ * the timer's new duration in seconds, UI_EVENT_BRIGHTNESS the
+ * brightness in per cent, UI_EVENT_DISMISS_ALL all notifications
+ * dismissed and UI_EVENT_SNOOZE the id of a notification put away for
+ * the hours and minutes in its alarm.
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -119,6 +121,8 @@ enum ui_event_kind {
 	UI_EVENT_DISMISS,
 	UI_EVENT_TIMER_SET,
 	UI_EVENT_BRIGHTNESS,
+	UI_EVENT_DISMISS_ALL,
+	UI_EVENT_SNOOZE,
 };
 
 struct ui_event {

@@ -102,6 +102,21 @@ static void test_notify(void)
 	CHECK(notify_get(0)->id == -3);
 	notify_dismiss(-3);
 
+	feed("<insert><id>8</id><su>Later</su></insert>");
+	feed("<insert><id>9</id><su>Gone</su></insert>");
+	uint32_t seq = notify_get(1)->seq;
+	notify_snooze(8, 1600);
+	notify_snooze(9, 1600);
+	CHECK(notify_count() == 0);
+	feed("<removed><id>9</id></removed>");
+	notify_tick(1599);
+	CHECK(notify_count() == 0);
+	notify_tick(1600);
+	CHECK(notify_count() == 1 && notify_get(0)->id == 8 && notify_get(0)->time == 1600);
+	CHECK(notify_get(0)->seq > seq && !strcmp(notify_get(0)->summary, "Later"));
+	notify_dismiss_all();
+	CHECK(notify_count() == 0);
+
 	for (int i = 0; i < 25; i++) {
 		snprintf(msg, sizeof msg, "<insert><id>%d</id></insert>", i);
 		feed(msg);

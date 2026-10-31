@@ -1,15 +1,19 @@
 /* Phone notifications as the AsteroidOS notification service receives
  * them: XML-like <insert> and <removed> messages, split over as many
  * characteristic writes as the MTU needs, so writes are collected until a
- * message ends. An insert with a known id replaces that notification. */
+ * message ends. An insert with a known id replaces that notification.
+ * A snoozed notification is put aside until its time (RTC seconds) and
+ * then comes back as new, unless the phone removed or replaced it
+ * meanwhile. */
 #include <string.h>
 #include "asteroid.h"
 #include "notify.h"
 
 static char msg[2048];
 static unsigned msg_len;
-static struct notification list[NOTIFY_MAX];
-static unsigned count;
+static struct notification list[NOTIFY_MAX], aside[NOTIFY_MAX];
+static uint32_t aside_until[NOTIFY_MAX];
+static unsigned count, asides;
 static uint32_t serial;
 
 static const char *find_tag(const char *s, const char *end, const char *tag, const char **body_end)
@@ -95,6 +99,27 @@ static void remove_at(unsigned i)
 	serial++;
 }
 
+static void unsnooze_at(unsigned i)
+{
+	memmove(&aside[i], &aside[i + 1], (asides - i - 1) * sizeof aside[0]);
+	memmove(&aside_until[i], &aside_until[i + 1], (asides - i - 1) * sizeof aside_until[0]);
+	asides--;
+}
+
+static void drop_snoozed(int32_t id)
+{
+	for (unsigned i = asides; i--;)
+		if (aside[i].id == id)
+			unsnooze_at(i);
+}
+
+static struct notification *add(void)
+{
+	if (count == NOTIFY_MAX)
+		remove_at(0);
+	return &list[count++];
+}
+
 static void handle(const char *s, const char *end)
 {
 	char id_text[16];
@@ -105,9 +130,8 @@ static void handle(const char *s, const char *end)
 		int i = find_id(id);
 		if (i >= 0)
 			remove_at((unsigned)i);
-		if (count == NOTIFY_MAX)
-			remove_at(0);
-		struct notification *n = &list[count++];
+		drop_snoozed(id);
+		struct notification *n = add();
 		memset(n, 0, sizeof *n);
 		n->id = id;
 		field(s, end, "pn", n->package, sizeof n->package);
@@ -123,6 +147,7 @@ static void handle(const char *s, const char *end)
 		int i = find_id(id);
 		if (i >= 0)
 			remove_at((unsigned)i);
+		drop_snoozed(id);
 		log_printf("notify: %ld removed%s\n", (long)id, i < 0 ? " (unknown)" : "");
 	}
 }
@@ -162,6 +187,43 @@ void notify_dismiss(int32_t id)
 	int i = find_id(id);
 	if (i >= 0)
 		remove_at((unsigned)i);
+}
+
+void notify_dismiss_all(void)
+{
+	if (count) {
+		count = 0;
+		serial++;
+	}
+}
+
+void notify_snooze(int32_t id, uint32_t until)
+{
+	int i = find_id(id);
+	if (i < 0)
+		return;
+	if (asides == NOTIFY_MAX)
+		unsnooze_at(0);
+	aside[asides] = list[i];
+	aside_until[asides++] = until;
+	remove_at((unsigned)i);
+	log_printf("notify: %ld snoozed\n", (long)id);
+}
+
+void notify_tick(uint32_t now)
+{
+	for (unsigned i = 0; i < asides;) {
+		if ((int32_t)(now - aside_until[i]) < 0) {
+			i++;
+			continue;
+		}
+		struct notification *n = add();
+		*n = aside[i];
+		n->time = now;
+		n->seq = ++serial;
+		log_printf("notify: %ld back from snooze\n", (long)n->id);
+		unsnooze_at(i);
+	}
 }
 
 uint32_t notify_serial(void)
