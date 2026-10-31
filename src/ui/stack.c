@@ -533,6 +533,13 @@ void stack_indicators(void)
 	ind_t0 = time_ms();
 }
 
+/* Whether anything the stack draws still changes by itself: a slide, a
+ * drag, an app opening, the dimming behind a pop-up or the indicators. */
+bool stack_animating(uint32_t now_ms)
+{
+	return stack_moving() || (fade > 0.0f && fade < 1.0f) || now_ms - ind_t0 < IND_OUT_MS + IND_BACK_MS;
+}
+
 void stack_pending(bool on)
 {
 	pending = on;

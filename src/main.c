@@ -29,6 +29,7 @@
 const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
+#define MESH_STEP_MS 90
 #define CHARGER_WAKE_MS 3000
 #define RING_MS 30000
 #define ASLEEP_STATS_MS 60000
@@ -564,7 +565,7 @@ void main(void)
 	unsigned laps = load_stopwatch(&sw_acc, &sw_running, &sw_start, lap_ms);
 	if (have_ui)
 		ui_set_laps(lap_ms, laps);
-	uint32_t shown_timer = 1, shown_sw = 1;
+	uint32_t shown_timer = 1, shown_sw = 1, shown_step = UINT32_MAX;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
@@ -929,8 +930,13 @@ void main(void)
 			ambient_draw();
 			cpu_clock_slow(true);
 		}
+		/* Awake, a frame is drawn when the UI repainted, the stack moves
+		 * or animates, or the FlatMesh takes its next step: every 90 ms,
+		 * as qml-asteroid's FlatMesh timer. In between the CPU waits for
+		 * an interrupt, at the latest the next 1 ms tick. */
 		if (have_display && awake) {
-			uint32_t *buf = display_backbuffer();
+			uint32_t *buf = display_backbuffer(), step = (now - t0) / MESH_STEP_MS;
+			bool frame = !have_ui || woke || step != shown_step;
 			if (have_ui) {
 				uint32_t u0 = time_us(), x, y, w, h;
 				bool repainted = false;
@@ -957,6 +963,7 @@ void main(void)
 						for (uint32_t r = y; r < y + h; r++)
 							dcache_clean_range(layer + r * fb.stride + x, w * 4);
 				}
+				frame |= repainted || stack_animating(now);
 				if (repainted) {
 					ui_repaints++;
 					ui_repaint_us += time_us() - u0;
@@ -967,22 +974,27 @@ void main(void)
 				flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
 				mesh_colors(stack_launcher());
 			}
-			if (have_gpu) {
-				gpu_flatmesh(buf, now - t0, have_ui);
+			if (frame) {
+				shown_step = step;
+				if (have_gpu) {
+					gpu_flatmesh(buf, step * MESH_STEP_MS, have_ui);
+				} else {
+					flatmesh_render(buf, step * MESH_STEP_MS);
+					if (have_ui)
+						ui_render(buf, fb.stride, 0, 0);
+				}
+				if (!have_ui) {
+					draw_dot(buf);
+					fbcon_draw(buf);
+				}
+				display_flip();
+				/* The indicators pop out once the first frame is on the panel. */
+				if (woke && have_ui)
+					stack_indicators();
+				woke = false;
 			} else {
-				flatmesh_render(buf, now - t0);
-				if (have_ui)
-					ui_render(buf, fb.stride, 0, 0);
+				wfi();
 			}
-			if (!have_ui) {
-				draw_dot(buf);
-				fbcon_draw(buf);
-			}
-			display_flip();
-			/* The indicators pop out once the first frame is on the panel. */
-			if (woke && have_ui)
-				stack_indicators();
-			woke = false;
 		}
 		if (have_ui && awake && (!last_clock || now - last_clock >= 1000)) {
 			last_clock = now;

@@ -43,6 +43,7 @@ void stack_pending(bool on);
 void stack_indicators_cpu(uint32_t *buf, uint32_t stride, int dx, int dy);
 unsigned stack_screen(void);
 bool stack_moving(void);
+bool stack_animating(uint32_t now_ms);
 void stack_offset(int *x, int *y);
 float stack_dim(void);
 float stack_launcher(void);
