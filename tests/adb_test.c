@@ -108,6 +108,7 @@ static void host_send(uint32_t cmd, uint32_t a0, uint32_t a1, const void *data, 
 
 static void pump(void)
 {
+	console_poll();
 	for (int i = 0; i < 8; i++)
 		adb_poll();
 }
@@ -217,6 +218,39 @@ static void test_shell_exec(void)
 	expect(A_WRTE, dev, 12, "y\n", 2);
 	host_send(A_OKAY, 12, dev, NULL, 0);
 	expect(A_CLSE, dev, 12, NULL, 0);
+
+	/* A second exec while the first waits for the main loop is refused;
+	 * one the host closes before the main loop ran gives nothing. */
+	host_send(A_OPEN, 13, 0, "shell:echo p", 13);
+	host_send(A_OPEN, 14, 0, "shell:echo q", 13);
+	CHECK(get(&m) && m.cmd == A_OKAY && m.arg1 == 13);
+	dev = m.arg0;
+	CHECK(get(&m) && m.cmd == A_OKAY && m.arg1 == 14);
+	uint32_t dev2 = m.arg0;
+	bool p = false, q = false, c13 = false, c14 = false;
+	while (get(&m)) {
+		if (m.cmd == A_WRTE && m.arg0 == dev && m.len == 2 && !memcmp(m.data, "p\n", 2))
+			p = true;
+		else if (m.cmd == A_WRTE && m.arg0 == dev2 && m.len == 5 && !memcmp(m.data, "busy\n", 5))
+			q = true;
+		else if (m.cmd == A_CLSE && m.arg0 == dev)
+			c13 = true;
+		else if (m.cmd == A_CLSE && m.arg0 == dev2)
+			c14 = true;
+		else
+			CHECK(!"unexpected message");
+		if (m.cmd == A_WRTE)
+			host_send(A_OKAY, m.arg1, m.arg0, NULL, 0);
+	}
+	CHECK(p && q && c13 && c14);
+	host_send(A_CLSE, 13, dev, NULL, 0);
+	host_send(A_CLSE, 14, dev2, NULL, 0);
+	expect_none();
+	host_send(A_OPEN, 15, 0, "shell:echo r", 13);
+	CHECK(pop(&m) && m.cmd == A_OKAY && m.arg1 == 15);
+	host_send(A_CLSE, 15, m.arg0, NULL, 0);
+	expect(A_CLSE, m.arg0, 15, NULL, 0);
+	expect_none();
 }
 
 static void test_interactive(void)

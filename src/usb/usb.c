@@ -235,12 +235,18 @@ usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *count)
 	return &adb_driver;
 }
 
-/* CDC console */
+/* CDC console. Output from inside a TinyUSB callback cannot wait for
+ * the host (tud_task would nest), so it is dropped when the buffer is
+ * full there; commands run from the main loop, where it can wait. */
+static bool cdc_in_cb;
+
 static void cdc_out(const char *s, size_t n, void *ctx)
 {
 	while (n) {
 		uint32_t k = tud_cdc_write(s, (uint32_t)n);
 		if (!k) {
+			if (cdc_in_cb)
+				return;
 			tud_cdc_write_flush();
 			tud_task();
 			if (!tud_cdc_connected())
@@ -256,16 +262,20 @@ void tud_cdc_rx_cb(uint8_t itf)
 {
 	char buf[64];
 	uint32_t n;
+	cdc_in_cb = true;
 	while ((n = tud_cdc_read(buf, sizeof buf)) > 0)
 		console_input(buf, n);
+	cdc_in_cb = false;
 }
 
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
+	cdc_in_cb = true;
 	if (dtr)
 		console_attach(cdc_out, NULL, true);
 	else
 		console_detach();
+	cdc_in_cb = false;
 	log_printf("usb: console %s\n", dtr ? "opened" : "closed");
 }
 
@@ -311,7 +321,6 @@ void usb_poll(void)
 {
 	tud_task();
 	adb_poll();
-	console_poll();
 	if (tud_cdc_connected())
 		tud_cdc_write_flush();
 	adb_queue_rx();

@@ -125,10 +125,17 @@ static void queue_ctrl(uint32_t cmd, uint32_t arg0, uint32_t arg1)
 	c->arg1 = arg1;
 }
 
+static void exec_done(void *ctx)
+{
+	((struct stream *)ctx)->closing = true;
+}
+
 static void stream_free(struct stream *s)
 {
 	if (s->kind == SHELL)
 		console_detach();
+	if (s->kind == EXEC)
+		console_cancel(s);
 	if (s->kind == SYNC && s->sending && s->file)
 		adb_fs_remove(s->file);
 	s->kind = FREE;
@@ -403,8 +410,10 @@ static void handle_open(void)
 	if (kind == SHELL)
 		console_attach(stream_out, s, true);
 	else if (kind == EXEC) {
-		console_exec(svc + 6, stream_out, s);
-		s->closing = true;
+		if (!console_exec(svc + 6, stream_out, s, exec_done)) {
+			ring_put(s, "busy\n", 5);
+			s->closing = true;
+		}
 	} else if (kind == REBOOT)
 		s->closing = true;
 }

@@ -576,6 +576,7 @@ void main(void)
 		uint32_t now = time_ms();
 		wdt_feed();
 		usb_poll();
+		console_poll();
 		bt_poll();
 		screenshot_poll();
 		weather_poll();

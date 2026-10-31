@@ -5,7 +5,8 @@
 
 void console_init(void);
 void console_input(const char *buf, size_t n);
-void console_exec(const char *line, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
+bool console_exec(const char *line, void (*out)(const char *s, size_t n, void *ctx), void *ctx, void (*done)(void *ctx));
+void console_cancel(void *ctx);
 void console_attach(void (*out)(const char *s, size_t n, void *ctx), void *ctx, bool echo);
 void console_detach(void);
 void console_poll(void);

@@ -17,11 +17,15 @@ static void collect(const char *s, size_t n, void *ctx)
 	}
 }
 
+static void *done_ctx;
+static void exec_done(void *ctx) { done_ctx = ctx; }
+
 static const char *run(const char *line)
 {
 	out_len = 0;
 	out[0] = 0;
-	console_exec(line, collect, NULL);
+	console_exec(line, collect, NULL, NULL);
+	console_poll();
 	return out;
 }
 
@@ -77,21 +81,62 @@ int main(void)
 	CHECK(!strcmp(out, "> "));
 	out_len = 0;
 	console_input("ecx\x7fho hi\r\n", 11);
+	console_poll();
 	CHECK(!strcmp(out, "ecx\b \bho hi\r\nhi\r\n> "));
 	out_len = 0;
+	/* Typed-ahead input is echoed before the earlier command runs. */
 	console_input("echo a\nech", 10);
+	console_poll();
 	console_input("o bb\b\bc\r", 9);
-	CHECK(!strcmp(out, "echo a\r\na\r\n> echo bb\b \b\b \bc\r\nc\r\n> "));
+	console_poll();
+	CHECK(!strcmp(out, "echo a\r\necha\r\n> o bb\b \b\b \bc\r\nc\r\n> "));
+	/* A second line before the first ran is refused. */
+	out_len = 0;
+	console_input("echo one\recho two\r", 18);
+	CHECK(!strcmp(out, "echo one\r\necho two\r\nbusy\r\n> "));
+	out_len = 0;
+	console_poll();
+	CHECK(!strcmp(out, "one\r\n> "));
 	console_detach();
 	out_len = 0;
 	console_input("echo gone\r", 10);
+	console_poll();
 	CHECK(out_len == 0);
+	/* A line typed on a shell that closes before it ran never runs. */
+	console_attach(collect, NULL, true);
+	console_input("echo late\r", 10);
+	console_detach();
+	console_attach(collect, NULL, true);
+	out_len = 0;
+	console_poll();
+	CHECK(out_len == 0);
+	console_detach();
 
 	console_attach(collect, NULL, false);
 	out_len = 0;
 	console_input("echo raw\n", 9);
+	console_poll();
 	CHECK(!strcmp(out, "raw\n"));
 	console_detach();
+
+	/* An exec job waits for console_poll, is refused while one is
+	 * pending, and can be cancelled before or muted while it runs. */
+	out_len = 0;
+	CHECK(console_exec("echo first", collect, &out_len, exec_done));
+	CHECK(!console_exec("echo second", collect, &out_len, exec_done));
+	CHECK(out_len == 0 && !done_ctx);
+	console_poll();
+	CHECK(!strcmp(out, "first\n") && done_ctx == &out_len);
+	done_ctx = NULL;
+	out_len = 0;
+	CHECK(console_exec("echo dropped", collect, &out_len, exec_done));
+	console_cancel(&out_len);
+	console_poll();
+	CHECK(out_len == 0 && !done_ctx);
+	CHECK(console_exec("echo kept", collect, &out_len, exec_done));
+	console_cancel(&done_ctx);
+	console_poll();
+	CHECK(!strcmp(out, "kept\n") && done_ctx == &out_len);
 
 	printf("console_test: %s\n", stub_failures ? "FAILED" : "ok");
 	return stub_failures != 0;

@@ -38,6 +38,21 @@ static out_fn cur_out;
 static void *cur_ctx;
 static bool cur_crlf;
 
+/* Lines arrive from the USB stack (CDC and adb callbacks), which also
+ * runs under the display's idle hook, so a command is not run where its
+ * line arrives: it waits in this slot until console_poll runs it from the
+ * main loop. A terminal line uses the terminal sink of that moment, so a
+ * shell that closes in between gets nothing; an exec job keeps its own
+ * sink and tells its owner when it is done. */
+static struct {
+	bool pending, terminal;
+	char line[LINE_LEN];
+	out_fn out;
+	void *ctx;
+	void (*done)(void *ctx);
+} job;
+static bool running;
+
 static void emit(const char *s, size_t n)
 {
 	if (!cur_out)
@@ -912,6 +927,22 @@ void console_init(void)
 	last_cr = false;
 	term_out = NULL;
 	cur_out = NULL;
+	job.pending = running = false;
+}
+
+static bool busy(void)
+{
+	return job.pending || running;
+}
+
+static void queue(const char *text)
+{
+	size_t n = strlen(text);
+	if (n > LINE_LEN - 1)
+		n = LINE_LEN - 1;
+	memcpy(job.line, text, n);
+	job.line[n] = 0;
+	job.pending = true;
 }
 
 void console_input(const char *buf, size_t n)
@@ -928,9 +959,13 @@ void console_input(const char *buf, size_t n)
 				emit("\n", 1);
 			line[line_len] = 0;
 			line_len = 0;
-			run(line);
-			use_terminal();
-			prompt();
+			if (busy()) {
+				say("busy\n");
+				prompt();
+			} else {
+				job.terminal = true;
+				queue(line);
+			}
 			continue;
 		}
 		last_cr = false;
@@ -953,18 +988,54 @@ void console_input(const char *buf, size_t n)
 	}
 }
 
-void console_exec(const char *text, out_fn out, void *ctx)
+bool console_exec(const char *text, out_fn out, void *ctx, void (*done)(void *ctx))
 {
-	out_fn o = cur_out;
-	void *x = cur_ctx;
-	bool crlf = cur_crlf;
-	cur_out = out;
-	cur_ctx = ctx;
-	cur_crlf = false;
-	run(text);
-	cur_out = o;
-	cur_ctx = x;
-	cur_crlf = crlf;
+	if (busy())
+		return false;
+	job.terminal = false;
+	job.out = out;
+	job.ctx = ctx;
+	job.done = done;
+	queue(text);
+	return true;
+}
+
+void console_cancel(void *ctx)
+{
+	if (job.terminal || job.ctx != ctx)
+		return;
+	if (running) {
+		cur_out = NULL;
+		cur_ctx = NULL;
+		job.done = NULL;
+	} else {
+		job.pending = false;
+	}
+}
+
+void console_poll(void)
+{
+	if (!job.pending || running)
+		return;
+	job.pending = false;
+	running = true;
+	bool term = job.terminal;
+	if (term) {
+		use_terminal();
+	} else {
+		cur_out = job.out;
+		cur_ctx = job.ctx;
+		cur_crlf = false;
+	}
+	run(job.line);
+	void (*done)(void *) = job.done;
+	void *ctx = job.ctx;
+	running = false;
+	use_terminal();
+	if (term)
+		prompt();
+	else if (done)
+		done(ctx);
 }
 
 void console_attach(out_fn out, void *ctx, bool echo)
@@ -974,6 +1045,8 @@ void console_attach(out_fn out, void *ctx, bool echo)
 	term_echo = echo;
 	line_len = 0;
 	last_cr = false;
+	if (job.terminal)
+		job.pending = false;
 	use_terminal();
 	prompt();
 }
@@ -984,9 +1057,7 @@ void console_detach(void)
 	term_ctx = NULL;
 	term_echo = false;
 	line_len = 0;
+	if (job.terminal)
+		job.pending = false;
 	use_terminal();
-}
-
-void console_poll(void)
-{
 }
