@@ -34,8 +34,16 @@
 #define BOARD_BT_MPM		28
 #define BOARD_BT_PATCH		"BCM4343A1_001.002.009.0053.0240.hcd"
 
-/* MPM pins: the touch one is unverified (gpio 17 here as on sturgeon),
- * the PMIC one is the chip's. */
+/* ITE IT7260 touch controller on BLSP1 QUP5, interrupt on gpio 17 (MPM
+ * pin 8), reset on gpio 16. */
+#define BOARD_TOUCH_QUP		5
+#define BOARD_TOUCH_SDA		18
+#define BOARD_TOUCH_SCL		19
+#define BOARD_TOUCH_ADDR	0x46
+#define BOARD_TOUCH_IRQ		17
+#define BOARD_TOUCH_RESET	16
 #define BOARD_TOUCH_MPM		8
+
+/* The PMIC's interrupt line (power key, charger) as an MPM pin. */
 #define BOARD_PMIC_MPM		62
 #endif
