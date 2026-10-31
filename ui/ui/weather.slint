@@ -19,8 +19,8 @@ component Temperature {
         height: parent.height;
         text: root.degrees + "°C";
         color: white;
-        font-size: 50px;
-        font-weight: 200;
+        font-family: "Noto Sans ExtraCondensed ExtraLight";
+        font-size: 60px;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -90,8 +90,8 @@ export component WeatherScreen {
                 height: 168px;
                 text: i == 0 ? "Today" : i == 1 ? "Tomorrow" : root.weekdays[Math.mod(Face.weekday + i, 7)];
                 color: white;
+                font-family: "Noto Sans SemiCondensed ExtraLight";
                 font-size: 40px;
-                font-weight: 200;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
@@ -126,8 +126,8 @@ export component WeatherScreen {
             height: 176px;
             text: Face.weather-city;
             color: white;
+            font-family: "Noto Sans SemiCondensed ExtraLight";
             font-size: Face.weather-city.character-count > 16 ? 34px : Face.weather-city.character-count > 14 ? 36px : 40px;
-            font-weight: 200;
             horizontal-alignment: center;
             vertical-alignment: center;
             wrap: word-wrap;
