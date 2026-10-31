@@ -10,7 +10,7 @@ int hub_send(const uint8_t *p, unsigned n);
 void hub_set_time(void);
 uint32_t hub_steps(void);
 void hub_heart_rate_on(bool on);
-uint32_t hub_heart_rate(uint8_t *status);
+uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);
 bool hub_tilted(void);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);

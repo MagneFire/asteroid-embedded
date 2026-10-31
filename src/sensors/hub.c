@@ -49,10 +49,12 @@ enum { T_REQUEST, T_RESPONSE, T_EVENT };
 #define CMD_ACTIVATE	0x00
 #define CMD_DEACTIVATE	0x01
 #define CMD_SET_TIME	0x01
+#define CMD_SET_DELAY	0x02
 #define CMD_BATCH	0x03
 #define CMD_FLUSH	0x04
 #define CMD_PARAMETER	0x13
 #define TILT_PERIOD_MS	10
+#define HEART_RATE_DELAY_MS	200
 #define CMD_EVENT	0x10
 
 enum state { S_OFF, S_BOOT, S_VERSION, S_HANDSHAKE, S_PARAMETER, S_TILT, S_TILT_BATCH, S_TIME, S_STEPS, S_READY, S_FAILED };
@@ -77,6 +79,7 @@ static uint8_t parameters[][8] = {
 static uint32_t tilts;
 static uint32_t steps = HUB_NONE, heart_rate = HUB_NONE;
 static uint8_t heart_status;
+static unsigned heart_readings;
 static bool heart_on;
 
 static void time_request(uint8_t *m)
@@ -283,6 +286,7 @@ static void frame(const uint8_t *p, unsigned n)
 	if (n >= 9 && p[0] == CH_SERVICE && p[1] == T_EVENT && p[2] == TAG_HEART_RATE && p[3] == CMD_EVENT) {
 		memcpy(&heart_rate, p + 4, 4);
 		heart_status = p[8];
+		heart_readings++;
 		return;
 	}
 	if (state == S_READY && n >= 4 && p[0] == CH_SERVICE && p[1] == T_RESPONSE) {
@@ -385,20 +389,27 @@ uint32_t hub_steps(void)
 	return steps;
 }
 
+/* As the vendor HAL does for each sensor, the delay goes before the
+ * activation: 200 ms, sensorfw's for heart rate. Activated without it,
+ * the MCU sent no rate a second time. */
 void hub_heart_rate_on(bool on)
 {
+	static const uint8_t delay[] = { CH_SERVICE, T_REQUEST, TAG_HEART_RATE, CMD_SET_DELAY, HEART_RATE_DELAY_MS, 0, 0, 0 };
 	uint8_t m[] = { CH_SERVICE, T_REQUEST, TAG_HEART_RATE, on ? CMD_ACTIVATE : CMD_DEACTIVATE };
-	if (on == heart_on || hub_send(m, sizeof m))
+	if (on == heart_on || (on && hub_send(delay, sizeof delay)) || hub_send(m, sizeof m))
 		return;
 	heart_on = on;
 	heart_rate = HUB_NONE;
+	heart_readings = 0;
 	log_printf("hub: heart rate %s\n", on ? "on" : "off");
 }
 
-uint32_t hub_heart_rate(uint8_t *status)
+uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 {
 	if (status)
 		*status = heart_status;
+	if (readings)
+		*readings = heart_on ? heart_readings : 0;
 	return heart_on ? heart_rate : HUB_NONE;
 }
 
