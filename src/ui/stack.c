@@ -3,15 +3,17 @@
  * watchface, (W, 0) with the notifications on screen, (-W, 0) for
  * Today, (0, -H) for the launcher and (0, H) for the quick settings; the
  * side screens sit one screen away from the watchface. An open app lies
- * over all of them, fading in when opened; dragged from the top edge,
- * or from the left edge on its first page, it follows the finger,
- * fading, and let go past 15 % it closes onto the watchface. From the
- * left edge on a later page only that page follows the finger, over
- * the page below (ui_app_peek), and let go past 15 % it goes a page
- * back. A drag moves the origin with the finger,
- * clamped to the screens that exist in that direction, and a release
- * past half the screen or a quick flick switches screens; the slide back
- * to rest is an ease-out over SLIDE_MS. */
+ * over all of them, sliding in from the right and fading in over
+ * APP_FADE_MS when opened; dragged from the top edge, or from the left
+ * edge on its first page, it follows the finger, fading, and let go
+ * past 15 % it closes onto the watchface. From the left edge on a later
+ * page only that page follows the finger, over the page below
+ * (ui_app_peek), and let go past 15 % it goes a page back. Put to
+ * sleep, the stack goes back to the watchface but keeps the app for
+ * APP_KEEP_MS, so a quick wake returns to it. A drag moves the origin
+ * with the finger, clamped to the screens that exist in that direction,
+ * and a release past half the screen or a quick flick switches screens;
+ * the slide back to rest is an ease-out over SLIDE_MS. */
 #include "asteroid.h"
 #include "display/display.h"
 #include "gpu/draw.h"
@@ -25,6 +27,8 @@
 #define FADE_MS		300
 #define APP_FADE_MS	100
 #define APP_SNAP_MS	200
+#define APP_KEEP_MS	5000
+#define IND_NEAR	4.8f
 #define EDGE_PX		40
 #define BAND		16
 #define BANDS		32
@@ -38,9 +42,9 @@ static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] 
 static unsigned launcher;
 static int W, H, fx, fy, from_x, from_y, off, from_off, peek;
 static unsigned screen, gesture;
-static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back;
-static uint32_t app_t0;
-static int down_x, down_y;
+static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back, opening;
+static uint32_t app_t0, slept_t;
+static int down_x, down_y, depth;
 static uint32_t down_ms, anim_t0, fade_t;
 static float fade;
 static struct { int x0, x1; } bands[UI_PANELS][BANDS];
@@ -57,15 +61,38 @@ void stack_init(uint32_t width, uint32_t height)
 	stack_home();
 }
 
+static void close_app(void)
+{
+	app_open = false;
+	ui_set_app(-1);
+}
+
 void stack_home(void)
 {
 	screen = UI_PANEL_FACE;
 	fx = fy = 0;
 	if (peeking)
 		ui_app_peek_end(false);
-	animating = dragging = app_open = app_closing = peeking = false;
+	if (app_open)
+		close_app();
+	animating = dragging = app_closing = peeking = opening = false;
 	gesture = IDLE;
 	fade = 0.0f;
+}
+
+void stack_sleep(uint32_t now_ms)
+{
+	bool open = app_open;
+	app_open = false;
+	stack_home();
+	app_open = open;
+	slept_t = now_ms;
+}
+
+void stack_wake(uint32_t now_ms)
+{
+	if (app_open && now_ms - slept_t >= APP_KEEP_MS)
+		close_app();
 }
 
 /* The app moves back to rest, or (close) away and onto the watchface;
@@ -89,10 +116,12 @@ static void slide_app(bool close)
 
 void stack_open_app(void)
 {
-	app_open = true;
-	app_closing = false;
-	off = 0;
+	app_open = opening = true;
+	app_closing = app_top = false;
+	off = W;
+	depth = 0;
 	app_t0 = time_ms();
+	stack_indicators();
 }
 
 static float app_alpha(void)
@@ -100,11 +129,13 @@ static float app_alpha(void)
 	uint32_t t = time_ms() - app_t0;
 	float a = t >= APP_FADE_MS ? 1.0f : (float)t / APP_FADE_MS, size = app_top ? H : W;
 	float b = (size - 2.0f * off) / size;
+	if (opening)
+		return a;
 	return b < a ? (b > 0.0f ? b : 0.0f) : a;
 }
 
 unsigned stack_screen(void) { return screen; }
-bool stack_moving(void) { return animating || dragging || (app_open && time_ms() - app_t0 < APP_FADE_MS); }
+bool stack_moving(void) { return animating || dragging || opening; }
 void stack_offset(int *x, int *y) { *x = fx; *y = fy; }
 
 static void slide_to(unsigned s)
@@ -216,6 +247,7 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 			gesture = back || down ? SWIPE : SCROLL;
 			if (gesture == SWIPE) {
 				app_top = down;
+				opening = false;
 				cancel_press();
 				if (peeking)
 					ui_app_peek_end(false);
@@ -330,6 +362,16 @@ void stack_update(uint32_t now_ms)
 		fade = fade + step < 1.0f ? fade + step : 1.0f;
 	else
 		fade = fade - step > 0.0f ? fade - step : 0.0f;
+	/* The app's indicators pop out again as it goes a page in or out. */
+	if (app_open && ui_app_depth() != depth) {
+		depth = ui_app_depth();
+		stack_indicators();
+	}
+	if (opening) {
+		uint32_t t = now_ms - app_t0;
+		off = t >= APP_FADE_MS ? 0 : W - (int)(W * t / APP_FADE_MS);
+		opening = t < APP_FADE_MS;
+	}
 	if (!animating)
 		return;
 	uint32_t t = now_ms - anim_t0;
@@ -348,7 +390,8 @@ void stack_update(uint32_t now_ms)
 		off = from_off + (int)((to - from_off) * p);
 		if (t >= APP_SNAP_MS) {
 			animating = false;
-			app_open = !app_closing;
+			if (app_closing)
+				close_app();
 		}
 		return;
 	}
@@ -440,9 +483,11 @@ float stack_launcher(void)
 /* Edge indicators, AsteroidOS's: a light square turned 45 degrees,
  * centred on the middle of each edge with a screen beyond it, 7.2 px wide
  * at 60 % opacity. Each swipe and each wake they grow to 12 px and 80 %
- * and move 12 px in over 300 ms, then settle back over 400 ms. While
- * notifications are waiting the left one stays out, on the watchface and
- * on the always-on face. Drawn from a 32 px texture made as they change. */
+ * and move 12 px in over 300 ms, then settle back over 400 ms. An open
+ * app has them on its left (back) and top (close) edges, moving only
+ * 4.8 px in, as it opens and goes a page in or out. While notifications
+ * are waiting the left one stays out, on the watchface and on the
+ * always-on face. Drawn from a 32 px texture made as they change. */
 #define IND_TEX		32
 #define IND_LOW_W	7.2f
 #define IND_HIGH_W	12.0f
@@ -463,6 +508,12 @@ void stack_indicators(void)
 void stack_pending(bool on)
 {
 	pending = on;
+}
+
+/* How far they move in at the peak: less on an app. */
+static float ind_far(void)
+{
+	return app_open ? IND_NEAR : IND_FAR;
 }
 
 /* How far into the pop-out animation, 0 at rest and 1 at its peak. */
@@ -492,7 +543,7 @@ static void diamond(uint32_t *tex, unsigned stride, float w, float alpha)
 static unsigned ind_edges(void)
 {
 	if (app_open)
-		return 0;
+		return 1 | 4;
 	switch (screen) {
 	case UI_PANEL_FACE:
 		return 0xf;
@@ -527,7 +578,7 @@ static void indicators(void)
 		bool kept = e == 0 && pending && screen == UI_PANEL_FACE;
 		float q = kept ? 1.0f : p;
 		float w = IND_LOW_W + (IND_HIGH_W - IND_LOW_W) * q, a = IND_LOW_A + (IND_HIGH_A - IND_LOW_A) * q;
-		float in = (kept ? IND_FAR : IND_FAR * p);
+		float in = kept ? IND_FAR : ind_far() * p;
 		int k = kept ? 1 : 0;
 		if (shown[k][0] != w || shown[k][1] != a) {
 			diamond(tex[k], IND_TEX, w, a);

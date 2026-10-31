@@ -657,7 +657,7 @@ void main(void)
 			if (!ambient)
 				display_sleep();
 			if (have_ui) {
-				stack_home();
+				stack_sleep(now);
 				ui_hide_notification();
 			}
 			if (have_gpu) {
@@ -697,6 +697,8 @@ void main(void)
 			last_activity = now = time_ms();
 			last_clock = 0;
 			woke = true;
+			if (have_ui)
+				stack_wake(now);
 			log_printf("wake\n");
 		}
 		sleep_request = wake_request = false;

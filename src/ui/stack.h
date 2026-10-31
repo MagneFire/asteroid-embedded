@@ -21,7 +21,9 @@
  * offset and alpha) and the overlay, which fades in and out over 300
  * ms, between gpu_draw_begin and gpu_draw_end; while the overlay
  * fades out, stack_overlay_frozen says to leave its layer as it is;
- * stack_home snaps back to the watchface. */
+ * stack_home snaps back to the watchface, closing any app;
+ * stack_sleep does so keeping the app, which stack_wake closes once the
+ * watch has slept APP_KEEP_MS. */
 #ifndef STACK_H
 #define STACK_H
 #include <stdint.h>
@@ -32,6 +34,8 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms);
 void stack_update(uint32_t now_ms);
 void stack_compose(void (*background)(int x, int y, float alpha));
 void stack_home(void);
+void stack_sleep(uint32_t now_ms);
+void stack_wake(uint32_t now_ms);
 void stack_open_app(void);
 void stack_set_launcher(unsigned layout);
 void stack_indicators(void);

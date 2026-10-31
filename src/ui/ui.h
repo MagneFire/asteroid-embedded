@@ -18,9 +18,10 @@
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
  * the watchface to its always-on form. The app panel shows the app set
- * with ui_set_app. ui_set_settings shows the settings (brightness in per
- * cent), ui_set_face selects the watchface and whether nightstand mode is
- * on and in effect, ui_set_launcher the launcher layout.
+ * with ui_set_app, none for -1. ui_set_settings shows the settings
+ * (brightness in per cent), ui_set_face selects the watchface and
+ * whether nightstand mode is on and in effect, ui_set_launcher the
+ * launcher layout.
  * ui_launcher_edges says which edges of the launcher lead somewhere
  * (left, right, top, bottom as bits 0-3) and, in bit 4, whether it is at
  * its start; ui_notes_edges does the same for the notifications, bit 4
