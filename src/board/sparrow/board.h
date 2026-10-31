@@ -44,6 +44,16 @@
 #define BOARD_TOUCH_RESET	16
 #define BOARD_TOUCH_MPM		8
 
+/* PNI EM7184 sensor hub on BLSP1 QUP2 (gpio 6/7, function 3), interrupt
+ * on gpio 111 (MPM pin 54); its firmware is uploaded at every boot. */
+#define BOARD_HUB_QUP		2
+#define BOARD_HUB_SDA		6
+#define BOARD_HUB_SCL		7
+#define BOARD_HUB_FUNC		3
+#define BOARD_HUB_ADDR		0x28
+#define BOARD_HUB_IRQ		111
+#define BOARD_HUB_MPM		54
+
 /* The PMIC's interrupt line (power key, charger) as an MPM pin. */
 #define BOARD_PMIC_MPM		62
 #endif
