@@ -492,10 +492,12 @@ static void layer(unsigned panel, int x, int y, float alpha)
 }
 
 /* Towards the launcher the mesh takes the launcher's colours instead of
- * darkening (stack_launcher). */
+ * darkening (stack_launcher), except for the turbo list and the three by
+ * three grid, which keep the watchface's. */
 float stack_dim(void)
 {
-	float dx = (float)absi(fx) / W, dy = fy > 0 ? (float)fy / H : 0.0f, d = dx > dy ? dx : dy;
+	bool dark = launcher == 4 || launcher == 5;
+	float dx = (float)absi(fx) / W, dy = fy > 0 || dark ? (float)absi(fy) / H : 0.0f, d = dx > dy ? dx : dy;
 	if (app_open && app_alpha() > d)
 		d = app_alpha();
 	return d * DIM;
