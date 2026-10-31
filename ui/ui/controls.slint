@@ -378,7 +378,7 @@ export component LabeledSwitch {
     }
 }
 
-// IntSelector: a 100 px row with a pill from x = 7 to 333, its fill showing value between min
+// IntSelector: a 100 px row with a pill from x = 67 to 333, its fill showing value between min
 // and max, "-" and "+" buttons at its ends, dimmed at the limits, and the value with its unit
 // in the middle. Dragged sideways, or held for 800 ms, the pill sets the value from where the
 // finger is, in steps of step, with a darker fill and a larger number meanwhile.
@@ -394,7 +394,7 @@ export component IntSelector {
     property <bool> tracking;
 
     function track(x: length) {
-        let f = Math.clamp((x - 33px) / (326px - 66px), 0, 1);
+        let f = Math.clamp((x - 33px) / (266px - 66px), 0, 1);
         let v = Math.clamp(Math.round((root.min + f * (root.max - root.min)) / root.step) * root.step, root.min, root.max);
         if v != root.value {
             root.set(v);
@@ -405,9 +405,9 @@ export component IntSelector {
     height: 100px;
 
     Rectangle {
-        x: 7px;
+        x: 67px;
         y: 17px;
-        width: 326px;
+        width: 266px;
         height: 66px;
         border-radius: 33px;
         border-width: 2.5px;
@@ -455,9 +455,9 @@ export component IntSelector {
     }
 
     Text {
-        x: 7px;
+        x: 67px;
         y: 17px;
-        width: 326px;
+        width: 266px;
         height: 66px;
         text: root.value + root.unit;
         color: white;
@@ -468,7 +468,7 @@ export component IntSelector {
     }
 
     IconButton {
-        x: 1px;
+        x: 61px;
         y: 10px;
         icon: @image-url("../icons/ios-remove.svg");
         opacity: root.value <= root.min ? 0.3 : 1;
