@@ -7,7 +7,9 @@
 #include "display.h"
 #include "flatmesh_geometry.h"
 
-#define SCALE 1.2f
+/* The mesh is a disc of points: scaled to reach past a round screen's
+ * edge, or further out to the corners of a square one. */
+#define SCALE (BOARD_PANEL_ROUND ? 1.2f : 1.45f)
 #define DEFAULT_CENTER 0x888888u
 #define DEFAULT_OUTER 0x000000u
 
@@ -168,7 +170,7 @@ static void look_vertex(int i, float x, float y, void *ctx)
 	l->pos[i][1] = 0.5f + (y - 0.5f) * view_scale + l->dy;
 }
 
-static unsigned clip_round(float (*p)[2], unsigned n, float cx, float cy)
+static unsigned clip_round(float (*p)[2], unsigned n, float cx, float cy, float radius)
 {
 	/* cos and sin of 2 pi / 64, stepped around from (0.5, 0). */
 	static float edge[ROUND_SIDES][2];
@@ -182,8 +184,9 @@ static unsigned clip_round(float (*p)[2], unsigned n, float cx, float cy)
 	}
 	float tmp[ROUND_SIDES + 3][2];
 	for (int k = 0; k < ROUND_SIDES && n; k++) {
-		float ax = cx + edge[k][0], ay = cy + edge[k][1];
-		float bx = cx + edge[(k + 1) % ROUND_SIDES][0], by = cy + edge[(k + 1) % ROUND_SIDES][1];
+		float scale = radius * 2.0f;
+		float ax = cx + edge[k][0] * scale, ay = cy + edge[k][1] * scale;
+		float bx = cx + edge[(k + 1) % ROUND_SIDES][0] * scale, by = cy + edge[(k + 1) % ROUND_SIDES][1] * scale;
 		unsigned m = 0;
 		for (unsigned j = 0; j < n; j++) {
 			float *u = p[j], *v = p[(j + 1) % n];
@@ -228,7 +231,10 @@ unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, 
 	l.dx = dx;
 	l.dy = dy;
 	animate(t_ms, look_vertex, &l);
-	float cx = 0.5f + dx, cy = 0.5f + dy, inner = 0.5f * 0.99879546f;
+	/* The window is the round screen, or on a square one the circle
+	 * through its corners, so the background fills it. */
+	float radius = BOARD_PANEL_ROUND ? 0.5f : 0.72f;
+	float cx = 0.5f + dx, cy = 0.5f + dy, inner = radius * 0.99879546f;
 	float *o = out;
 	for (int t = 0; t < FLATMESH_INDICES / 3; t++) {
 		float m = flatmesh_vertices[flatmesh_indices[3 * t]][2], rgb[3];
@@ -244,7 +250,7 @@ unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, 
 			float ex = p[k][0] - cx, ey = p[k][1] - cy;
 			inside &= ex * ex + ey * ey <= inner * inner;
 		}
-		unsigned n = inside ? 3 : clip_round(p, 3, cx, cy);
+		unsigned n = inside ? 3 : clip_round(p, 3, cx, cy, radius);
 		for (unsigned k = 1; k + 1 < n; k++) {
 			o = emit(o, p[0][0], p[0][1], rgb, alpha);
 			o = emit(o, p[k][0], p[k][1], rgb, alpha);

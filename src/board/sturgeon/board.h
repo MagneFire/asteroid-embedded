@@ -12,6 +12,7 @@
 #define BOARD_PANEL_HZ		60
 #define BOARD_PANEL_TE_GPIO	24
 #define BOARD_PANEL_FLIP_UD	1
+#define BOARD_PANEL_ROUND	1
 
 /* Firmware on the system partition. */
 #define BOARD_FIRMWARE_DIRS	"/vendor/firmware/"

@@ -14,6 +14,7 @@
 #define BOARD_PANEL_HZ		57
 #define BOARD_PANEL_TE_GPIO	24
 #define BOARD_PANEL_FLIP_UD	0
+#define BOARD_PANEL_ROUND	0
 
 /* Firmware on the system partition: the GPU microcode under vendor,
  * the Bluetooth patch and the sensor hub firmware under etc. */
