@@ -900,6 +900,12 @@ void main(void)
 			}
 			ui_set_battery(bms_percent(), pmic_charging());
 			ui_set_connected(bt_host_connected());
+			static char addr_text[18];
+			uint8_t addr[6];
+			if (!addr_text[0] && !bt_addr_load(addr))
+				snprintf(addr_text, sizeof addr_text, "%02X:%02X:%02X:%02X:%02X:%02X", addr[5], addr[4], addr[3],
+					 addr[2], addr[1], addr[0]);
+			ui_set_info(addr_text, now / 1000);
 			static bool ns;
 			if (nightstand_on() != ns) {
 				ns = !ns;

@@ -32,6 +32,9 @@ export global Face {
     in-out property <int> day;
     in-out property <int> month;
     in-out property <int> year: 2026;
+    // Seconds since boot and the Bluetooth address, for About.
+    in-out property <int> uptime;
+    in-out property <string> bt-address;
     in-out property <int> battery-percent;
     in-out property <bool> charging;
     in-out property <bool> ambient;

@@ -611,7 +611,10 @@ export component SettingsApp {
                 for item in [
                     { label: "Build ID", value: Face.build },
                     { label: "Codename", value: "sturgeon" },
+                    { label: "Bluetooth address", value: Face.bt-address },
                     { label: "Display size", value: "400W x 400H" },
+                    { label: "Uptime", value: Math.floor(Face.uptime / 86400) + " days " + Face.two-digits(Math.mod(Math.floor(Face.uptime / 3600), 24)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.uptime / 60), 60)) + ":" + Face.two-digits(Math.mod(Face.uptime, 60)) },
+                    { label: "Total memory", value: "512 MB" },
                     { label: "Battery", value: Face.battery-percent + "%" },
                 ]: VerticalLayout {
                     padding-top: 20px;

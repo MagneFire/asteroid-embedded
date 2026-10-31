@@ -516,6 +516,17 @@ pub unsafe extern "C" fn ui_set_build(build: *const u8) {
     each(|face| face.set_build(build.clone()));
 }
 
+/// The Bluetooth address as text and the seconds since boot, for About.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_info(bt_address: *const u8, uptime: u32) {
+    let len = if bt_address.is_null() { 0 } else { unsafe { core::ffi::CStr::from_ptr(bt_address as *const core::ffi::c_char) }.count_bytes() };
+    let address = unsafe { text(bt_address, len as u32) };
+    each(|face| {
+        face.set_bt_address(address.clone());
+        face.set_uptime(uptime as i32);
+    });
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_face(watchface: i32, nightstand_setting: bool, nightstand: bool) {
     each(|face| {

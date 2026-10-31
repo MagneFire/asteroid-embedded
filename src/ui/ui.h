@@ -177,6 +177,7 @@ unsigned ui_notes_edges(void);
 bool ui_app_colors(int app, struct ui_colors *out);
 void ui_set_settings(const struct ui_settings *s);
 void ui_set_build(const char *build);
+void ui_set_info(const char *bt_address, uint32_t uptime_s);
 void ui_set_face(int watchface, bool nightstand_setting, bool nightstand);
 void ui_set_alarms(const struct ui_alarm *alarms, uint32_t n);
 bool ui_next_event(struct ui_event *e);
