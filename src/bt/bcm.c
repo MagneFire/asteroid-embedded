@@ -1,12 +1,12 @@
-/* Broadcom BCM43430A0 Bluetooth on BLSP1 UART4 (gpio 12-15, function 2).
- * Power: REG_ON on gpio 67 (low 30 ms, then high). Sleep handshake: the
- * host drives BT_WAKE on gpio 63, the chip drives HOST_WAKE on gpio 64,
- * both active low. Bring-up as brcm_patchram_plus runs it on this watch
- * (--use_baudrate_for_download --no2bytes --enable_lpm, 3000000 baud):
- * reset at 115200, switch to the fast rate, download the minidriver,
- * send the .hcd file's records (each a vendor command, the last one
- * launches the patch), back to 115200 while the patched firmware boots,
- * reset, fast rate again, optional BD_ADDR, sleep mode parameters. */
+/* Broadcom BCM4343 Bluetooth on a BLSP UART (function and gpio, REG_ON,
+ * the wake lines, their polarity and the MPM pin come from board.h).
+ * Power: REG_ON low 30 ms, then high. Sleep handshake: the host drives
+ * BT_WAKE, the chip drives HOST_WAKE, each asserted at the board's active
+ * level. Bring-up: reset at 115200, switch to the fast rate, download the
+ * minidriver, send the .hcd file's records (each a vendor command, the
+ * last one launches the patch), back to 115200 while the patched firmware
+ * boots, reset, fast rate again, optional BD_ADDR, the board's sleep mode
+ * parameters. */
 #include <string.h>
 #include "asteroid.h"
 #include "bt.h"
@@ -17,6 +17,8 @@
 #define GPIO_BT_HOST_WAKE	BOARD_BT_HOST_WAKE
 #define GPIO_BT_REG_ON		BOARD_BT_REG_ON
 #define MPM_PIN_HOST_WAKE	BOARD_BT_MPM
+#define DEV_WAKE_ACTIVE		BOARD_BT_DEV_WAKE_ACTIVE
+#define HOST_WAKE_ACTIVE	BOARD_BT_HOST_WAKE_ACTIVE
 #define DEV_WAKE_IDLE_MS	1000
 #define BAUD_BOOT		115200
 #define BAUD_FAST		3000000
@@ -32,7 +34,7 @@
 #define BCM_DOWNLOAD_MINIDRIVER	0xfc2e
 #define BCM_LAUNCH_RAM		0xfc4e
 
-static const uint8_t sleep_mode[12] = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 };
+static const uint8_t sleep_mode[12] = BOARD_BT_SLEEP_MODE;
 
 static bool dev_awake = true;
 static uint32_t tx_t;
@@ -50,7 +52,7 @@ static void power(bool on)
 	tlmm_config(GPIO_BT_REG_ON, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
 	if (!on)
 		return;
-	tlmm_set(GPIO_BT_DEV_WAKE, 0);
+	tlmm_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
 	tlmm_config(GPIO_BT_DEV_WAKE, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
 	tlmm_config(GPIO_BT_HOST_WAKE, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
 	sleep_ms(30);
@@ -202,15 +204,15 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 		   herr);
 	dev_awake = true;
 	tx_t = time_ms();
-	tlmm_irq_config(GPIO_BT_HOST_WAKE, TLMM_IRQ_EDGE_FALLING, host_wake_irq);
+	tlmm_irq_config(GPIO_BT_HOST_WAKE, HOST_WAKE_ACTIVE ? TLMM_IRQ_EDGE_RISING : TLMM_IRQ_EDGE_FALLING, host_wake_irq);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, true);
-	spm_wake_pin(MPM_PIN_HOST_WAKE, true, false);
+	spm_wake_pin(MPM_PIN_HOST_WAKE, true, HOST_WAKE_ACTIVE);
 	return 0;
 }
 
 void bt_stop(void)
 {
-	spm_wake_pin(MPM_PIN_HOST_WAKE, false, false);
+	spm_wake_pin(MPM_PIN_HOST_WAKE, false, HOST_WAKE_ACTIVE);
 	tlmm_irq_enable(GPIO_BT_HOST_WAKE, false);
 	uart_dm_stop(BT_UART);
 	power(false);
@@ -223,9 +225,15 @@ bool bt_running(void)
 	return running;
 }
 
+/* The raw HOST_WAKE level, whatever the board's polarity. */
 bool bt_host_wake(void)
 {
 	return tlmm_get(GPIO_BT_HOST_WAKE);
+}
+
+static bool host_wake_asserted(void)
+{
+	return bt_host_wake() == HOST_WAKE_ACTIVE;
 }
 
 
@@ -233,17 +241,17 @@ void bt_tx_activity(void)
 {
 	tx_t = time_ms();
 	if (!dev_awake) {
-		tlmm_set(GPIO_BT_DEV_WAKE, 0);
+		tlmm_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
 		dev_awake = true;
 	}
 }
 
 void bt_lpm_poll(void)
 {
-	if (running && !bt_host_wake())
+	if (running && host_wake_asserted())
 		bt_tx_activity();
 	if (running && dev_awake && time_ms() - tx_t >= DEV_WAKE_IDLE_MS && uart_dm_idle(BT_UART)) {
-		tlmm_set(GPIO_BT_DEV_WAKE, 1);
+		tlmm_set(GPIO_BT_DEV_WAKE, !DEV_WAKE_ACTIVE);
 		dev_awake = false;
 	}
 }
@@ -258,7 +266,7 @@ uint32_t bt_lpm_next_ms(void)
 
 bool bt_can_sleep(void)
 {
-	return !running || (!dev_awake && bt_host_wake() && uart_dm_idle(BT_UART));
+	return !running || (!dev_awake && !host_wake_asserted() && uart_dm_idle(BT_UART));
 }
 
 void bt_sleep(bool asleep)

@@ -33,6 +33,12 @@
 #define BOARD_BT_REG_ON		34
 #define BOARD_BT_MPM		28
 #define BOARD_BT_PATCH		"BCM4343A1_001.002.009.0053.0240.hcd"
+/* Both wake lines are active high. Sleep mode parameters (0xFC27): mode 1,
+ * host and controller idle thresholds 1, dev-wake and host-wake
+ * polarity 1 (active high), then the SCO/LPM/tristate flags. */
+#define BOARD_BT_DEV_WAKE_ACTIVE	1
+#define BOARD_BT_HOST_WAKE_ACTIVE	1
+#define BOARD_BT_SLEEP_MODE	{ 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0 }
 
 /* ITE IT7260 touch controller on BLSP1 QUP5, interrupt on gpio 17 (MPM
  * pin 8), reset on gpio 16. */

@@ -48,6 +48,12 @@
 #define BOARD_BT_REG_ON		67
 #define BOARD_BT_MPM		28
 #define BOARD_BT_PATCH		"4343A0.hcd"
+/* Both wake lines are active low. Sleep mode parameters (0xFC27): mode 1,
+ * host and controller idle thresholds 0x18, dev-wake and host-wake
+ * polarity 0 (active low), then the SCO/LPM/tristate flags. */
+#define BOARD_BT_DEV_WAKE_ACTIVE	0
+#define BOARD_BT_HOST_WAKE_ACTIVE	0
+#define BOARD_BT_SLEEP_MODE	{ 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 }
 
 /* STM32 sensor hub on BLSP1 UART1 (gpio 0-3, function 2). */
 #define BOARD_HUB_UART		1
