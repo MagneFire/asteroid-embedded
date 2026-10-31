@@ -42,8 +42,11 @@
  * the timer's new duration in seconds, UI_EVENT_BRIGHTNESS the
  * brightness in per cent, UI_EVENT_DISMISS_ALL all notifications
  * dismissed, UI_EVENT_SNOOZE the id of a notification put away for the
- * hours and minutes in its alarm and UI_EVENT_SETTING_VALUE an enum
- * setting in bits 8 and up set to the value in bits 0-7.
+ * hours and minutes in its alarm, UI_EVENT_SETTING_VALUE an enum
+ * setting in bits 8 and up set to the value in bits 0-7,
+ * UI_EVENT_TIME_SET the time of day set by hand in minutes and
+ * UI_EVENT_DATE_SET a date set by hand as (year - 2000) << 9 | month << 5
+ * | day.
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -131,6 +134,8 @@ enum ui_event_kind {
 	UI_EVENT_DISMISS_ALL,
 	UI_EVENT_SNOOZE,
 	UI_EVENT_SETTING_VALUE,
+	UI_EVENT_TIME_SET,
+	UI_EVENT_DATE_SET,
 };
 
 struct ui_event {
@@ -146,7 +151,7 @@ _Static_assert(sizeof(struct ui_event) == 12, "ui_event");
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
 	     uint32_t height);
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
-		  uint32_t rtc);
+		  uint32_t year, uint32_t rtc);
 void ui_set_connected(bool connected);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);

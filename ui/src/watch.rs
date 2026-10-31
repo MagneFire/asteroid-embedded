@@ -144,6 +144,8 @@ const EVENT_BRIGHTNESS: u32 = 9;
 const EVENT_DISMISS_ALL: u32 = 10;
 const EVENT_SNOOZE: u32 = 11;
 const EVENT_SETTING_VALUE: u32 = 12;
+const EVENT_TIME_SET: u32 = 13;
+const EVENT_DATE_SET: u32 = 14;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiEvent>() == 12 && core::mem::size_of::<UiSettings>() == 12);
@@ -281,6 +283,10 @@ pub unsafe extern "C" fn ui_init(
         face.on_brightness_set(move |percent| event(&queue, EVENT_BRIGHTNESS, percent));
         let queue = events.clone();
         face.on_setting_set(move |setting, value| event(&queue, EVENT_SETTING_VALUE, setting << 8 | (value & 0xff)));
+        let queue = events.clone();
+        face.on_time_set(move |minutes| event(&queue, EVENT_TIME_SET, minutes));
+        let queue = events.clone();
+        face.on_date_set(move |day, month, year| event(&queue, EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;
@@ -296,7 +302,7 @@ pub unsafe extern "C" fn ui_init(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32, day: u32, month: u32, rtc: u32) {
+pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32, day: u32, month: u32, year: u32, rtc: u32) {
     each(|face| {
         face.set_now(rtc as i32);
         face.set_hour(hour.min(23) as i32);
@@ -305,6 +311,7 @@ pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32
         face.set_weekday(weekday.min(6) as i32);
         face.set_day(day.clamp(1, 31) as i32);
         face.set_month(month.clamp(1, 12) as i32);
+        face.set_year(year.clamp(2000, 2099) as i32);
     });
 }
 

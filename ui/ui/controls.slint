@@ -58,11 +58,14 @@ export component IconButton {
 
 // CircularSpinner (wrap) or Spinner with its SpinnerDelegate: count two-digit values or labels,
 // one every 48 px, the one in the middle 39 px and opaque, the others 22 px at 60 %, and the top
-// and bottom fifth fading out. twelve shows 0 as 12. show(v, d) turns it to v from outside over d.
+// and bottom fifth fading out. twelve shows 0 as 12, first is added to the numbers shown, and
+// plain shows them without a leading zero. show(v, d) turns it to v from outside over d.
 export component Spinner {
     in property <int> count;
     in property <[string]> labels;
     in property <bool> twelve;
+    in property <int> first;
+    in property <bool> plain;
     in property <bool> wrap: true;
     in property <bool> interactive: true;
     in-out property <int> value;
@@ -101,7 +104,7 @@ export component Spinner {
         width: root.width;
         height: root.step;
         visible: root.wrap || (self.n >= 0 && self.n < root.count);
-        text: root.labels.length > 0 ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : Face.two-digits(self.v);
+        text: root.labels.length > 0 ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : root.plain ? (self.v + root.first) + "" : Face.two-digits(self.v + root.first);
         color: white;
         font-size: Math.round(22 + 17 * self.near) * 1px;
         opacity: (0.6 + 0.4 * self.near) * self.fade;

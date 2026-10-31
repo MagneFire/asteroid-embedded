@@ -31,6 +31,7 @@ export global Face {
     in-out property <int> weekday;
     in-out property <int> day;
     in-out property <int> month;
+    in-out property <int> year: 2026;
     in-out property <int> battery-percent;
     in-out property <bool> charging;
     in-out property <bool> ambient;
@@ -116,6 +117,9 @@ export global Face {
     public pure function temperature(c: int) -> string {
         return self.fahrenheit ? Math.round(c * 9 / 5 + 32) + "°F" : c + "°C";
     }
+    // The time of day in minutes, and a date, as set by hand.
+    callback time-set(int);
+    callback date-set(int, int, int);
     // An enum setting and the value to set it to.
     callback setting-set(int, int);
 

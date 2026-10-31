@@ -1,15 +1,16 @@
 // The Settings app, laid out as asteroid-settings: a list of icon rows, each opening a page that
 // slides in from the right. The pages are the ones the firmware has settings for: Display
 // (brightness, always on, burn-in protection, tilt and tap to wake), Nightstand (with its
-// brightness, delay and always on), Watchface and Launcher pickers, Units (12 hour clock,
-// Fahrenheit), Bluetooth (on/off, connection, forgetting the phone) and About. Rows call
+// brightness, delay and always on), Watchface and Launcher pickers, Time and Date, Units (12 hour
+// clock, Fahrenheit), Bluetooth (on/off, connection, forgetting the phone) and About. Rows call
 // setting-toggled with the firmware's enum setting, 34 to forget the paired phone, 35 + n to pick
-// watchface n and 48 + n to pick launcher n, setting-set with an enum setting and its value, and
-// brightness-set with a brightness in per cent.
+// watchface n and 48 + n to pick launcher n, setting-set with an enum setting and its value,
+// brightness-set with a brightness in per cent, and time-set and date-set with the time or date
+// set.
 import { Face, Watchface } from "face.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
-import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page } from "controls.slint";
+import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton } from "controls.slint";
 
 // A 60 px check badge with a soft shadow, as the pickers mark the current choice.
 component Check {
@@ -35,7 +36,7 @@ component Check {
 
 export component SettingsApp {
     // 0 the list, then 1 Display, 2 Nightstand, 3 Watchface, 4 Launcher, 5 Units, 6 Bluetooth,
-    // 7 About.
+    // 7 About, 8 Time, 9 Date.
     in-out property <int> page;
     property <int> back: Face.back-count;
 
@@ -48,6 +49,23 @@ export component SettingsApp {
         self.page = 0;
         Face.peek = 0;
         Face.peeking = false;
+    }
+
+    // Slides the page on top out to the right and the list back in, as LayerStack's pop does,
+    // then leaves it.
+    function pop() {
+        Face.peeking = false;
+        Face.peek = 400px;
+        popped.running = true;
+    }
+    popped := Timer {
+        interval: 200ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.page = 0;
+            Face.peek = 0;
+        }
     }
 
     width: 100%;
@@ -78,6 +96,8 @@ export component SettingsApp {
                     { icon: @image-url("../icons/ios-moon-outline.svg"), title: "Nightstand", page: 2 },
                     { icon: @image-url("../icons/ios-watchface-outline.svg"), title: "Watchface", page: 3 },
                     { icon: @image-url("../icons/ios-launcher-outline.svg"), title: "Launcher", page: 4 },
+                    { icon: @image-url("../icons/ios-clock-outline.svg"), title: "Time", page: 8 },
+                    { icon: @image-url("../icons/ios-date-outline.svg"), title: "Date", page: 9 },
                     { icon: @image-url("../icons/ios-units-outline.svg"), title: "Units", page: 5 },
                     { icon: @image-url("../icons/ios-bluetooth-outline.svg"), title: "Bluetooth", page: 6 },
                     { icon: @image-url("../icons/ios-help-circle-outline.svg"), title: "About", page: 7 },
@@ -386,6 +406,138 @@ export component SettingsApp {
             clicked => {
                 Face.setting-toggled(34);
             }
+        }
+    }
+
+    // TimePage: hours and minutes (and AM/PM) on circular spinners from the current time, set
+    // with the check button.
+    if root.page == 8: Page {
+        property <length> w: Face.clock12 ? 120px : 180px;
+
+        time-hours := Spinner {
+            x: 20px;
+            y: 80px;
+            width: parent.w;
+            height: 240px;
+            count: Face.clock12 ? 12 : 24;
+            twelve: Face.clock12;
+            value: Face.clock12 ? Math.mod(Face.hour, 12) : Face.hour;
+        }
+
+        Rectangle {
+            x: 20px + parent.w - 1px;
+            y: 104px;
+            width: 1px;
+            height: 192px;
+            background: #ffffff88;
+        }
+
+        time-minutes := Spinner {
+            x: 20px + parent.w;
+            y: 80px;
+            width: parent.w;
+            height: 240px;
+            count: 60;
+            value: Face.minute;
+        }
+
+        if Face.clock12: Rectangle {
+            x: 20px + 2 * parent.w - 1px;
+            y: 104px;
+            width: 1px;
+            height: 192px;
+            background: #ffffff88;
+        }
+
+        time-ampm := Spinner {
+            x: 20px + 2 * parent.w;
+            y: 80px;
+            width: parent.w;
+            height: 240px;
+            visible: Face.clock12;
+            count: 2;
+            wrap: false;
+            labels: ["AM", "PM"];
+            value: Face.hour >= 12 ? 1 : 0;
+        }
+
+        IconButton {
+            x: (400px - self.width) / 2;
+            y: 400px - 12px - self.height;
+            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            clicked => {
+                Face.time-set((time-hours.value + (Face.clock12 ? time-ampm.value * 12 : 0)) * 60 + time-minutes.value);
+                root.pop();
+            }
+        }
+
+        PageHeader {
+            text: "Time";
+        }
+    }
+
+    // DatePage: day, month and year on circular spinners from today, set with the check button.
+    if root.page == 9: Page {
+        date-day := Spinner {
+            x: 20px;
+            y: 80px;
+            width: 120px;
+            height: 240px;
+            count: 31;
+            first: 1;
+            plain: true;
+            value: Face.day - 1;
+        }
+
+        Rectangle {
+            x: 139px;
+            y: 104px;
+            width: 1px;
+            height: 192px;
+            background: #ffffff88;
+        }
+
+        date-month := Spinner {
+            x: 140px;
+            y: 80px;
+            width: 120px;
+            height: 240px;
+            count: 12;
+            labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            value: Face.month - 1;
+        }
+
+        Rectangle {
+            x: 259px;
+            y: 104px;
+            width: 1px;
+            height: 192px;
+            background: #ffffff88;
+        }
+
+        date-year := Spinner {
+            x: 260px;
+            y: 80px;
+            width: 120px;
+            height: 240px;
+            count: 100;
+            first: 2000;
+            plain: true;
+            value: Face.year - 2000;
+        }
+
+        IconButton {
+            x: (400px - self.width) / 2;
+            y: 400px - 12px - self.height;
+            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            clicked => {
+                Face.date-set(date-day.value + 1, date-month.value + 1, date-year.value + 2000);
+                root.pop();
+            }
+        }
+
+        PageHeader {
+            text: "Date";
         }
     }
 

@@ -187,7 +187,7 @@ static void ambient_draw(void)
 	uint32_t rtc = pmic_rtc_read(), x, y, w, h, *buf = display_backbuffer();
 	civil_from_epoch(rtc, &c);
 	ambient_minute = rtc / 60;
-	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, rtc);
+	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
 	ui_set_battery(bms_percent(), pmic_charging());
 	bool ns = nightstand_on();
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
@@ -318,6 +318,32 @@ static void setting_toggled(int s)
 		setting_set((enum setting)s, !setting_get((enum setting)s));
 	}
 	show_settings();
+}
+
+/* The clock set by hand: the time of day in minutes, keeping the date,
+ * or a date, keeping the time. */
+static void set_clock(int kind, int v)
+{
+	struct civil c;
+	civil_from_epoch(pmic_rtc_read(), &c);
+	if (kind == UI_EVENT_TIME_SET) {
+		if (v < 0 || v >= 24 * 60)
+			return;
+		c.hour = (uint32_t)v / 60;
+		c.minute = (uint32_t)v % 60;
+		c.second = 0;
+	} else {
+		uint32_t day = v & 31, month = v >> 5 & 15, year = 2000 + (v >> 9 & 127);
+		bool leap = year % 4 == 0 && (year % 100 || year % 400 == 0);
+		uint32_t days = month == 2 ? 28u + leap : 30 + ((month + month / 8) & 1);
+		if (v < 0 || month < 1 || month > 12 || day < 1 || year > 2099)
+			return;
+		c.day = day > days ? days : day;
+		c.month = month;
+		c.year = year;
+	}
+	pmic_rtc_write(epoch_from_civil(&c));
+	log_printf("clock set to %04lu-%02lu-%02lu %02lu:%02lu\n", c.year, c.month, c.day, c.hour, c.minute);
 }
 
 /* A setting set to a value from the UI, kept to the steps it offers. */
@@ -617,6 +643,11 @@ void main(void)
 			case UI_EVENT_DISMISS_ALL:
 				notify_dismiss_all();
 				break;
+			case UI_EVENT_TIME_SET:
+			case UI_EVENT_DATE_SET:
+				set_clock(e.kind, a);
+				last_clock = 0;
+				break;
 			case UI_EVENT_SETTING_VALUE:
 				setting_value(a >> 8, a & 0xff);
 				break;
@@ -848,7 +879,7 @@ void main(void)
 			struct civil c;
 			uint32_t rtc = pmic_rtc_read();
 			civil_from_epoch(rtc, &c);
-			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, rtc);
+			ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
 			if (rtc / 86400 != weather_day) {
 				weather_day = rtc / 86400;
 				show_weather();
