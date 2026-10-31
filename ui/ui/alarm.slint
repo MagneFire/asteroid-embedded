@@ -24,7 +24,7 @@ global Days {
 }
 
 // The days of an alarm as asteroid-alarmclock writes them: a name for the usual sets, otherwise
-// the initials from Monday with the days it rings on in white.
+// the initials from Monday with the days it rings on in bold.
 component DaysText {
     in property <int> days;
     in property <float> dim;
@@ -46,7 +46,7 @@ component DaysText {
         for d in Days.order: Text {
             text: Days.letters[d];
             color: white;
-            opacity: Days.has(root.days, d) ? root.dim : root.dim * 0.5;
+            opacity: root.dim;
             font-size: 28px;
             font-weight: Days.has(root.days, d) ? 700 : 300;
             vertical-alignment: center;
