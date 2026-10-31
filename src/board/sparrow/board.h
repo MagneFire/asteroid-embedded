@@ -22,16 +22,15 @@
  * the Bluetooth patch and the sensor hub firmware under etc. */
 #define BOARD_FIRMWARE_DIRS	"/vendor/firmware/", "/etc/firmware/bt/", "/etc/firmware/"
 
-/* BCM4343A1 Bluetooth on BLSP1 UART1 (gpio 0-3, function 2); the wake
- * pins are unverified, the MPM pin not yet derived. The patch is in
- * /system/etc/firmware/bt on this watch. */
+/* BCM4343A1 Bluetooth on BLSP1 UART1 (gpio 0-3, function 2), REG_ON on
+ * gpio 34, host wake on gpio 48 (MPM pin 20), device wake on gpio 61. */
 #define BOARD_BT_UART		1
 #define BOARD_BT_GPIO		0
 #define BOARD_BT_FUNC		2
 #define BOARD_BT_DEV_WAKE	61
 #define BOARD_BT_HOST_WAKE	48
 #define BOARD_BT_REG_ON		34
-#define BOARD_BT_MPM		28
+#define BOARD_BT_MPM		20
 #define BOARD_BT_PATCH		"BCM4343A1_001.002.009.0053.0240.hcd"
 /* Both wake lines are active high. Sleep mode parameters (0xFC27): mode 1,
  * host and controller idle thresholds 1, dev-wake and host-wake
