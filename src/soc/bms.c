@@ -30,11 +30,11 @@
 #define CHAN_BATT_ID		0x31
 
 #define RSENSE_UOHM		9700
-#define V_CUTOFF_UV		3200000
+#define V_CUTOFF_UV		BOARD_BAT_CUTOFF_UV
 #define V_MAX_UV		4350000
 #define CHG_TERM_UA		20000
 #define FLAT_OCV_UV		3800000
-#define LOW_VOLTAGE_UV		3350000
+#define LOW_VOLTAGE_UV		BOARD_BAT_LOW_UV
 #define ADJUST_SOC_LOW		15
 #define HOLD_SOC_EST		3
 #define LOW_OCV_CORR_UV		100
@@ -58,14 +58,19 @@
 
 #include "battery.h"
 
-/* Two cell makers, told apart by the ID resistor in the pack; they share
- * the voltage table but not the internal resistance. */
+/* The board's cells, told apart by the ID resistor in the pack; they
+ * share the voltage table but not the internal resistance. battery.h
+ * may give its own table as BATTERY_CELLS; otherwise these are
+ * sturgeon's two cell makers. */
 struct cell {
 	const char *name;
 	int id_kohm, rbatt_mohm;
 	uint16_t rbatt_sf[31][5];
 };
 
+#ifdef BATTERY_CELLS
+static const struct cell cells[] = { BATTERY_CELLS };
+#else
 static const struct cell cells[] = {
 	{ "SCUD", 10, 496, {
 		{ 1926, 401, 100, 65, 47 }, { 1916, 401, 100, 65, 47 }, { 1767, 405, 102, 67, 48 },
@@ -94,6 +99,7 @@ static const struct cell cells[] = {
 		{ 45877, 5703, 688, 411, 255 },
 	} },
 };
+#endif
 
 /* Battery thermistor: 0.1 C against mV at the ADC input, with a 68 kOhm
  * pull-up to 1.8 V. */
@@ -823,7 +829,7 @@ static void status_check(void)
 void bms_init(void)
 {
 	int ohm = ratiometric_mv(CHAN_BATT_ID), kohm = ohm > 0 && ohm < 1800 ? 68 * ohm / (1800 - ohm) : 0;
-	cell = iabs(cells[1].id_kohm - kohm) < iabs(cells[0].id_kohm - kohm) ? &cells[1] : &cells[0];
+	cell = ARRAY_SIZE(cells) > 1 && iabs(cells[1].id_kohm - kohm) < iabs(cells[0].id_kohm - kohm) ? &cells[1] : &cells[0];
 	uint8_t stored = pmic_read(BMS_SOC_STORAGE), iavg = pmic_read(BMS_IAVG_STORAGE);
 	int stored_soc = (stored >> 1) ? (stored >> 1) - 1 : NONE;
 	status = pmic_battery_status();

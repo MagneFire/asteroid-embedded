@@ -18,3 +18,8 @@ static const uint16_t ocv_mv[31][5] = {
 	{ 3475, 3488, 3484, 3472, 3454 }, { 3392, 3410, 3406, 3389, 3364 }, { 3274, 3298, 3283, 3260, 3229 },
 	{ 3000, 3000, 3000, 3000, 3000 },
 };
+
+/* The gauge's cutoff voltage and the low voltage below which it
+ * recalculates more often. */
+#define BOARD_BAT_CUTOFF_UV	3200000
+#define BOARD_BAT_LOW_UV	3350000
