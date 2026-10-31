@@ -24,11 +24,10 @@
 #include "storage/storage.h"
 #include "alarm.h"
 #include "clockapps.h"
+#include "power.h"
 #include "config.h"
 
-#define SLEEP_AFTER_MS 10000
 #define MESH_STEP_MS 90
-#define CHARGER_WAKE_MS 3000
 #define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
 
@@ -130,90 +129,11 @@ static void draw_dot(uint32_t *buf)
 		}
 }
 
-static volatile bool console_sleep, console_wake, console_settings;
+static bool console_settings;
 
 void settings_changed(void)
 {
 	console_settings = true;
-}
-
-void power_request(bool sleep)
-{
-	if (sleep)
-		console_sleep = true;
-	else
-		console_wake = true;
-}
-
-/* Nightstand mode is in effect while the watch is on its charger and
- * for the nightstand delay after it comes off, as asteroid-launcher's
- * nightstandDelayTimer keeps it, so a loose cable does not end it. */
-static bool nightstand_on(void)
-{
-	static bool was_usb;
-	static uint32_t lost_t;
-	bool usb = pmic_usb_present();
-	uint32_t now = time_ms();
-	if (was_usb && !usb)
-		lost_t = now | 1;
-	was_usb = usb;
-	return setting_get(SETTING_NIGHTSTAND) &&
-	       (usb || (lost_t && now - lost_t < (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000));
-}
-
-/* The always-on face: shown while asleep unless turned off, drawn on
- * the CPU so the GPU can stay off, with the panel in idle mode at 18 %
- * brightness, AsteroidOS's low power mode level on this watch. Each
- * minute it moves by a random amount against burn-in, as the launcher's
- * burnInProtectionManager moves the grid: up to the watchface's margin,
- * times 1, 1/2 or 1/4 for the high, medium and low levels, and the left
- * indicator by up to two and four fin widths. */
-#define AOD_BRIGHTNESS 18
-#define FIN_PX 6
-static bool ambient;
-static uint32_t ambient_minute;
-
-static int burn_in_shift(uint32_t *seed, int range)
-{
-	*seed ^= *seed << 13;
-	*seed ^= *seed >> 17;
-	*seed ^= *seed << 5;
-	return range ? (int)(*seed % (uint32_t)(2 * range + 1)) - range : 0;
-}
-
-static void ambient_draw(void)
-{
-	struct civil c;
-	uint32_t rtc = pmic_rtc_read(), x, y, w, h, *buf = display_backbuffer();
-	civil_from_epoch(rtc, &c);
-	ambient_minute = rtc / 60;
-	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
-	ui_set_battery(bms_percent(), pmic_charging());
-	bool ns = nightstand_on();
-	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
-	ui_tick();
-	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
-	for (unsigned i = 0; i < ARRAY_SIZE(panels); i++) {
-		unsigned p = panels[i];
-		if (ui_update(p, &x, &y, &w, &h)) {
-			uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
-			stack_damage(p, x, y, w, h);
-			for (uint32_t r = y; r < y + h; r++)
-				dcache_clean_range(layer + r * fb.stride + x, w * 4);
-		}
-	}
-	/* The digital face leaves 54 px (20 px in nightstand mode) around
-	 * it, the classic one 14 px (24 px). */
-	static const uint8_t level[] = { 0, 4, 2, 1 };
-	uint32_t seed = rtc | 1;
-	int b = setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
-	int range = (setting_get(SETTING_WATCHFACE) ? (ns ? 24 : 14) : (ns ? 20 : 54)) * m / 4;
-	int dx = burn_in_shift(&seed, range), dy = burn_in_shift(&seed, range);
-	int ix = m ? burn_in_shift(&seed, FIN_PX) + FIN_PX : 0, iy = m ? burn_in_shift(&seed, 2 * FIN_PX) : 0;
-	memset(buf, 0, fb.stride * fb.height * 4);
-	ui_render(buf, fb.stride, dx, dy);
-	stack_indicators_cpu(buf, fb.stride, ix, iy);
-	display_flip();
 }
 
 static void bluetooth_start(void)
@@ -271,14 +191,7 @@ static void show_settings(void)
 	ui_set_settings(&u);
 	ui_set_launcher(setting_get(SETTING_LAUNCHER));
 	stack_set_launcher(setting_get(SETTING_LAUNCHER));
-	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), nightstand_on());
-}
-
-/* In nightstand mode the screen takes the nightstand brightness. */
-static void set_brightness(void)
-{
-	int b = setting_get(nightstand_on() ? SETTING_NIGHTSTAND_BRIGHTNESS : SETTING_BRIGHTNESS);
-	display_set_brightness((uint8_t)(b * 255 / 100));
+	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 }
 
 /* A setting changed from the UI: store it and put it into effect. */
@@ -291,7 +204,7 @@ static void setting_toggled(int s)
 		else
 			b = s == UI_BRIGHTNESS_UP ? (b + 10 > 100 ? 100 : b + 10) : (b - 10 < 10 ? 10 : b - 10);
 		setting_set(SETTING_BRIGHTNESS, b);
-		set_brightness();
+		power_set_brightness();
 	} else if (s >= UI_WATCHFACE_FIRST && s < UI_WATCHFACE_FIRST + 2) {
 		setting_set(SETTING_WATCHFACE, s - UI_WATCHFACE_FIRST);
 	} else if (s >= UI_LAUNCHER_FIRST && s < UI_LAUNCHER_FIRST + UI_LAUNCHERS) {
@@ -331,7 +244,7 @@ static void setting_toggled(int s)
 		}
 	} else if (s == SETTING_NIGHTSTAND) {
 		setting_set(SETTING_NIGHTSTAND, !setting_get(SETTING_NIGHTSTAND));
-		set_brightness();
+		power_set_brightness();
 	} else if (s >= 0 && s < SETTINGS) {
 		setting_set((enum setting)s, !setting_get((enum setting)s));
 	}
@@ -369,7 +282,7 @@ static void setting_value(int s, int v)
 {
 	if (s == SETTING_NIGHTSTAND_BRIGHTNESS && v >= 10 && v <= 100) {
 		setting_set(SETTING_NIGHTSTAND_BRIGHTNESS, v / 10 * 10);
-		set_brightness();
+		power_set_brightness();
 	} else if (s == SETTING_NIGHTSTAND_DELAY && v >= 0 && v <= 30) {
 		setting_set(SETTING_NIGHTSTAND_DELAY, v / 5 * 5);
 	} else if (s == SETTING_BURN_IN && v >= 0 && v <= 3) {
@@ -456,6 +369,7 @@ void main(void)
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
 	bool have_hub = hub_init();
+	power_init(have_display, have_ui, have_hub);
 	console_init();
 	usb_init("asteroid-sturgeon");
 	if (have_display)
@@ -464,15 +378,14 @@ void main(void)
 
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
-	bool sleep_request = false, wake_request = false, gpu_off = false;
-	bool charger_wake = false;
-	bool key_was = false, awake = true, woke = false;
+	bool gpu_off = false;
+	bool key_was = false, woke = false;
 	uint32_t alarm_t = 0, shown_step = UINT32_MAX;
 	clockapps_init(have_ui, have_haptics);
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
-	uint32_t key_down_t = 0, last_activity = time_ms(), asleep_t = 0, asleep_ms = 0, wakeups = 0;
+	uint32_t key_down_t = 0;
 	struct touch t;
 	int down_x = 0, down_y = 0;
 	uint32_t down_t = 0;
@@ -486,15 +399,13 @@ void main(void)
 		bt_poll();
 		screenshot_poll();
 		weather_poll();
-		if (!awake)
-			wakeups++;
 		if (bt_start_t && now - bt_start_t < 0x80000000u) {
 			bt_start_t = 0;
 			weather_load();
 			if (setting_get(SETTING_BLUETOOTH))
 				bluetooth_start();
 			if (have_display)
-				set_brightness();
+				power_set_brightness();
 			if (have_ui) {
 				show_settings();
 				ui_set_build(build_id);
@@ -505,23 +416,24 @@ void main(void)
 		bms_poll();
 		if (have_hub) {
 			hub_poll();
-			if (hub_tilted() && !awake && setting_get(SETTING_TILT))
-				wake_request = true;
+			if (hub_tilted() && !power_awake() && setting_get(SETTING_TILT))
+				power_request(false);
 		}
 		if (have_haptics)
 			haptics_poll();
 		while (have_touch && touch_poll(&t)) {
 			if (t.event == TOUCH_PALM) {
 				log_printf("touch: palm\n");
-				sleep_request |= awake;
+				if (power_awake())
+					power_request(true);
 				continue;
 			}
-			if (!awake) {
+			if (!power_awake()) {
 				if (t.event == TOUCH_DOWN && setting_get(SETTING_TAP))
-					wake_request = true;
+					power_request(false);
 				continue;
 			}
-			last_activity = now;
+			power_activity(now);
 			if (have_ui)
 				stack_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x,
 					    t.y, now);
@@ -540,14 +452,9 @@ void main(void)
 			dot_y = t.y;
 		}
 		pmic_power_key_irq();
-		/* A cable plugged in shows the screen for CHARGER_WAKE_MS, as
-		 * mce does. */
 		if (pmic_usb_irq() && pmic_usb_present()) {
 			log_printf("usb: cable plugged in\n");
-			if (!awake)
-				charger_wake = true;
-			else if (now - last_activity > SLEEP_AFTER_MS - CHARGER_WAKE_MS)
-				last_activity = now - (SLEEP_AFTER_MS - CHARGER_WAKE_MS);
+			power_charger_plugged(now);
 		}
 		bool key = pmic_power_key();
 		if (key != key_was) {
@@ -557,19 +464,17 @@ void main(void)
 			} else if (now - key_down_t >= 3000) {
 				log_printf("rebooting on power key\n");
 				reboot();
-			} else if (awake) {
-				sleep_request = true;
 			} else {
-				wake_request = true;
+				power_request(power_awake());
 			}
 		}
 		if (bt_passkey() != passkey) {
 			passkey = bt_passkey();
 			if (have_ui)
 				ui_set_passkey(passkey);
-			if (passkey >= 0)
-				wake_request = !awake;
-			last_activity = now;
+			if (passkey >= 0 && !power_awake())
+				power_request(false);
+			power_activity(now);
 		}
 		if (notify_serial() != notify_seen) {
 			notify_seen = notify_serial();
@@ -593,8 +498,9 @@ void main(void)
 					ui_show_notification(top->id);
 				if (have_haptics && setting_get(SETTING_VIBRATION))
 					vibrate(top->vibrate);
-				wake_request = !awake;
-				last_activity = now;
+				if (!power_awake())
+					power_request(false);
+				power_activity(now);
 			}
 			shown_seq = top ? top->seq : 0;
 		}
@@ -608,13 +514,13 @@ void main(void)
 			alarm_t = now;
 			notify_tick(pmic_rtc_read());
 		}
-		if (clockapps_tick(now) && !awake)
-			wake_request = true;
+		if (clockapps_tick(now) && !power_awake())
+			power_request(false);
 		if (clockapps_ringing())
-			last_activity = now;
+			power_activity(now);
 		for (struct ui_event e; have_ui && ui_next_event(&e);) {
 			int a = e.value;
-			last_activity = now;
+			power_activity(now);
 			switch (e.kind) {
 			case UI_EVENT_SETTING:
 				setting_toggled(a);
@@ -645,7 +551,7 @@ void main(void)
 			case UI_EVENT_BRIGHTNESS:
 				if (a >= 10 && a <= 100) {
 					setting_set(SETTING_BRIGHTNESS, a);
-					set_brightness();
+					power_set_brightness();
 					show_settings();
 				}
 				break;
@@ -654,7 +560,7 @@ void main(void)
 				break;
 			}
 		}
-		if (awake)
+		if (power_awake())
 			clockapps_refresh(now);
 		if (have_ui && weather_serial() != weather_seen) {
 			weather_seen = weather_serial();
@@ -664,85 +570,35 @@ void main(void)
 		if (console_settings) {
 			console_settings = false;
 			if (have_display)
-				set_brightness();
+				power_set_brightness();
 			if (have_ui)
 				show_settings();
 		}
-		if (console_sleep || console_wake) {
-			sleep_request |= console_sleep && awake;
-			wake_request |= console_wake && !awake;
-			console_sleep = console_wake = false;
-		}
-		/* The short charger wake only when nothing else wakes the watch. */
-		if (charger_wake && !awake && !wake_request)
-			wake_request = true;
-		else
-			charger_wake = false;
-		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
-			clockapps_sleep();
-			settings_flush();
-			ambient = have_ui && setting_get(nightstand_on() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
-			if (!ambient)
-				display_sleep();
-			if (have_ui) {
-				stack_sleep(now);
-				ui_hide_notification();
-			}
+		switch (power_update(&now)) {
+		case POWER_SLEPT:
 			if (have_gpu) {
 				gpu_suspend();
 				gpu_off = true;
 			}
-			if (ambient) {
-				ui_set_ambient(true);
-				ambient_draw();
-				display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
-				display_idle(true);
-			}
-			timer_set_period(1000);
-			cpu_clock_slow(true);
-			awake = false;
-			asleep_t = now;
-			log_printf("sleep\n");
-		} else if (have_display && !awake && wake_request) {
-			cpu_clock_slow(false);
+			break;
+		case POWER_WOKE:
 			if (gpu_off) {
 				uint32_t g0 = time_us();
 				have_gpu = gpu_init();
 				gpu_off = false;
 				log_printf("gpu: resumed in %lu us\n", time_us() - g0);
 			}
-			timer_set_period(1);
-			if (ambient) {
-				ui_set_ambient(false);
-				display_idle(false);
-				set_brightness();
-				ambient = false;
-			} else {
-				display_wake();
-			}
-			awake = true;
-			asleep_ms += now - asleep_t;
-			last_activity = now = time_ms();
-			if (charger_wake)
-				last_activity -= SLEEP_AFTER_MS - CHARGER_WAKE_MS;
-			charger_wake = false;
 			last_clock = 0;
 			woke = true;
-			if (have_ui)
-				stack_wake(now);
-			log_printf("wake\n");
-		}
-		sleep_request = wake_request = false;
-		if (ambient && !awake && pmic_rtc_read() / 60 != ambient_minute) {
-			cpu_clock_slow(false);
-			ambient_draw();
-			cpu_clock_slow(true);
+			break;
+		case POWER_NONE:
+			break;
 		}
 		/* Awake, a frame is drawn when the UI repainted, the stack moves
 		 * or animates, or the FlatMesh takes its next step: every 90 ms,
 		 * as qml-asteroid's FlatMesh timer. In between the CPU waits for
 		 * an interrupt, at the latest the next 1 ms tick. */
-		if (have_display && awake) {
+		if (have_display && power_awake()) {
 			uint32_t *buf = display_backbuffer(), step = (now - t0) / MESH_STEP_MS;
 			bool frame = !have_ui || woke || step != shown_step;
 			if (have_ui) {
@@ -751,7 +607,7 @@ void main(void)
 				int sx, sy;
 				stack_update(now);
 				if (stack_moving())
-					last_activity = now;
+					power_activity(now);
 				ui_tick();
 				uint32_t damage[UI_PANELS][4];
 				bool damaged[UI_PANELS] = { false };
@@ -804,7 +660,7 @@ void main(void)
 				wfi();
 			}
 		}
-		if (have_ui && awake && (!last_clock || now - last_clock >= 1000)) {
+		if (have_ui && power_awake() && (!last_clock || now - last_clock >= 1000)) {
 			last_clock = now;
 			struct civil c;
 			uint32_t rtc = pmic_rtc_read();
@@ -822,20 +678,16 @@ void main(void)
 				snprintf(addr_text, sizeof addr_text, "%02X:%02X:%02X:%02X:%02X:%02X", addr[5], addr[4], addr[3],
 					 addr[2], addr[1], addr[0]);
 			ui_set_info(addr_text, now / 1000);
-			static bool ns;
-			if (nightstand_on() != ns) {
-				ns = !ns;
-				set_brightness();
-			}
-			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
+			power_tick();
+			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 		}
+		bool awake = power_awake();
 		if (!awake && now - last >= ASLEEP_STATS_MS) {
 			last = now;
 			uint32_t pc, pcc, pcb;
 			spm_stats(&pc, &pcc, &pcb);
-			log_printf("power: asleep, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", wakeups, pc, pcc, pcb,
-				   pmic_battery_avg_ua() / 1000);
-			wakeups = 0;
+			log_printf("power: asleep, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", power_wakeups(), pc, pcc,
+				   pcb, pmic_battery_avg_ua() / 1000);
 		}
 		if (awake && now - last >= 1000) {
 			last = now;
@@ -845,16 +697,12 @@ void main(void)
 			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - t0) / 1000,
 				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
 			frames0 = display_frames();
-			uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
+			uint32_t slept = power_slept_ms(now);
 			uint32_t pc, pcc, pcb;
 			spm_stats(&pc, &pcc, &pcb);
 			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, battery %ld mA, %ld mA average\n",
-				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, wakeups, pc, pcc, pcb,
+				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, power_wakeups(), pc, pcc, pcb,
 				   pmic_battery_ua() / 1000, pmic_battery_avg_ua() / 1000);
-			asleep_ms = 0;
-			if (!awake)
-				asleep_t = now;
-			wakeups = 0;
 			if (gpu_frames)
 				log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,
 					   gpu_us / gpu_frames, gpu_vert_us / gpu_frames);
@@ -882,50 +730,14 @@ void main(void)
 			reboot();
 		}
 #endif
-		if ((!have_display || !awake) && !haptics_busy() && !screenshot_busy() && timer_ticks()) {
-			bool quiet = !have_display || awake || display_rest();
-			bool cluster = quiet && !awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
-			if (!awake)
-				cpu_clock_slow(true);
-			if (cluster) {
-				bt_sleep(true);
-				hub_sleep(true);
-				cpu_clock_park();
-			}
-			uint32_t next = 1000;
-			if (!awake && !usb_connected()) {
-				uint32_t bt = bt_idle_ms(), lpm = bt_lpm_next_ms(), stats = ASLEEP_STATS_MS - (time_ms() - last);
-				next = stats > ASLEEP_STATS_MS ? 1 : stats;
-				if (bt < next)
-					next = bt;
-				if (lpm < next)
-					next = lpm;
-				if (have_hub && !hub_can_sleep() && next > 50)
-					next = 50;
-				uint32_t minute = (60 - pmic_rtc_read() % 60) * 1000, app = clockapps_next_ms(time_ms());
-				if (ambient && minute < next)
-					next = minute;
-				if (app < next)
-					next = app;
-			}
-			bool long_sleep = !awake && next > 1000;
-			if (long_sleep) {
-				timer_set_period(next);
-				timer_next(next);
-				wdt_arm(next + 3000, next + 4000, NULL);
-			}
-			spm_idle(cluster);
-			if (long_sleep) {
-				wdt_arm(3000, 4000, NULL);
-				timer_set_period(1000);
-				timer_next(1);
-			}
-			if (cluster) {
-				cpu_clock_unpark();
-				hub_sleep(false);
-				bt_sleep(false);
-				cpu_clock_slow(false);
-			}
+		uint32_t app_next = 1000;
+		if (!awake) {
+			uint32_t stats = ASLEEP_STATS_MS - (time_ms() - last);
+			app_next = stats > ASLEEP_STATS_MS ? 1 : stats;
+			uint32_t app = clockapps_next_ms(time_ms());
+			if (app < app_next)
+				app_next = app;
 		}
+		power_idle(app_next);
 	}
 }
