@@ -1,8 +1,12 @@
 // The quick settings above the watchface, laid out as AsteroidOS's quick panel: a fixed row with
 // lock (to the always-on face) and Settings, a row of toggles three to a page, paged sideways,
 // with dots for the pages, and the battery level as a bar and a number. An enabled toggle is a
-// darker disc with a bright icon, a disabled one a faint disc with a faint icon. The numbers
-// passed to setting-toggled are the firmware's enum setting, 15 to lock and 16 for Settings.
+// darker disc with a bright icon, a disabled one a faint disc with a faint icon, a pressed one a
+// lighter disc with a dimmed icon. The toggles start at their first page each time the panel
+// comes in. The brightness toggle switches between 10 % and 100 %; held for 300 ms it turns into
+// a bar across the panel, the rest fading out, that sets the brightness from where the finger is
+// in steps of 10 %. While charging the bolt pulses and the bar's end swings. The numbers passed
+// to setting-toggled are the firmware's enum setting, 15 to lock and 16 for Settings.
 import { Face } from "face.slint";
 
 component Toggle {
@@ -12,6 +16,7 @@ component Toggle {
     in property <bool> held;
     in property <length> size: 112px;
     callback clicked();
+    property <bool> down: touch.pressed || root.held;
 
     width: root.size;
     height: root.size;
@@ -19,7 +24,7 @@ component Toggle {
     Rectangle {
         border-radius: root.size / 2;
         background: #222222;
-        opacity: touch.pressed || root.held ? 1 : root.button ? 1 : root.on ? 0.75 : 0.2;
+        opacity: root.down ? 0.6 : root.button ? 1 : root.on ? 0.75 : 0.2;
     }
 
     Image {
@@ -28,8 +33,8 @@ component Toggle {
         width: root.size / 2;
         height: root.size / 2;
         source: root.icon;
-        colorize: white;
-        opacity: root.button || root.on ? 1 : 0.3;
+        colorize: root.down ? #d3d3d3 : white;
+        opacity: root.down ? 0.5 : root.button || root.on ? 1 : 0.3;
     }
 
     touch := TouchArea {
@@ -54,15 +59,43 @@ export component QuickSettings {
     property <int> hit: root.page == 0 ? (self.column < 3 && self.left < 112px ? self.column : -1)
         : self.at - root.strip - 16px >= (root.strip - 112px) / 2 && self.at - root.strip - 16px < (root.strip + 112px) / 2 ? 3 : -1;
     property <int> held: strip-touch.pressed && !root.dragging ? root.hit : -1;
+    property <bool> scrubbing;
+    property <float> shown: root.scrubbing ? 0 : 1;
+    animate shown {
+        duration: 200ms;
+        easing: cubic-bezier(0.455, 0.03, 0.515, 0.955);
+    }
+    property <bool> visible-now: Face.screen == 5 && Face.app < 0;
+    property <bool> charging: Face.charging && self.visible-now;
+    // The bolt's pulse between 1 and 0.7 over 3 s and the bar's swing over 1.5 s, run only while
+    // the panel is on screen.
+    property <float> pulse: self.charging ? 0.85 + 0.15 * Math.cos(Math.mod(animation-tick() / 1ms, 3000) / 3000 * 360deg) : 1;
+    property <float> wave: self.charging ? Math.sin(Math.mod(animation-tick() / 1ms, 1500) / 1500 * 360deg) : 0;
 
     width: 100%;
     height: 100%;
 
+    changed visible-now => {
+        if self.visible-now {
+            self.page = 0;
+        }
+    }
+
+    // From the finger's x across the panel, 15 % in from each side being the ends.
+    function scrub(x: length) {
+        let f = Math.clamp((x - root.width * 0.15) / (root.width * 0.7), 0, 1);
+        let v = Math.clamp(Math.round((10 + f * 90) / 10) * 10, 10, 100);
+        if v != Face.brightness {
+            Face.brightness-set(v);
+        }
+    }
+
     Toggle {
         x: root.width / 2 - 16px - self.width;
-        y: 38px;
+        y: 32px;
         size: 96px;
         button: true;
+        opacity: root.shown;
         icon: @image-url("../icons/ios-unlock.svg");
         clicked => {
             Face.setting-toggled(15);
@@ -71,9 +104,10 @@ export component QuickSettings {
 
     Toggle {
         x: root.width / 2 + 16px;
-        y: 38px;
+        y: 32px;
         size: 96px;
         button: true;
+        opacity: root.shown;
         icon: @image-url("../icons/ios-settings.svg");
         clicked => {
             Face.setting-toggled(16);
@@ -90,6 +124,7 @@ export component QuickSettings {
         Rectangle {
             x: -root.page * (root.strip + 16px) + root.drag;
             width: root.pages * (root.strip + 16px);
+            opacity: root.shown;
             animate x {
                 duration: root.dragging ? 0ms : 150ms;
                 easing: ease-out;
@@ -102,15 +137,15 @@ export component QuickSettings {
 
                 Toggle {
                     icon: @image-url("../icons/ios-sunny.svg");
-                    on: true;
+                    on: Face.brightness > 10;
                     held: root.held == 0;
                     clicked => {
-                        Face.setting-toggled(0);
+                        Face.brightness-set(Face.brightness > 10 ? 10 : 100);
                     }
                 }
 
                 Toggle {
-                    icon: Face.bluetooth-on ? @image-url("../icons/ios-bluetooth.svg") : @image-url("../icons/ios-bluetooth-off-outline.svg");
+                    icon: Face.bluetooth-connected ? @image-url("../icons/ios-bluetooth-connected.svg") : @image-url("../icons/ios-bluetooth.svg");
                     on: Face.bluetooth-on;
                     held: root.held == 1;
                     clicked => {
@@ -145,13 +180,31 @@ export component QuickSettings {
             }
         }
 
+        Timer {
+            interval: 300ms;
+            running: root.held == 0 && !root.scrubbing && !root.swiped;
+            triggered => {
+                root.scrubbing = true;
+                root.swiped = true;
+                root.scrub(strip-touch.pressed-x + parent.x);
+            }
+        }
+
         strip-touch := TouchArea {
             clicked => {
                 if !root.swiped && root.hit >= 0 {
-                    Face.setting-toggled(root.hit);
+                    if root.hit == 0 {
+                        Face.brightness-set(Face.brightness > 10 ? 10 : 100);
+                    } else {
+                        Face.setting-toggled(root.hit);
+                    }
                 }
             }
             moved => {
+                if root.scrubbing {
+                    root.scrub(self.mouse-x + parent.x);
+                    return;
+                }
                 if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 10px {
                     root.dragging = true;
                     root.swiped = true;
@@ -164,23 +217,26 @@ export component QuickSettings {
                 if e.kind == PointerEventKind.down {
                     root.swiped = false;
                 }
-                if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) && root.dragging {
-                    root.page = Math.clamp(root.page + (root.drag < -40px ? 1 : root.drag > 40px ? -1 : 0), 0, root.pages - 1);
-                    root.drag = 0;
-                    root.dragging = false;
+                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                    root.scrubbing = false;
+                    if root.dragging {
+                        root.page = Math.clamp(root.page + (root.drag < -40px ? 1 : root.drag > 40px ? -1 : 0), 0, root.pages - 1);
+                        root.drag = 0;
+                        root.dragging = false;
+                    }
                 }
             }
         }
     }
 
     for i in root.pages: Rectangle {
-        x: root.width / 2 + (i - (root.pages - 1) / 2) * 22px - 8px;
+        x: root.width / 2 + (i - (root.pages - 1) / 2) * 20px - 8px;
         y: 272px;
         width: 16px;
         height: 16px;
         border-radius: 8px;
         background: white;
-        opacity: i == root.page ? 0.6 : 0.3;
+        opacity: (i == root.page ? 0.5 : 0.25) * root.shown;
     }
 
     Rectangle {
@@ -191,9 +247,11 @@ export component QuickSettings {
         border-radius: 16px;
         background: #ffffff33;
         clip: true;
+        opacity: root.shown;
 
         Rectangle {
-            width: parent.width * Face.battery-percent / 100;
+            x: 0;
+            width: parent.width * (Face.battery-percent / 100 + 0.05 * root.wave);
             height: parent.height;
             background: #ffffff4d;
         }
@@ -204,6 +262,7 @@ export component QuickSettings {
             height: 32px;
             source: @image-url("../icons/ios-flash.svg");
             colorize: white;
+            opacity: root.pulse;
         }
     }
 
@@ -214,8 +273,61 @@ export component QuickSettings {
         height: 50px;
         text: Face.battery-percent + "%";
         color: white;
+        opacity: root.shown;
         font-size: 36px;
         font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // The brightness bar while scrubbing: the value where the fixed row was, the bar in the middle
+    // and its name where the battery bar was.
+    Rectangle {
+        x: root.width * 0.1;
+        y: (root.height - 80px) / 2;
+        width: root.width * 0.8;
+        height: 80px;
+        border-radius: 40px;
+        background: #212121bf;
+        clip: true;
+        opacity: 1 - root.shown;
+
+        Rectangle {
+            x: 0;
+            width: parent.width * Face.brightness / 100;
+            height: parent.height;
+            background: #ffffff4d;
+            animate width {
+                duration: 80ms;
+                easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            }
+        }
+    }
+
+    Text {
+        x: 0;
+        y: 32px;
+        width: root.width;
+        height: 112px;
+        text: Face.brightness + "%";
+        color: white;
+        opacity: (1 - root.shown) * 0.9;
+        font-size: 48px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Text {
+        x: 0;
+        y: 320px - 12px - 32px;
+        width: root.width;
+        height: 64px;
+        text: "Brightness";
+        color: white;
+        opacity: (1 - root.shown) * 0.9;
+        font-size: 48px;
+        font-weight: 500;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
