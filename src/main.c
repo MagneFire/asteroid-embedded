@@ -379,7 +379,7 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool gpu_off = false;
-	bool key_was = false, woke = false;
+	bool key_was = false, woke = false, wake_touch = false;
 	uint32_t alarm_t = 0, shown_step = UINT32_MAX;
 	clockapps_init(have_ui, have_haptics);
 	int32_t passkey = -1;
@@ -429,8 +429,15 @@ void main(void)
 				continue;
 			}
 			if (!power_awake()) {
-				if (t.event == TOUCH_DOWN && setting_get(SETTING_TAP))
+				if (t.event == TOUCH_DOWN && setting_get(SETTING_TAP)) {
 					power_request(false);
+					wake_touch = true;
+				}
+				continue;
+			}
+			/* The touch that woke the watch is not a touch on the UI. */
+			if (wake_touch) {
+				wake_touch = t.event != TOUCH_UP;
 				continue;
 			}
 			power_activity(now);
