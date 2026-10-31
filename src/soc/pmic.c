@@ -204,9 +204,8 @@ uint32_t pmic_battery_mv(void)
 
 /* Charger (SMBB on PM8226): the charger, buck, battery interface, USB
  * path and misc peripherals at 0x1000, 0x1100, 0x1200, 0x1300 and 0x1600.
- * Set up in the order the vendor driver probes them, with the limits of
- * the HB442528EBC cell: 4.35 V, 300 mA fast charge, resume 100 mV below
- * full. Writes to the 0xd0-0xff test registers need SEC_ACCESS first.
+ * Set up in the order the vendor driver probes them, with the board's
+ * limits for its cell and charging resumed 100 mV below full. Writes to the 0xd0-0xff test registers need SEC_ACCESS first.
  * The hardware end-of-charge logic is overridden, so the poll ends the
  * charge itself, trims the regulation voltage and restarts charging. */
 #define SMBB_CHGR		0x001000
@@ -260,12 +259,12 @@ uint32_t pmic_battery_mv(void)
 #define USB_RT_VALID		BIT(1)
 #define CHG_EN			BIT(7)
 #define CHG_ON_BAT_FORCE	BIT(0)
-#define VDDMAX_MV		4350
-#define VDDSAFE_MV		(VDDMAX_MV + 80)
-#define VINMIN_MV		4370
-#define IBATMAX_MA		300
-#define IBATSAFE_MA		600
-#define ITERM_MA		20
+#define VDDMAX_MV		BOARD_CHG_VDD_MAX_MV
+#define VDDSAFE_MV		BOARD_CHG_VDD_SAFE_MV
+#define VINMIN_MV		BOARD_CHG_VIN_MIN_MV
+#define IBATMAX_MA		BOARD_CHG_IBAT_MAX_MA
+#define IBATSAFE_MA		BOARD_CHG_IBAT_SAFE_MA
+#define ITERM_MA		BOARD_CHG_ITERM_MA
 #define RESUME_DELTA_MV		100
 #define VBATDET_ERR_MV		50
 #define TCHG_MINS		150
@@ -274,6 +273,17 @@ uint32_t pmic_battery_mv(void)
 #define EOC_PERIOD_MS		10000
 #define EOC_COUNT		10
 #define TRIM_MAX_DELTA_MV	80
+
+/* The board's limits have to land on a register step: 10 mV from 3.24 V
+ * for the voltages, 50 mV from 4.0 V for the input minimum and 50 mA for
+ * the currents. */
+_Static_assert(VDDMAX_MV >= 3240 && VDDMAX_MV % 10 == 0 && VDDSAFE_MV >= VDDMAX_MV && VDDSAFE_MV % 10 == 0,
+	       "charger voltage off the 10 mV steps");
+_Static_assert(VINMIN_MV >= 4000 && VINMIN_MV % 50 == 0 && 0x0c + (VINMIN_MV - 4000) / 50 <= 0x3f,
+	       "charger input minimum off the 50 mV steps");
+_Static_assert(IBATMAX_MA % 50 == 0 && IBATMAX_MA / 50 <= 0x3f && IBATSAFE_MA % 50 == 0 && IBATSAFE_MA / 50 <= 0x3f &&
+		       IBATMAX_MA <= IBATSAFE_MA,
+	       "charger current off the 50 mA steps");
 
 static uint8_t trim_center;
 static int32_t vddmax_delta_mv;

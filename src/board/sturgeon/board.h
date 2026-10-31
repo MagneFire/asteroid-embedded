@@ -73,4 +73,13 @@
 
 /* The PMIC's interrupt line (power key, charger) as an MPM pin. */
 #define BOARD_PMIC_MPM		62
+
+/* Charger limits for the 300 mAh HB442528EBC cell: 4.35 V, 1 C fast
+ * charge, 20 mA termination. */
+#define BOARD_CHG_VDD_MAX_MV	4350
+#define BOARD_CHG_VDD_SAFE_MV	4430
+#define BOARD_CHG_VIN_MIN_MV	4350
+#define BOARD_CHG_IBAT_MAX_MA	300
+#define BOARD_CHG_IBAT_SAFE_MA	600
+#define BOARD_CHG_ITERM_MA	20
 #endif

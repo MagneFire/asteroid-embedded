@@ -67,4 +67,13 @@
 
 /* PM8226 vibrator drive voltage. */
 #define BOARD_VIB_MV		3000
+
+/* Charger limits for the PR3's 380 mAh C11N1540 cell: 4.35 V, 300 mA
+ * fast charge (below 1 C), 20 mA termination. Unverified on the bench. */
+#define BOARD_CHG_VDD_MAX_MV	4350
+#define BOARD_CHG_VDD_SAFE_MV	4380
+#define BOARD_CHG_VIN_MIN_MV	4350
+#define BOARD_CHG_IBAT_MAX_MA	300
+#define BOARD_CHG_IBAT_SAFE_MA	600
+#define BOARD_CHG_ITERM_MA	20
 #endif
