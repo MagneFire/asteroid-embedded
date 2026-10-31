@@ -1,7 +1,8 @@
-/* Vendor firmware: the GPU microcode and the Bluetooth patch are read
- * from /vendor/firmware on the watch's Android system partition, where
- * its own software keeps them, so none of it is part of this image.
- * Each file is read once into a fixed pool and kept there. */
+/* Vendor firmware: the GPU microcode, the Bluetooth patch and the like
+ * are read from the watch's Android system partition, where its own
+ * software keeps them, so none of it is part of this image. The board
+ * lists the directories to look in. Each file is read once into a fixed
+ * pool and kept there. */
 #include <string.h>
 #include "asteroid.h"
 #include "storage.h"
@@ -14,7 +15,8 @@ static bool opened;
 static uint8_t pool[POOL_SIZE] __attribute__((aligned(64)));
 static uint32_t used;
 static unsigned nfiles;
-static struct { char name[24]; uint32_t off, size; } files[MAX_FILES];
+static struct { char name[40]; uint32_t off, size; } files[MAX_FILES];
+static const char *const dirs[] = { BOARD_FIRMWARE_DIRS };
 
 static int open_system(void)
 {
@@ -36,16 +38,26 @@ const void *firmware_get(const char *name, uint32_t *size)
 			*size = files[i].size;
 			return pool + files[i].off;
 		}
-	char path[64] = "/vendor/firmware/";
+	char path[64];
 	struct ext4_inode in;
 	size_t len = strlen(name);
 	int r;
 	if (nfiles == MAX_FILES || len >= sizeof files[0].name)
 		return NULL;
-	memcpy(path + 17, name, len + 1);
-	if ((r = open_system()) || (r = ext4_lookup(&fs, path, &in))) {
-		log_printf("firmware: %s: %d\n", path, r);
+	if ((r = open_system())) {
+		log_printf("firmware: system partition: %d\n", r);
 		return NULL;
+	}
+	for (unsigned i = 0; ; i++) {
+		if (i == sizeof dirs / sizeof dirs[0]) {
+			log_printf("firmware: %s: %d\n", name, r);
+			return NULL;
+		}
+		size_t dlen = strlen(dirs[i]);
+		memcpy(path, dirs[i], dlen);
+		memcpy(path + dlen, name, len + 1);
+		if (!(r = ext4_lookup(&fs, path, &in)))
+			break;
 	}
 	if (in.size > POOL_SIZE - used || ext4_read(&fs, &in, 0, pool + used, (uint32_t)in.size) != (int)in.size) {
 		log_printf("firmware: %s: %lu bytes not read\n", path, (unsigned long)in.size);

@@ -13,6 +13,9 @@
 #define BOARD_PANEL_TE_GPIO	24
 #define BOARD_PANEL_FLIP_UD	1
 
+/* Firmware on the system partition. */
+#define BOARD_FIRMWARE_DIRS	"/vendor/firmware/"
+
 /* Synaptics RMI4 touch controller on BLSP1 QUP5. */
 #define BOARD_TOUCH_QUP		5
 #define BOARD_TOUCH_SDA		18
