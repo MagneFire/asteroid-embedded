@@ -111,6 +111,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../src/ui/ui.h");
     println!("cargo:rerun-if-changed=../src/asteroid.h");
     println!("cargo:rerun-if-env-changed=ASTEROID_BOARD");
+    println!("cargo:rerun-if-env-changed=ASTEROID_HEART_RATE");
     println!("cargo:rerun-if-env-changed=ASTEROID_UI_SIZE");
 }
 
@@ -143,7 +144,10 @@ fn codes(out: &std::path::Path) {
     let ui_h = std::fs::read_to_string("../src/ui/ui.h").unwrap();
     let asteroid_h = std::fs::read_to_string("../src/asteroid.h").unwrap();
     let board = std::env::var("ASTEROID_BOARD").unwrap_or_else(|_| "sturgeon".into());
-    let mut slint = format!("export global Codes {{\n    out property <string> board: \"{board}\";\n");
+    let heart_rate = std::env::var("ASTEROID_HEART_RATE").map_or(true, |v| v != "0");
+    let mut slint = format!(
+        "export global Codes {{\n    out property <string> board: \"{board}\";\n    out property <bool> heart-rate: {heart_rate};\n"
+    );
     let mut rust = String::new();
     for (header, name, ty) in [
         (&asteroid_h, "setting", "i32"),

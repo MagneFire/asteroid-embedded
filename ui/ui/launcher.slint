@@ -5,6 +5,7 @@
 // colours) and which edges lead somewhere. size is the screen it is drawn for, so the selector can
 // show it small. A tap opens the app over the screen stack.
 import { Face } from "face.slint";
+import { Codes } from "codes.slint";
 
 export struct App {
     id: int,
@@ -15,7 +16,8 @@ export struct App {
 }
 
 export global Apps {
-    out property <[App]> list: [
+    // The Heart Rate app only where the watch has the sensor (Codes.heart-rate).
+    property <[App]> all: [
         { id: 2, name: "Alarm Clock", icon: @image-url("../icons/ios-alarm-outline.svg"), center: #CC9800, outer: #0C0500 },
         { id: 8, name: "Calculator", icon: @image-url("../icons/ios-calculator-outline.svg"), center: #7CA600, outer: #0C0B00 },
         { id: 9, name: "Diamonds", icon: @image-url("../icons/2048.svg"), center: #009933, outer: #000C00 },
@@ -27,6 +29,18 @@ export global Apps {
         { id: 3, name: "Timer", icon: @image-url("../icons/ios-timer-outline.svg"), center: #A6005F, outer: #0C0003 },
         { id: 5, name: "Weather", icon: @image-url("../icons/launcher-cloudy-outline.svg"), center: #990019, outer: #0C0200 },
     ];
+    property <[App]> without-heart-rate: [
+        { id: 2, name: "Alarm Clock", icon: @image-url("../icons/ios-alarm-outline.svg"), center: #CC9800, outer: #0C0500 },
+        { id: 8, name: "Calculator", icon: @image-url("../icons/ios-calculator-outline.svg"), center: #7CA600, outer: #0C0B00 },
+        { id: 9, name: "Diamonds", icon: @image-url("../icons/2048.svg"), center: #009933, outer: #000C00 },
+        { id: 7, name: "Flashlight", icon: @image-url("../icons/ios-bulb-outline.svg"), center: #00A698, outer: #000C07 },
+        { id: 0, name: "Music", icon: @image-url("../icons/ios-musical-notes-outline.svg"), center: #2577B3, outer: #000619 },
+        { id: 1, name: "Settings", icon: @image-url("../icons/ios-settings-outline.svg"), center: #0044A6, outer: #00010C },
+        { id: 4, name: "Stopwatch", icon: @image-url("../icons/ios-stopwatch-outline.svg"), center: #9800A6, outer: #0C0009 },
+        { id: 3, name: "Timer", icon: @image-url("../icons/ios-timer-outline.svg"), center: #A6005F, outer: #0C0003 },
+        { id: 5, name: "Weather", icon: @image-url("../icons/launcher-cloudy-outline.svg"), center: #990019, outer: #0C0200 },
+    ];
+    out property <[App]> list: Codes.heart-rate ? all : without-heart-rate;
     out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
 }
 

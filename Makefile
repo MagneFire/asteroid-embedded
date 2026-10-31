@@ -90,7 +90,7 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h $(BUILD)/watch.mk
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS) $(BUILD)/watch.mk
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" ASTEROID_BOARD=$(WATCH) ASTEROID_UI_SIZE=$(BOARD_UI_SIZE) \
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" ASTEROID_BOARD=$(WATCH) ASTEROID_UI_SIZE=$(BOARD_UI_SIZE) ASTEROID_HEART_RATE=$(BOARD_HEART_RATE) \
 		$(CARGO) build --release --target armv7a-none-eabihf
 	@touch $@
 
