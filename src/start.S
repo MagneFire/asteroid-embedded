@@ -109,3 +109,12 @@ irq_enable:
 irq_disable:
         cpsid   i
         bx      lr
+        .global irq_save
+irq_save:
+        mrs     r0, cpsr
+        cpsid   i
+        bx      lr
+        .global irq_restore
+irq_restore:
+        msr     cpsr_c, r0
+        bx      lr

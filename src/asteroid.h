@@ -116,6 +116,9 @@ void tlmm_irq_enable(unsigned n, bool on);
 void tlmm_irq_ack(unsigned n);
 void irq_enable(void);
 void irq_disable(void);
+uint32_t irq_save(void);	/* mask IRQs, returning the state for irq_restore */
+void irq_restore(uint32_t cpsr);
+bool in_irq(void);	/* true inside an interrupt handler */
 void timer_init(void);
 void timer_resume(void);
 uint32_t time_ms(void);

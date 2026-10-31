@@ -54,12 +54,17 @@ void log_init(void)
 
 void log_set_sink(void (*fn)(const char *s, size_t n)) { sink = fn; }
 
+/* Called from the main loop and from interrupt handlers: the ring
+ * indices are updated with interrupts masked so a line from an interrupt
+ * cannot tear one the main loop is writing. */
 static void log_write(const char *s, size_t n)
 {
+	uint32_t flags = irq_save();
 	for (size_t i = 0; i < n; i++)
 		console_put(s[i]);
 	if (sink)
 		sink(s, n);
+	irq_restore(flags);
 }
 
 void log_puts(const char *s) { log_write(s, strlen(s)); }

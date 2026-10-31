@@ -67,6 +67,10 @@ struct bus {
 		i2c_done_fn done;
 		void *ctx;
 	} xfer;
+	struct {
+		const char *what;	/* a failure seen in interrupt context, logged by i2c_qup_poll */
+		uint32_t state, status, err, op;
+	} pending;
 };
 
 static struct bus buses[6];
@@ -194,8 +198,17 @@ int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32
 
 static int fail(struct bus *b, const char *what)
 {
-	log_printf("i2c: %s: state %08lx i2c %08lx err %08lx op %08lx\n", what, readl(b->base + QUP_STATE),
-		   readl(b->base + QUP_I2C_STATUS), readl(b->base + QUP_ERROR_FLAGS), readl(b->base + QUP_OPERATIONAL));
+	uint32_t state = readl(b->base + QUP_STATE), status = readl(b->base + QUP_I2C_STATUS),
+		 err = readl(b->base + QUP_ERROR_FLAGS), op = readl(b->base + QUP_OPERATIONAL);
+	if (in_irq()) {
+		b->pending.what = what;
+		b->pending.state = state;
+		b->pending.status = status;
+		b->pending.err = err;
+		b->pending.op = op;
+	} else {
+		log_printf("i2c: %s: state %08lx i2c %08lx err %08lx op %08lx\n", what, state, status, err, op);
+	}
 	reset(b);
 	b->xfer.busy = false;
 	return -1;
@@ -259,6 +272,14 @@ void i2c_qup_poll(unsigned qup)
 	struct bus *b = bus(qup);
 	if (!b)
 		return;
+	if (b->pending.what) {
+		uint32_t flags = irq_save();
+		const char *what = b->pending.what;
+		uint32_t state = b->pending.state, status = b->pending.status, err = b->pending.err, op = b->pending.op;
+		b->pending.what = NULL;
+		irq_restore(flags);
+		log_printf("i2c: %s (in irq): state %08lx i2c %08lx err %08lx op %08lx\n", what, state, status, err, op);
+	}
 	if (b->xfer.busy && time_ms() - b->xfer.started > 20) {
 		irq_disable();
 		if (b->xfer.busy) {

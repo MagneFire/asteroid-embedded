@@ -98,6 +98,10 @@ void gic_disable(unsigned id)
 
 /* frame: {r0-r3, r12, pc} of the interrupted code, for handlers that
  * report where the main loop was. */
+static volatile unsigned depth;
+
+bool in_irq(void) { return depth != 0; }
+
 void irq_handler(const uint32_t *frame)
 {
 	irq_frame = frame;
@@ -107,7 +111,9 @@ void irq_handler(const uint32_t *frame)
 		spurious++;
 		return;
 	}
+	depth++;
 	if (id < nirq && handlers[id])
 		handlers[id]();
+	depth--;
 	writel(iar, GICC_EOIR);
 }
