@@ -202,6 +202,14 @@ int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv)
 	return rpm_request(type, id, kvp, 1);
 }
 
+/* A vote in the sleep set keeps a regulator on while the apps processor
+ * is asleep; without one the RPM applies only the other masters' votes. */
+int rpm_regulator_sleep_enable(uint32_t type, uint32_t id, bool on)
+{
+	uint32_t kvp[3] = { 0x6e657773, 4, on };
+	return request(RPM_SET_SLEEP, type, id, kvp, 1);
+}
+
 /* Bus and memory clocks: an RPM vote outlives a warm reset, so set the
  * apps processor's votes explicitly at boot. */
 #define RPM_CLK1		0x316b6c63u
