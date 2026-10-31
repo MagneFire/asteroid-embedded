@@ -3,10 +3,12 @@
  * watchface, (W, 0) with the notifications on screen, (-W, 0) for
  * Today, (0, -H) for the launcher and (0, H) for the quick settings; the
  * side screens sit one screen away from the watchface. An open app lies
- * over all of them, fading in when opened; dragged from the left or top
- * edge it follows the finger, fading, and let go past 15 % it goes a
- * page back, or closes onto the watchface from its first page or from
- * the top edge. A drag moves the origin with the finger,
+ * over all of them, fading in when opened; dragged from the top edge,
+ * or from the left edge on its first page, it follows the finger,
+ * fading, and let go past 15 % it closes onto the watchface. From the
+ * left edge on a later page only that page follows the finger, over
+ * the page below (ui_app_peek), and let go past 15 % it goes a page
+ * back. A drag moves the origin with the finger,
  * clamped to the screens that exist in that direction, and a release
  * past half the screen or a quick flick switches screens; the slide back
  * to rest is an ease-out over SLIDE_MS. */
@@ -34,9 +36,9 @@ static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] 
 static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
 static unsigned launcher;
-static int W, H, fx, fy, from_x, from_y, off, from_off;
+static int W, H, fx, fy, from_x, from_y, off, from_off, peek;
 static unsigned screen, gesture;
-static bool animating, dragging, horizontal, app_open, app_closing, app_top;
+static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back;
 static uint32_t app_t0;
 static int down_x, down_y;
 static uint32_t down_ms, anim_t0, fade_t;
@@ -59,19 +61,26 @@ void stack_home(void)
 {
 	screen = UI_PANEL_FACE;
 	fx = fy = 0;
-	animating = dragging = app_open = app_closing = false;
+	if (peeking)
+		ui_app_peek_end(false);
+	animating = dragging = app_open = app_closing = peeking = false;
 	gesture = IDLE;
 	fade = 0.0f;
 }
 
-/* The app moves back to rest, or (close) away and onto the watchface. */
+/* The app moves back to rest, or (close) away and onto the watchface;
+ * while peeking its top page moves back, or (close) away and a page
+ * back. */
 static void slide_app(bool close)
 {
-	from_off = off;
-	app_closing = close;
+	from_off = peeking ? peek : off;
+	peek_back = close;
 	anim_t0 = time_ms();
 	animating = true;
 	dragging = false;
+	if (peeking)
+		return;
+	app_closing = close;
 	if (close) {
 		screen = UI_PANEL_FACE;
 		fx = fy = 0;
@@ -208,7 +217,10 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 			if (gesture == SWIPE) {
 				app_top = down;
 				cancel_press();
-				if (down || !ui_app_depth()) {
+				if (peeking)
+					ui_app_peek_end(false);
+				peeking = !down && ui_app_depth();
+				if (!peeking) {
 					screen = UI_PANEL_FACE;
 					fx = fy = 0;
 				}
@@ -218,17 +230,15 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 			ui_touch(UI_PANEL_APP, kind, x, y);
 			break;
 		}
-		off = app_top ? clampi(dy, 0, H) : clampi(dx, 0, W);
+		int d = app_top ? clampi(dy, 0, H) : clampi(dx, 0, W);
+		if (peeking)
+			ui_app_peek(peek = d);
+		else
+			off = d;
 		animating = false;
 		dragging = kind == UI_TOUCH_MOVE;
-		if (kind == UI_TOUCH_UP) {
-			if (off * 100 <= (app_top ? H : W) * 15)
-				slide_app(false);
-			else if (!app_top && ui_app_back())
-				slide_app(false);
-			else
-				slide_app(true);
-		}
+		if (kind == UI_TOUCH_UP)
+			slide_app(d * 100 > (app_top ? H : W) * 15);
 		break;
 	}
 }
@@ -323,6 +333,15 @@ void stack_update(uint32_t now_ms)
 	if (!animating)
 		return;
 	uint32_t t = now_ms - anim_t0;
+	if (peeking) {
+		float u = t >= APP_SNAP_MS ? 0.0f : 1.0f - (float)t / APP_SNAP_MS, p = 1.0f - u * u * u * u * u;
+		ui_app_peek(peek = from_off + (int)(((peek_back ? W : 0) - from_off) * p));
+		if (t >= APP_SNAP_MS) {
+			animating = peeking = false;
+			ui_app_peek_end(peek_back);
+		}
+		return;
+	}
 	if (app_open) {
 		float u = t >= APP_SNAP_MS ? 0.0f : 1.0f - (float)t / APP_SNAP_MS, p = 1.0f - u * u * u * u * u;
 		int to = app_closing ? (app_top ? H : W) / 2 : 0;

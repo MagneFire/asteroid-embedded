@@ -536,16 +536,27 @@ pub extern "C" fn ui_app_depth() -> i32 {
     ui().map_or(0, |ui| ui.screens[APP].global::<Face>().get_app_depth())
 }
 
-/// Takes the open app one page back; false when it is on its first page.
+/// Drags the open app's top page px to the right, showing the page below.
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_app_back() -> bool {
-    let Some(ui) = ui() else { return false };
+pub extern "C" fn ui_app_peek(px: i32) {
+    let Some(ui) = ui() else { return };
     let face = ui.screens[APP].global::<Face>();
-    if face.get_app_depth() == 0 {
-        return false;
+    face.set_peeking(true);
+    face.set_peek(px as f32);
+}
+
+/// Ends the drag, taking the open app one page back if back; the app resets the peek as it
+/// leaves the page, so the page is never drawn back in place.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_app_peek_end(back: bool) {
+    let Some(ui) = ui() else { return };
+    let face = ui.screens[APP].global::<Face>();
+    if back && face.get_app_depth() > 0 {
+        face.set_back_count(face.get_back_count() + 1);
+    } else {
+        face.set_peek(0.0);
+        face.set_peeking(false);
     }
-    face.set_back_count(face.get_back_count() + 1);
-    true
 }
 
 

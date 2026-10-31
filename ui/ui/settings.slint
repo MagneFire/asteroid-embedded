@@ -42,33 +42,44 @@ export component SettingsApp {
     }
     changed back => {
         self.page = 0;
+        Face.peek = 0;
+        Face.peeking = false;
     }
 
     width: 100%;
     height: 100%;
 
-    if root.page == 0: Flickable {
-        width: 400px;
-        height: 400px;
-        content-height: list.preferred-height;
+    // Under a page being dragged back, the list shows in the strip it uncovers. Kept
+    // while the page is on top, as LayerStack keeps the layer below, so it comes back as it was.
+    Rectangle {
+        x: 0;
+        width: root.page == 0 ? 400px : Face.peeking ? Face.peek : 0;
+        clip: true;
 
-        list := VerticalLayout {
-            padding-top: 24px;
-            padding-bottom: 24px;
+        Flickable {
+            x: 0;
+            width: 400px;
+            height: 400px;
+            content-height: list.preferred-height;
 
-            for item[i] in [
-                { icon: @image-url("../icons/ios-display-outline.svg"), title: "Display", page: 1 },
-                { icon: @image-url("../icons/ios-moon-outline.svg"), title: "Nightstand", page: 2 },
-                { icon: @image-url("../icons/ios-watchface-outline.svg"), title: "Watchface", page: 3 },
-                { icon: @image-url("../icons/ios-launcher-outline.svg"), title: "Launcher", page: 4 },
-                { icon: @image-url("../icons/ios-units-outline.svg"), title: "Units", page: 5 },
-                { icon: @image-url("../icons/ios-bluetooth-outline.svg"), title: "Bluetooth", page: 6 },
-                { icon: @image-url("../icons/ios-help-circle-outline.svg"), title: "About", page: 7 },
-            ]: ListItem {
-                icon: item.icon;
-                title: item.title;
-                clicked => {
-                    root.page = item.page;
+            list := VerticalLayout {
+                padding-top: 24px;
+                padding-bottom: 24px;
+
+                for item[i] in [
+                    { icon: @image-url("../icons/ios-display-outline.svg"), title: "Display", page: 1 },
+                    { icon: @image-url("../icons/ios-moon-outline.svg"), title: "Nightstand", page: 2 },
+                    { icon: @image-url("../icons/ios-watchface-outline.svg"), title: "Watchface", page: 3 },
+                    { icon: @image-url("../icons/ios-launcher-outline.svg"), title: "Launcher", page: 4 },
+                    { icon: @image-url("../icons/ios-units-outline.svg"), title: "Units", page: 5 },
+                    { icon: @image-url("../icons/ios-bluetooth-outline.svg"), title: "Bluetooth", page: 6 },
+                    { icon: @image-url("../icons/ios-help-circle-outline.svg"), title: "About", page: 7 },
+                ]: ListItem {
+                    icon: item.icon;
+                    title: item.title;
+                    clicked => {
+                        root.page = item.page;
+                    }
                 }
             }
         }

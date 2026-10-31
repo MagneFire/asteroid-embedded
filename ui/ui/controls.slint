@@ -470,16 +470,17 @@ export component Pill {
     }
 }
 
-// A page pushed on top of another, sliding in from the right over 200 ms like LayerStack.
+// A page pushed on top of another, sliding in from the right over 200 ms like LayerStack, and
+// following the back gesture aside (Face.peek).
 export component Page {
     property <length> offset: 400px;
 
-    x: self.offset;
+    x: self.offset + Face.peek;
     y: 0;
     width: 400px;
     height: 400px;
     animate x {
-        duration: 200ms;
+        duration: Face.peeking ? 0ms : 200ms;
         easing: ease-out-quint;
     }
 

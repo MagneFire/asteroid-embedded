@@ -144,7 +144,8 @@ void ui_show_notification(int32_t id);
 void ui_hide_notification(void);
 void ui_set_media(const char *title, uint32_t title_len, const char *artist, uint32_t artist_len, const char *album,
 		  uint32_t album_len, bool playing, int32_t volume);
-bool ui_app_back(void);
+void ui_app_peek(int px);
+void ui_app_peek_end(bool back);
 int ui_app_depth(void);
 bool ui_launcher_colors(struct ui_colors *out);
 void ui_set_launcher(int layout);

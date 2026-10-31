@@ -3,7 +3,8 @@
  * below it (swipe up) and the quick settings above it (swipe down),
  * the opposite swipe going back, as on AsteroidOS. stack_open_app
  * fades the app panel in over the stack; a drag from the left edge
- * goes back (ui_app_back) and closes it from its first page, one from
+ * drags the app's top page aside over the one below (ui_app_peek) and
+ * goes a page back, or closes the app from its first page, one from
  * the top edge closes it. Each screen is a Slint panel in its own
  * layer (ui.h); the stack owns where the layers are on the display
  * and draws them on the GPU: a touch that moves past the swipe

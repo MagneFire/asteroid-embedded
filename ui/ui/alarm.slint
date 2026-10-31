@@ -6,7 +6,7 @@
 // alarm-saved(index, hour, minute, days, on), index -1 for a new alarm, and alarm-deleted(index).
 import { Face, AlarmItem } from "face.slint";
 import { Pager } from "launcher.slint";
-import { PageHeader, IconButton, Spinner } from "controls.slint";
+import { PageHeader, IconButton, Spinner, Page } from "controls.slint";
 
 global Days {
     // Monday first, as the bits of days (bit 0 Sunday) and their names.
@@ -73,17 +73,25 @@ export component AlarmApp {
     }
     changed back => {
         self.page = 0;
+        Face.peek = 0;
+        Face.peeking = false;
     }
 
     width: 100%;
     height: 100%;
 
-    if root.page == 0: Rectangle {
+    // Under a page being dragged back, the alarms show in the strip it uncovers. Kept
+    // while the page is on top, as LayerStack keeps the layer below, so it comes back as it was.
+    Rectangle {
         property <length> scroll: list.index * root.width - list.drag;
         animate scroll {
             duration: list.dragging ? 0ms : list.anim;
             easing: ease-out;
         }
+
+        x: 0;
+        width: root.page == 0 ? 400px : Face.peeking ? Face.peek : 0;
+        clip: true;
 
         list := Pager {
             item: root.width;
@@ -256,7 +264,7 @@ export component AlarmApp {
         }
     }
 
-    if root.page == 1: Rectangle {
+    if root.page == 1: Page {
         property <length> w: Face.clock12 ? 120px : 180px;
 
         hours := Spinner {
@@ -329,7 +337,7 @@ export component AlarmApp {
         }
     }
 
-    if root.page == 2: Rectangle {
+    if root.page == 2: Page {
         PageHeader {
             x: 0;
             y: 0;
