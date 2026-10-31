@@ -124,6 +124,10 @@ int main(void)
 	CHECK(stub_asleep);
 	run("wake");
 	CHECK(!stub_asleep);
+	run("awake on");
+	CHECK(stub_keep_awake && !stub_asleep);
+	run("awake off");
+	CHECK(!stub_keep_awake);
 
 	out_len = 0;
 	console_attach(collect, NULL, NULL, true);

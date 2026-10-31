@@ -53,6 +53,8 @@ int speaker_probe(uint16_t *rev) { return -1; }
 void cpu_clock_slow(bool slow) {}
 bool cpu_clock_is_slow(void) { return false; }
 void power_request(bool sleep) { stub_asleep = sleep; }
+bool stub_keep_awake;
+void power_keep_awake(bool on) { stub_keep_awake = on; }
 static int stub_settings[SETTINGS] = { [SETTING_AOD] = 1 };
 int setting_get(enum setting s) { return stub_settings[s]; }
 void setting_set(enum setting s, int v) { stub_settings[s] = v; }

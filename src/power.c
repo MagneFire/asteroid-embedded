@@ -26,6 +26,7 @@
 static bool have_display, have_ui, have_hub;
 static bool awake = true, ambient, sleep_request, wake_request, charger_wake;
 static uint32_t ambient_minute, last_activity, asleep_t, asleep_ms, wakeups;
+static bool keep_awake;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
 void power_init(bool display, bool ui, bool hub)
@@ -47,6 +48,11 @@ void power_request(bool sleep)
 void power_activity(uint32_t now)
 {
 	last_activity = now;
+}
+
+void power_keep_awake(bool on)
+{
+	keep_awake = on;
 }
 
 /* A cable plugged in shows the screen for CHARGER_WAKE_MS, as mce
@@ -148,6 +154,8 @@ enum power_change power_update(uint32_t *now_p)
 		wake_request = true;
 	else
 		charger_wake = false;
+	if (keep_awake && awake && !sleep_request)
+		last_activity = now;
 	if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 		clockapps_sleep();
 		settings_flush();

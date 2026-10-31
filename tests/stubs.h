@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 extern uint32_t stub_ms, stub_rtc, stub_brightness;
-extern bool stub_asleep;
+extern bool stub_asleep, stub_keep_awake;
 extern jmp_buf *stub_reboot_jmp;
 extern int stub_failures;
 extern char stub_notify[1024];

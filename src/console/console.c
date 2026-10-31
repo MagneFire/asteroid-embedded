@@ -17,6 +17,7 @@
 #include "media/media.h"
 #include "audio/speaker.h"
 #include "ui/ui.h"
+#include "power.h"
 #include "console.h"
 
 #define LINE_LEN	128
@@ -220,6 +221,20 @@ static void cmd_bright(const char *args)
 
 static void cmd_sleep(const char *args) { power_request(true); }
 static void cmd_wake(const char *args) { power_request(false); }
+
+/* awake on|off: keeps the watch from sleeping on its own, for testing. */
+static void cmd_awake(const char *args)
+{
+	bool on = !strcmp(args, "on");
+	if (!on && strcmp(args, "off")) {
+		say("usage: awake on|off\n");
+		return;
+	}
+	power_keep_awake(on);
+	if (on)
+		power_request(false);
+	say("awake %s\n", on ? "held" : "released");
+}
 
 static void cmd_set(const char *args)
 {
@@ -902,6 +917,7 @@ static const struct command commands[] = {
 	{ "bright", "<0-255>", cmd_bright },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
+	{ "awake", "on|off", cmd_awake },
 	{ "aod", "[on|off]", cmd_aod },
 	{ "set", "[name [value]]", cmd_set },
 	{ "rtc", "[seconds]", cmd_rtc },
