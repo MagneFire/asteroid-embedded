@@ -6,8 +6,8 @@
 #include "asteroid.h"
 #include "storage.h"
 
-#define POOL_SIZE	(64u * 1024)
-#define MAX_FILES	4
+#define POOL_SIZE	(128u * 1024)
+#define MAX_FILES	6
 
 static struct ext4 fs;
 static bool opened;
