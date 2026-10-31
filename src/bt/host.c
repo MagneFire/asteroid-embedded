@@ -310,6 +310,12 @@ bool bt_host_connected(void)
 	return host_on && conn != BLE_HS_CONN_HANDLE_NONE;
 }
 
+void bt_host_disconnect(void)
+{
+	if (bt_host_connected())
+		ble_gap_terminate(conn, BLE_ERR_REM_USER_CONN_TERM);
+}
+
 void bt_host_status(struct bt_status *s)
 {
 	struct ble_gap_conn_desc d;

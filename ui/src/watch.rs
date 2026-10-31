@@ -316,8 +316,11 @@ pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_set_connected(connected: bool) {
-    each(|face| face.set_bluetooth_connected(connected));
+pub extern "C" fn ui_set_connected(connected: bool, bonded: bool) {
+    each(|face| {
+        face.set_bluetooth_connected(connected);
+        face.set_bluetooth_bonded(bonded);
+    });
 }
 
 #[unsafe(no_mangle)]

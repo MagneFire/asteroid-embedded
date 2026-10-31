@@ -261,6 +261,11 @@ int bt_store_clear(void)
 	return persist();
 }
 
+bool bt_store_bonded(void)
+{
+	return bonds.n_peer > 0;
+}
+
 static bool rpa_matches(const uint8_t irk[16], const uint8_t rpa[6])
 {
 	uint8_t key[16], in[16] = { 0 }, out[16];

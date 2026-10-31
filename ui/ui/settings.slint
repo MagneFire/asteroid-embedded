@@ -404,8 +404,11 @@ export component SettingsApp {
             y: 290px;
             text: "Forget phone";
             icon: @image-url("../icons/ios-trash-outline.svg");
+            dim: !Face.bluetooth-bonded;
             clicked => {
-                Face.setting-toggled(34);
+                if Face.bluetooth-bonded {
+                    Face.setting-toggled(34);
+                }
             }
         }
     }

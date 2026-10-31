@@ -13,8 +13,8 @@
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
  * code. ui_set_clock also takes the RTC (seconds), against which the
  * notifications' times (RTC seconds) give their age; ui_set_connected
- * says whether a phone is connected. Notifications are set as a list,
- * newest first; ui_show_notification
+ * says whether a phone is connected and whether one is paired.
+ * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
  * the watchface to its always-on form. The app panel shows the app set
@@ -157,7 +157,7 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 	     uint32_t height);
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
 		  uint32_t year, uint32_t rtc);
-void ui_set_connected(bool connected);
+void ui_set_connected(bool connected, bool bonded);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);

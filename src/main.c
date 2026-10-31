@@ -318,6 +318,8 @@ static void setting_toggled(int s)
 		bt_pairing_reply(s == UI_PAIR_ACCEPT);
 	} else if (s == UI_FORGET_PHONE) {
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
+		bt_host_disconnect();
+		ui_set_connected(bt_host_connected(), bt_store_bonded());
 	} else if (s == SETTING_BLUETOOTH) {
 		bool on = !setting_get(SETTING_BLUETOOTH);
 		setting_set(SETTING_BLUETOOTH, on);
@@ -900,7 +902,7 @@ void main(void)
 				show_weather();
 			}
 			ui_set_battery(bms_percent(), pmic_charging());
-			ui_set_connected(bt_host_connected());
+			ui_set_connected(bt_host_connected(), bt_store_bonded());
 			static char addr_text[18];
 			uint8_t addr[6];
 			if (!addr_text[0] && !bt_addr_load(addr))
