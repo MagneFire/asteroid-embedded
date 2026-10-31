@@ -26,6 +26,7 @@
 #include "alarm.h"
 #include "clockapps.h"
 #include "calc.h"
+#include "game.h"
 #include "power.h"
 #include "config.h"
 
@@ -81,6 +82,11 @@ static uint32_t rgb(struct ui_rgb c)
 static void show_calc(void)
 {
 	ui_set_calc(calc_shown(), strlen(calc_shown()), calc_length());
+}
+
+static void show_game(void)
+{
+	ui_set_game(game_tiles(), game_score(), game_best(), game_over());
 }
 
 static void open_app(int app)
@@ -380,7 +386,7 @@ void main(void)
 	pmic_usb_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
-	bool have_hub = hub_init(), steps_awake = false, was_lit = false;
+	bool have_hub = hub_init(), steps_awake = false, was_lit = false, was_diamonds = false;
 	uint32_t shown_bpm = 0;
 	power_init(have_display, have_ui, have_hub);
 	console_init();
@@ -395,6 +401,7 @@ void main(void)
 	bool key_was = false, woke = false, wake_touch = false;
 	uint32_t alarm_t = 0, shown_step = UINT32_MAX;
 	clockapps_init(have_ui, have_haptics);
+	game_init();
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
@@ -601,6 +608,9 @@ void main(void)
 				calc_key(a);
 				show_calc();
 				break;
+			case UI_EVENT_GAME:
+				game_move(a, now);
+				break;
 			case UI_EVENT_SNOOZE:
 				notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);
 				break;
@@ -618,6 +628,14 @@ void main(void)
 		}
 		if (power_awake())
 			clockapps_refresh(now);
+		if (game_tick(now) && have_ui)
+			show_game();
+		/* The game's board is saved when its app closes or the watch
+		 * sleeps, not on every move. */
+		bool diamonds = have_ui && ui_app_open() == UI_APP_DIAMONDS;
+		if (was_diamonds && !diamonds)
+			game_save();
+		was_diamonds = diamonds;
 		if (have_ui && weather_serial() != weather_seen) {
 			weather_seen = weather_serial();
 			show_weather();
@@ -632,6 +650,7 @@ void main(void)
 		}
 		switch (power_update(&now)) {
 		case POWER_SLEPT:
+			game_save();
 			if (have_gpu) {
 				gpu_suspend();
 				gpu_off = true;

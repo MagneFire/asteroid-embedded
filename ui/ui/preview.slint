@@ -2,7 +2,7 @@
 // shows the screen chosen by `screen` (0 watchface, 1 notifications, 2 weather, 3 launcher, 6 app)
 // with the overlay on top, over a backdrop instead of the FlatMesh.
 import "../fonts/NotoSans-Light.ttf";
-import { Face, Note, Day, Watchface } from "face.slint";
+import { Face, Note, Day, Tile, Watchface } from "face.slint";
 import { NoteList } from "notes.slint";
 import { WeatherScreen } from "weather.slint";
 import { Launcher } from "launcher.slint";
@@ -37,6 +37,10 @@ export component Preview inherits Window {
     in-out property <int> app <=> Face.app;
     in-out property <string> calc-shown <=> Face.calc-shown;
     in-out property <int> calc-length <=> Face.calc-length;
+    in-out property <[Tile]> game-tiles <=> Face.game-tiles;
+    in-out property <int> game-score <=> Face.game-score;
+    in-out property <int> game-best <=> Face.game-best;
+    in-out property <bool> game-over <=> Face.game-over;
     in property <int> screen;
     in property <brush> backdrop: #303030;
     in property <bool> round-mask;

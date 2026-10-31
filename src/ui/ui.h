@@ -18,7 +18,9 @@
  * measures, and ui_app_open the app open on the app panel, -1 for none;
  * ui_flashlight_on says whether the Flashlight app's light is on.
  * ui_set_calc gives the calculator its display text and the length of
- * the number it shows, which sets the font size.
+ * the number it shows, which sets the font size; ui_set_game the
+ * UI_TILES tiles of the Diamonds game, its score, best score and whether
+ * it is over.
  * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
@@ -51,7 +53,8 @@
  * setting in bits 8 and up set to the value in bits 0-7,
  * UI_EVENT_TIME_SET the time of day set by hand in minutes and
  * UI_EVENT_DATE_SET a date set by hand as (year - 2000) << 9 | month << 5
- * | day, UI_EVENT_CALC a calculator key (enum ui_calc_key).
+ * | day, UI_EVENT_CALC a calculator key (enum ui_calc_key) and
+ * UI_EVENT_GAME a move in the Diamonds game (enum ui_game_move).
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -80,6 +83,7 @@ enum ui_app {
 	UI_APP_HEART_RATE,
 	UI_APP_FLASHLIGHT,
 	UI_APP_CALCULATOR,
+	UI_APP_DIAMONDS,
 };
 enum ui_clock_action {
 	UI_TIMER_START = 20,
@@ -128,6 +132,7 @@ enum ui_calc_key {
 	UI_CALC_BACK,
 	UI_CALC_NEGATE,
 };
+enum ui_game_move { UI_GAME_LEFT, UI_GAME_RIGHT, UI_GAME_UP, UI_GAME_DOWN, UI_GAME_RESET };
 
 /* Shared with the Rust side (ui/src/watch.rs), which lays them out the
  * same way and checks their sizes. */
@@ -143,6 +148,15 @@ struct ui_rgb {
 struct ui_colors {
 	struct ui_rgb center, outer;
 };
+
+/* A tile of the Diamonds game: its column and row, -1 while unused, its
+ * value, whether it just merged (pop) and whether it slid there (anim). */
+struct ui_tile {
+	int8_t x, y;
+	uint16_t val;
+	bool pop, anim;
+};
+#define UI_TILES 16
 
 /* Brightnesses in per cent, the nightstand delay in seconds, burn_in
  * 0 off, 1 high, 2 medium, 3 low. */
@@ -168,6 +182,7 @@ enum ui_event_kind {
 	UI_EVENT_TIME_SET,
 	UI_EVENT_DATE_SET,
 	UI_EVENT_CALC,
+	UI_EVENT_GAME,
 };
 
 struct ui_event {
@@ -176,8 +191,8 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 12,
-	       "ui types");
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 12 &&
+	       sizeof(struct ui_tile) == 6, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
@@ -189,6 +204,7 @@ void ui_set_heart_rate(uint32_t bpm);
 int ui_app_open(void);
 bool ui_flashlight_on(void);
 void ui_set_calc(const char *shown, uint32_t shown_len, uint32_t length);
+void ui_set_game(const struct ui_tile *tiles, uint32_t score, uint32_t best, bool over);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);

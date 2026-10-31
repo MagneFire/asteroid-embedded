@@ -1,0 +1,218 @@
+// Diamonds, laid out as asteroid-diamonds: a 2048 board of 4 by 4 cells turned 45 degrees so its
+// diagonal spans the screen, score and best score boxes at the lower corners, and a Game Over
+// disc with a Try Again pill. The firmware plays the game (Face.game-tiles are its 16 slots,
+// each a tile with a cell, a value and whether it slid or just merged); a swipe along a diagonal
+// of the screen is a move along the board. The renderer cannot turn things, so the tiles and
+// boxes are images turned at build time and their numbers stay upright.
+import { Face, Tile } from "face.slint";
+import { Codes } from "codes.slint";
+import { GameShapes } from "game_shapes.slint";
+
+component Diamond {
+    in property <Tile> tile;
+    in property <bool> grow: true;
+    property <float> scale: self.tile.val > 0 ? (self.tile.pop ? 1.1 : 1) : 0;
+    animate scale {
+        duration: 100ms;
+    }
+    // The cell's centre: the board's columns run down to the right, its rows down to the left.
+    property <length> step: GameShapes.pitch * 0.7071;
+    property <length> cx: 200px + self.step * (self.tile.x - self.tile.y);
+    property <length> cy: 200px + self.step * (self.tile.x + self.tile.y - 3);
+    animate cx, cy {
+        duration: self.tile.anim ? 100ms : 0ms;
+    }
+    property <length> size: GameShapes.tile-size * (self.grow ? self.scale : 1);
+    property <int> digits: self.tile.val <= 9 ? 1 : self.tile.val <= 99 ? 2 : self.tile.val <= 999 ? 3 : 4;
+
+    x: self.cx - self.size / 2;
+    y: self.cy - self.size / 2;
+    width: self.size;
+    height: self.size;
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: GameShapes.tile;
+        colorize: root.tile.val == 2 ? #9eadae : root.tile.val == 4 ? #718c8e : root.tile.val == 8 ? #e4b301 : root.tile.val == 16 ? #e9981f : root.tile.val == 32 ? #e9771f : root.tile.val == 64 ? #e95c1f : root.tile.val == 128 ? #0091bd : root.tile.val == 256 ? #0071bd : root.tile.val == 512 ? #0052bd : root.tile.val == 1024 ? #a300bd : root.tile.val == 2048 ? #db007e : #cc0023;
+        opacity: root.tile.val == 2 || root.tile.val == 4 ? 0.6 : 1;
+    }
+
+    if root.grow: Text {
+        x: 0;
+        y: (root.digits == 1 ? -1px : root.digits == 2 ? 5px : root.digits == 3 ? 9px : 14px) * root.scale;
+        width: parent.width;
+        height: parent.height;
+        text: root.tile.val;
+        color: #f9f6f2;
+        font-weight: 700;
+        font-size: (root.digits == 1 ? 45.8px : root.digits == 2 ? 39.3px : root.digits == 3 ? 32.7px : 26.2px) * root.scale;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component ScoreBox {
+    in property <image> shape;
+    in property <image> caption;
+    in property <[image]> digits;
+    // Which way the box is turned: 1 clockwise, -1 the other way.
+    in property <int> dir;
+    in property <int> value;
+    in property <length> cx;
+    property <int> n: self.value < 10 ? 1 : self.value < 100 ? 2 : self.value < 1000 ? 3 : self.value < 10000 ? 4 : self.value < 100000 ? 5 : 6;
+
+    x: self.cx - GameShapes.box-left-size / 2;
+    y: 324px - GameShapes.box-left-size / 2;
+    width: GameShapes.box-left-size;
+    height: self.width;
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.shape;
+        colorize: #af590b;
+        opacity: 0.7;
+    }
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.caption;
+        opacity: 0.7;
+    }
+
+    // The number's digits along the box: digit k at u along it and v above its centre line,
+    // turned with the box.
+    for k in root.n: Image {
+        property <length> u: (k * 2 - (root.n - 1)) * GameShapes.digit-advance / 2;
+        property <length> v: GameShapes.number-offset;
+        x: parent.width / 2 + (self.u - self.v * root.dir) * 0.7071 - GameShapes.digit-size / 2;
+        y: parent.height / 2 + (self.u * root.dir + self.v) * 0.7071 - GameShapes.digit-size / 2;
+        width: GameShapes.digit-size;
+        height: GameShapes.digit-size;
+        source: root.digits[Math.mod(Math.floor(root.value / Math.pow(10, root.n - 1 - k)), 10)];
+        opacity: 0.7;
+    }
+}
+
+export component DiamondsScreen {
+    width: 100%;
+    height: 100%;
+
+    // A swipe moves the board along the diagonal it follows most, past 1 % of the board's width.
+    // A press the screen stack takes for itself ends far off screen, which is no swipe.
+    swipe := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.up && self.mouse-x >= 0 && self.mouse-x <= self.width && self.mouse-y >= 0 && self.mouse-y <= self.height {
+                let dx = self.mouse-x - self.pressed-x;
+                let dy = self.mouse-y - self.pressed-y;
+                let along = (dx + dy) * 0.7071;
+                let across = (dy - dx) * 0.7071;
+                let limit = GameShapes.pitch * 4 * 0.01;
+                if Math.abs(along) > Math.abs(across) {
+                    if along > limit {
+                        Face.game-move(Codes.ui-game-right);
+                    } else if along < -limit {
+                        Face.game-move(Codes.ui-game-left);
+                    }
+                } else if across > limit {
+                    Face.game-move(Codes.ui-game-down);
+                } else if across < -limit {
+                    Face.game-move(Codes.ui-game-up);
+                }
+            }
+        }
+    }
+
+    ScoreBox {
+        shape: GameShapes.box-left;
+        caption: GameShapes.caption-left;
+        digits: GameShapes.digits-left;
+        dir: 1;
+        value: Face.game-best;
+        cx: 76px;
+    }
+
+    ScoreBox {
+        shape: GameShapes.box-right;
+        caption: GameShapes.caption-right;
+        digits: GameShapes.digits-right;
+        dir: -1;
+        value: Face.game-score;
+        cx: 324px;
+    }
+
+    // The empty cells, faint.
+    for i in 16: Diamond {
+        tile: { x: Math.mod(i, 4), y: Math.floor(i / 4), val: 1, pop: false, anim: false };
+        grow: false;
+        opacity: 0.113;
+    }
+
+    for t in Face.game-tiles: Diamond {
+        tile: t;
+        visible: t.x >= 0;
+    }
+
+    if Face.game-over: Rectangle {
+        property <bool> grown;
+        property <length> d: self.grown ? 400px : 0px;
+        animate d {
+            duration: 200ms;
+            easing: ease-in;
+        }
+
+        init => {
+            self.grown = true;
+        }
+
+        Rectangle {
+            x: 200px - parent.d / 2;
+            y: 200px - parent.d / 2;
+            width: parent.d;
+            height: parent.d;
+            border-radius: parent.d / 2;
+            background: black;
+            opacity: 0.8;
+        }
+
+        TouchArea { }
+
+        Text {
+            x: 0;
+            y: 0;
+            width: 400px;
+            height: 320px;
+            text: "Game Over";
+            color: white;
+            font-size: 40px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        pill := Rectangle {
+            x: 200px - self.width / 2;
+            y: 200px;
+            width: again.preferred-width + 64px;
+            height: again.preferred-height + 48px;
+            border-radius: self.height / 2;
+            background: retry.pressed ? #99111111 : #BB111111;
+
+            again := Text {
+                text: "Try Again";
+                color: white;
+                font-size: 32px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            retry := TouchArea {
+                clicked => {
+                    Face.game-move(Codes.ui-game-reset);
+                }
+            }
+        }
+    }
+}

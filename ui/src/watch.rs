@@ -86,6 +86,17 @@ pub struct UiAlarm {
     on: bool,
 }
 
+/// A tile of the Diamonds game, as the firmware keeps it.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct UiTile {
+    x: i8,
+    y: i8,
+    val: u16,
+    pop: bool,
+    anim: bool,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct UiRgb {
@@ -139,6 +150,7 @@ mod codes {
 use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
+const _: () = assert!(core::mem::size_of::<UiTile>() == 6);
 const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 12);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
@@ -157,6 +169,7 @@ struct Ui {
     notes: Rc<VecModel<Note>>,
     forecast: Rc<VecModel<Day>>,
     alarms: Rc<VecModel<AlarmItem>>,
+    tiles: Rc<VecModel<Tile>>,
     opened: Queue,
     events: Events,
     stride: usize,
@@ -238,6 +251,7 @@ pub unsafe extern "C" fn ui_init(
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
     let alarms = Rc::new(VecModel::default());
+    let tiles = Rc::new(VecModel::from(alloc::vec![Tile { x: -1, y: -1, val: 0, pop: false, anim: false }; 16]));
     let (opened, events): (Queue, Events) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
@@ -250,6 +264,7 @@ pub unsafe extern "C" fn ui_init(
         face.set_notes(notes.clone().into());
         face.set_weather_forecast(forecast.clone().into());
         face.set_alarms(alarms.clone().into());
+        face.set_game_tiles(tiles.clone().into());
         let queue = events.clone();
         face.on_alarm_saved(move |index, hour, minute, days, on| {
             let alarm = UiAlarm { hour: hour as u8, minute: minute as u8, days: days as u8, on };
@@ -291,6 +306,8 @@ pub unsafe extern "C" fn ui_init(
         let queue = events.clone();
         face.on_calc_key(move |key| event(&queue, UI_EVENT_CALC, key));
         let queue = events.clone();
+        face.on_game_move(move |dir| event(&queue, UI_EVENT_GAME, dir));
+        let queue = events.clone();
         face.on_date_set(move |day, month, year| event(&queue, UI_EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
@@ -301,7 +318,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, alarms, opened, events, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, alarms, tiles, opened, events, stride, width, height });
     }
     true
 }
@@ -346,6 +363,27 @@ pub unsafe extern "C" fn ui_set_calc(shown: *const u8, shown_len: u32, length: u
         let face = ui.screens[APP].global::<Face>();
         face.set_calc_shown(shown);
         face.set_calc_length(length as i32);
+    });
+}
+
+/// The Diamonds game's UI_TILES tiles, changed in place so the UI animates their moves.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_game(tiles: *const UiTile, score: u32, best: u32, over: bool) {
+    if tiles.is_null() {
+        return;
+    }
+    let tiles = unsafe { core::slice::from_raw_parts(tiles, 16) };
+    with_ui(|ui| {
+        for (i, t) in tiles.iter().enumerate() {
+            let tile = Tile { x: t.x as i32, y: t.y as i32, val: t.val as i32, pop: t.pop, anim: t.anim };
+            if ui.tiles.row_data(i) != Some(tile.clone()) {
+                ui.tiles.set_row_data(i, tile);
+            }
+        }
+        let face = ui.screens[APP].global::<Face>();
+        face.set_game_score(score as i32);
+        face.set_game_best(best as i32);
+        face.set_game_over(over);
     });
 }
 

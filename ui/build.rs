@@ -5,6 +5,10 @@
 // screen, with its position, since paths cannot be drawn at run time here. The codes the UI and
 // the firmware exchange (the settings, the actions, the event kinds) are read from the C headers
 // into a Slint global and Rust constants, so neither side keeps its own copy.
+use skrifa::instance::{LocationRef, Size};
+use skrifa::outline::pen::SvgPen;
+use skrifa::outline::DrawSettings;
+use skrifa::{FontRef, MetadataProvider};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -54,6 +58,7 @@ fn main() {
 
     ring(&out);
     heart_arc(&out);
+    game_shapes(&out);
     codes(&out);
 
     let config = slint_build::CompilerConfiguration::new()
@@ -108,6 +113,7 @@ fn codes(out: &std::path::Path) {
         (&ui_h, "ui_alarm_action", "i32"),
         (&ui_h, "ui_event_kind", "u32"),
         (&ui_h, "ui_calc_key", "i32"),
+        (&ui_h, "ui_game_move", "i32"),
     ] {
         for (ident, value) in c_enum(header, name) {
             writeln!(slint, "    out property <int> {}: {value};", ident.to_lowercase().replace('_', "-")).unwrap();
@@ -186,6 +192,97 @@ fn heart_arc(out: &std::path::Path) {
     list("arrows", arrows);
     slint.push_str("}\n");
     std::fs::write(out.join("heart_arc.slint"), slint).unwrap();
+}
+
+/// The glyphs of text in the font at px as SVG paths from the baseline's start, filled with
+/// fill, and the text's width.
+fn glyph_paths(font: &FontRef, text: &str, px: f32, fill: &str) -> (String, f32) {
+    let size = Size::new(px);
+    let charmap = font.charmap();
+    let metrics = font.glyph_metrics(size, LocationRef::default());
+    let outlines = font.outline_glyphs();
+    let mut out = String::new();
+    let mut x = 0.0f32;
+    for ch in text.chars() {
+        let gid = charmap.map(ch).unwrap_or_else(|| panic!("no glyph for {ch}"));
+        let mut pen = SvgPen::with_precision(2);
+        outlines.get(gid).unwrap().draw(DrawSettings::unhinted(size, LocationRef::default()), &mut pen).unwrap();
+        write!(out, "<path d=\"{}\" fill=\"{fill}\" transform=\"translate({x:.2} 0) scale(1 -1)\"/>", &*pen).unwrap();
+        x += metrics.advance_width(gid).unwrap();
+    }
+    (out, x)
+}
+
+/// asteroid-diamonds' board is turned 45 degrees, which the renderer cannot do, so its shapes
+/// come as images: a tile (a rounded square 5 px smaller than a cell of the board, whose
+/// diagonal is the screen) and the score boxes (0.3 by 0.12 of the screen), each turned 45
+/// degrees one way or the other, cut to their bounding boxes. Text cannot be turned either, so
+/// the boxes' captions and the digits of their numbers are glyph outlines turned the same way.
+fn game_shapes(out: &std::path::Path) {
+    let size: f64 = std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(400.0);
+    let dir = out.join("game");
+    std::fs::create_dir_all(&dir).unwrap();
+    let field = (size * size / 2.0).sqrt().floor();
+    let tile = field / 4.0 - 5.0;
+    let font_data = std::fs::read("fonts/NotoSans-Bold.ttf").unwrap();
+    let font = FontRef::new(&font_data).unwrap();
+    let cap = |px: f32| font.metrics(Size::new(px), LocationRef::default()).cap_height.unwrap_or(px * 0.7);
+    let mut slint = String::from("export global GameShapes {\n");
+    let mut shape = |name: &str, w: f64, h: f64, angle: f64| {
+        let bbox = ((w + h) / 2.0_f64.sqrt()).ceil();
+        let (x, y, c) = ((bbox - w) / 2.0, (bbox - h) / 2.0, bbox / 2.0);
+        let svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{bbox}\" height=\"{bbox}\" viewBox=\"0 0 {bbox} {bbox}\"><rect x=\"{x:.2}\" y=\"{y:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" rx=\"3\" fill=\"white\" transform=\"rotate({angle} {c} {c})\"/></svg>"
+        );
+        let path = dir.join(format!("{name}.svg"));
+        std::fs::write(&path, svg).unwrap();
+        writeln!(slint, "    out property <image> {name}: @image-url(\"{}\");", path.display()).unwrap();
+        writeln!(slint, "    out property <length> {name}-size: {bbox}px;").unwrap();
+    };
+    shape("tile", tile, tile, 45.0);
+    shape("box-left", size * 0.3, size * 0.12, 45.0);
+    shape("box-right", size * 0.3, size * 0.12, -45.0);
+    // The caption sits in the lower part of its box (0.6 of the height down, 12 px), the number
+    // in the upper (0.1 down, 20 px), both centred along it.
+    let (w, h) = (size * 0.3, size * 0.12);
+    let bbox = ((w + h) / 2.0_f64.sqrt()).ceil();
+    for (name, text, angle) in [("caption-left", "BEST", 45.0), ("caption-right", "SCORE", -45.0)] {
+        let (paths, width) = glyph_paths(&font, text, 12.0, "#eee4da");
+        let svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{bbox}\" height=\"{bbox}\" viewBox=\"0 0 {bbox} {bbox}\"><g transform=\"translate({c} {c}) rotate({angle}) translate({x:.2} {y:.2})\">{paths}</g></svg>",
+            c = bbox / 2.0,
+            x = -width as f64 / 2.0,
+            y = h * 0.6 + 12.0 * 1.36 / 2.0 + cap(12.0) as f64 / 2.0 - h / 2.0,
+        );
+        let path = dir.join(format!("{name}.svg"));
+        std::fs::write(&path, svg).unwrap();
+        writeln!(slint, "    out property <image> {name}: @image-url(\"{}\");", path.display()).unwrap();
+    }
+    let digit_px = 28.0;
+    let advance = font.glyph_metrics(Size::new(20.0), LocationRef::default()).advance_width(font.charmap().map('0').unwrap()).unwrap();
+    for (name, angle) in [("digits-left", 45.0), ("digits-right", -45.0)] {
+        writeln!(slint, "    out property <[image]> {name}: [").unwrap();
+        for d in 0..10 {
+            let (paths, width) = glyph_paths(&font, &d.to_string(), 20.0, "white");
+            let svg = format!(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{digit_px}\" height=\"{digit_px}\" viewBox=\"0 0 {digit_px} {digit_px}\"><g transform=\"translate({c} {c}) rotate({angle}) translate({x:.2} {y:.2})\">{paths}</g></svg>",
+                c = digit_px / 2.0,
+                x = -width / 2.0,
+                y = cap(20.0) / 2.0,
+            );
+            let path = dir.join(format!("{name}-{d}.svg"));
+            std::fs::write(&path, svg).unwrap();
+            writeln!(slint, "        @image-url(\"{}\"),", path.display()).unwrap();
+        }
+        slint.push_str("    ];\n");
+    }
+    writeln!(slint, "    out property <length> digit-size: {digit_px}px;").unwrap();
+    writeln!(slint, "    out property <length> digit-advance: {advance:.2}px;").unwrap();
+    // The number's centre line, above the box's centre.
+    writeln!(slint, "    out property <length> number-offset: {:.2}px;", h * 0.1 + 20.0 * 1.36 / 2.0 - h / 2.0).unwrap();
+    writeln!(slint, "    out property <length> pitch: {}px;", field / 4.0).unwrap();
+    slint.push_str("}\n");
+    std::fs::write(out.join("game_shapes.slint"), slint).unwrap();
 }
 
 /// 50 segments of 1.2 degrees, 7.2 degrees apart from 12 o'clock clockwise, between radius

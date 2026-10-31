@@ -17,6 +17,16 @@ export struct Day {
     max: int,
 }
 
+// A tile of the Diamonds game: column and row (-1 while unused), value, whether it just merged
+// and whether it slid to its place.
+export struct Tile {
+    x: int,
+    y: int,
+    val: int,
+    pop: bool,
+    anim: bool,
+}
+
 export struct AlarmItem {
     hour: int,
     minute: int,
@@ -69,6 +79,11 @@ export global Face {
     // The calculator's display text (digits grouped) and the length of the number it shows.
     in-out property <string> calc-shown: "0";
     in-out property <int> calc-length: 1;
+    // The Diamonds game: its 16 tiles, score, best score and whether it is over.
+    in-out property <[Tile]> game-tiles;
+    in-out property <int> game-score;
+    in-out property <int> game-best;
+    in-out property <bool> game-over;
     // RTC seconds, for the age of notifications.
     in-out property <int> now;
     in-out property <bool> vibration-on: true;
@@ -133,8 +148,9 @@ export global Face {
     callback date-set(int, int, int);
     // An enum setting and the value to set it to.
     callback setting-set(int, int);
-    // A calculator key.
+    // A calculator key, and a move in the Diamonds game.
     callback calc-key(int);
+    callback game-move(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;
