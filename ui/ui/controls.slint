@@ -360,14 +360,26 @@ export component LabeledSwitch {
 
 // IntSelector: a 100 px row with a pill from x = 7 to 333, its fill showing value between min
 // and max, "-" and "+" buttons at its ends, dimmed at the limits, and the value with its unit
-// in the middle.
+// in the middle. Dragged sideways, or held for 800 ms, the pill sets the value from where the
+// finger is, in steps of step, with a darker fill and a larger number meanwhile.
 export component IntSelector {
     in property <int> value;
     in property <int> min;
     in property <int> max: 100;
+    in property <int> step: 10;
     in property <string> unit: "%";
     callback down();
     callback up();
+    callback set(int);
+    property <bool> tracking;
+
+    function track(x: length) {
+        let f = Math.clamp((x - 33px) / (326px - 66px), 0, 1);
+        let v = Math.clamp(Math.round((root.min + f * (root.max - root.min)) / root.step) * root.step, root.min, root.max);
+        if v != root.value {
+            root.set(v);
+        }
+    }
 
     width: 400px;
     height: 100px;
@@ -386,10 +398,38 @@ export component IntSelector {
             x: 0;
             width: parent.width * (root.value - root.min) / Math.max(1, root.max - root.min);
             height: parent.height;
-            background: #00000066;
+            background: root.tracking ? #00000099 : #00000066;
             animate width {
-                duration: 120ms;
-                easing: ease-out;
+                duration: root.tracking ? 0ms : 120ms;
+                easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            }
+        }
+
+        drag := TouchArea {
+            moved => {
+                if !root.tracking {
+                    let dx = Math.abs(self.mouse-x - self.pressed-x);
+                    let dy = Math.abs(self.mouse-y - self.pressed-y);
+                    if (dx < 8px && dy < 8px) || dx < dy {
+                        return;
+                    }
+                    root.tracking = true;
+                }
+                root.track(self.mouse-x);
+            }
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                    root.tracking = false;
+                }
+            }
+        }
+
+        Timer {
+            interval: 800ms;
+            running: drag.pressed && !root.tracking;
+            triggered => {
+                root.tracking = true;
+                root.track(drag.mouse-x);
             }
         }
     }
@@ -401,7 +441,7 @@ export component IntSelector {
         height: 66px;
         text: root.value + root.unit;
         color: white;
-        font-size: 26px;
+        font-size: root.tracking ? 33px : 26px;
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;

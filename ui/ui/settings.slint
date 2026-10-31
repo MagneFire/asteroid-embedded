@@ -114,6 +114,9 @@ export component SettingsApp {
                     up => {
                         Face.brightness-set(Math.min(100, Face.brightness + 10));
                     }
+                    set(v) => {
+                        Face.brightness-set(v);
+                    }
                 }
 
                 RowSeparator { }
