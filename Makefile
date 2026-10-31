@@ -120,8 +120,12 @@ run: $(BUILD)/asteroid.img
 
 SLINT_VIEWER ?= $(or $(shell command -v slint-viewer 2>/dev/null),$(HOME)/.cargo/bin/slint-viewer)
 
+# The UI is laid out for 400 px; for another screen size the viewer scales it as the build does,
+# one window pixel to a screen pixel.
+PREVIEW_SCALE = $(if $(filter 400,$(BOARD_UI_SIZE)),,SLINT_SCALE_FACTOR=$(shell awk 'BEGIN { print $(BOARD_UI_SIZE) / 400 }'))
+
 preview: $(UI_LIB)
-	$(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/note_icons.slint)))) \
+	$(PREVIEW_SCALE) $(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/note_icons.slint)))) \
 		--auto-reload --load-data tools/preview/watchface.json ui/ui/preview.slint
 
 disasm: $(BUILD)/asteroid.elf
