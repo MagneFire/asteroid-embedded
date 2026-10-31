@@ -109,7 +109,7 @@ def main():
         fetch_ramoops(a.tail)
         return
     if adb_online():
-        subprocess.run(["adb", "reboot"], capture_output=True, timeout=20)
+        subprocess.run(["adb", "reboot", "bootloader"], capture_output=True, timeout=20)
         wait_for(True, 20, "come back to fastboot")
     else:
         wait_for(True, 10, "appear in fastboot")

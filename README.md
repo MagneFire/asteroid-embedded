@@ -13,7 +13,7 @@ user interface in `ui/` is a Slint crate built into a static library and
 linked into the image.
 
     make                # build/asteroid.img for sturgeon
-    make WATCH=sparrow  # a scaffold so far: no touch, haptics or hub driver
+    make WATCH=sparrow  # the same for sparrow
 
 What differs between the watches (pins, buses, panel timing, the battery
 curve, the Bluetooth patch) is in `src/board/<watch>/`, with the drivers
@@ -22,21 +22,23 @@ only that watch has listed in its `board.mk`.
     make TEST=abort     # a build that takes a data abort
 
 The image carries no vendor firmware. The Adreno A3xx microcode
-(`a330_pm4.fw`, `a330_pfp.fw`) and the Bluetooth patch (`4343A0.hcd`) are
-read at boot from `/vendor/firmware` on the watch's own Android system
-partition.
+(`a330_pm4.fw`, `a330_pfp.fw`), the Bluetooth patch and, on sparrow, the
+sensor hub firmware are read at boot from the watch's own Android system
+partition (the directories are listed per board in `board.h`).
 
 ## Run
 
-The watch must sit in fastboot (lk2nd built with `LK2ND_FORCE_FASTBOOT=1`
-and `SCRATCH_SIZE=0x0F000000` flashed to `boot`).
+The watch must sit in fastboot. Sturgeon has lk2nd (built with
+`LK2ND_FORCE_FASTBOOT=1` and `SCRATCH_SIZE=0x0F000000`) flashed to `boot`,
+which also serves the log region after a crash; sparrow's stock bootloader
+boots the image as it is, and `adb reboot bootloader` brings it back.
 
-    make run            # adb reboot, fastboot boot, show the log over adb
+    make run            # adb reboot bootloader, fastboot boot, show the log
     make test           # host tests for the adb and console code
 
 The running firmware is an adb device: `adb shell` gives the command
 console (`help` lists the commands), `adb push`/`adb pull` move files to
-and from a RAM file table, `adb reboot` returns to fastboot. The firmware
+and from a RAM file table, `adb reboot bootloader` returns to fastboot. The firmware
 keeps its log and a fault record in DRAM across a warm reset; when an image
 dies, `tools/run.py` fetches them through `fastboot oem ramoops raw` and
 symbolizes the addresses in the fault record with `addr2line`.
