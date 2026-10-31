@@ -1,0 +1,167 @@
+// The heart rate app, laid out as asteroid-hrm: a green arc from the bottom left clockwise round to
+// the bottom right, growing over 30 s while it measures, the rate in large digits in the middle
+// ("Measuring…" blinking until there is one), the previous rate on the arc at the upper or lower
+// left with a gap in the arc beside it, and a red heart with "bpm" at the bottom that beats at the
+// rate. The software renderer cannot rotate text, so the previous rate stays upright.
+import { Face } from "face.slint";
+import { HeartArc } from "heart_arc.slint";
+
+export component HeartRateScreen {
+    property <int> bpm: Face.heart-rate;
+    property <int> shown;
+    property <int> last;
+    property <duration> started;
+    property <bool> pulse-out;
+    property <bool> blink: true;
+    property <length> r: 400px / 2.9;
+    // How far round the arc reaches, 0 to 1 of its 310 degrees: 30 s to grow while measuring.
+    property <float> reach: self.bpm > 0 ? 1 : Math.min(1, (animation-tick() - self.started) / 30s);
+    // With each beat both ends pull back 6 degrees as the heart grows, and come back as it shrinks.
+    property <float> pull: self.pulse-out ? 6 : 0;
+    animate pull {
+        duration: root.bpm > 0 ? 20000ms / root.bpm : 100ms;
+        easing: ease-in-out-sine;
+    }
+    // The previous rate sits 30 degrees above the left of the arc when it was higher, below when
+    // lower, moving there over 1 s; the arc opens a 28 degree gap there, in 100 ms.
+    property <float> last-deg: self.last > self.bpm ? 210 : 150;
+    animate last-deg {
+        duration: 1000ms;
+        easing: ease-out-circ;
+    }
+    property <float> gap: self.last > 0 ? 28 : 0;
+    animate gap {
+        duration: 100ms;
+        easing: ease-out-circ;
+    }
+    // In whole degrees from 3 o'clock: the run start..g1 and, with a gap, g2..end.
+    property <int> start: Math.round(115 + self.pull);
+    property <int> end: Math.max(self.start, Math.round(115 + self.reach * 310 - self.pull));
+    property <bool> split: self.gap > 0.5;
+    property <int> g1: Math.min(self.end, Math.round(self.last-deg - self.gap / 2));
+    property <int> g2: Math.min(self.end, Math.round(self.last-deg + self.gap / 2));
+    property <int> e1: self.split ? self.g1 : self.end;
+    property <duration> beat: self.bpm > 0 ? 30000ms / self.bpm : 100ms;
+
+    width: 100%;
+    height: 100%;
+
+    init => {
+        self.started = animation-tick();
+    }
+    changed bpm => {
+        if self.bpm > 0 && self.shown > 0 && self.bpm != self.shown {
+            self.last = self.shown;
+        }
+        self.shown = self.bpm;
+    }
+
+    for seg[i] in HeartArc.segments: Image {
+        x: seg.x;
+        y: seg.y;
+        source: seg.img;
+        colorize: #38ff12;
+        opacity: 0.4;
+        visible: (115 + i >= root.start && 116 + i <= root.e1) || (root.split && 115 + i >= root.g2 && 116 + i <= root.end);
+    }
+
+    // Round ends: the start, the end of the first run and, with a gap, the second run's ends.
+    for cap in [
+        { on: root.e1 > root.start, img: HeartArc.starts[root.start - 115] },
+        { on: root.e1 > root.start, img: HeartArc.ends[root.e1 - 115] },
+        { on: root.split && root.end > root.g2, img: HeartArc.starts[root.g2 - 115] },
+        { on: root.split && root.end > root.g2, img: HeartArc.ends[root.end - 115] },
+    ]: Image {
+        x: cap.img.x;
+        y: cap.img.y;
+        source: cap.img.img;
+        colorize: #38ff12;
+        opacity: 0.4;
+        visible: cap.on;
+    }
+    Text {
+        x: 0;
+        y: 0;
+        width: 400px;
+        height: 400px;
+        text: root.bpm > 0 ? root.bpm : "Measuring…";
+        color: white;
+        font-size: root.bpm > 0 ? (root.bpm >= 100 ? 116px : 132px) : 24px;
+        letter-spacing: root.bpm > 0 ? -3.2px : 0;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        opacity: root.bpm > 0 || root.blink ? 1 : 0;
+        animate opacity {
+            duration: 600ms;
+            easing: ease-out-quad;
+        }
+    }
+
+    Timer {
+        interval: 800ms;
+        running: root.bpm == 0;
+        triggered => {
+            root.blink = !root.blink;
+        }
+    }
+
+    if root.last > 0: Text {
+        x: 200px + root.r * Math.cos(root.last-deg * 1deg) - 30px;
+        y: 200px + root.r * Math.sin(root.last-deg * 1deg) - 20px;
+        width: 60px;
+        height: 40px;
+        text: root.last;
+        color: white;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: -0.4px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // The arrow inside it, pointing at the current rate in the middle.
+    if root.last > 0: Image {
+        property <{img: image, x: length, y: length}> arrow: HeartArc.arrows[Math.round(root.last-deg) - 140];
+        x: self.arrow.x;
+        y: self.arrow.y;
+        source: self.arrow.img;
+        colorize: #38ff12;
+        opacity: 0.4;
+    }
+
+    Timer {
+        interval: root.beat;
+        running: root.bpm > 0;
+        triggered => {
+            root.pulse-out = !root.pulse-out;
+        }
+    }
+
+    property <length> heart: root.pulse-out ? 104px : 80px;
+    animate heart {
+        duration: root.bpm > 0 ? 20000ms / root.bpm : 100ms;
+        easing: ease-in-out-sine;
+    }
+
+    Image {
+        x: 200px - root.heart * 0.6;
+        y: 324px - root.heart * 0.6;
+        width: root.heart * 1.2;
+        height: root.heart * 1.2;
+        source: @image-url("../icons/ios-heart.svg");
+        colorize: #e23b4e;
+    }
+
+    Text {
+        x: 0;
+        y: 324px - 15px;
+        width: 400px;
+        height: 34px;
+        text: "bpm";
+        color: white;
+        font-size: Math.round(root.heart * 0.22 / 1px) * 1px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

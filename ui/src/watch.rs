@@ -327,6 +327,17 @@ pub extern "C" fn ui_set_connected(connected: bool, bonded: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_heart_rate(bpm: u32) {
+    each(|face| face.set_heart_rate(bpm as i32));
+}
+
+/// The app on the app panel, -1 for none.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_app_open() -> i32 {
+    with_ui(|ui| ui.screens[APP].global::<Face>().get_app()).unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_battery(percent: u32, charging: bool) {
     each(|face| {
         face.set_battery_percent(percent.min(100) as i32);

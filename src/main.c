@@ -370,6 +370,7 @@ void main(void)
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
 	bool have_hub = hub_init(), steps_awake = false;
+	uint32_t shown_bpm = 0;
 	power_init(have_display, have_ui, have_hub);
 	console_init();
 	usb_init("asteroid-" BOARD_NAME);
@@ -424,6 +425,19 @@ void main(void)
 			if (steps_awake && !power_awake())
 				steps_save();
 			steps_awake = power_awake();
+			/* The heart rate sensor runs while the Heart Rate app is on
+			 * screen; until its second reading the screen stays on, as
+			 * asteroid-hrm keeps the display from blanking until it has
+			 * a previous rate. */
+			bool measure = have_ui && power_awake() && ui_app_open() == UI_APP_HEART_RATE;
+			hub_heart_rate_on(measure);
+			unsigned readings;
+			uint32_t bpm = hub_heart_rate(NULL, &readings);
+			bpm = bpm == HUB_NONE ? 0 : bpm;
+			if (bpm != shown_bpm)
+				ui_set_heart_rate(shown_bpm = bpm);
+			if (measure && readings < 2)
+				power_activity(now);
 		}
 		if (have_haptics)
 			haptics_poll();

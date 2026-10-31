@@ -13,7 +13,9 @@
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
  * code. ui_set_clock also takes the RTC (seconds), against which the
  * notifications' times (RTC seconds) give their age; ui_set_connected
- * says whether a phone is connected and whether one is paired.
+ * says whether a phone is connected and whether one is paired;
+ * ui_set_heart_rate gives the Heart Rate app its reading, 0 while it
+ * measures, and ui_app_open the app open on the app panel, -1 for none.
  * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
@@ -65,7 +67,7 @@ _Static_assert(UI_PANELS * UI_LAYER_STRIDE <= UI_LAYER_SIZE, "more panels than l
 
 enum ui_touch_kind { UI_TOUCH_DOWN, UI_TOUCH_MOVE, UI_TOUCH_UP };
 enum ui_panel { UI_PANEL_FACE, UI_PANEL_LEFT, UI_PANEL_RIGHT, UI_PANEL_BOTTOM, UI_PANEL_OVERLAY, UI_PANEL_TOP, UI_PANEL_APP };
-enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS, UI_APP_ALARM, UI_APP_TIMER, UI_APP_STOPWATCH, UI_APP_WEATHER };
+enum ui_app { UI_APP_MUSIC, UI_APP_SETTINGS, UI_APP_ALARM, UI_APP_TIMER, UI_APP_STOPWATCH, UI_APP_WEATHER, UI_APP_HEART_RATE };
 enum ui_clock_action {
 	UI_TIMER_START = 20,
 	UI_TIMER_RESET,
@@ -157,6 +159,8 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
 		  uint32_t year, uint32_t rtc);
 void ui_set_connected(bool connected, bool bonded);
+void ui_set_heart_rate(uint32_t bpm);
+int ui_app_open(void);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);

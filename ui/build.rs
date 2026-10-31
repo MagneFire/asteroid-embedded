@@ -53,6 +53,7 @@ fn main() {
     std::fs::write(out.join("note_icons.rs"), rust).unwrap();
 
     ring(&out);
+    heart_arc(&out);
     codes(&out);
 
     let config = slint_build::CompilerConfiguration::new()
@@ -115,6 +116,75 @@ fn codes(out: &std::path::Path) {
     slint.push_str("}\n");
     std::fs::write(out.join("codes.slint"), slint).unwrap();
     std::fs::write(out.join("codes.rs"), rust).unwrap();
+}
+
+/// asteroid-hrm's arc: radius 1/2.9 of the screen, 3.4 % wide, clockwise from 115 degrees (from 3
+/// o'clock, clockwise) round to 65, leaving the bottom for the heart. It is drawn at 40 % opacity
+/// and the renderer has no group opacity, so its pieces must not overlap: 310 segments of one
+/// degree, and for each degree a round start cap (the half disc before it) and end cap (after it),
+/// so any run of segments gets round ends. The arrow by the previous rate, pointing at the
+/// centre, comes for each degree from 140 to 220.
+fn heart_arc(out: &std::path::Path) {
+    let size: f64 = std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(400.0);
+    let (r, half, c) = (size / 2.9, size * 0.034 / 2.0, size / 2.0);
+    let dir = out.join("heart-arc");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut slint = String::from("export global HeartArc {\n");
+    let mut list = |name: &str, polys: Vec<Vec<(f64, f64)>>| {
+        writeln!(slint, "    out property <[{{img: image, x: length, y: length}}]> {name}: [").unwrap();
+        for (i, pts) in polys.iter().enumerate() {
+            let x0 = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min).floor();
+            let y0 = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min).floor();
+            let x1 = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max).ceil();
+            let y1 = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max).ceil();
+            let poly: Vec<String> = pts.iter().map(|p| format!("{:.2},{:.2}", p.0 - x0, p.1 - y0)).collect();
+            let svg = format!(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\"><polygon points=\"{}\" fill=\"white\"/></svg>",
+                poly.join(" "),
+                w = x1 - x0,
+                h = y1 - y0
+            );
+            let path = dir.join(format!("{name}-{i}.svg"));
+            std::fs::write(&path, svg).unwrap();
+            writeln!(slint, "        {{ img: @image-url(\"{}\"), x: {x0}px, y: {y0}px }},", path.display()).unwrap();
+        }
+        slint.push_str("    ];\n");
+    };
+    let at = |rr: f64, a: f64| (c + rr * a.cos(), c + rr * a.sin());
+    let segments = (0..310)
+        .map(|i| {
+            let a0 = (115.0 + i as f64).to_radians();
+            let a1 = a0 + 1.0_f64.to_radians();
+            vec![at(r + half, a0), at(r + half, a1), at(r - half, a1), at(r - half, a0)]
+        })
+        .collect();
+    list("segments", segments);
+    // A half disc on the radial line at the angle, towards smaller (start) or larger (end) angles.
+    let cap = |deg: f64, dir: f64| {
+        let a = deg.to_radians();
+        let (cx, cy) = at(r, a);
+        (0..=16)
+            .map(|k| {
+                let phi = (-90.0 + k as f64 * 11.25_f64).to_radians();
+                let radial = phi.sin() * half;
+                let along = phi.cos() * half * dir;
+                (cx + radial * a.cos() - along * a.sin(), cy + radial * a.sin() + along * a.cos())
+            })
+            .collect::<Vec<_>>()
+    };
+    list("starts", (0..=310).map(|k| cap(115.0 + k as f64, -1.0)).collect());
+    list("ends", (0..=310).map(|k| cap(115.0 + k as f64, 1.0)).collect());
+    let arrows = (140..=220)
+        .map(|deg| {
+            let a = (deg as f64).to_radians();
+            let (tip, base, w) = (r - 58.0, r - 38.0, 11.0);
+            let (bx, by) = at(base, a);
+            vec![at(tip, a), (bx - w * a.sin(), by + w * a.cos()), (bx + w * a.sin(), by - w * a.cos())]
+        })
+        .collect();
+    list("arrows", arrows);
+    slint.push_str("}\n");
+    std::fs::write(out.join("heart_arc.slint"), slint).unwrap();
 }
 
 /// 50 segments of 1.2 degrees, 7.2 degrees apart from 12 o'clock clockwise, between radius
