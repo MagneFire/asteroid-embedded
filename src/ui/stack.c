@@ -10,10 +10,15 @@
  * page only that page follows the finger, over the page below
  * (ui_app_peek), and let go past 15 % it goes a page back. Put to
  * sleep, the stack goes back to the watchface but keeps the app for
- * APP_KEEP_MS, so a quick wake returns to it. A drag moves the origin
- * with the finger, clamped to the screens that exist in that direction,
- * and a release past half the screen or a quick flick switches screens;
- * the slide back to rest is an ease-out over SLIDE_MS. */
+ * APP_KEEP_MS, so a quick wake returns to it.
+ *
+ * Swipes between screens follow AsteroidOS's gesture filter: the
+ * average move per touch event decides, taking the drag once it passes
+ * 1 % of the screen along one axis (and the finger is LOCK_PX away).
+ * The origin then moves with the finger, clamped to the screens that
+ * exist in that direction, and a release past half the screen
+ * (vertically only while still moving that way) or at more than
+ * FLICK_PX per event switches screens, sliding linearly over SLIDE_MS. */
 #include "asteroid.h"
 #include "display/display.h"
 #include "gpu/draw.h"
@@ -21,7 +26,8 @@
 #include "ui/stack.h"
 
 #define SWIPE_PX	40
-#define FLICK_MS	300
+#define LOCK_PX		8
+#define FLICK_PX	10.0f
 #define SLIDE_MS	100
 #define DIM		0.4f
 #define FADE_MS		300
@@ -44,9 +50,9 @@ static int W, H, fx, fy, from_x, from_y, off, from_off, peek;
 static unsigned screen, gesture;
 static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back, opening;
 static uint32_t app_t0, slept_t;
-static int down_x, down_y, depth;
-static uint32_t down_ms, anim_t0, fade_t;
-static float fade;
+static int down_x, down_y, prev_x, prev_y, moves, depth;
+static uint32_t anim_t0, fade_t;
+static float fade, vx, vy;
 static struct { int x0, x1; } bands[UI_PANELS][BANDS];
 
 static int rest_x(unsigned s) { return s == UI_PANEL_LEFT ? W : s == UI_PANEL_RIGHT ? -W : 0; }
@@ -215,11 +221,14 @@ static bool launcher_scroll(int dx, int dy)
 	return !(dy > 0 && (down_y < EDGE_PX || ui_launcher_edges() & 16));
 }
 
-static void release(bool flick)
+static void release(void)
 {
-	int x = fx - rest_x(screen), y = fy - rest_y(screen);
-	if (absi(x) * 2 > W || absi(y) * 2 > H || (flick && (x || y)))
-		swipe(absi(x) >= absi(y) ? (x > 0 ? RIGHT : LEFT) : (y < 0 ? UP : DOWN));
+	int x = fx - rest_x(screen), y = fy - rest_y(screen), d = horizontal ? x : y;
+	float v = horizontal ? vx : vy;
+	bool half = absi(d) * 2 > (horizontal ? W : H) && (horizontal || (d > 0) == (v > 0));
+	bool flick = (v > FLICK_PX && d > 0) || (v < -FLICK_PX && d < 0);
+	if (half || flick)
+		swipe(horizontal ? (x > 0 ? RIGHT : LEFT) : (y < 0 ? UP : DOWN));
 	else
 		slide_to(screen);
 }
@@ -302,13 +311,23 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 		scroll = launcher_scroll(dx, dy);
 	else if (screen == UI_PANEL_LEFT && absi(dx) > absi(dy))
 		scroll = !(dx < 0 && ui_notes_edges() & 16);
-	bool flick = now_ms - down_ms < FLICK_MS;
+	if (kind == UI_TOUCH_DOWN) {
+		moves = 0;
+		vx = vy = 0.0f;
+	} else {
+		moves++;
+		vx += ((float)(x - prev_x) - vx) / moves;
+		vy += ((float)(y - prev_y) - vy) / moves;
+	}
+	prev_x = x;
+	prev_y = y;
+	float lock = W / 100.0f;
+	bool locked = (vx > lock || vx < -lock || vy > lock || vy < -lock) && dx * dx + dy * dy > LOCK_PX * LOCK_PX;
 	if (app_open) {
 		if (kind == UI_TOUCH_DOWN) {
 			gesture = PENDING;
 			down_x = x;
 			down_y = y;
-			down_ms = now_ms;
 		}
 		touch_app(kind, x, y, dx, dy, far);
 		if (kind == UI_TOUCH_UP)
@@ -320,19 +339,18 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 		gesture = PENDING;
 		down_x = x;
 		down_y = y;
-		down_ms = now_ms;
 		ui_touch(screen, UI_TOUCH_DOWN, x, y);
 		break;
 	case UI_TOUCH_MOVE:
-		if (gesture == PENDING && far && !scroll) {
+		if (gesture == PENDING && locked && !scroll) {
 			gesture = SWIPE;
-			horizontal = absi(dx) >= absi(dy);
+			horizontal = (vx < 0 ? -vx : vx) >= (vy < 0 ? -vy : vy);
 			cancel_press();
 			drag(dx, dy);
 		} else if (gesture == SWIPE) {
 			drag(dx, dy);
 		} else if (gesture == PENDING || gesture == SCROLL) {
-			if (far)
+			if (far && scroll)
 				gesture = SCROLL;
 			ui_touch(screen, UI_TOUCH_MOVE, x, y);
 		}
@@ -341,12 +359,14 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 		stack_indicators();
 		if (gesture == SWIPE) {
 			drag(dx, dy);
-			release(flick);
+			release();
+		} else if (gesture == PENDING && locked && !scroll) {
+			cancel_press();
+			horizontal = (vx < 0 ? -vx : vx) >= (vy < 0 ? -vy : vy);
+			drag(dx, dy);
+			release();
 		} else if (gesture == PENDING && far && !scroll) {
 			cancel_press();
-			horizontal = absi(dx) >= absi(dy);
-			drag(dx, dy);
-			release(true);
 		} else if (gesture == PENDING || gesture == SCROLL) {
 			ui_touch(screen, UI_TOUCH_UP, x, y);
 		}
@@ -405,7 +425,7 @@ void stack_update(uint32_t now_ms)
 		animating = false;
 		return;
 	}
-	float u = 1.0f - (float)t / SLIDE_MS, p = 1.0f - u * u * u;
+	float p = (float)t / SLIDE_MS;
 	fx = from_x + (int)((rest_x(screen) - from_x) * p);
 	fy = from_y + (int)((rest_y(screen) - from_y) * p);
 }
