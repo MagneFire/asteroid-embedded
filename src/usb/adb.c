@@ -649,6 +649,21 @@ void adb_rx(const void *buf, uint32_t len)
 	in_rx--;
 }
 
+/* Something to send once the transport can take it, or more of a
+ * stream's output behind the transfer the host has yet to take: the
+ * main loop should go round again rather than sleep. */
+bool adb_pending(void)
+{
+	if (tx_off != tx_len || cnxn_pending || ctrl_count)
+		return true;
+	for (unsigned i = 0; i < STREAMS; i++) {
+		const struct stream *s = &streams[i];
+		if (s->kind != FREE && (s->count || s->closing))
+			return true;
+	}
+	return false;
+}
+
 void adb_poll(void)
 {
 	for (int i = 0; i < 16 && step(); i++)

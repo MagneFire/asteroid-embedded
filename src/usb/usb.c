@@ -332,3 +332,23 @@ void usb_poll(void)
 }
 
 void usb_stats(uint32_t *rx, uint32_t *tx) { *rx = usb_rx_bytes; *tx = usb_tx_bytes; }
+
+/* The stack has an event to handle, an adb transfer is in flight or
+ * adb has more to send: the main loop should go round again before it
+ * sleeps, as a completion that lands after its poll would otherwise
+ * wait for the next tick. */
+bool usb_busy(void)
+{
+	static uint32_t since;
+	bool busy = usb_connected() && (tud_task_event_ready() || adb_tx_busy || adb_pending());
+	if (!busy)
+		since = 0;
+	else if (!since)
+		since = time_ms();
+	else if (time_ms() - since > 2000) {
+		log_printf("usb: busy for %lu ms: event %d, tx %d, pending %d\n", time_ms() - since, tud_task_event_ready(),
+			   adb_tx_busy, adb_pending());
+		since = time_ms();
+	}
+	return busy;
+}

@@ -206,6 +206,7 @@ void fbcon_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void usb_init(const char *serialno);
 void usb_poll(void);
 bool usb_connected(void);
+bool usb_busy(void);
 void usb_stats(uint32_t *rx, uint32_t *tx);
 
 struct civil { uint32_t year, month, day, weekday, hour, minute, second; };

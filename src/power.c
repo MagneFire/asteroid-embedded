@@ -216,6 +216,15 @@ enum power_change power_update(uint32_t *now_p)
  * when they can sleep too. */
 void power_idle(uint32_t app_next_ms)
 {
+	/* A USB completion that landed after this pass's poll would wait
+	 * for the next tick, a second asleep, and adb needs several per
+	 * message: go round again instead, at full speed, as a pass on the
+	 * sleep clock takes over 100 ms. */
+	if (usb_busy()) {
+		if (!awake && cpu_clock_is_slow())
+			cpu_clock_slow(false);
+		return;
+	}
 	if ((have_display && awake) || haptics_busy() || screenshot_busy() || !timer_ticks())
 		return;
 	bool quiet = !have_display || awake || display_rest();

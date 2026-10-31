@@ -26,6 +26,7 @@ void adb_rx(const void *buf, uint32_t len);
 uint32_t adb_rx_expected(void);
 void adb_poll(void);
 bool adb_online(void);
+bool adb_pending(void);
 void adb_reset(void);
 
 struct adb_file {
