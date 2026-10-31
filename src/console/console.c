@@ -13,6 +13,7 @@
 #include "screenshot/screenshot.h"
 #include "notify/notify.h"
 #include "media/media.h"
+#include "audio/speaker.h"
 #include "ui/ui.h"
 #include "console.h"
 
@@ -711,6 +712,16 @@ static void cmd_hub(const char *args)
 	say("hub: send %u bytes: %d\n", n, hub_send(buf, n));
 }
 
+static void cmd_amp(const char *args)
+{
+	uint16_t rev;
+	int r = speaker_probe(&rev);
+	if (r)
+		say("amp: no answer (%d)\n", r);
+	else
+		say("amp: revision %04x\n", rev);
+}
+
 static void cmd_buzz(const char *args)
 {
 	static uint16_t ms;
@@ -829,6 +840,7 @@ static const struct command commands[] = {
 	{ "emmctest", "", cmd_emmctest },
 	{ "kv", "[set <key> <text> | del <key>]", cmd_kv },
 	{ "btinfo", "", cmd_btinfo },
+	{ "amp", "", cmd_amp },
 	{ "buzz", "[ms]", cmd_buzz },
 	{ "hub", "[send <hex bytes>]", cmd_hub },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },

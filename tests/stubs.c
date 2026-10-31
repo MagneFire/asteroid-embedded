@@ -40,6 +40,7 @@ int bt_host_start(void) { return -1; }
 void bt_host_stop(void) {}
 int bt_store_clear(void) { return -1; }
 void haptics_play(const uint16_t *on_off_ms, unsigned n) {}
+int speaker_probe(uint16_t *rev) { return -1; }
 void cpu_clock_slow(bool slow) {}
 bool cpu_clock_is_slow(void) { return false; }
 void power_request(bool sleep) { stub_asleep = sleep; }
