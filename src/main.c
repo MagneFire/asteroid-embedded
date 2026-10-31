@@ -25,6 +25,7 @@
 #include "storage/storage.h"
 #include "alarm.h"
 #include "clockapps.h"
+#include "calc.h"
 #include "power.h"
 #include "config.h"
 
@@ -77,6 +78,11 @@ static uint32_t rgb(struct ui_rgb c)
 	return (uint32_t)c.r << 16 | (uint32_t)c.g << 8 | c.b;
 }
 
+static void show_calc(void)
+{
+	ui_set_calc(calc_shown(), strlen(calc_shown()), calc_length());
+}
+
 static void open_app(int app)
 {
 	struct ui_colors c;
@@ -85,6 +91,11 @@ static void open_app(int app)
 	if (ui_app_colors(app, &c)) {
 		app_center = rgb(c.center);
 		app_outer = rgb(c.outer);
+	}
+	/* The calculator starts over each time, as the app does. */
+	if (app == UI_APP_CALCULATOR) {
+		calc_reset();
+		show_calc();
 	}
 	ui_set_app(app);
 	stack_open_app();
@@ -585,6 +596,10 @@ void main(void)
 				break;
 			case UI_EVENT_SETTING_VALUE:
 				setting_value(a, e.arg);
+				break;
+			case UI_EVENT_CALC:
+				calc_key(a);
+				show_calc();
 				break;
 			case UI_EVENT_SNOOZE:
 				notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);

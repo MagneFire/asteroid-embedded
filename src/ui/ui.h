@@ -17,6 +17,8 @@
  * ui_set_heart_rate gives the Heart Rate app its reading, 0 while it
  * measures, and ui_app_open the app open on the app panel, -1 for none;
  * ui_flashlight_on says whether the Flashlight app's light is on.
+ * ui_set_calc gives the calculator its display text and the length of
+ * the number it shows, which sets the font size.
  * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
@@ -49,7 +51,7 @@
  * setting in bits 8 and up set to the value in bits 0-7,
  * UI_EVENT_TIME_SET the time of day set by hand in minutes and
  * UI_EVENT_DATE_SET a date set by hand as (year - 2000) << 9 | month << 5
- * | day.
+ * | day, UI_EVENT_CALC a calculator key (enum ui_calc_key).
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -77,6 +79,7 @@ enum ui_app {
 	UI_APP_WEATHER,
 	UI_APP_HEART_RATE,
 	UI_APP_FLASHLIGHT,
+	UI_APP_CALCULATOR,
 };
 enum ui_clock_action {
 	UI_TIMER_START = 20,
@@ -112,6 +115,18 @@ enum ui_media_action {
 	UI_MEDIA_PAUSE,
 	UI_MEDIA_VOLUME_UP = 5,
 	UI_MEDIA_VOLUME_DOWN,
+};
+/* The calculator's keys: the digits are their values. */
+enum ui_calc_key {
+	UI_CALC_POINT = 10,
+	UI_CALC_ADD,
+	UI_CALC_SUBTRACT,
+	UI_CALC_MULTIPLY,
+	UI_CALC_DIVIDE,
+	UI_CALC_EQUALS,
+	UI_CALC_CLEAR,
+	UI_CALC_BACK,
+	UI_CALC_NEGATE,
 };
 
 /* Shared with the Rust side (ui/src/watch.rs), which lays them out the
@@ -152,6 +167,7 @@ enum ui_event_kind {
 	UI_EVENT_SETTING_VALUE,
 	UI_EVENT_TIME_SET,
 	UI_EVENT_DATE_SET,
+	UI_EVENT_CALC,
 };
 
 struct ui_event {
@@ -172,6 +188,7 @@ void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
 int ui_app_open(void);
 bool ui_flashlight_on(void);
+void ui_set_calc(const char *shown, uint32_t shown_len, uint32_t length);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);

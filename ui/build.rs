@@ -107,6 +107,7 @@ fn codes(out: &std::path::Path) {
         (&ui_h, "ui_media_action", "i32"),
         (&ui_h, "ui_alarm_action", "i32"),
         (&ui_h, "ui_event_kind", "u32"),
+        (&ui_h, "ui_calc_key", "i32"),
     ] {
         for (ident, value) in c_enum(header, name) {
             writeln!(slint, "    out property <int> {}: {value};", ident.to_lowercase().replace('_', "-")).unwrap();

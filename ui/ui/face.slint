@@ -66,6 +66,9 @@ export global Face {
     in-out property <int> heart-rate;
     // Whether the Flashlight app's light is on, read by the firmware for the brightness.
     in-out property <bool> flashlight-on: true;
+    // The calculator's display text (digits grouped) and the length of the number it shows.
+    in-out property <string> calc-shown: "0";
+    in-out property <int> calc-length: 1;
     // RTC seconds, for the age of notifications.
     in-out property <int> now;
     in-out property <bool> vibration-on: true;
@@ -130,6 +133,8 @@ export global Face {
     callback date-set(int, int, int);
     // An enum setting and the value to set it to.
     callback setting-set(int, int);
+    // A calculator key.
+    callback calc-key(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

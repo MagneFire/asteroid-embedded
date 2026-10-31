@@ -289,6 +289,8 @@ pub unsafe extern "C" fn ui_init(
         let queue = events.clone();
         face.on_time_set(move |minutes| event(&queue, UI_EVENT_TIME_SET, minutes));
         let queue = events.clone();
+        face.on_calc_key(move |key| event(&queue, UI_EVENT_CALC, key));
+        let queue = events.clone();
         face.on_date_set(move |day, month, year| event(&queue, UI_EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
@@ -335,6 +337,16 @@ pub extern "C" fn ui_set_heart_rate(bpm: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_open() -> i32 {
     with_ui(|ui| ui.screens[APP].global::<Face>().get_app()).unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_calc(shown: *const u8, shown_len: u32, length: u32) {
+    let shown = unsafe { text(shown, shown_len) };
+    with_ui(|ui| {
+        let face = ui.screens[APP].global::<Face>();
+        face.set_calc_shown(shown);
+        face.set_calc_length(length as i32);
+    });
 }
 
 /// Whether the Flashlight app has its light on.

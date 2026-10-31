@@ -1,0 +1,136 @@
+// The calculator, laid out as asteroid-calculator on this round 400 px screen: the number along
+// the top on a dark band, over a grid of 5 by 4 keys. A pressed key lifts a bold copy of its
+// label above the finger on a dark disc, the top row less far, the operators to the side. The
+// firmware keeps the number (Face.calc-shown, grouped in threes) and the length that sets its
+// size. A tap on the number negates it.
+import { Face } from "face.slint";
+import { Codes } from "codes.slint";
+
+struct Key {
+    label: string,
+    key: int,
+    // The lift of the pressed label as fractions of the key height, up and to the right.
+    up: float,
+    right: float,
+}
+
+export component CalculatorScreen {
+    // The content box leaves 32 px at the sides and 28 px at the bottom; the display takes its
+    // top quarter, the keys the rest below a 4 px gap, 8 px apart.
+    property <length> key-w: (336px - 4 * 8px) / 5;
+    property <length> key-h: (372px / 4 * 3 - 4px - 3 * 8px) / 4;
+    property <length> display-h: 372px / 4;
+    property <[Key]> keys: [
+        { label: "÷", key: Codes.ui-calc-divide, up: 1.14, right: 0.7 },
+        { label: "7", key: 7, up: 1.1, right: 0 },
+        { label: "8", key: 8, up: 1.2, right: 0 },
+        { label: "9", key: 9, up: 1.1, right: 0 },
+        { label: "−", key: Codes.ui-calc-subtract, up: 1.14, right: -0.7 },
+        { label: "×", key: Codes.ui-calc-multiply, up: 1.5, right: 0.3 },
+        { label: "4", key: 4, up: 1.5, right: 0 },
+        { label: "5", key: 5, up: 1.5, right: 0 },
+        { label: "6", key: 6, up: 1.5, right: 0 },
+        { label: "+", key: Codes.ui-calc-add, up: 1.5, right: -0.3 },
+        { label: "C", key: Codes.ui-calc-clear, up: 1.5, right: 0 },
+        { label: "1", key: 1, up: 1.5, right: 0 },
+        { label: "2", key: 2, up: 1.5, right: 0 },
+        { label: "3", key: 3, up: 1.5, right: 0 },
+        { label: "=", key: Codes.ui-calc-equals, up: 1.5, right: 0 },
+        { label: "", key: -1, up: 0, right: 0 },
+        { label: ".", key: Codes.ui-calc-point, up: 1.5, right: 0 },
+        { label: "0", key: 0, up: 1.5, right: 0 },
+        { label: "<", key: Codes.ui-calc-back, up: 1.5, right: 0 },
+    ];
+    // The number's size steps down with its length.
+    property <int> n: Face.calc-length;
+    property <length> display-size: self.n <= 5 ? 60px : self.n == 6 ? 56px : self.n == 7 ? 52px : self.n == 8 ? 50px : self.n == 9 ? 48px : self.n <= 11 ? 44px : self.n == 12 ? 42px : self.n == 13 ? 40px : self.n == 14 ? 38px : 36px;
+
+    width: 100%;
+    height: 100%;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 400px;
+        height: root.display-h;
+        background: #bb19381F;
+    }
+
+    Text {
+        x: 68px;
+        y: 0;
+        width: 264px;
+        height: root.display-h - 8px;
+        text: Face.calc-shown;
+        color: white;
+        font-family: "Noto Sans Condensed Medium";
+        font-size: root.display-size;
+        horizontal-alignment: center;
+        vertical-alignment: bottom;
+        overflow: elide;
+    }
+
+    TouchArea {
+        x: 32px;
+        y: 0;
+        width: 336px;
+        height: root.display-h;
+        clicked => {
+            Face.calc-key(Codes.ui-calc-negate);
+        }
+    }
+
+    for k[i] in root.keys: Rectangle {
+        property <bool> down: touch.pressed && k.key >= 0;
+        // The label's line box, which the disc behind it fills.
+        property <length> size: self.down ? root.key-w * 1.1 : root.key-w * 0.7;
+        property <length> box: self.size * 1.36;
+        property <length> dx: self.down ? k.right * root.key-h : 0;
+        property <length> dy: self.down ? -k.up * root.key-h : 0;
+        animate size, dx, dy {
+            duration: self.down ? 30ms : 60ms;
+            easing: self.down ? ease-out-expo : ease-in-expo;
+        }
+
+        x: 32px + Math.mod(i, 5) * (root.key-w + 8px);
+        y: root.display-h + 4px + Math.floor(i / 5) * (root.key-h + 8px);
+        width: root.key-w;
+        height: root.key-h;
+        z: self.down ? 2 : 0;
+
+        Rectangle {
+            x: (root.key-w - self.width) / 2 + parent.dx;
+            y: (root.key-h - self.width) / 2 + parent.dy + parent.box * 0.02;
+            width: parent.box;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: #19381F;
+            opacity: parent.down ? 0.9 : 0;
+            animate opacity {
+                duration: parent.down ? 40ms : 80ms;
+                easing: parent.down ? ease-out-expo : ease-in-expo;
+            }
+        }
+
+        Text {
+            x: parent.dx;
+            y: parent.dy;
+            width: root.key-w;
+            height: root.key-h;
+            text: k.label;
+            color: white;
+            font-size: parent.size;
+            font-weight: parent.down ? 700 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        touch := TouchArea {
+            clicked => {
+                if k.key >= 0 {
+                    Face.calc-key(k.key);
+                }
+            }
+        }
+    }
+}
