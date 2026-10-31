@@ -164,15 +164,25 @@ struct Ui {
     height: usize,
 }
 
-fn ui() -> Option<&'static mut Ui> {
-    unsafe { (*UI.0.get()).as_mut() }
+static BUSY: Static<Cell<bool>> = Static(UnsafeCell::new(Cell::new(false)));
+
+/// The UI, for the length of f, to one caller at a time: the ui_* functions run from the main
+/// loop only, and one that called another while holding the UI would hand out a second &mut to
+/// it, so that is a panic (a fault record) instead.
+fn with_ui<R>(f: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let busy = unsafe { &*BUSY.0.get() };
+    assert!(!busy.replace(true), "ui re-entered");
+    let r = unsafe { (*UI.0.get()).as_mut() }.map(f);
+    busy.set(false);
+    r
 }
 
 fn each(f: impl Fn(Face)) {
-    let Some(ui) = ui() else { return };
-    for screen in &ui.screens {
-        f(screen.global::<Face>());
-    }
+    with_ui(|ui| {
+        for screen in &ui.screens {
+            f(screen.global::<Face>());
+        }
+    });
 }
 
 fn pop(queue: &Queue) -> Option<i32> {
@@ -201,7 +211,7 @@ pub unsafe extern "C" fn ui_init(
     width: u32,
     height: u32,
 ) -> bool {
-    if ui().is_some()
+    if with_ui(|_| ()).is_some()
         || heap.is_null()
         || heap_size == 0
         || layers.is_null()
@@ -353,8 +363,7 @@ fn note_icon(name: &str) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_clear_notifications() {
-    let Some(ui) = ui() else { return };
-    ui.notes.set_vec(Vec::new());
+    with_ui(|ui| ui.notes.set_vec(Vec::new()));
 }
 
 #[unsafe(no_mangle)]
@@ -370,21 +379,20 @@ pub unsafe extern "C" fn ui_add_notification(
     icon_len: u32,
     time: u32,
 ) {
-    let Some(ui) = ui() else { return };
-    ui.notes.push(Note {
+    let note = Note {
         id,
         icon: note_icon(unsafe { text(icon, icon_len) }.as_str()),
         app: unsafe { text(app, app_len) },
         summary: unsafe { text(summary, summary_len) },
         body: unsafe { text(body, body_len) },
         time: time as i32,
-    });
+    };
+    with_ui(|ui| ui.notes.push(note));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_show_notification(id: i32) {
-    let Some(ui) = ui() else { return };
-    let Some(note) = ui.notes.iter().find(|n| n.id == id) else { return };
+    let Some(note) = with_ui(|ui| ui.notes.iter().find(|n| n.id == id)).flatten() else { return };
     each(|face| {
         face.set_notification_id(note.id);
         face.set_notification_icon(note.icon);
@@ -429,14 +437,12 @@ pub extern "C" fn ui_set_launcher(layout: i32) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_notes_edges() -> u32 {
-    let Some(ui) = ui() else { return 2 | 16 };
-    ui.screens[NOTES].global::<Face>().get_notes_edges() as u32
+    with_ui(|ui| ui.screens[NOTES].global::<Face>().get_notes_edges() as u32).unwrap_or(2 | 16)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_launcher_edges() -> u32 {
-    let Some(ui) = ui() else { return 4 };
-    ui.screens[LAUNCHER].global::<Face>().get_launcher_edges() as u32
+    with_ui(|ui| ui.screens[LAUNCHER].global::<Face>().get_launcher_edges() as u32).unwrap_or(4)
 }
 
 /// Which panel the stack has on screen, under any app.
@@ -449,37 +455,39 @@ pub extern "C" fn ui_set_screen(panel: u32) {
 /// false for the layouts that keep the mesh grey.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_launcher_colors(out: *mut UiColors) -> bool {
-    let Some(ui) = ui() else { return false };
-    let screen = &ui.screens[LAUNCHER];
-    let apps = screen.global::<Apps>().get_list();
-    let n = apps.row_count();
-    let layout = screen.global::<Face>().get_launcher();
-    if n == 0 || out.is_null() || layout == 4 || layout == 5 {
-        return false;
-    }
-    let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, (n - 1) as f32);
-    let (i, t) = (pos as usize, pos - (pos as usize) as f32);
-    let a = apps.row_data(i).unwrap();
-    let b = apps.row_data((i + 1).min(n - 1)).unwrap();
-    let mix = |x: slint::Color, y: slint::Color| {
-        let c = |p: u8, q: u8| (p as f32 * (1.0 - t) + q as f32 * t) as u8;
-        UiRgb { r: c(x.red(), y.red()), g: c(x.green(), y.green()), b: c(x.blue(), y.blue()) }
-    };
-    unsafe { *out = UiColors { center: mix(a.center, b.center), outer: mix(a.outer, b.outer) } };
-    true
+    with_ui(|ui| {
+        let screen = &ui.screens[LAUNCHER];
+        let apps = screen.global::<Apps>().get_list();
+        let n = apps.row_count();
+        let layout = screen.global::<Face>().get_launcher();
+        if n == 0 || out.is_null() || layout == 4 || layout == 5 {
+            return false;
+        }
+        let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, (n - 1) as f32);
+        let (i, t) = (pos as usize, pos - (pos as usize) as f32);
+        let a = apps.row_data(i).unwrap();
+        let b = apps.row_data((i + 1).min(n - 1)).unwrap();
+        let mix = |x: slint::Color, y: slint::Color| {
+            let c = |p: u8, q: u8| (p as f32 * (1.0 - t) + q as f32 * t) as u8;
+            UiRgb { r: c(x.red(), y.red()), g: c(x.green(), y.green()), b: c(x.blue(), y.blue()) }
+        };
+        unsafe { *out = UiColors { center: mix(a.center, b.center), outer: mix(a.outer, b.outer) } };
+        true
+    }).unwrap_or(false)
 }
 
 /// The background colours of an app; false for an unknown app.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_app_colors(app: i32, out: *mut UiColors) -> bool {
-    let Some(ui) = ui() else { return false };
-    let apps = ui.screens[LAUNCHER].global::<Apps>().get_list();
-    let Some(a) = apps.iter().find(|a| a.id == app) else { return false };
-    if out.is_null() {
-        return false;
-    }
-    unsafe { *out = UiColors { center: rgb(a.center), outer: rgb(a.outer) } };
-    true
+    with_ui(|ui| {
+        let apps = ui.screens[LAUNCHER].global::<Apps>().get_list();
+        let Some(a) = apps.iter().find(|a| a.id == app) else { return false };
+        if out.is_null() {
+            return false;
+        }
+        unsafe { *out = UiColors { center: rgb(a.center), outer: rgb(a.outer) } };
+        true
+    }).unwrap_or(false)
 }
 
 
@@ -535,25 +543,25 @@ pub extern "C" fn ui_set_face(watchface: i32, nightstand_setting: bool, nightsta
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_set_alarms(alarms: *const UiAlarm, n: u32) {
-    let Some(ui) = ui() else { return };
     let alarms = if alarms.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(alarms, n as usize) } };
     let items = alarms
         .iter()
         .map(|a| AlarmItem { hour: a.hour as i32, minute: a.minute as i32, days: a.days as i32, on: a.on })
         .collect::<Vec<_>>();
-    ui.alarms.set_vec(items);
+    with_ui(|ui| ui.alarms.set_vec(items));
 }
 
 
 /// The next thing the user did, oldest first; false when there is none.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_next_event(out: *mut UiEvent) -> bool {
-    let Some(ui) = ui() else { return false };
-    let Some(e) = ui.events.borrow_mut().pop_front() else { return false };
-    if !out.is_null() {
-        unsafe { *out = e };
-    }
-    true
+    with_ui(|ui| {
+        let Some(e) = ui.events.borrow_mut().pop_front() else { return false };
+        if !out.is_null() {
+            unsafe { *out = e };
+        }
+        true
+    }).unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
@@ -601,30 +609,32 @@ pub extern "C" fn ui_set_app(app: i32) {
 /// How many pages deep the open app is.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_depth() -> i32 {
-    ui().map_or(0, |ui| ui.screens[APP].global::<Face>().get_app_depth())
+    with_ui(|ui| ui.screens[APP].global::<Face>().get_app_depth()).unwrap_or(0)
 }
 
 /// Drags the open app's top page px to the right, showing the page below.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_peek(px: i32) {
-    let Some(ui) = ui() else { return };
-    let face = ui.screens[APP].global::<Face>();
-    face.set_peeking(true);
-    face.set_peek(px as f32);
+    with_ui(|ui| {
+        let face = ui.screens[APP].global::<Face>();
+        face.set_peeking(true);
+        face.set_peek(px as f32);
+    });
 }
 
 /// Ends the drag, taking the open app one page back if back; the app resets the peek as it
 /// leaves the page, so the page is never drawn back in place.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_peek_end(back: bool) {
-    let Some(ui) = ui() else { return };
-    let face = ui.screens[APP].global::<Face>();
-    if back && face.get_app_depth() > 0 {
-        face.set_back_count(face.get_back_count() + 1);
-    } else {
-        face.set_peek(0.0);
-        face.set_peeking(false);
-    }
+    with_ui(|ui| {
+        let face = ui.screens[APP].global::<Face>();
+        if back && face.get_app_depth() > 0 {
+            face.set_back_count(face.get_back_count() + 1);
+        } else {
+            face.set_peek(0.0);
+            face.set_peeking(false);
+        }
+    });
 }
 
 
@@ -637,7 +647,6 @@ pub unsafe extern "C" fn ui_set_weather(
     min_c: *const i32,
     max_c: *const i32,
 ) {
-    let Some(ui) = ui() else { return };
     let n = if ids.is_null() || min_c.is_null() || max_c.is_null() { 0 } else { days as usize };
     let day = |i: usize| unsafe { Day { id: *ids.add(i), min: *min_c.add(i), max: *max_c.add(i) } };
     let city = unsafe { text(city, city_len) };
@@ -647,49 +656,56 @@ pub unsafe extern "C" fn ui_set_weather(
         face.set_weather_city(city.clone());
         face.set_weather_today(today.clone());
     });
-    ui.forecast.set_vec((1..n).map(day).collect::<Vec<_>>());
+    with_ui(|ui| ui.forecast.set_vec((1..n).map(day).collect::<Vec<_>>()));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_modal() -> bool {
-    let Some(ui) = ui() else { return false };
-    let face = ui.screens[OVERLAY].global::<Face>();
-    face.get_notification_shown() || face.get_passkey() >= 0 || face.get_alarm_ringing()
+    with_ui(|ui| {
+        let face = ui.screens[OVERLAY].global::<Face>();
+        face.get_notification_shown() || face.get_passkey() >= 0 || face.get_alarm_ringing()
+    }).unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_touch(panel: u32, kind: i32, x: i32, y: i32) {
-    let Some(ui) = ui() else { return };
-    let Some(panel) = ui.panels.get(panel as usize) else { return };
-    let position = LogicalPosition::new(x as f32, y as f32);
-    let button = PointerEventButton::Left;
-    let window = panel.window.window();
-    let dispatch = |event| {
-        let _ = window.dispatch_event_with_result(event);
-    };
-    match kind {
-        0 => dispatch(WindowEvent::PointerPressed { position, button }),
-        1 => dispatch(WindowEvent::PointerMoved { position }),
-        2 => {
-            dispatch(WindowEvent::PointerReleased { position, button });
-            dispatch(WindowEvent::PointerExited);
+    with_ui(|ui| {
+        let Some(panel) = ui.panels.get(panel as usize) else { return };
+        let position = LogicalPosition::new(x as f32, y as f32);
+        let button = PointerEventButton::Left;
+        let window = panel.window.window();
+        let dispatch = |event| {
+            let _ = window.dispatch_event_with_result(event);
+        };
+        match kind {
+            0 => dispatch(WindowEvent::PointerPressed { position, button }),
+            1 => dispatch(WindowEvent::PointerMoved { position }),
+            2 => {
+                dispatch(WindowEvent::PointerReleased { position, button });
+                dispatch(WindowEvent::PointerExited);
+            }
+            _ => {}
         }
-        _ => {}
-    }
+    });
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_tick() {
-    let Some(ui) = ui() else { return };
-    while let Some(id) = pop(&ui.opened) {
+    if with_ui(|_| ()).is_none() {
+        return;
+    }
+    while let Some(id) = with_ui(|ui| pop(&ui.opened)).flatten() {
         ui_show_notification(id);
     }
-    let face = ui.screens[OVERLAY].global::<Face>();
-    let id = face.get_notification_id();
-    if face.get_notification_shown() && !ui.notes.iter().any(|n| n.id == id) {
-        face.set_notification_shown(false);
-    }
-    if !face.get_notification_shown() {
+    let hide = with_ui(|ui| {
+        let face = ui.screens[OVERLAY].global::<Face>();
+        let id = face.get_notification_id();
+        if face.get_notification_shown() && !ui.notes.iter().any(|n| n.id == id) {
+            face.set_notification_shown(false);
+        }
+        !face.get_notification_shown()
+    });
+    if hide == Some(true) {
         ui_hide_notification();
     }
     slint::platform::update_timers_and_animations();
@@ -697,31 +713,32 @@ pub extern "C" fn ui_tick() {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_update(panel: u32, x: *mut u32, y: *mut u32, w: *mut u32, h: *mut u32) -> bool {
-    let Some(ui) = ui() else { return false };
-    let Some(panel) = ui.panels.get_mut(panel as usize) else { return false };
-    let mut region = None;
-    let (layer, stride, width, height) = (&mut *panel.layer, ui.stride, ui.width, ui.height);
-    panel.window.draw_if_needed(|renderer| {
-        region = Some(renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height)))
-    });
-    let Some(region) = region else { return false };
-    let origin = region.bounding_box_origin();
-    let size = region.bounding_box_size();
-    let x0 = (origin.x.max(0) as usize).min(ui.width);
-    let y0 = (origin.y.max(0) as usize).min(ui.height);
-    let x1 = (x0 + size.width as usize).min(ui.width);
-    let y1 = (y0 + size.height as usize).min(ui.height);
-    if x1 == x0 || y1 == y0 {
-        return false;
-    }
-    unsafe {
-        for (p, v) in [(x, x0), (y, y0), (w, x1 - x0), (h, y1 - y0)] {
-            if !p.is_null() {
-                *p = v as u32;
+    with_ui(|ui| {
+        let Some(panel) = ui.panels.get_mut(panel as usize) else { return false };
+        let mut region = None;
+        let (layer, stride, width, height) = (&mut *panel.layer, ui.stride, ui.width, ui.height);
+        panel.window.draw_if_needed(|renderer| {
+            region = Some(renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height)))
+        });
+        let Some(region) = region else { return false };
+        let origin = region.bounding_box_origin();
+        let size = region.bounding_box_size();
+        let x0 = (origin.x.max(0) as usize).min(ui.width);
+        let y0 = (origin.y.max(0) as usize).min(ui.height);
+        let x1 = (x0 + size.width as usize).min(ui.width);
+        let y1 = (y0 + size.height as usize).min(ui.height);
+        if x1 == x0 || y1 == y0 {
+            return false;
+        }
+        unsafe {
+            for (p, v) in [(x, x0), (y, y0), (w, x1 - x0), (h, y1 - y0)] {
+                if !p.is_null() {
+                    *p = v as u32;
+                }
             }
         }
-    }
-    true
+        true
+    }).unwrap_or(false)
 }
 
 #[inline(always)]
@@ -733,51 +750,53 @@ fn over(src: u32, dst: u32, keep: u32) -> u32 {
 /// Blends the watchface layer, moved by (dx, dy), and the overlay over buf.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32, dx: i32, dy: i32) {
-    let Some(ui) = ui() else { return };
-    let stride = stride_px as usize;
-    if buf.is_null() || stride < ui.width {
-        return;
-    }
-    let fb = unsafe { core::slice::from_raw_parts_mut(buf, stride * ui.height) };
-    let (w, h) = (ui.width as i32, ui.height as i32);
-    for (layer, (dx, dy)) in [(&ui.panels[0].layer, (dx.clamp(-w, w), dy.clamp(-h, h))), (&ui.panels[OVERLAY].layer, (0, 0))] {
-        let (x0, x1) = (dx.max(0) as usize, (w + dx).min(w) as usize);
-        for y in dy.max(0) as usize..(h + dy).min(h) as usize {
-            let sy = (y as i32 - dy) as usize;
-            let sx = (x0 as i32 - dx) as usize;
-            let row = &mut fb[y * stride + x0..y * stride + x1];
-            let line = &layer[sy * ui.stride + sx..sy * ui.stride + sx + (x1 - x0)];
-            for (d, s) in row.iter_mut().zip(line.iter()) {
-                match s.alpha {
-                    0 => {}
-                    255 => *d = (s.red as u32) << 16 | (s.green as u32) << 8 | s.blue as u32,
-                    a => {
-                        let keep = 255 - a as u32;
-                        let r = over(s.red as u32, *d >> 16 & 0xff, keep);
-                        let g = over(s.green as u32, *d >> 8 & 0xff, keep);
-                        let b = over(s.blue as u32, *d & 0xff, keep);
-                        *d = r.min(255) << 16 | g.min(255) << 8 | b.min(255);
+    with_ui(|ui| {
+        let stride = stride_px as usize;
+        if buf.is_null() || stride < ui.width {
+            return;
+        }
+        let fb = unsafe { core::slice::from_raw_parts_mut(buf, stride * ui.height) };
+        let (w, h) = (ui.width as i32, ui.height as i32);
+        for (layer, (dx, dy)) in [(&ui.panels[0].layer, (dx.clamp(-w, w), dy.clamp(-h, h))), (&ui.panels[OVERLAY].layer, (0, 0))] {
+            let (x0, x1) = (dx.max(0) as usize, (w + dx).min(w) as usize);
+            for y in dy.max(0) as usize..(h + dy).min(h) as usize {
+                let sy = (y as i32 - dy) as usize;
+                let sx = (x0 as i32 - dx) as usize;
+                let row = &mut fb[y * stride + x0..y * stride + x1];
+                let line = &layer[sy * ui.stride + sx..sy * ui.stride + sx + (x1 - x0)];
+                for (d, s) in row.iter_mut().zip(line.iter()) {
+                    match s.alpha {
+                        0 => {}
+                        255 => *d = (s.red as u32) << 16 | (s.green as u32) << 8 | s.blue as u32,
+                        a => {
+                            let keep = 255 - a as u32;
+                            let r = over(s.red as u32, *d >> 16 & 0xff, keep);
+                            let g = over(s.green as u32, *d >> 8 & 0xff, keep);
+                            let b = over(s.blue as u32, *d & 0xff, keep);
+                            *d = r.min(255) << 16 | g.min(255) << 8 | b.min(255);
+                        }
                     }
                 }
             }
         }
-    }
+    });
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_repaint(panel: u32, gpu: bool) {
-    let Some(ui) = ui() else { return };
-    let Some(panel) = ui.panels.get_mut(panel as usize) else { return };
-    let (layer, stride, width, height) = (&mut *panel.layer, ui.stride, ui.width, ui.height);
-    panel.window.request_redraw();
-    panel.window.draw_if_needed(|renderer| {
-        renderer.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
-        if gpu {
-            renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height));
-            paint::finish();
-        } else {
-            renderer.render(layer, stride);
-        }
-        renderer.set_repaint_buffer_type(RepaintBufferType::ReusedBuffer);
+    with_ui(|ui| {
+        let Some(panel) = ui.panels.get_mut(panel as usize) else { return };
+        let (layer, stride, width, height) = (&mut *panel.layer, ui.stride, ui.width, ui.height);
+        panel.window.request_redraw();
+        panel.window.draw_if_needed(|renderer| {
+            renderer.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
+            if gpu {
+                renderer.render_into_buffer(&mut GpuLayer::new(layer, stride, width, height));
+                paint::finish();
+            } else {
+                renderer.render(layer, stride);
+            }
+            renderer.set_repaint_buffer_type(RepaintBufferType::ReusedBuffer);
+        });
     });
 }
