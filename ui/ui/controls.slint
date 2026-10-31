@@ -57,7 +57,7 @@ export component IconButton {
 
 // CircularSpinner (wrap) or Spinner with its SpinnerDelegate: count two-digit values or labels,
 // one every 48 px, the one in the middle 39 px and opaque, the others 22 px at 60 %, and the top
-// and bottom fifth fading out. twelve shows 0 as 12. show(v) turns it to v from outside.
+// and bottom fifth fading out. twelve shows 0 as 12. show(v, d) turns it to v from outside over d.
 export component Spinner {
     in property <int> count;
     in property <[string]> labels;
@@ -67,13 +67,20 @@ export component Spinner {
     in-out property <int> value;
     property <length> step: 48px;
     property <length> scroll: pager.index * self.step - pager.drag;
+    property <duration> shown: -1ms;
+    property <bool> dragging: pager.dragging;
     animate scroll {
-        duration: pager.dragging ? 0ms : pager.anim;
+        duration: pager.dragging ? 0ms : self.shown >= 0ms ? self.shown : pager.anim;
         easing: ease-out;
     }
 
-    public function show(v: int) {
+    public function show(v: int, d: duration) {
+        self.shown = d;
         pager.index = v;
+    }
+
+    changed dragging => {
+        self.shown = -1ms;
     }
 
     changed scroll => {

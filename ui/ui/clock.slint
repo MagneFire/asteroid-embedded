@@ -16,13 +16,17 @@ export component TimerApp {
     width: 100%;
     height: 100%;
 
+    // Turning to a value takes 400 ms, to 0 none, as the spinners' highlightMoveDuration.
+    pure function move(v: int) -> duration {
+        return v != 0 ? 400ms : 0ms;
+    }
     function follow() {
         if !Face.timer-running && root.left == root.chosen {
             return;
         }
-        hours.show(Math.floor(root.left / 3600));
-        minutes.show(Math.mod(Math.floor(root.left / 60), 60));
-        seconds.show(Math.mod(root.left, 60));
+        hours.show(Math.floor(root.left / 3600), root.move(Math.floor(root.left / 3600)));
+        minutes.show(Math.mod(Math.floor(root.left / 60), 60), root.move(Math.mod(Math.floor(root.left / 60), 60)));
+        seconds.show(Math.mod(root.left, 60), root.move(Math.mod(root.left, 60)));
     }
     changed left => {
         self.follow();
