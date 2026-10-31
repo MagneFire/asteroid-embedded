@@ -77,11 +77,28 @@ export component AlarmApp {
         Face.peeking = false;
     }
 
+    // Slides the page on top out to the right and the alarms back in, as LayerStack's pop does,
+    // then leaves it.
+    function pop() {
+        Face.peeking = false;
+        Face.peek = 400px;
+        popped.running = true;
+    }
+    popped := Timer {
+        interval: 200ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.page = 0;
+            Face.peek = 0;
+        }
+    }
+
     width: 100%;
     height: 100%;
 
-    // Moved out to the left as a page slides in, and back in beside a page dragged back, kept
-    // meanwhile, as LayerStack keeps the layer below, so it comes back as it was.
+    // Moved out to the left as a page slides in, and back in beside a page dragged back or
+    // popped, kept meanwhile, as LayerStack keeps the layer below, so it comes back as it was.
     Rectangle {
         property <length> scroll: list.index * root.width - list.drag;
         animate scroll {
@@ -89,7 +106,7 @@ export component AlarmApp {
             easing: ease-out;
         }
 
-        x: root.page == 0 ? 0 : Face.peeking ? Face.peek - 400px : -400px;
+        x: root.page == 0 ? 0 : Face.peek - 400px;
         width: 400px;
         animate x {
             duration: Face.peeking ? 0ms : 200ms;
@@ -334,7 +351,7 @@ export component AlarmApp {
                     root.page = 2;
                 } else {
                     Face.alarm-saved(root.index, root.hour, root.minute, root.days, true);
-                    root.page = 0;
+                    root.pop();
                 }
             }
         }
@@ -387,7 +404,7 @@ export component AlarmApp {
             icon: root.index < 0 ? @image-url("../icons/ios-add-circle-outline.svg") : @image-url("../icons/ios-checkmark-circle-outline.svg");
             clicked => {
                 Face.alarm-saved(root.index, root.hour, root.minute, root.days, true);
-                root.page = 0;
+                root.pop();
             }
         }
     }
