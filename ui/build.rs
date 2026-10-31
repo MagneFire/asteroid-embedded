@@ -1,10 +1,14 @@
 // Compiles the .slint files with fonts and icons embedded as pixel data for the software renderer.
 // The notification icons are the AsteroidOS Ionicons set, resized to NOTE_ICON_PX and listed in a
 // generated Slint global, with their sorted names for the lookup by name. The nightstand battery
-// ring is generated too: each of its segments a small SVG cut to its bounding box on a 400 px
-// screen, with its position, since paths cannot be drawn at run time here. The codes the UI and
-// the firmware exchange (the settings, the actions, the event kinds) are read from the C headers
-// into a Slint global and Rust constants, so neither side keeps its own copy.
+// ring is generated too: each of its segments a small SVG cut to its bounding box, with its
+// position, since paths cannot be drawn at run time here. The codes the UI and the firmware
+// exchange (the settings, the actions, the event kinds) are read from the C headers into a Slint
+// global and Rust constants, so neither side keeps its own copy.
+//
+// The .slint files are laid out in px of a UI_PX screen. A board's screen of another size
+// (ASTEROID_UI_SIZE, in pixels) scales them by the compiler's constant scale factor, which also
+// renders the images at their scaled size here, so the firmware draws them unscaled.
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::pen::SvgPen;
 use skrifa::outline::DrawSettings;
@@ -13,6 +17,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 const NOTE_ICON_PX: u32 = 40;
+const UI_PX: u32 = 400;
 const ICON_DIR: &str = "../third_party/asteroid-icons-ion/src";
 
 fn resize(svg: &str, px: u32) -> String {
@@ -30,6 +35,40 @@ fn resize(svg: &str, px: u32) -> String {
         tag.push_str(" viewBox=\"0 0 512 512\"");
     }
     format!("{}{tag} width=\"{px}\" height=\"{px}\"{}", &svg[..start], &svg[end..])
+}
+
+/// The screen's size in pixels.
+fn screen_px() -> u32 {
+    std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(UI_PX)
+}
+
+/// The step in px of the smallest whole number of screen pixels, 5 px (4 pixels) for a 320 pixel
+/// screen: generated shapes whose boxes are put on it land on whole pixels, sized as drawn.
+fn pixel_grid() -> f64 {
+    let (mut a, mut b) = (UI_PX, screen_px());
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    (UI_PX / a) as f64
+}
+
+/// A white polygon (points in px) as an SVG cut to its bounding box on the pixel grid, written to
+/// path, and the box's position.
+fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64) {
+    let g = pixel_grid();
+    let x0 = (pts.iter().map(|p| p.0).fold(f64::MAX, f64::min) / g).floor() * g;
+    let y0 = (pts.iter().map(|p| p.1).fold(f64::MAX, f64::min) / g).floor() * g;
+    let x1 = (pts.iter().map(|p| p.0).fold(f64::MIN, f64::max) / g).ceil() * g;
+    let y1 = (pts.iter().map(|p| p.1).fold(f64::MIN, f64::max) / g).ceil() * g;
+    let poly: Vec<String> = pts.iter().map(|p| format!("{:.2},{:.2}", p.0 - x0, p.1 - y0)).collect();
+    let svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\"><polygon points=\"{}\" fill=\"white\"/></svg>",
+        poly.join(" "),
+        w = x1 - x0,
+        h = y1 - y0
+    );
+    std::fs::write(path, svg).unwrap();
+    (x0, y0)
 }
 
 fn main() {
@@ -63,7 +102,8 @@ fn main() {
 
     let config = slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRendererNoFonts)
-        .with_include_paths(vec![out]);
+        .with_include_paths(vec![out])
+        .with_scale_factor(screen_px() as f32 / UI_PX as f32);
     slint_build::compile_with_config("ui/watchface.slint", config).unwrap();
     println!("cargo:rerun-if-changed=fonts");
     println!("cargo:rerun-if-changed=icons");
@@ -132,7 +172,7 @@ fn codes(out: &std::path::Path) {
 /// so any run of segments gets round ends. The arrow by the previous rate, pointing at the
 /// centre, comes for each degree from 140 to 220.
 fn heart_arc(out: &std::path::Path) {
-    let size: f64 = std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(400.0);
+    let size = UI_PX as f64;
     let (r, half, c) = (size / 2.9, size * 0.034 / 2.0, size / 2.0);
     let dir = out.join("heart-arc");
     std::fs::create_dir_all(&dir).unwrap();
@@ -140,19 +180,8 @@ fn heart_arc(out: &std::path::Path) {
     let mut list = |name: &str, polys: Vec<Vec<(f64, f64)>>| {
         writeln!(slint, "    out property <[{{img: image, x: length, y: length}}]> {name}: [").unwrap();
         for (i, pts) in polys.iter().enumerate() {
-            let x0 = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min).floor();
-            let y0 = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min).floor();
-            let x1 = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max).ceil();
-            let y1 = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max).ceil();
-            let poly: Vec<String> = pts.iter().map(|p| format!("{:.2},{:.2}", p.0 - x0, p.1 - y0)).collect();
-            let svg = format!(
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\"><polygon points=\"{}\" fill=\"white\"/></svg>",
-                poly.join(" "),
-                w = x1 - x0,
-                h = y1 - y0
-            );
             let path = dir.join(format!("{name}-{i}.svg"));
-            std::fs::write(&path, svg).unwrap();
+            let (x0, y0) = polygon_svg(&path, pts);
             writeln!(slint, "        {{ img: @image-url(\"{}\"), x: {x0}px, y: {y0}px }},", path.display()).unwrap();
         }
         slint.push_str("    ];\n");
@@ -219,7 +248,7 @@ fn glyph_paths(font: &FontRef, text: &str, px: f32, fill: &str) -> (String, f32)
 /// degrees one way or the other, cut to their bounding boxes. Text cannot be turned either, so
 /// the boxes' captions and the digits of their numbers are glyph outlines turned the same way.
 fn game_shapes(out: &std::path::Path) {
-    let size: f64 = std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(400.0);
+    let size = UI_PX as f64;
     let dir = out.join("game");
     std::fs::create_dir_all(&dir).unwrap();
     let field = (size * size / 2.0).sqrt().floor();
@@ -286,9 +315,9 @@ fn game_shapes(out: &std::path::Path) {
 }
 
 /// 50 segments of 1.2 degrees, 7.2 degrees apart from 12 o'clock clockwise, between radius
-/// 0.395 and 0.45 of the screen, whose size is ASTEROID_UI_SIZE (the board's).
+/// 0.395 and 0.45 of the screen.
 fn ring(out: &std::path::Path) {
-    let size: f64 = std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(400.0);
+    let size = UI_PX as f64;
     let dir = out.join("ring");
     std::fs::create_dir_all(&dir).unwrap();
     let mut slint = String::from("export global Ring {\n    out property <[{img: image, x: length, y: length}]> segments: [\n");
@@ -299,19 +328,8 @@ fn ring(out: &std::path::Path) {
             .iter()
             .map(|&(r, a)| (size / 2.0 + r * size * a.cos(), size / 2.0 + r * size * a.sin()))
             .collect();
-        let x0 = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min).floor();
-        let y0 = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min).floor();
-        let x1 = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max).ceil();
-        let y1 = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max).ceil();
-        let poly: Vec<String> = pts.iter().map(|p| format!("{:.2},{:.2}", p.0 - x0, p.1 - y0)).collect();
-        let svg = format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\"><polygon points=\"{}\" fill=\"white\"/></svg>",
-            poly.join(" "),
-            w = x1 - x0,
-            h = y1 - y0
-        );
         let path = dir.join(format!("{i}.svg"));
-        std::fs::write(&path, svg).unwrap();
+        let (x0, y0) = polygon_svg(&path, &pts);
         writeln!(slint, "        {{ img: @image-url(\"{}\"), x: {x0}px, y: {y0}px }},", path.display()).unwrap();
     }
     slint.push_str("    ];\n}\n");

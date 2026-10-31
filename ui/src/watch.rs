@@ -11,7 +11,7 @@ use core::time::Duration;
 use crate::paint::{self, GpuLayer};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError, VecModel};
+use slint::{ComponentHandle, Model, PhysicalPosition, PhysicalSize, PlatformError, VecModel};
 
 slint::include_modules!();
 
@@ -679,13 +679,13 @@ pub extern "C" fn ui_app_depth() -> i32 {
     with_ui(|ui| ui.screens[APP].global::<Face>().get_app_depth()).unwrap_or(0)
 }
 
-/// Drags the open app's top page px to the right, showing the page below.
+/// Drags the open app's top page px (screen pixels) to the right, showing the page below.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_peek(px: i32) {
     with_ui(|ui| {
         let face = ui.screens[APP].global::<Face>();
         face.set_peeking(true);
-        face.set_peek(px as f32);
+        face.set_peek(px as f32 / ui.screens[APP].window().scale_factor());
     });
 }
 
@@ -738,9 +738,9 @@ pub extern "C" fn ui_modal() -> bool {
 pub extern "C" fn ui_touch(panel: u32, kind: i32, x: i32, y: i32) {
     with_ui(|ui| {
         let Some(panel) = ui.panels.get(panel as usize) else { return };
-        let position = LogicalPosition::new(x as f32, y as f32);
-        let button = PointerEventButton::Left;
         let window = panel.window.window();
+        let position = PhysicalPosition::new(x, y).to_logical(window.scale_factor());
+        let button = PointerEventButton::Left;
         let dispatch = |event| {
             let _ = window.dispatch_event_with_result(event);
         };
