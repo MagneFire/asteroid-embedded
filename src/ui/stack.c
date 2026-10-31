@@ -6,11 +6,12 @@
  * over all of them, sliding in from the right and fading in over
  * APP_FADE_MS when opened; dragged from the top edge, or from the left
  * edge on its first page, it follows the finger, fading, and let go
- * past 15 % it closes onto the watchface. From the left edge on a later
- * page only that page follows the finger, over the page below
- * (ui_app_peek), and let go past 15 % it goes a page back. Put to
- * sleep, the stack goes back to the watchface but keeps the app for
- * APP_KEEP_MS, so a quick wake returns to it.
+ * past 15 % of the way from where the drag began to the far edge it
+ * closes onto the watchface. From the left edge on a later page only
+ * that page follows the finger, over the page below (ui_app_peek), and
+ * let go past 15 % it goes a page back. Put to sleep, the stack goes
+ * back to the watchface but keeps the app for APP_KEEP_MS, so a quick
+ * wake returns to it.
  *
  * Swipes between screens follow AsteroidOS's gesture filter: the
  * average move per touch event decides, taking the drag once it passes
@@ -206,8 +207,9 @@ void stack_set_launcher(unsigned layout)
 
 /* Whether a drag on the launcher is its own. The horizontal layouts
  * take sideways drags. The vertical ones take vertical drags, except a
- * drag down from their start or from the top edge, which goes back to
- * the watchface. The speed dial takes drags that start on its wheel. */
+ * drag down from their start, or for the vertical pages from the top
+ * edge, which goes back to the watchface. The speed dial takes drags
+ * that start on its wheel. */
 static bool launcher_scroll(int dx, int dy)
 {
 	if (launcher == 0 || launcher == 2)
@@ -218,7 +220,7 @@ static bool launcher_scroll(int dx, int dy)
 	}
 	if (absi(dx) > absi(dy))
 		return false;
-	return !(dy > 0 && (down_y < EDGE_PX || ui_launcher_edges() & 16));
+	return !(dy > 0 && ((launcher == 1 && down_y < EDGE_PX) || ui_launcher_edges() & 16));
 }
 
 static void release(void)
@@ -280,7 +282,7 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 		animating = false;
 		dragging = kind == UI_TOUCH_MOVE;
 		if (kind == UI_TOUCH_UP)
-			slide_app(d * 100 > (app_top ? H : W) * 15);
+			slide_app(d * 100 > (app_top ? H - down_y : W - down_x) * 15);
 		break;
 	}
 }
