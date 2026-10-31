@@ -16,6 +16,7 @@
 #define BOARD_PANEL_LINES	326
 #define BOARD_PANEL_HZ		57
 #define BOARD_PANEL_TE_GPIO	24
+#define BOARD_PANEL_FLIP_UD	0
 
 /* BCM4343A1 Bluetooth on BLSP1 UART1 (gpio 0-3, function 2); the wake
  * pins are unverified, the MPM pin not yet derived. The patch is in

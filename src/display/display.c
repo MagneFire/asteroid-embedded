@@ -112,7 +112,8 @@ bool display_init(void)
 	writel(SRC_FORMAT_XRGB8888, PIPE + PIPE_SRC_FORMAT);
 	writel(UNPACK_XRGB, PIPE + PIPE_SRC_UNPACK);
 	writel(fb.stride * 4, PIPE + PIPE_SRC_YSTRIDE);
-	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | PIPE_FLIP_UD, PIPE + PIPE_SRC_OP_MODE);
+	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | (BOARD_PANEL_FLIP_UD ? PIPE_FLIP_UD : 0),
+	       PIPE + PIPE_SRC_OP_MODE);
 	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
 	return true;

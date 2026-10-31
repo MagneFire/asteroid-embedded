@@ -7,10 +7,11 @@
 #define BOARD_UI_SIZE		400
 
 /* RM69080 400x400 command-mode panel: 434 lines with the porches at
- * 60 Hz, TE into the MDP. */
+ * 60 Hz, TE into the MDP, mounted upside down. */
 #define BOARD_PANEL_LINES	434
 #define BOARD_PANEL_HZ		60
 #define BOARD_PANEL_TE_GPIO	24
+#define BOARD_PANEL_FLIP_UD	1
 
 /* Synaptics RMI4 touch controller on BLSP1 QUP5. */
 #define BOARD_TOUCH_QUP		5
