@@ -79,7 +79,8 @@ export component Overlay {
         }
     }
 
-    // BluetoothAgent: a light disc with a drop shadow, a grey Bluetooth icon and the pass key.
+    // BluetoothAgent: a light disc with a drop shadow, a grey Bluetooth icon, the pass key, and
+    // grey cancel and confirm buttons below it (setting-toggled 42 and 43).
     if Face.passkey >= 0: Rectangle {
         Rectangle {
             x: 58px;
@@ -129,6 +130,26 @@ export component Overlay {
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
+        }
+
+        IconButton {
+            x: 112px;
+            y: 236px;
+            color: #666666;
+            icon: @image-url("../icons/ios-close-circle-outline.svg");
+            clicked => {
+                Face.setting-toggled(42);
+            }
+        }
+
+        IconButton {
+            x: 208px;
+            y: 236px;
+            color: #666666;
+            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            clicked => {
+                Face.setting-toggled(43);
+            }
         }
     }
 

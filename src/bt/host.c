@@ -28,11 +28,6 @@ static uint8_t own_addr_type;
 static uint32_t battery_t, start_t, resets;
 static unsigned char crypto_heap[32768];
 
-static int pairing_accept(uint32_t number)
-{
-	return 1;
-}
-
 static void advertise(void);
 
 static void log_addr(const char *what, const ble_addr_t *a)
@@ -41,19 +36,45 @@ static void log_addr(const char *what, const ble_addr_t *a)
 		   a->val[1], a->val[0], a->type);
 }
 
+/* The number shown while pairing, and whether it waits for the user to
+ * confirm that the phone shows the same (numeric comparison) rather than
+ * for the phone to enter it. */
 static int32_t passkey = -1;
+static bool comparing;
+static uint16_t pairing_conn;
 
 int32_t bt_passkey(void)
 {
 	return passkey;
 }
 
+/* The user's answer to the pairing screen, which it then hides: a
+ * comparison is answered, and refusing a passkey drops the connection. */
+void bt_pairing_reply(bool accept)
+{
+	if (passkey < 0)
+		return;
+	if (comparing) {
+		struct ble_sm_io io = { .action = BLE_SM_IOACT_NUMCMP, .numcmp_accept = accept };
+		int rc = ble_sm_inject_io(pairing_conn, &io);
+		log_printf("bt: pairing, compare %s%s\n", accept ? "accepted" : "rejected", rc ? " (failed)" : "");
+		comparing = false;
+	} else if (!accept) {
+		ble_gap_terminate(pairing_conn, BLE_ERR_REM_USER_CONN_TERM);
+		log_printf("bt: pairing cancelled\n");
+	}
+	passkey = -1;
+}
+
 static void passkey_action(uint16_t handle, const struct ble_gap_passkey_params *p)
 {
 	struct ble_sm_io io = { .action = p->action };
+	pairing_conn = handle;
 	if (p->action == BLE_SM_IOACT_NUMCMP) {
-		io.numcmp_accept = (uint8_t)pairing_accept(p->numcmp);
-		log_printf("bt: pairing, compare %06lu: %s\n", p->numcmp, io.numcmp_accept ? "accepted" : "rejected");
+		passkey = (int32_t)p->numcmp;
+		comparing = true;
+		log_printf("bt: pairing, compare %06lu\n", p->numcmp);
+		return;
 	} else if (p->action == BLE_SM_IOACT_DISP) {
 		uint32_t r = 0;
 		ble_hs_hci_rand(&r, sizeof r);
@@ -90,6 +111,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		break;
 	case BLE_GAP_EVENT_DISCONNECT:
 		passkey = -1;
+		comparing = false;
 		log_printf("bt: disconnected, reason %04x\n", ev->disconnect.reason);
 		conn = BLE_HS_CONN_HANDLE_NONE;
 		advertise();
@@ -105,6 +127,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		break;
 	case BLE_GAP_EVENT_ENC_CHANGE:
 		passkey = -1;
+		comparing = false;
 		if (!ble_gap_conn_find(ev->enc_change.conn_handle, &d)) {
 			log_printf("bt: encryption %d: encrypted %u, authenticated %u, bonded %u, key size %u\n",
 				   ev->enc_change.status, d.sec_state.encrypted, d.sec_state.authenticated,

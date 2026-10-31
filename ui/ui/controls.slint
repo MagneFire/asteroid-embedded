@@ -32,10 +32,11 @@ export component PageHeader {
     }
 }
 
-// An icon, 80 px by default, dimmed while pressed.
+// An icon, 80 px and white by default, dimmed while pressed.
 export component IconButton {
     in property <image> icon;
     in property <length> size: 80px;
+    in property <color> color: white;
     callback clicked();
 
     width: self.size;
@@ -45,7 +46,7 @@ export component IconButton {
         width: parent.width;
         height: parent.height;
         source: root.icon;
-        colorize: white;
+        colorize: root.color;
         opacity: touch.pressed ? 0.7 : 1;
     }
 

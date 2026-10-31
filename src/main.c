@@ -314,6 +314,8 @@ static void setting_toggled(int s)
 		if (s == UI_POWER_OFF)
 			pmic_shutdown_mode();
 		reboot();
+	} else if (s == UI_PAIR_REJECT || s == UI_PAIR_ACCEPT) {
+		bt_pairing_reply(s == UI_PAIR_ACCEPT);
 	} else if (s == UI_FORGET_PHONE) {
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 	} else if (s == SETTING_BLUETOOTH) {

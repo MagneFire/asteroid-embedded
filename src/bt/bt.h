@@ -67,6 +67,7 @@ void bt_host_status(struct bt_status *s);
 bool bt_host_connected(void);
 void bt_poll(void);
 int32_t bt_passkey(void);
+void bt_pairing_reply(bool accept);
 uint32_t bt_idle_ms(void);
 
 struct bt_kv {
