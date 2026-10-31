@@ -30,6 +30,8 @@ export global Apps {
 // the last moves projected over a deceleration of 0.0015 px/ms^2, then rounded to a step. offset
 // is where the content is, animate it with anim unless dragging: long enough for the ease-out to
 // start at the finger's speed (at least 1 px/ms). tapped fires for a press that did not move.
+// With cross set, a drag mostly across the axis is reported in cross-drag instead, and in
+// crossed when let go.
 export component Pager inherits TouchArea {
     in property <bool> horizontal: true;
     in property <length> item: 400px;
@@ -37,19 +39,29 @@ export component Pager inherits TouchArea {
     in property <bool> wrap;
     // At most this many items per flick, 0 for no limit.
     in property <int> limit;
+    in property <bool> cross;
     in-out property <int> index;
     out property <length> drag;
     out property <bool> dragging;
+    out property <length> cross-drag;
+    out property <bool> crossing;
     out property <duration> anim: 150ms;
     property <float> vel;
     property <length> last;
     property <duration> last-t;
     property <length> pos: self.horizontal ? self.mouse-x : self.mouse-y;
     property <length> start: self.horizontal ? self.pressed-x : self.pressed-y;
+    property <length> across: self.horizontal ? self.mouse-y - self.pressed-y : self.mouse-x - self.pressed-x;
     callback tapped(length, length);
+    callback crossed(length);
 
     moved => {
-        if !self.dragging && Math.abs(self.pos - self.start) > 10px {
+        if self.cross && !self.dragging && !self.crossing && Math.abs(self.across) > 10px && Math.abs(self.across) > Math.abs(self.pos - self.start) {
+            self.crossing = true;
+        }
+        if self.crossing {
+            self.cross-drag = self.across;
+        } else if !self.dragging && Math.abs(self.pos - self.start) > 10px {
             self.dragging = true;
             self.vel = 0;
             self.last = self.pos;
@@ -68,10 +80,14 @@ export component Pager inherits TouchArea {
     pointer-event(e) => {
         if e.kind == PointerEventKind.down {
             self.dragging = false;
+            self.crossing = false;
             self.drag = 0;
+            self.cross-drag = 0;
         }
         if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-            if self.dragging && self.mouse-x > -1000px {
+            if self.crossing {
+                self.crossed(self.mouse-x > -1000px ? self.cross-drag : 0);
+            } else if self.dragging && self.mouse-x > -1000px {
                 let v = animation-tick() - self.last-t > 100ms ? 0 : Math.clamp(self.vel, -2.5, 2.5);
                 let projected = (self.index * self.item - self.drag) / 1px - v * Math.abs(v) / 0.003;
                 let free = Math.round(projected / (self.item / 1px));
@@ -84,6 +100,8 @@ export component Pager inherits TouchArea {
             }
             self.drag = 0;
             self.dragging = false;
+            self.crossing = false;
+            self.cross-drag = 0;
         }
     }
 }

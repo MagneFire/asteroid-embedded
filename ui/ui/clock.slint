@@ -121,13 +121,18 @@ component Sup {
 
 // The elapsed time large in the middle, tenths smaller in lavender; a tap starts or stops it.
 // Stopped, it blinks and a reset button shows below. A swipe left shows the laps: the current
-// split on top, tapped to record a lap, and the laps below with how much faster (green) or slower
-// (red) each was than the one before.
+// split on top, tapped to record a lap, and the laps below, scrolled up and down under it, with
+// how much faster (green) or slower (red) each was than the one before.
 export component StopwatchApp {
     property <int> ms: Face.stopwatch-ms;
     property <bool> paused: !Face.stopwatch-running && self.ms > 0;
     property <length> scroll: pages.index * 400px - pages.drag;
     property <bool> blink;
+    // How far the laps are scrolled up, and how far they can go: from 120 px down, 80 px rows and
+    // an 80 px gap below the last.
+    property <length> laps-scroll;
+    property <length> laps-end: Math.min(0, 400px - 120px - (Face.stopwatch-laps.length + 1) * 80px - 80px);
+    property <length> laps-y: Math.clamp(self.laps-scroll + pages.cross-drag, self.laps-end, 0);
     animate scroll {
         duration: pages.dragging ? 0ms : pages.anim;
         easing: ease-out;
@@ -274,31 +279,32 @@ export component StopwatchApp {
         clip: true;
 
         for k[i] in Face.stopwatch-laps.length + 1: Rectangle {
-            property <bool> current: i == 0;
-            property <int> lap: i - 1;
-            y: 120px + i * 80px;
+            y: 120px + i * 80px + root.laps-y;
             width: 400px;
             height: 80px;
-            visible: self.y < 400px;
+            visible: self.y < 400px && self.y > -80px;
 
-            Text {
+            HorizontalLayout {
                 x: 60px;
-                width: 60px;
+                width: 280px;
                 height: parent.height;
-                text: "L" + (parent.current ? Face.stopwatch-laps.length + 1 : Face.stopwatch-laps.length - parent.lap);
-                color: #CCCCF3;
-                opacity: 0.6;
-                font-size: 24px;
-                vertical-alignment: center;
-            }
+                spacing: 12px;
+                alignment: start;
 
-            Text {
-                x: 120px;
-                height: parent.height;
-                text: parent.current ? root.run-text(root.ms - (Face.stopwatch-laps.length > 0 ? Face.stopwatch-laps[0] : 0)) : root.lap-text(root.split(parent.lap));
-                color: white;
-                font-size: 32px;
-                vertical-alignment: center;
+                Text {
+                    text: "L" + (i == 0 ? Face.stopwatch-laps.length + 1 : Face.stopwatch-laps.length - (i - 1));
+                    color: #CCCCF3;
+                    opacity: 0.6;
+                    font-size: 24px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: i == 0 ? root.run-text(root.ms - (Face.stopwatch-laps.length > 0 ? Face.stopwatch-laps[0] : 0)) : root.lap-text(root.split(i - 1));
+                    color: white;
+                    font-size: 32px;
+                    vertical-alignment: center;
+                }
             }
 
             if i != 0 && i < Face.stopwatch-laps.length: Text {
@@ -348,6 +354,11 @@ export component StopwatchApp {
     pages := Pager {
         item: 400px;
         count: 2;
+        limit: 1;
+        cross: self.index == 1;
+        crossed(d) => {
+            root.laps-scroll = Math.clamp(root.laps-scroll + d, root.laps-end, 0);
+        }
         tapped(x, y) => {
             if self.index == 1 {
                 if y < 160px {
