@@ -9,12 +9,20 @@
 #define WDT_BARK_TIME	(APCS_WDT_BASE + 0x10)
 #define WDT_BITE_TIME	(APCS_WDT_BASE + 0x14)
 
+/* The time registers hold 28 bits of sleep clock ticks. */
+static uint32_t ticks(uint32_t ms)
+{
+	if (ms > WDT_MAX_MS)
+		ms = WDT_MAX_MS;
+	return (uint32_t)((uint64_t)ms * SLEEP_CLK_HZ / 1000);
+}
+
 void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void))
 {
 	writel(0, WDT_EN);
 	writel(1, WDT_RST);
-	writel(bark_ms * SLEEP_CLK_HZ / 1000, WDT_BARK_TIME);
-	writel(bite_ms * SLEEP_CLK_HZ / 1000, WDT_BITE_TIME);
+	writel(ticks(bark_ms), WDT_BARK_TIME);
+	writel(ticks(bite_ms), WDT_BITE_TIME);
 	writel(1, WDT_EN);
 	if (bark)
 		gic_enable(IRQ_WDT_BARK, bark);
@@ -23,9 +31,4 @@ void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void))
 void wdt_feed(void)
 {
 	writel(1, WDT_RST);
-}
-
-void wdt_stop(void)
-{
-	writel(0, WDT_EN);
 }

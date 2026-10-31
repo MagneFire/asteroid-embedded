@@ -1103,7 +1103,7 @@ void main(void)
 			if (long_sleep) {
 				timer_set_period(next);
 				timer_next(next);
-				wdt_stop();
+				wdt_arm(next + 3000, next + 4000, NULL);
 			}
 			spm_idle(cluster);
 			if (long_sleep) {

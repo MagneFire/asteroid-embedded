@@ -51,6 +51,20 @@ static struct ble_npl_event *pop(struct ble_npl_eventq *evq)
 	return ev;
 }
 
+/* The host waits here with the controller running the transport in
+ * wait_fn. The watchdog is fed for WAIT_FEED_MS; a wait longer than that
+ * is a hung controller, and the watchdog then records where. */
+#define WAIT_FEED_MS 10000
+
+static void wait_feed(uint32_t t0, const char *what)
+{
+	uint32_t waited = time_ms() - t0;
+	if (waited < WAIT_FEED_MS)
+		wdt_feed();
+	else if (waited < WAIT_FEED_MS + 100)
+		log_printf("bt: %s stuck for %lu ms, letting the watchdog bite\n", what, waited);
+}
+
 struct ble_npl_event *ble_npl_eventq_get(struct ble_npl_eventq *evq, ble_npl_time_t tmo)
 {
 	uint32_t t0 = time_ms();
@@ -59,7 +73,7 @@ struct ble_npl_event *ble_npl_eventq_get(struct ble_npl_eventq *evq, ble_npl_tim
 		if (wait_fn)
 			wait_fn();
 		bt_npl_expire();
-		wdt_feed();
+		wait_feed(t0, "eventq_get");
 	}
 	return ev;
 }
@@ -173,7 +187,7 @@ ble_npl_error_t ble_npl_sem_pend(struct ble_npl_sem *sem, ble_npl_time_t timeout
 			return BLE_NPL_TIMEOUT;
 		if (wait_fn)
 			wait_fn();
-		wdt_feed();
+		wait_feed(t0, "sem_pend");
 	}
 	sem->tokens--;
 	return BLE_NPL_OK;
