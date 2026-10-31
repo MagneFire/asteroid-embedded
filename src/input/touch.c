@@ -12,14 +12,14 @@
 #include "display/display.h"
 #include "touch.h"
 
-#define QUP		5
+#define QUP		BOARD_TOUCH_QUP
 #define F11_CTRL58	0x64
 #define PALM_SIZE	40
-#define ADDR		0x20
+#define ADDR		BOARD_TOUCH_ADDR
 #define PDT_START	0xe9
 #define PAGE_SELECT	0xff
-#define GPIO_ATTN	17
-#define GPIO_RESET	16
+#define GPIO_ATTN	BOARD_TOUCH_ATTN
+#define GPIO_RESET	BOARD_TOUCH_RESET
 
 struct fn {
 	uint8_t query, cmd, ctrl, data, intr, number;
@@ -272,7 +272,7 @@ bool touch_init(void)
 	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	power_on();
 	uint8_t e[6];
-	int ret = i2c_qup_init(QUP, 18, 19, 3, 384000);
+	int ret = i2c_qup_init(QUP, BOARD_TOUCH_SDA, BOARD_TOUCH_SCL, 3, 384000);
 	if (!ret)
 		ret = rd(PAGE_SELECT, e, 1);
 	if (ret) {

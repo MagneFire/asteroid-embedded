@@ -2,7 +2,7 @@
  * works it out. The PMIC's battery monitor measures the open circuit
  * voltage on its own while the load is low and counts the charge through
  * the sense resistor since then. The charge left is the cell's capacity
- * at that voltage (from the HB442528EBC tables) minus the counted charge
+ * at that voltage (from the board's battery tables) minus the counted charge
  * and minus the charge that cannot be used before the voltage under the
  * average load drops to the cutoff. Near empty and while charging the
  * result is corrected with the voltage under load, and the reported value
@@ -56,23 +56,7 @@
 #define CHARGER_GONE_HOLD_S	10
 #define NONE			(-1000)
 
-static const int8_t lut_temp[5] = { -20, 0, 25, 40, 60 };
-static const uint8_t lut_pc[31] = { 100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25,
-				    20, 16, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
-static const uint16_t fcc_mah[5] = { 322, 321, 322, 321, 320 };
-static const uint16_t ocv_mv[31][5] = {
-	{ 4351, 4348, 4344, 4340, 4334 }, { 4253, 4275, 4279, 4277, 4272 }, { 4182, 4215, 4222, 4220, 4216 },
-	{ 4121, 4158, 4166, 4164, 4160 }, { 4067, 4107, 4112, 4112, 4108 }, { 4000, 4056, 4062, 4061, 4058 },
-	{ 3942, 4000, 4014, 4014, 4011 }, { 3900, 3948, 3970, 3970, 3967 }, { 3864, 3905, 3922, 3924, 3922 },
-	{ 3836, 3868, 3878, 3878, 3877 }, { 3817, 3838, 3846, 3846, 3845 }, { 3802, 3814, 3822, 3822, 3821 },
-	{ 3788, 3795, 3802, 3802, 3800 }, { 3775, 3782, 3784, 3784, 3782 }, { 3760, 3770, 3769, 3764, 3754 },
-	{ 3744, 3756, 3750, 3742, 3728 }, { 3726, 3735, 3728, 3719, 3706 }, { 3708, 3712, 3704, 3694, 3682 },
-	{ 3691, 3694, 3685, 3678, 3667 }, { 3676, 3686, 3682, 3674, 3664 }, { 3668, 3682, 3679, 3672, 3661 },
-	{ 3658, 3678, 3676, 3670, 3658 }, { 3648, 3672, 3672, 3664, 3650 }, { 3632, 3663, 3660, 3648, 3628 },
-	{ 3610, 3642, 3627, 3615, 3594 }, { 3579, 3602, 3586, 3573, 3558 }, { 3536, 3550, 3539, 3528, 3514 },
-	{ 3475, 3488, 3484, 3472, 3454 }, { 3392, 3410, 3406, 3389, 3364 }, { 3274, 3298, 3283, 3260, 3229 },
-	{ 3000, 3000, 3000, 3000, 3000 },
-};
+#include "battery.h"
 
 /* Two cell makers, told apart by the ID resistor in the pack; they share
  * the voltage table but not the internal resistance. */

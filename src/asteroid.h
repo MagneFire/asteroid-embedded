@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "soc/msm8226.h"
+#include "board.h"
 
 #define BIT(n) (1u << (n))
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))

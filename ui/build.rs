@@ -64,6 +64,8 @@ fn main() {
     println!("cargo:rerun-if-changed={ICON_DIR}");
     println!("cargo:rerun-if-changed=../src/ui/ui.h");
     println!("cargo:rerun-if-changed=../src/asteroid.h");
+    println!("cargo:rerun-if-env-changed=ASTEROID_BOARD");
+    println!("cargo:rerun-if-env-changed=ASTEROID_UI_SIZE");
 }
 
 /// The enumerators of `enum name { ... }` in a C header: only identifiers, with or without an
@@ -94,7 +96,8 @@ fn c_enum(header: &str, name: &str) -> Vec<(String, i64)> {
 fn codes(out: &std::path::Path) {
     let ui_h = std::fs::read_to_string("../src/ui/ui.h").unwrap();
     let asteroid_h = std::fs::read_to_string("../src/asteroid.h").unwrap();
-    let mut slint = String::from("export global Codes {\n");
+    let board = std::env::var("ASTEROID_BOARD").unwrap_or_else(|_| "sturgeon".into());
+    let mut slint = format!("export global Codes {{\n    out property <string> board: \"{board}\";\n");
     let mut rust = String::new();
     for (header, name, ty) in [
         (&asteroid_h, "setting", "i32"),
@@ -115,9 +118,9 @@ fn codes(out: &std::path::Path) {
 }
 
 /// 50 segments of 1.2 degrees, 7.2 degrees apart from 12 o'clock clockwise, between radius
-/// 0.395 and 0.45 of the screen.
+/// 0.395 and 0.45 of the screen, whose size is ASTEROID_UI_SIZE (the board's).
 fn ring(out: &std::path::Path) {
-    const SIZE: f64 = 400.0;
+    let size: f64 = std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(400.0);
     let dir = out.join("ring");
     std::fs::create_dir_all(&dir).unwrap();
     let mut slint = String::from("export global Ring {\n    out property <[{img: image, x: length, y: length}]> segments: [\n");
@@ -126,7 +129,7 @@ fn ring(out: &std::path::Path) {
         let a1 = a0 + 1.2_f64.to_radians();
         let pts: Vec<(f64, f64)> = [(0.395, a0), (0.45, a0), (0.45, a1), (0.395, a1)]
             .iter()
-            .map(|&(r, a)| (SIZE / 2.0 + r * SIZE * a.cos(), SIZE / 2.0 + r * SIZE * a.sin()))
+            .map(|&(r, a)| (size / 2.0 + r * size * a.cos(), size / 2.0 + r * size * a.sin()))
             .collect();
         let x0 = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min).floor();
         let y0 = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min).floor();

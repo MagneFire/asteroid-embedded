@@ -13,7 +13,11 @@ user interface in `ui/` is a Slint crate built into a static library and
 linked into the image.
 
     make                # build/asteroid.img for sturgeon
-    make WATCH=sparrow
+    make WATCH=sparrow  # a scaffold so far: no touch, haptics or hub driver
+
+What differs between the watches (pins, buses, panel timing, the battery
+curve, the Bluetooth patch) is in `src/board/<watch>/`, with the drivers
+only that watch has listed in its `board.mk`.
     make TEST=hang      # a build that stalls its main loop (watchdog test)
     make TEST=abort     # a build that takes a data abort
 

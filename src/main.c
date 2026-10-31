@@ -371,7 +371,7 @@ void main(void)
 	bool have_hub = hub_init();
 	power_init(have_display, have_ui, have_hub);
 	console_init();
-	usb_init("asteroid-sturgeon");
+	usb_init("asteroid-" BOARD_NAME);
 	if (have_display)
 		display_set_idle_hook(usb_poll);
 	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());

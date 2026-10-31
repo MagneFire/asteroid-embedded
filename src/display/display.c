@@ -82,24 +82,24 @@ bool display_init(void)
 		   readl(MDP_PP0 + PP_TEAR_CHECK_EN), readl(MDP_PP0 + PP_SYNC_CONFIG_VSYNC),
 		   readl(MDP_PP0 + PP_SYNC_CONFIG_HEIGHT), readl(MDP_PP0 + PP_VSYNC_INIT_VAL),
 		   readl(MDP_PP0 + PP_SYNC_THRESH), readl(MDP_PP0 + PP_START_POS),
-		   readl(MDP_PP0 + PP_RD_PTR_IRQ), readl(TLMM_GPIO_CFG(24)));
-	/* Tear check: gpio 24 carries the panel's TE line into the MDP
+		   readl(MDP_PP0 + PP_RD_PTR_IRQ), readl(TLMM_GPIO_CFG(BOARD_PANEL_TE_GPIO)));
+	/* Tear check: the TE gpio carries the panel's TE line into the MDP
 	 * (function 1, input, pull-down). The vsync counter runs at 19.2 MHz
-	 * over the panel's 434 lines (400 + porches) at 60 Hz and is
-	 * resynchronised by TE; a kick then starts at the vertical blank. */
-	writel(1 | 1 << 2, TLMM_GPIO_CFG(24));
-	uint32_t edges = 0, level = readl(TLMM_GPIO_IO(24)) & 1, t0 = time_us();
+	 * over the panel's lines (height + porches) at its refresh rate and
+	 * is resynchronised by TE; a kick then starts at the vertical blank. */
+	writel(1 | 1 << 2, TLMM_GPIO_CFG(BOARD_PANEL_TE_GPIO));
+	uint32_t edges = 0, level = readl(TLMM_GPIO_IO(BOARD_PANEL_TE_GPIO)) & 1, t0 = time_us();
 	while (time_us() - t0 < 100000) {
-		uint32_t l = readl(TLMM_GPIO_IO(24)) & 1;
+		uint32_t l = readl(TLMM_GPIO_IO(BOARD_PANEL_TE_GPIO)) & 1;
 		if (l != level) {
 			edges++;
 			level = l;
 		}
 	}
 	log_printf("display: te gpio %lu edges in 100 ms\n", edges);
-	uint32_t vclks_line = 19200000 / (434 * 60);
+	uint32_t vclks_line = 19200000 / (BOARD_PANEL_LINES * BOARD_PANEL_HZ);
 	writel(PP_VSYNC_COUNTER_EN | PP_VSYNC_IN_EN | vclks_line, MDP_PP0 + PP_SYNC_CONFIG_VSYNC);
-	writel(434, MDP_PP0 + PP_SYNC_CONFIG_HEIGHT);
+	writel(BOARD_PANEL_LINES, MDP_PP0 + PP_SYNC_CONFIG_HEIGHT);
 	writel(fb.height, MDP_PP0 + PP_VSYNC_INIT_VAL);
 	writel(fb.height + 1, MDP_PP0 + PP_RD_PTR_IRQ);
 	writel(fb.height, MDP_PP0 + PP_START_POS);

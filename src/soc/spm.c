@@ -15,8 +15,8 @@
 #define APCS_IPC		0xf9011008u
 #define APCS_IPC_MPM		BIT(1)
 #define VMPM			0xfc4281d0u
-#define MPM_PIN_TOUCH		8
-#define MPM_PIN_PMIC		62
+#define MPM_PIN_TOUCH		BOARD_TOUCH_MPM
+#define MPM_PIN_PMIC		BOARD_PMIC_MPM
 
 #define SCM_SVC_BOOT		0x01
 #define SCM_BOOT_ADDR		0x01

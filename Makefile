@@ -10,6 +10,7 @@ SIZE    := $(CROSS)size
 DTC     ?= dtc
 WATCH   ?= sturgeon
 TEST    ?=
+include src/board/$(WATCH)/board.mk
 
 BUILD  := build
 TUSB   := third_party/tinyusb/src
@@ -21,13 +22,13 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/power.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
-        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/input/touch.c src/input/haptics.c src/audio/speaker.c \
+        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/stubs.c $(BOARD_SRCS) \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/ui/ui.c src/ui/stack.c \
         src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
         src/bt/hci.c src/bt/bcm.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
-        src/notify/notify.c src/sensors/hub.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
+        src/notify/notify.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
         src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/store.c src/storage/kv.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
@@ -43,7 +44,7 @@ OBJS := $(patsubst %,$(BUILD)/%.o,$(SRCS))
 CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -ffreestanding -nostdlib \
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
-          -Isrc -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
+          -Isrc -Isrc/board/$(WATCH) -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
           -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"'
@@ -67,6 +68,11 @@ $(BUILD)/config.h: FORCE
 	@echo '$(if $(TEST),#define TEST_$(shell echo $(TEST) | tr a-z A-Z) 1,)' > $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
+$(BUILD)/watch.mk: FORCE
+	@mkdir -p $(BUILD)
+	@echo 'WATCH := $(WATCH)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
 FORCE:
 
 $(BUILD)/%.S.o: %.S
@@ -79,12 +85,13 @@ $(BUILD)/$(NIMBLE)/%.c.o $(BUILD)/$(MBEDTLS)/%.c.o: CFLAGS += $(THIRD_PARTY_CFLA
 
 $(BUILD)/src/version.c.o: $(BUILD)/gitrev.h
 $(BUILD)/src/%.c.o: CFLAGS += -Werror
-$(BUILD)/%.c.o: %.c $(BUILD)/config.h
+$(BUILD)/%.c.o: %.c $(BUILD)/config.h $(BUILD)/watch.mk
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
-$(UI_LIB): $(UI_SRCS)
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" $(CARGO) build --release --target armv7a-none-eabihf
+$(UI_LIB): $(UI_SRCS) $(BUILD)/watch.mk
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" ASTEROID_BOARD=$(WATCH) ASTEROID_UI_SIZE=$(BOARD_UI_SIZE) \
+		$(CARGO) build --release --target armv7a-none-eabihf
 	@touch $@
 
 $(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/memmap.h
@@ -122,7 +129,7 @@ disasm: $(BUILD)/asteroid.elf
 
 HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
-               -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h \
+               -U_FORTIFY_SOURCE -I src -I src/board/$(WATCH) -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c
 PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c

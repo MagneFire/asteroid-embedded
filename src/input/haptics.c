@@ -6,10 +6,10 @@
 #include "asteroid.h"
 #include "storage/storage.h"
 
-#define QUP			2
-#define ADDR			0x5a
-#define GPIO_TRIGGER		59
-#define GPIO_ENABLE		60
+#define QUP			BOARD_HAPTICS_QUP
+#define ADDR			BOARD_HAPTICS_ADDR
+#define GPIO_TRIGGER		BOARD_HAPTICS_TRIGGER
+#define GPIO_ENABLE		BOARD_HAPTICS_ENABLE
 #define KV_CALIBRATION		"haptics.cal"
 
 #define REG_STATUS		0x00
@@ -84,7 +84,7 @@ bool haptics_init(void)
 	tlmm_config(GPIO_ENABLE, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
 	tlmm_set(GPIO_ENABLE, 1);
 	delay_ms(10);
-	if (i2c_qup_init(QUP, 6, 7, 3, 384000))
+	if (i2c_qup_init(QUP, BOARD_HAPTICS_SDA, BOARD_HAPTICS_SCL, 3, 384000))
 		return false;
 	uint8_t status, feedback, bemf;
 	int r;
