@@ -12,9 +12,6 @@
 #define BOARD_PANEL_HZ		60
 #define BOARD_PANEL_TE_GPIO	24
 #define BOARD_PANEL_FLIP_UD	1
-/* Idle mode: select page 0 and send a NOP first, no settling time. */
-#define BOARD_PANEL_IDLE_PREP	1
-#define BOARD_PANEL_IDLE_SETTLE_MS 0
 
 /* Firmware on the system partition. */
 #define BOARD_FIRMWARE_DIRS	"/vendor/firmware/"

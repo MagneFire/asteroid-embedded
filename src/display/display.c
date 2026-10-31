@@ -258,22 +258,25 @@ void display_wake(void)
 }
 
 /* Idle mode keeps the panel showing its memory with fewer colours and
- * less power, for the always-on face. Some panels want command page 0
- * selected and a NOP followed by 150 ms before entering it; others a
- * settling time after the command. */
+ * less power, for the always-on face. The command sequences are the
+ * panel's, from the board. */
+#include "panel.h"
+
+static void dcs_sequence(const struct dcs_step *steps, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		dsi_dcs_write(steps[i].cmd, steps[i].data, steps[i].n);
+		if (steps[i].delay_ms)
+			delay_ms(steps[i].delay_ms);
+	}
+}
+
 void display_idle(bool on)
 {
 	display_active();
 	pp_wait();
-#if BOARD_PANEL_IDLE_PREP
-	static const uint8_t zero = 0;
-	dsi_dcs_write(0xfe, &zero, 1);
-	if (on) {
-		dsi_dcs_write(0x00, &zero, 1);
-		delay_ms(150);
-	}
-#endif
-	dsi_dcs_write(on ? 0x39 : 0x38, NULL, 0);
-	if (BOARD_PANEL_IDLE_SETTLE_MS)
-		delay_ms(BOARD_PANEL_IDLE_SETTLE_MS);
+	if (on)
+		dcs_sequence(panel_idle_on, sizeof panel_idle_on / sizeof panel_idle_on[0]);
+	else
+		dcs_sequence(panel_idle_off, sizeof panel_idle_off / sizeof panel_idle_off[0]);
 }
