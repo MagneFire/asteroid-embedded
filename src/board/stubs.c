@@ -11,6 +11,7 @@ WEAK bool touch_init(void) { return false; }
 WEAK bool touch_poll(struct touch *t) { return false; }
 WEAK void touch_stats(uint32_t *attentions, uint32_t *errors) { *attentions = *errors = 0; }
 WEAK void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms) {}
+WEAK void touch_sleep(bool on) {}
 
 WEAK bool haptics_init(void) { return false; }
 WEAK void haptics_play(const uint16_t *on_off_ms, unsigned n) {}

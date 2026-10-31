@@ -34,8 +34,13 @@
 #define VER_CONFIG	0x06
 #define CMD_PALM	0x21
 
+#define CMD_POWER	0x04
+#define POWER_ACTIVE	0x00
+#define POWER_IDLE	0x01
+
 #define REC_LEN		14
 #define REC_TYPE	0xf0
+#define REC_TYPE_WAKE	0x10
 #define REC_FINGERS	0x07
 #define REC_PALM	0x01
 #define PRESSURE_TOUCH	2
@@ -94,6 +99,9 @@ static void power_on(void)
 	rpm_regulator_voltage(RPM_LDOA, 19, 2850000);
 	rpm_regulator_enable(RPM_LDOA, 19, true);
 	rpm_regulator_enable(RPM_VSA, 1, true);
+	rpm_regulator_sleep_enable(RPM_LDOA, 6, true);
+	rpm_regulator_sleep_enable(RPM_LDOA, 19, true);
+	rpm_regulator_sleep_enable(RPM_VSA, 1, true);
 	tlmm_set(GPIO_RESET, 0);
 	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 6);
 	for (int i = 0; i < 6; i++) {
@@ -123,7 +131,10 @@ static volatile bool round_busy;
 static volatile uint32_t round_t;
 static const uint8_t query_index = BUF_QUERY, point_index = BUF_POINT;
 static uint8_t query, rec[REC_LEN];
-static uint32_t attentions, errors;
+static uint32_t attentions, errors, rounds, stalls;
+static bool asleep, mode_set;
+static uint32_t mode_t, mode_wait, mode_rounds;
+static unsigned mode_fails;
 static bool present, was_down, palm_down;
 static int last_x, last_y;
 
@@ -139,6 +150,9 @@ static void push(const struct touch *t)
 
 static void rearm(void)
 {
+	rounds++;
+	if (!mode_set)
+		mode_wait = 0;
 	round_busy = false;
 	round_t = time_ms();
 	tlmm_irq_enable(GPIO_IRQ, true);
@@ -157,6 +171,17 @@ static void point_done(int err, void *ctx)
 {
 	if (err) {
 		errors++;
+		rearm();
+		return;
+	}
+	if ((rec[0] & REC_TYPE) == REC_TYPE_WAKE) {
+		/* The idle mode's wake gesture: a tap where the finger last was. */
+		struct touch t = { TOUCH_DOWN, last_x, last_y, true };
+		push(&t);
+		t.event = TOUCH_UP;
+		t.down = false;
+		push(&t);
+		was_down = false;
 		rearm();
 		return;
 	}
@@ -275,7 +300,6 @@ static void fake_poll(void)
  * reports for good, so a line found low with no round for a while
  * starts one from here. */
 #define STALL_MS 50
-static uint32_t stalls;
 
 static void stall_poll(void)
 {
@@ -291,10 +315,79 @@ static void stall_poll(void)
 		log_printf("touch: irq line low without an interrupt\n");
 }
 
+/* Power mode and palm threshold together: active scanning with the
+ * normal palm threshold while the screen is on; idle, which reports a
+ * wake gesture instead of points, with a lower one while it is off. */
+#define PALM_AWAKE	0xa0
+#define PALM_ASLEEP	0x70
+
+static int set_mode(uint8_t mode, uint8_t palm)
+{
+	const uint8_t palm_cmd[] = { CMD_PALM, 0x00, 0x00, palm }, mode_cmd[] = { CMD_POWER, 0x00, mode };
+	uint8_t resp[2] = { 0xff, 0xff };
+	int ret = command(palm_cmd, sizeof(palm_cmd), resp, sizeof(resp));
+	if (!ret && (resp[0] || resp[1]))
+		ret = -6;
+	if (!ret)
+		ret = command(mode_cmd, sizeof(mode_cmd), resp, sizeof(resp));
+	if (!ret && (resp[0] || resp[1]))
+		ret = -7;
+	return ret;
+}
+
+/* Called from the main loop: the pin interrupt is held off and a round
+ * in flight finished first, then the commands go out synchronously. */
+
+/* The controller stops acknowledging its address some ten seconds
+ * after the last touch and only a finger brings it back, so a mode that
+ * could not be set is retried a few times and then once more after the
+ * next round. The screen-off command itself waits 5 s like the vendor's
+ * driver. */
+#define IDLE_DELAY_MS	5000
+#define RETRY_MS	2000
+#define RETRIES		3
+
+static void apply_mode(void)
+{
+	tlmm_irq_enable(GPIO_IRQ, false);
+	uint32_t t0 = time_ms();
+	while (round_busy && time_ms() - t0 < 50)
+		i2c_qup_poll(QUP);
+	uint8_t q = 0xff;
+	int ret = rd(BUF_QUERY, &q, 1);
+	if (!ret)
+		ret = set_mode(asleep ? POWER_IDLE : POWER_ACTIVE, asleep ? PALM_ASLEEP : PALM_AWAKE);
+	mode_set = !ret;
+	mode_fails = ret ? mode_fails + 1 : 0;
+	mode_t = round_t = time_ms();
+	mode_wait = RETRY_MS;
+	if (!ret || mode_fails == RETRIES)
+		log_printf("touch: %s mode %s (%d, try %u)\n", asleep ? "idle" : "active", ret ? "not set" : "set", ret, mode_fails);
+	tlmm_irq_enable(GPIO_IRQ, true);
+}
+
+void touch_sleep(bool on)
+{
+	if (!present)
+		return;
+	asleep = on;
+	mode_set = false;
+	mode_fails = 0;
+	mode_t = time_ms();
+	mode_wait = on ? IDLE_DELAY_MS : 0;
+}
+
 bool touch_poll(struct touch *t)
 {
 	i2c_qup_poll(QUP);
 	stall_poll();
+	if (present && !mode_set && !round_busy && time_ms() - mode_t >= mode_wait) {
+		if (rounds != mode_rounds)
+			mode_fails = 0;
+		mode_rounds = rounds;
+		if (mode_fails < RETRIES)
+			apply_mode();
+	}
 	if (fake.active)
 		fake_poll();
 	if (q_tail == q_head)
@@ -341,18 +434,9 @@ bool touch_init(void)
 	log_printf("touch: IT7260 rev %c%c, firmware %02x %02x %02x %02x, config %02x %02x %02x %02x (%d)\n", id[8], id[9],
 		   fw[5], fw[6], fw[7], fw[8], cfg[1], cfg[2], cfg[3], cfg[4], vret);
 
-	/* Active scanning (the modes are 0 active, 1 idle, 2 sleep). */
-	static const uint8_t active_cmd[] = { 0x04, 0x00, 0x00 };
-	uint8_t aresp[2] = { 0xff, 0xff };
-	int aret = command(active_cmd, sizeof(active_cmd), aresp, sizeof(aresp));
-	log_printf("touch: active mode (%d, %02x %02x)\n", aret, aresp[0], aresp[1]);
-
-	/* The palm threshold used while the screen is on. */
-	static const uint8_t palm_cmd[] = { CMD_PALM, 0x00, 0x00, 0xa0 };
-	uint8_t resp[2] = { 0xff, 0xff };
-	ret = command(palm_cmd, sizeof(palm_cmd), resp, sizeof(resp));
-	log_printf("touch: palm threshold %s (%d, %02x %02x), status %02x, irq gpio %u\n",
-		   !ret && !resp[0] && !resp[1] ? "set" : "not set", ret, resp[0], resp[1], q, tlmm_get(GPIO_IRQ));
+	ret = set_mode(POWER_ACTIVE, PALM_AWAKE);
+	mode_set = !ret;
+	log_printf("touch: active mode (%d), status %02x, irq gpio %u\n", ret, q, tlmm_get(GPIO_IRQ));
 
 	tlmm_irq_config(GPIO_IRQ, TLMM_IRQ_EDGE_FALLING, attention);
 	round_t = time_ms();

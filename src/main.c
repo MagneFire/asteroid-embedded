@@ -651,12 +651,16 @@ void main(void)
 		switch (power_update(&now)) {
 		case POWER_SLEPT:
 			game_save();
+			if (have_touch)
+				touch_sleep(true);
 			if (have_gpu) {
 				gpu_suspend();
 				gpu_off = true;
 			}
 			break;
 		case POWER_WOKE:
+			if (have_touch)
+				touch_sleep(false);
 			if (gpu_off) {
 				uint32_t g0 = time_us();
 				have_gpu = gpu_init();

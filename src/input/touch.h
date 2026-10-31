@@ -14,4 +14,7 @@ bool touch_init(void);
 bool touch_poll(struct touch *t);
 void touch_stats(uint32_t *attentions, uint32_t *errors);
 void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms);
+/* The screen went off (on) or came back (off): a controller may scan
+ * more slowly and report only a wake gesture while the screen is off. */
+void touch_sleep(bool on);
 #endif
