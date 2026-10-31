@@ -6,6 +6,7 @@ import { SettingsApp } from "settings.slint";
 import { AlarmApp } from "alarm.slint";
 import { TimerApp, StopwatchApp } from "clock.slint";
 import { HeartRateScreen } from "heart.slint";
+import { FlashlightScreen } from "flash.slint";
 
 export component AppScreen {
     width: 100%;
@@ -18,4 +19,5 @@ export component AppScreen {
     if Face.app == 4: StopwatchApp { }
     if Face.app == 5: WeatherScreen { }
     if Face.app == 6: HeartRateScreen { }
+    if Face.app == 7: FlashlightScreen { }
 }

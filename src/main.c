@@ -369,7 +369,7 @@ void main(void)
 	pmic_usb_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
-	bool have_hub = hub_init(), steps_awake = false;
+	bool have_hub = hub_init(), steps_awake = false, was_lit = false;
 	uint32_t shown_bpm = 0;
 	power_init(have_display, have_ui, have_hub);
 	console_init();
@@ -438,6 +438,20 @@ void main(void)
 				ui_set_heart_rate(shown_bpm = bpm);
 			if (measure && readings < 2)
 				power_activity(now);
+		}
+		/* The Flashlight app keeps the screen on and, while its light
+		 * is on, at full brightness, as asteroid-flashlight sets the
+		 * maximum brightness and puts the setting back when it ends. */
+		bool flashlight = have_ui && ui_app_open() == UI_APP_FLASHLIGHT;
+		bool lit = flashlight && ui_flashlight_on();
+		if (flashlight && power_awake())
+			power_activity(now);
+		if (lit != was_lit && power_awake()) {
+			was_lit = lit;
+			if (lit)
+				display_set_brightness(255);
+			else if (have_display)
+				power_set_brightness();
 		}
 		if (have_haptics)
 			haptics_poll();
@@ -617,6 +631,7 @@ void main(void)
 			}
 			last_clock = 0;
 			woke = true;
+			was_lit = false;
 			break;
 		case POWER_NONE:
 			break;

@@ -1,0 +1,46 @@
+// The flashlight, laid out as asteroid-flashlight: a white disc filling the screen while the
+// light is on, with a bulb outline in it, that a tap shrinks to a grey disc with a filled bulb.
+// The firmware reads Face.flashlight-on for the brightness.
+import { Face } from "face.slint";
+
+export component FlashlightScreen {
+    property <bool> on: Face.flashlight-on;
+    property <length> size: self.on ? 400px : 180px;
+    animate size {
+        duration: 100ms;
+        easing: ease-in;
+    }
+
+    width: 100%;
+    height: 100%;
+
+    init => {
+        Face.flashlight-on = true;
+    }
+
+    disc := Rectangle {
+        x: 200px - root.size / 2;
+        y: 200px - root.size / 2;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: root.on ? #ffffff : #66444444;
+        animate background {
+            duration: 150ms;
+            easing: ease-in;
+        }
+
+        Image {
+            width: parent.width * 0.7;
+            height: parent.height * 0.7;
+            source: root.on ? @image-url("../icons/ios-bulb-outline.svg") : @image-url("../icons/ios-bulb.svg");
+            colorize: root.on ? #f0f0f0 : white;
+        }
+
+        TouchArea {
+            clicked => {
+                Face.flashlight-on = !Face.flashlight-on;
+            }
+        }
+    }
+}

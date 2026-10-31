@@ -337,6 +337,12 @@ pub extern "C" fn ui_app_open() -> i32 {
     with_ui(|ui| ui.screens[APP].global::<Face>().get_app()).unwrap_or(-1)
 }
 
+/// Whether the Flashlight app has its light on.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_flashlight_on() -> bool {
+    with_ui(|ui| ui.screens[APP].global::<Face>().get_flashlight_on()).unwrap_or(false)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_battery(percent: u32, charging: bool) {
     each(|face| {

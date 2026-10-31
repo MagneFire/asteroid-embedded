@@ -64,6 +64,8 @@ export global Face {
     in-out property <bool> bluetooth-bonded;
     // The heart rate in bpm while the Heart Rate app measures, 0 until there is one.
     in-out property <int> heart-rate;
+    // Whether the Flashlight app's light is on, read by the firmware for the brightness.
+    in-out property <bool> flashlight-on: true;
     // RTC seconds, for the age of notifications.
     in-out property <int> now;
     in-out property <bool> vibration-on: true;
