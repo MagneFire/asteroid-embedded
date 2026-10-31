@@ -23,12 +23,12 @@
 #include "screenshot/screenshot.h"
 #include "storage/storage.h"
 #include "alarm.h"
+#include "clockapps.h"
 #include "config.h"
 
 #define SLEEP_AFTER_MS 10000
 #define MESH_STEP_MS 90
 #define CHARGER_WAKE_MS 3000
-#define RING_MS 30000
 #define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
 
@@ -338,70 +338,6 @@ static void setting_toggled(int s)
 	show_settings();
 }
 
-/* The timer and the stopwatch are kept in the key-value store across
- * reboots: the timer's duration and time left and, while it runs, the
- * RTC second it ends at; the stopwatch's time and laps and, while it
- * runs, the RTC second it started at. A timer that ended while the
- * watch was off is back at its duration. */
-#define KV_TIMER	"timer"
-#define KV_STOPWATCH	"stopwatch"
-#define LAPS		99
-
-struct saved_timer {
-	uint32_t set_ms, left_ms, end_rtc;
-};
-
-struct saved_stopwatch {
-	uint32_t acc_ms, start_rtc, running, laps;
-	uint32_t lap_ms[LAPS];
-};
-
-static void save_timer(uint32_t set, uint32_t left, uint32_t end, uint32_t now)
-{
-	struct saved_timer v = { set, left, end ? pmic_rtc_read() + (end - now + 500) / 1000 : 0 };
-	kv_set(KV_TIMER, &v, sizeof v);
-}
-
-static void save_stopwatch(uint32_t acc, bool running, uint32_t start, uint32_t now, const uint32_t *lap,
-			   unsigned laps)
-{
-	struct saved_stopwatch v = {
-		.acc_ms = acc,
-		.start_rtc = running ? pmic_rtc_read() - (now - start) / 1000 : 0,
-		.running = running,
-		.laps = laps,
-	};
-	memcpy(v.lap_ms, lap, laps * sizeof lap[0]);
-	kv_set(KV_STOPWATCH, &v, offsetof(struct saved_stopwatch, lap_ms) + laps * sizeof lap[0]);
-}
-
-static void load_timer(uint32_t *set, uint32_t *left, uint32_t *end)
-{
-	struct saved_timer v;
-	if (kv_get(KV_TIMER, &v, sizeof v) != sizeof v || !v.set_ms)
-		return;
-	uint32_t rtc = pmic_rtc_read();
-	*set = v.set_ms;
-	*left = v.end_rtc && v.end_rtc <= rtc ? v.set_ms : v.left_ms;
-	if (v.end_rtc > rtc)
-		*end = time_ms() + (v.end_rtc - rtc) * 1000;
-}
-
-static unsigned load_stopwatch(uint32_t *acc, bool *running, uint32_t *start, uint32_t *lap)
-{
-	static struct saved_stopwatch v;
-	int n = kv_get(KV_STOPWATCH, &v, sizeof v);
-	unsigned head = offsetof(struct saved_stopwatch, lap_ms);
-	if (n < (int)head || v.laps > LAPS || n != (int)(head + v.laps * sizeof v.lap_ms[0]))
-		return 0;
-	uint32_t rtc = pmic_rtc_read();
-	*acc = v.acc_ms + (v.running && rtc > v.start_rtc ? (rtc - v.start_rtc) * 1000 : 0);
-	*running = v.running;
-	*start = time_ms();
-	memcpy(lap, v.lap_ms, v.laps * sizeof lap[0]);
-	return v.laps;
-}
-
 /* The clock set by hand: the time of day in minutes, keeping the date,
  * or a date, keeping the time. */
 static void set_clock(int kind, int v)
@@ -440,31 +376,6 @@ static void setting_value(int s, int v)
 		setting_set(SETTING_BURN_IN, v);
 	}
 	show_settings();
-}
-
-static void show_alarms(void)
-{
-	struct ui_alarm list[ALARMS];
-	unsigned n = alarm_count();
-	for (unsigned i = 0; i < n; i++) {
-		const struct alarm *a = alarm_get(i);
-		list[i] = (struct ui_alarm){ a->hour, a->minute, a->days, a->on };
-	}
-	ui_set_alarms(list, n);
-}
-
-/* A change from the alarm app: an alarm edited or deleted. */
-static void alarm_edited(const struct ui_event *e)
-{
-	if (e->kind == UI_EVENT_ALARM_DELETE) {
-		if (e->value >= 0)
-			alarm_delete((unsigned)e->value);
-	} else if (e->alarm.hour < 24 && e->alarm.minute < 60) {
-		struct alarm a = { e->alarm.hour, e->alarm.minute, (uint8_t)(e->alarm.days & 0x7f), e->alarm.on };
-		if (!alarm_set(e->value >= 0 ? (unsigned)e->value : ALARMS, &a))
-			log_printf("alarm: no room\n");
-	}
-	show_alarms();
 }
 
 static void vibrate(const char *how)
@@ -555,14 +466,9 @@ void main(void)
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool charger_wake = false;
-	bool key_was = false, awake = true, woke = false, ringing = false, ring_timer = false, sw_running = false;
-	static uint32_t lap_ms[LAPS];
-	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
-	load_timer(&timer_set, &timer_left, &timer_end);
-	unsigned laps = load_stopwatch(&sw_acc, &sw_running, &sw_start, lap_ms);
-	if (have_ui)
-		ui_set_laps(lap_ms, laps);
-	uint32_t shown_timer = 1, shown_sw = 1, shown_step = UINT32_MAX;
+	bool key_was = false, awake = true, woke = false;
+	uint32_t alarm_t = 0, shown_step = UINT32_MAX;
+	clockapps_init(have_ui, have_haptics);
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
@@ -592,7 +498,7 @@ void main(void)
 			if (have_ui) {
 				show_settings();
 				ui_set_build(build_id);
-				show_alarms();
+				clockapps_show_alarms();
 			}
 		}
 		pmic_charger_poll();
@@ -701,25 +607,11 @@ void main(void)
 		if (now - alarm_t >= 1000) {
 			alarm_t = now;
 			notify_tick(pmic_rtc_read());
-			if (alarm_check(pmic_rtc_read()) && have_ui) {
-				log_printf("alarm: ringing\n");
-				ringing = true;
-				ring_timer = false;
-				ring_t = now;
-				ui_set_ringing(true, false);
-				show_alarms();
-				wake_request = !awake;
-			}
 		}
-		if (timer_end && (int32_t)(now - timer_end) >= 0 && have_ui) {
-			log_printf("timer: done\n");
-			timer_end = 0;
-			timer_left = timer_set;
-			ringing = ring_timer = true;
-			ring_t = now;
-			ui_set_ringing(true, true);
-			wake_request = !awake;
-		}
+		if (clockapps_tick(now) && !awake)
+			wake_request = true;
+		if (clockapps_ringing())
+			last_activity = now;
 		for (struct ui_event e; have_ui && ui_next_event(&e);) {
 			int a = e.value;
 			last_activity = now;
@@ -750,13 +642,6 @@ void main(void)
 			case UI_EVENT_SNOOZE:
 				notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);
 				break;
-			case UI_EVENT_TIMER_SET:
-				if (!timer_end && a >= 1 && a <= 86399) {
-					timer_set = timer_left = (uint32_t)a * 1000;
-					shown_timer = UINT32_MAX;
-					save_timer(timer_set, timer_left, timer_end, now);
-				}
-				break;
 			case UI_EVENT_BRIGHTNESS:
 				if (a >= 10 && a <= 100) {
 					setting_set(SETTING_BRIGHTNESS, a);
@@ -764,85 +649,13 @@ void main(void)
 					show_settings();
 				}
 				break;
-			case UI_EVENT_ALARM_EDIT:
-			case UI_EVENT_ALARM_DELETE:
-				alarm_edited(&e);
-				break;
-			case UI_EVENT_ALARM_RING:
-				if (!ringing)
-					break;
-				if (a == UI_ALARM_SNOOZE && !ring_timer)
-					alarm_snooze(pmic_rtc_read());
-				log_printf("alarm: %s\n", a == UI_ALARM_SNOOZE ? "snoozed" : "dismissed");
-				ringing = false;
-				break;
-			case UI_EVENT_CLOCK:
-				if (a == UI_TIMER_START && timer_end) {
-					timer_left = timer_end - now;
-					timer_end = 0;
-				} else if (a == UI_TIMER_START && timer_left) {
-					timer_end = now + timer_left;
-				} else if (a == UI_TIMER_RESET) {
-					timer_end = 0;
-					timer_left = timer_set;
-				} else if (a >= UI_TIMER_MINUTE_UP && a <= UI_TIMER_SECONDS_DOWN && !timer_end) {
-					int32_t step = a <= UI_TIMER_MINUTE_DOWN ? 60000 : 10000, t = (int32_t)timer_set;
-					t += a == UI_TIMER_MINUTE_UP || a == UI_TIMER_SECONDS_UP ? step : -step;
-					timer_set = timer_left = (uint32_t)(t < 10000 ? 10000 : t > 5940000 ? 5940000 : t);
-				} else if (a == UI_STOPWATCH_START) {
-					if (sw_running)
-						sw_acc += now - sw_start;
-					else
-						sw_start = now;
-					sw_running = !sw_running;
-				} else if (a == UI_STOPWATCH_RESET) {
-					sw_acc = 0;
-					sw_running = false;
-					laps = 0;
-					ui_set_laps(lap_ms, 0);
-				} else if (a == UI_STOPWATCH_LAP && sw_running && laps < ARRAY_SIZE(lap_ms)) {
-					memmove(lap_ms + 1, lap_ms, laps++ * sizeof lap_ms[0]);
-					lap_ms[0] = sw_acc + now - sw_start;
-					ui_set_laps(lap_ms, laps);
-				}
-				if (a >= UI_STOPWATCH_START)
-					save_stopwatch(sw_acc, sw_running, sw_start, now, lap_ms, laps);
-				else
-					save_timer(timer_set, timer_left, timer_end, now);
-				shown_timer = shown_sw = UINT32_MAX;
+			default:
+				clockapps_event(&e, now);
 				break;
 			}
 		}
-		if (have_ui && awake) {
-			uint32_t t = timer_end ? timer_end - now : timer_left, sw = sw_acc + (sw_running ? now - sw_start : 0);
-			if (t / 100 != shown_timer) {
-				shown_timer = t / 100;
-				ui_set_timer(t, timer_set, timer_end);
-			}
-			if (sw / 100 != shown_sw) {
-				shown_sw = sw / 100;
-				ui_set_stopwatch(sw, sw_running);
-			}
-		}
-		/* Unanswered, an alarm snoozes after RING_MS, as the alarm
-		 * presenter's autoSnoozeTimer does; a timer just stops. */
-		if (ringing && now - ring_t >= RING_MS) {
-			if (!ring_timer)
-				alarm_snooze(pmic_rtc_read());
-			log_printf("alarm: %s\n", ring_timer ? "stopped ringing" : "snoozed");
-			ringing = false;
-		}
-		if (ringing) {
-			static const uint16_t ring[] = { 500, 500 };
-			last_activity = now;
-			if (have_haptics && !haptics_busy())
-				haptics_play(ring, ARRAY_SIZE(ring));
-		} else if (have_ui && ring_t) {
-			ring_t = 0;
-			ui_set_ringing(false, false);
-			if (have_haptics)
-				haptics_play(NULL, 0);
-		}
+		if (awake)
+			clockapps_refresh(now);
 		if (have_ui && weather_serial() != weather_seen) {
 			weather_seen = weather_serial();
 			show_weather();
@@ -866,12 +679,7 @@ void main(void)
 		else
 			charger_wake = false;
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
-			if (ringing) {
-				if (!ring_timer)
-					alarm_snooze(pmic_rtc_read());
-				log_printf("alarm: %s\n", ring_timer ? "dismissed" : "snoozed");
-				ringing = false;
-			}
+			clockapps_sleep();
 			settings_flush();
 			ambient = have_ui && setting_get(nightstand_on() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
 			if (!ambient)
@@ -1094,13 +902,11 @@ void main(void)
 					next = lpm;
 				if (have_hub && !hub_can_sleep() && next > 50)
 					next = 50;
-				uint32_t rtc = pmic_rtc_read(), minute = (60 - rtc % 60) * 1000, alarm = alarm_next_s(rtc);
+				uint32_t minute = (60 - pmic_rtc_read() % 60) * 1000, app = clockapps_next_ms(time_ms());
 				if (ambient && minute < next)
 					next = minute;
-				if (alarm < next / 1000)
-					next = alarm ? alarm * 1000 : 1;
-				if (timer_end && timer_end - time_ms() < next)
-					next = (int32_t)(timer_end - time_ms()) > 0 ? timer_end - time_ms() : 1;
+				if (app < next)
+					next = app;
 			}
 			bool long_sleep = !awake && next > 1000;
 			if (long_sleep) {

@@ -7,6 +7,7 @@
 #include "bt/bt.h"
 #include "stubs.h"
 #include "storage/storage.h"
+#include "ui/ui.h"
 
 const char build_id[] = "hosttest";
 uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
@@ -39,7 +40,13 @@ bool bt_host_wake(void) { return false; }
 int bt_host_start(void) { return -1; }
 void bt_host_stop(void) {}
 int bt_store_clear(void) { return -1; }
-void haptics_play(const uint16_t *on_off_ms, unsigned n) {}
+__attribute__((weak)) void haptics_play(const uint16_t *on_off_ms, unsigned n) {}
+__attribute__((weak)) bool haptics_busy(void) { return false; }
+__attribute__((weak)) void ui_set_timer(uint32_t ms, uint32_t set_ms, bool running) {}
+__attribute__((weak)) void ui_set_stopwatch(uint32_t ms, bool running) {}
+__attribute__((weak)) void ui_set_ringing(bool ringing, bool timer) {}
+__attribute__((weak)) void ui_set_laps(const uint32_t *ms, uint32_t n) {}
+void ui_set_alarms(const struct ui_alarm *alarms, uint32_t n) {}
 int speaker_probe(uint16_t *rev) { return -1; }
 void cpu_clock_slow(bool slow) {}
 bool cpu_clock_is_slow(void) { return false; }
@@ -116,8 +123,8 @@ int store_open(void) { return -1; }
 const struct store_info *store_info(void) { return &stub_store; }
 int store_read(uint32_t off, void *buf, uint32_t len) { return -1; }
 int store_write(uint32_t off, const void *buf, uint32_t len) { return -1; }
-int kv_get(const char *key, void *buf, unsigned size) { return -1; }
-int kv_set(const char *key, const void *val, unsigned len) { return -1; }
-int kv_del(const char *key) { return -1; }
+__attribute__((weak)) int kv_get(const char *key, void *buf, unsigned size) { return -1; }
+__attribute__((weak)) int kv_set(const char *key, const void *val, unsigned len) { return -1; }
+__attribute__((weak)) int kv_del(const char *key) { return -1; }
 int kv_each(kv_each_fn fn, void *ctx) { return -1; }
 uint32_t kv_seq(void) { return 0; }
