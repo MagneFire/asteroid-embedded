@@ -28,7 +28,7 @@
 const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
-#define RING_MS 300000
+#define RING_MS 30000
 #define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
 
@@ -622,8 +622,12 @@ void main(void)
 				ui_set_stopwatch(sw, sw_running);
 			}
 		}
+		/* Unanswered, an alarm snoozes after RING_MS, as the alarm
+		 * presenter's autoSnoozeTimer does; a timer just stops. */
 		if (ringing && now - ring_t >= RING_MS) {
-			log_printf("alarm: stopped ringing\n");
+			if (!ring_timer)
+				alarm_snooze(pmic_rtc_read());
+			log_printf("alarm: %s\n", ring_timer ? "stopped ringing" : "snoozed");
 			ringing = false;
 		}
 		if (ringing) {
