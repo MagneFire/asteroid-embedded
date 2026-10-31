@@ -61,4 +61,7 @@
 
 /* The PMIC's interrupt line (power key, charger) as an MPM pin. */
 #define BOARD_PMIC_MPM		62
+
+/* PM8226 vibrator drive voltage. */
+#define BOARD_VIB_MV		3000
 #endif
