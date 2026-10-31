@@ -258,19 +258,22 @@ void display_wake(void)
 }
 
 /* Idle mode keeps the panel showing its memory with fewer colours and
- * less power, for the always-on face. Entering it, the vendor selects
- * command page 0 and sends a NOP followed by 150 ms. */
+ * less power, for the always-on face. Some panels want command page 0
+ * selected and a NOP followed by 150 ms before entering it; others a
+ * settling time after the command. */
 void display_idle(bool on)
 {
 	display_active();
-	static const uint8_t zero = 0;
 	pp_wait();
+#if BOARD_PANEL_IDLE_PREP
+	static const uint8_t zero = 0;
 	dsi_dcs_write(0xfe, &zero, 1);
 	if (on) {
 		dsi_dcs_write(0x00, &zero, 1);
 		delay_ms(150);
-		dsi_dcs_write(0x39, NULL, 0);
-	} else {
-		dsi_dcs_write(0x38, NULL, 0);
 	}
+#endif
+	dsi_dcs_write(on ? 0x39 : 0x38, NULL, 0);
+	if (BOARD_PANEL_IDLE_SETTLE_MS)
+		delay_ms(BOARD_PANEL_IDLE_SETTLE_MS);
 }

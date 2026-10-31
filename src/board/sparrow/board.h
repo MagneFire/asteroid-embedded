@@ -17,6 +17,9 @@
 #define BOARD_PANEL_HZ		57
 #define BOARD_PANEL_TE_GPIO	24
 #define BOARD_PANEL_FLIP_UD	0
+/* Idle mode: the plain commands, 100 ms to settle. */
+#define BOARD_PANEL_IDLE_PREP	0
+#define BOARD_PANEL_IDLE_SETTLE_MS 100
 
 /* Firmware on the system partition: the GPU microcode under vendor,
  * the Bluetooth patch and the sensor hub firmware under etc. */
