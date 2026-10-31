@@ -17,10 +17,10 @@ linked into the image.
     make TEST=hang      # a build that stalls its main loop (watchdog test)
     make TEST=abort     # a build that takes a data abort
 
-Every `firmware/*.fw` file goes into the boot image's ramdisk, which the
-bootloader loads next to the firmware; the firmware finds the files there
-by name. `firmware/` holds the Adreno A3xx microcode (`a330_pm4.fw`,
-`a330_pfp.fw`, identical to linux-firmware's `qcom/` copies).
+The image carries no vendor firmware. The Adreno A3xx microcode
+(`a330_pm4.fw`, `a330_pfp.fw`) and the Bluetooth patch (`4343A0.hcd`) are
+read at boot from `/vendor/firmware` on the watch's own Android system
+partition.
 
 ## Run
 
@@ -44,7 +44,4 @@ own license: TinyUSB and its ChipIdea port (MIT), the 5x12 console font
 (BSD, from the Android Open Source Project), the FlatMesh geometry
 (BSD-3-Clause, from qml-asteroid), the Noto Sans font in `ui/fonts/`
 (OFL-1.1) and the Ionicons in `ui/icons/` (MIT, from asteroid-icons-ion,
-resized). Slint is used under its GPL-3.0-only option. The GPU microcode
-in `firmware/` is Qualcomm's, redistributable under `firmware/LICENSE.qcom`;
-it is loaded from the boot image's ramdisk and is not part of the firmware
-binary.
+resized). Slint is used under its GPL-3.0-only option.

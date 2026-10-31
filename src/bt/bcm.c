@@ -130,11 +130,11 @@ static void host_wake_irq(unsigned n)
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	uint32_t hcd_len;
-	const uint8_t *hcd = boot_blob(PATCH_NAME, &hcd_len);
+	const uint8_t *hcd = firmware_get(PATCH_NAME, &hcd_len);
 	memset(info, 0, sizeof *info);
 	uint32_t t0 = time_ms();
 	if (!hcd)
-		return fail(info, "patch file " PATCH_NAME " in the boot image", -1);
+		return fail(info, "patch file " PATCH_NAME, -1);
 	if (running)
 		bt_stop();
 	hci_reset_parser();

@@ -3,11 +3,11 @@
  * and OCMEM clocks are RPM resources. Once powered it is configured as
  * the Linux driver does for this revision (VBIF limits, RBBM, CP
  * protection), the command processor's two microcode images are loaded
- * from the boot image's ramdisk (PM4 for the micro engine, PFP for the
- * prefetch parser, the first word of each file being a version), the micro engine is released and
- * initialised with CP_ME_INIT, and commands flow through a ring buffer
- * in uncached DRAM: type-0 packets write registers, type-3 packets carry
- * an opcode. Commands are submitted without waiting; new ones only
+ * from the system partition (PM4 for the micro engine, PFP for the
+ * prefetch parser, the first word of each file being a version), the
+ * micro engine is released and initialised with CP_ME_INIT, and
+ * commands flow through a ring buffer in uncached DRAM: type-0 packets
+ * write registers, type-3 packets carry an opcode. Commands are submitted without waiting; new ones only
  * overwrite words the command processor has read. Its ring interrupt
  * wakes the CPU out of WFI while it waits for the GPU. */
 #include <string.h>
@@ -197,9 +197,9 @@ static void load_ucode(uint32_t addr_reg, uint32_t data_reg, const uint32_t *fw,
 bool gpu_init(void)
 {
 	uint32_t pm4_len, pfp_len;
-	const uint32_t *pm4 = boot_blob("a330_pm4.fw", &pm4_len), *pfp = boot_blob("a330_pfp.fw", &pfp_len);
+	const uint32_t *pm4 = firmware_get("a330_pm4.fw", &pm4_len), *pfp = firmware_get("a330_pfp.fw", &pfp_len);
 	if (!pm4 || !pfp || pm4_len < 8 || pfp_len < 24) {
-		log_printf("gpu: no microcode in the boot image, not started\n");
+		log_printf("gpu: no microcode, not started\n");
 		return false;
 	}
 	if (!power_on())

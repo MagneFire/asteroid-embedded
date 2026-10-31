@@ -439,7 +439,6 @@ void main(void)
 	irq_enable();
 	log_init();
 	log_printf("asteroid-embedded %s up, timer %lu Hz, scm %d\n", build_id, timer_hz(), scm);
-	boot_init();
 	spmi_init();
 	pmic_init();
 	if (rpm_init()) {

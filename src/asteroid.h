@@ -202,9 +202,8 @@ struct civil { uint32_t year, month, day, weekday, hour, minute, second; };
 void civil_from_epoch(uint32_t secs, struct civil *c);
 uint32_t epoch_from_civil(const struct civil *c);
 
-/* boot handover */
-void boot_init(void);
-const void *boot_blob(const char *name, uint32_t *size);
+/* vendor firmware from the system partition */
+const void *firmware_get(const char *name, uint32_t *size);
 
 extern const char build_id[];
 #endif
