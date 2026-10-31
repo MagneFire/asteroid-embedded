@@ -3,11 +3,12 @@
 // (brightness, always on, burn-in protection, tilt and tap to wake), Nightstand (with its
 // brightness, delay and always on), Watchface and Launcher pickers, Time and Date, Units (12 hour
 // clock, Fahrenheit), Bluetooth (on/off, connection, forgetting the phone), Power (off, reboot)
-// and About. Rows call setting-toggled with the firmware's enum setting, 34 to forget the paired
-// phone, 35 + n to pick watchface n, 48 + n to pick launcher n, 39 to reboot and 40 to power off,
-// setting-set with an enum setting and its value, brightness-set with a brightness in per cent,
-// and time-set and date-set with the time or date set.
+// and About. Rows call setting-toggled with a setting or an action from the Codes global (the
+// firmware's enum setting and enum ui_action), setting-set with a setting and its value,
+// brightness-set with a brightness in per cent, and time-set and date-set with the time or date
+// set.
 import { Face, Watchface } from "face.slint";
+import { Codes } from "codes.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
 import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton, Remorse } from "controls.slint";
@@ -148,7 +149,7 @@ export component SettingsApp {
                     text: "Always on Display";
                     checked: Face.aod-on;
                     clicked => {
-                        Face.setting-toggled(3);
+                        Face.setting-toggled(Codes.setting-aod);
                     }
                 }
 
@@ -159,7 +160,7 @@ export component SettingsApp {
                     text: "Burn-in Protection";
                     value: ["Off", "High", "Medium", "Low"][Face.burn-in];
                     clicked => {
-                        Face.setting-set(14, Math.mod(Face.burn-in + 1, 4));
+                        Face.setting-set(Codes.setting-burn-in, Math.mod(Face.burn-in + 1, 4));
                     }
                 }
 
@@ -169,7 +170,7 @@ export component SettingsApp {
                     text: "Tilt-to-wake";
                     checked: Face.tilt-on;
                     clicked => {
-                        Face.setting-toggled(8);
+                        Face.setting-toggled(Codes.setting-tilt);
                     }
                 }
 
@@ -179,7 +180,7 @@ export component SettingsApp {
                     text: "Tap-to-wake";
                     checked: Face.tap-on;
                     clicked => {
-                        Face.setting-toggled(9);
+                        Face.setting-toggled(Codes.setting-tap);
                     }
                 }
             }
@@ -204,7 +205,7 @@ export component SettingsApp {
                     text: "Enable";
                     checked: Face.nightstand-on;
                     clicked => {
-                        Face.setting-toggled(6);
+                        Face.setting-toggled(Codes.setting-nightstand);
                     }
                 }
 
@@ -224,13 +225,13 @@ export component SettingsApp {
                         min: 10;
                         max: 100;
                         down => {
-                            Face.setting-set(11, Math.max(10, Face.nightstand-brightness - 10));
+                            Face.setting-set(Codes.setting-nightstand-brightness, Math.max(10, Face.nightstand-brightness - 10));
                         }
                         up => {
-                            Face.setting-set(11, Math.min(100, Face.nightstand-brightness + 10));
+                            Face.setting-set(Codes.setting-nightstand-brightness, Math.min(100, Face.nightstand-brightness + 10));
                         }
                         set(v) => {
-                            Face.setting-set(11, v);
+                            Face.setting-set(Codes.setting-nightstand-brightness, v);
                         }
                     }
 
@@ -245,13 +246,13 @@ export component SettingsApp {
                         step: 5;
                         unit: "s";
                         down => {
-                            Face.setting-set(12, Math.max(0, Face.nightstand-delay - 5));
+                            Face.setting-set(Codes.setting-nightstand-delay, Math.max(0, Face.nightstand-delay - 5));
                         }
                         up => {
-                            Face.setting-set(12, Math.min(30, Face.nightstand-delay + 5));
+                            Face.setting-set(Codes.setting-nightstand-delay, Math.min(30, Face.nightstand-delay + 5));
                         }
                         set(v) => {
-                            Face.setting-set(12, v);
+                            Face.setting-set(Codes.setting-nightstand-delay, v);
                         }
                     }
 
@@ -259,7 +260,7 @@ export component SettingsApp {
                         text: "Always on Display";
                         checked: Face.nightstand-aod;
                         clicked => {
-                            Face.setting-toggled(13);
+                            Face.setting-toggled(Codes.setting-nightstand-aod);
                         }
                     }
                 }
@@ -302,7 +303,7 @@ export component SettingsApp {
 
             TouchArea {
                 clicked => {
-                    Face.setting-toggled(35 + i);
+                    Face.setting-toggled(Codes.ui-watchface-first + i);
                 }
             }
         }
@@ -356,7 +357,7 @@ export component SettingsApp {
 
                 TouchArea {
                     clicked => {
-                        Face.setting-toggled(48 + i);
+                        Face.setting-toggled(Codes.ui-launcher-first + i);
                     }
                 }
             }
@@ -371,7 +372,7 @@ export component SettingsApp {
                 text: "Use 12H format:";
                 checked: Face.clock12;
                 clicked => {
-                    Face.setting-toggled(4);
+                    Face.setting-toggled(Codes.setting-clock12);
                 }
             }
 
@@ -379,7 +380,7 @@ export component SettingsApp {
                 text: "Use Fahrenheit:";
                 checked: Face.fahrenheit;
                 clicked => {
-                    Face.setting-toggled(10);
+                    Face.setting-toggled(Codes.setting-fahrenheit);
                 }
             }
         }
@@ -396,7 +397,7 @@ export component SettingsApp {
             title: Face.bluetooth-on ? "Bluetooth on" : "Bluetooth off";
             text: Face.bluetooth-connected ? "Connected" : "Not connected";
             clicked => {
-                Face.setting-toggled(1);
+                Face.setting-toggled(Codes.setting-bluetooth);
             }
         }
 
@@ -407,7 +408,7 @@ export component SettingsApp {
             dim: !Face.bluetooth-bonded;
             clicked => {
                 if Face.bluetooth-bonded {
-                    Face.setting-toggled(34);
+                    Face.setting-toggled(Codes.ui-forget-phone);
                 }
             }
         }
@@ -554,8 +555,8 @@ export component SettingsApp {
             height: self.preferred-height;
 
             for item[i] in [
-                { icon: @image-url("../icons/ios-power-outline.svg"), title: "Power Off", action: 40 },
-                { icon: @image-url("../icons/ios-sync.svg"), title: "Reboot", action: 39 },
+                { icon: @image-url("../icons/ios-power-outline.svg"), title: "Power Off", action: Codes.ui-power-off },
+                { icon: @image-url("../icons/ios-sync.svg"), title: "Reboot", action: Codes.ui-reboot },
             ]: ListItem {
                 icon: item.icon;
                 title: item.title;

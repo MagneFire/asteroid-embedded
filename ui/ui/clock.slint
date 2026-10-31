@@ -3,6 +3,7 @@
 // Face; clock-action takes 20 to start or pause the timer, 30 to start or stop the stopwatch, 31
 // to reset it and 32 to record a lap, and timer-set the timer's duration in seconds.
 import { Face } from "face.slint";
+import { Codes } from "codes.slint";
 import { IconButton, Spinner, PageDot } from "controls.slint";
 import { Pager } from "launcher.slint";
 
@@ -90,7 +91,7 @@ export component TimerApp {
         y: 308px;
         icon: Face.timer-running ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-timer-outline.svg");
         clicked => {
-            Face.clock-action(20);
+            Face.clock-action(Codes.ui-timer-start);
         }
     }
 }
@@ -362,13 +363,13 @@ export component StopwatchApp {
         tapped(x, y) => {
             if self.index == 1 {
                 if y < 160px {
-                    Face.clock-action(32);
+                    Face.clock-action(Codes.ui-stopwatch-lap);
                 }
             } else if root.paused && y > 280px && x > 140px && x < 260px {
-                Face.clock-action(31);
+                Face.clock-action(Codes.ui-stopwatch-reset);
                 self.index = 0;
             } else {
-                Face.clock-action(30);
+                Face.clock-action(Codes.ui-stopwatch-start);
                 root.blink = false;
             }
         }

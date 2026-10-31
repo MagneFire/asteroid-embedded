@@ -57,13 +57,13 @@ void haptics_play(const uint16_t *on_off_ms, unsigned n) { haptic_calls++; hapti
 
 static void event(uint32_t kind, int value)
 {
-	struct ui_event e = { kind, value, { 0 } };
+	struct ui_event e = { .kind = kind, .value = value };
 	clockapps_event(&e, stub_ms);
 }
 
 static void alarm_event(uint32_t kind, int index, uint8_t hour, uint8_t minute, uint8_t days)
 {
-	struct ui_event e = { kind, index, { hour, minute, days, true } };
+	struct ui_event e = { .kind = kind, .value = index, .alarm = { hour, minute, days, true } };
 	clockapps_event(&e, stub_ms);
 }
 

@@ -2,6 +2,7 @@
 // previous and next arrows at the edges, a large play/pause button in the middle, and volume
 // buttons around a thin level bar. Without a connected phone it shows a No data page instead.
 import { Face } from "face.slint";
+import { Codes } from "codes.slint";
 import { IconButton, Marquee, StatusPage } from "controls.slint";
 
 export component MusicScreen {
@@ -37,7 +38,7 @@ export component MusicScreen {
             y: 160px;
             icon: @image-url("../icons/ios-arrow-dropleft.svg");
             clicked => {
-                Face.media-action(0);
+                Face.media-action(Codes.ui-media-previous);
             }
         }
 
@@ -47,7 +48,7 @@ export component MusicScreen {
             size: 160px;
             icon: Face.media-playing ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
             clicked => {
-                Face.media-action(Face.media-playing ? 3 : 2);
+                Face.media-action(Face.media-playing ? Codes.ui-media-pause : Codes.ui-media-play);
             }
         }
 
@@ -56,7 +57,7 @@ export component MusicScreen {
             y: 160px;
             icon: @image-url("../icons/ios-arrow-dropright.svg");
             clicked => {
-                Face.media-action(1);
+                Face.media-action(Codes.ui-media-next);
             }
         }
 
@@ -65,7 +66,7 @@ export component MusicScreen {
             y: 272px;
             icon: @image-url("../icons/ios-volume-down.svg");
             clicked => {
-                Face.media-action(6);
+                Face.media-action(Codes.ui-media-volume-down);
             }
         }
 
@@ -91,7 +92,7 @@ export component MusicScreen {
             y: 272px;
             icon: @image-url("../icons/ios-volume-up.svg");
             clicked => {
-                Face.media-action(5);
+                Face.media-action(Codes.ui-media-volume-up);
             }
         }
     }

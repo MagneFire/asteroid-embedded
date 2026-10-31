@@ -10,6 +10,7 @@
 // The numbers passed to setting-toggled are the firmware's enum setting, 37 to lock, 38 for
 // Settings, 39 to reboot, 40 to power off and 41 for cinema mode.
 import { Face } from "face.slint";
+import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
 
 component Toggle {
@@ -102,18 +103,20 @@ export component QuickSettings {
     function press(i: int) {
         if i == 0 {
             Face.brightness-set(Face.brightness > 10 ? 10 : 100);
-        } else if i == 1 || i == 2 {
-            Face.setting-toggled(i);
+        } else if i == 1 {
+            Face.setting-toggled(Codes.setting-bluetooth);
+        } else if i == 2 {
+            Face.setting-toggled(Codes.setting-vibration);
         } else if i == 3 {
-            Face.setting-toggled(41);
+            Face.setting-toggled(Codes.ui-cinema);
         } else if i == 4 {
-            Face.setting-toggled(3);
+            Face.setting-toggled(Codes.setting-aod);
         } else if i == 5 {
             remorse.action = "Power Off";
-            remorse.code = 40;
+            remorse.code = Codes.ui-power-off;
         } else if i == 6 {
             remorse.action = "Reboot";
-            remorse.code = 39;
+            remorse.code = Codes.ui-reboot;
         }
     }
 
@@ -134,7 +137,7 @@ export component QuickSettings {
         opacity: root.shown;
         icon: @image-url("../icons/ios-unlock.svg");
         clicked => {
-            Face.setting-toggled(37);
+            Face.setting-toggled(Codes.ui-lock);
         }
     }
 
@@ -146,7 +149,7 @@ export component QuickSettings {
         opacity: root.shown;
         icon: @image-url("../icons/ios-settings.svg");
         clicked => {
-            Face.setting-toggled(38);
+            Face.setting-toggled(Codes.ui-open-settings);
         }
     }
 

@@ -128,32 +128,23 @@ pub struct UiSettings {
 pub struct UiEvent {
     kind: u32,
     value: i32,
+    arg: i32,
     alarm: UiAlarm,
 }
 
-const EVENT_SETTING: u32 = 0;
-const EVENT_APP: u32 = 1;
-const EVENT_MEDIA: u32 = 2;
-const EVENT_CLOCK: u32 = 3;
-const EVENT_ALARM_RING: u32 = 4;
-const EVENT_ALARM_EDIT: u32 = 5;
-const EVENT_ALARM_DELETE: u32 = 6;
-const EVENT_DISMISS: u32 = 7;
-const EVENT_TIMER_SET: u32 = 8;
-const EVENT_BRIGHTNESS: u32 = 9;
-const EVENT_DISMISS_ALL: u32 = 10;
-const EVENT_SNOOZE: u32 = 11;
-const EVENT_SETTING_VALUE: u32 = 12;
-const EVENT_TIME_SET: u32 = 13;
-const EVENT_DATE_SET: u32 = 14;
+mod codes {
+    #![allow(dead_code)]
+    include!(concat!(env!("OUT_DIR"), "/codes.rs"));
+}
+use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 12 && core::mem::size_of::<UiSettings>() == 12);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 12);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
 fn event(events: &Events, kind: u32, value: i32) {
-    events.borrow_mut().push_back(UiEvent { kind, value, alarm: UiAlarm::default() });
+    events.borrow_mut().push_back(UiEvent { kind, value, arg: 0, alarm: UiAlarm::default() });
 }
 
 fn rgb(c: slint::Color) -> UiRgb {
@@ -252,41 +243,43 @@ pub unsafe extern "C" fn ui_init(
         let queue = events.clone();
         face.on_alarm_saved(move |index, hour, minute, days, on| {
             let alarm = UiAlarm { hour: hour as u8, minute: minute as u8, days: days as u8, on };
-            queue.borrow_mut().push_back(UiEvent { kind: EVENT_ALARM_EDIT, value: index, alarm });
+            queue.borrow_mut().push_back(UiEvent { kind: UI_EVENT_ALARM_EDIT, value: index, arg: 0, alarm });
         });
         let queue = events.clone();
-        face.on_alarm_deleted(move |index| event(&queue, EVENT_ALARM_DELETE, index));
+        face.on_alarm_deleted(move |index| event(&queue, UI_EVENT_ALARM_DELETE, index));
         let queue = events.clone();
-        face.on_alarm_action(move |action| event(&queue, EVENT_ALARM_RING, action));
+        face.on_alarm_action(move |action| event(&queue, UI_EVENT_ALARM_RING, action));
         let queue = events.clone();
-        face.on_clock_action(move |action| event(&queue, EVENT_CLOCK, action));
+        face.on_clock_action(move |action| event(&queue, UI_EVENT_CLOCK, action));
         let queue = opened.clone();
         face.on_notification_opened(move |id| queue.borrow_mut().push(id));
         let queue = events.clone();
-        face.on_notification_dismissed(move |id| event(&queue, EVENT_DISMISS, id));
+        face.on_notification_dismissed(move |id| event(&queue, UI_EVENT_DISMISS, id));
         let queue = events.clone();
-        face.on_notifications_cleared(move || event(&queue, EVENT_DISMISS_ALL, 0));
+        face.on_notifications_cleared(move || event(&queue, UI_EVENT_DISMISS_ALL, 0));
         let queue = events.clone();
         face.on_notification_snoozed(move |id, minutes| {
             let alarm = UiAlarm { hour: (minutes / 60) as u8, minute: (minutes % 60) as u8, ..Default::default() };
-            queue.borrow_mut().push_back(UiEvent { kind: EVENT_SNOOZE, value: id, alarm });
+            queue.borrow_mut().push_back(UiEvent { kind: UI_EVENT_SNOOZE, value: id, arg: 0, alarm });
         });
         let queue = events.clone();
-        face.on_media_action(move |action| event(&queue, EVENT_MEDIA, action));
+        face.on_media_action(move |action| event(&queue, UI_EVENT_MEDIA, action));
         let queue = events.clone();
-        face.on_app_opened(move |app| event(&queue, EVENT_APP, app));
+        face.on_app_opened(move |app| event(&queue, UI_EVENT_APP, app));
         let queue = events.clone();
-        face.on_setting_toggled(move |setting| event(&queue, EVENT_SETTING, setting));
+        face.on_setting_toggled(move |setting| event(&queue, UI_EVENT_SETTING, setting));
         let queue = events.clone();
-        face.on_timer_set(move |seconds| event(&queue, EVENT_TIMER_SET, seconds));
+        face.on_timer_set(move |seconds| event(&queue, UI_EVENT_TIMER_SET, seconds));
         let queue = events.clone();
-        face.on_brightness_set(move |percent| event(&queue, EVENT_BRIGHTNESS, percent));
+        face.on_brightness_set(move |percent| event(&queue, UI_EVENT_BRIGHTNESS, percent));
         let queue = events.clone();
-        face.on_setting_set(move |setting, value| event(&queue, EVENT_SETTING_VALUE, setting << 8 | (value & 0xff)));
+        face.on_setting_set(move |setting, value| {
+            queue.borrow_mut().push_back(UiEvent { kind: UI_EVENT_SETTING_VALUE, value: setting, arg: value, alarm: UiAlarm::default() })
+        });
         let queue = events.clone();
-        face.on_time_set(move |minutes| event(&queue, EVENT_TIME_SET, minutes));
+        face.on_time_set(move |minutes| event(&queue, UI_EVENT_TIME_SET, minutes));
         let queue = events.clone();
-        face.on_date_set(move |day, month, year| event(&queue, EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
+        face.on_date_set(move |day, month, year| event(&queue, UI_EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;

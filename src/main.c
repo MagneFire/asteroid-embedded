@@ -543,7 +543,7 @@ void main(void)
 				last_clock = 0;
 				break;
 			case UI_EVENT_SETTING_VALUE:
-				setting_value(a >> 8, a & 0xff);
+				setting_value(a, e.arg);
 				break;
 			case UI_EVENT_SNOOZE:
 				notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);

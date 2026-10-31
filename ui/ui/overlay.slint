@@ -2,6 +2,7 @@
 // Bluetooth pairing code, or a ringing alarm or timer with dismiss and snooze buttons.
 import { NoteIcons } from "note_icons.slint";
 import { Face } from "face.slint";
+import { Codes } from "codes.slint";
 import { IconButton, StatusPage } from "controls.slint";
 
 export component Overlay {
@@ -138,7 +139,7 @@ export component Overlay {
             color: #666666;
             icon: @image-url("../icons/ios-close-circle-outline.svg");
             clicked => {
-                Face.setting-toggled(42);
+                Face.setting-toggled(Codes.ui-pair-reject);
             }
         }
 
@@ -148,7 +149,7 @@ export component Overlay {
             color: #666666;
             icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
             clicked => {
-                Face.setting-toggled(43);
+                Face.setting-toggled(Codes.ui-pair-accept);
             }
         }
     }
@@ -181,7 +182,7 @@ export component Overlay {
             y: 160px;
             icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
             clicked => {
-                Face.alarm-action(1);
+                Face.alarm-action(Codes.ui-alarm-dismiss);
             }
         }
 
@@ -190,9 +191,9 @@ export component Overlay {
             y: 160px;
             icon: Face.ringing-timer ? @image-url("../icons/ios-refresh-circle-outline.svg") : @image-url("../icons/ios-sleep-circle-outline.svg");
             clicked => {
-                Face.alarm-action(0);
+                Face.alarm-action(Codes.ui-alarm-snooze);
                 if Face.ringing-timer {
-                    Face.clock-action(20);
+                    Face.clock-action(Codes.ui-timer-start);
                 }
             }
         }

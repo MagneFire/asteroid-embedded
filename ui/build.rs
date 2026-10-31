@@ -2,7 +2,9 @@
 // The notification icons are the AsteroidOS Ionicons set, resized to NOTE_ICON_PX and listed in a
 // generated Slint global, with their sorted names for the lookup by name. The nightstand battery
 // ring is generated too: each of its segments a small SVG cut to its bounding box on a 400 px
-// screen, with its position, since paths cannot be drawn at run time here.
+// screen, with its position, since paths cannot be drawn at run time here. The codes the UI and
+// the firmware exchange (the settings, the actions, the event kinds) are read from the C headers
+// into a Slint global and Rust constants, so neither side keeps its own copy.
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -51,6 +53,7 @@ fn main() {
     std::fs::write(out.join("note_icons.rs"), rust).unwrap();
 
     ring(&out);
+    codes(&out);
 
     let config = slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRendererNoFonts)
@@ -59,6 +62,56 @@ fn main() {
     println!("cargo:rerun-if-changed=fonts");
     println!("cargo:rerun-if-changed=icons");
     println!("cargo:rerun-if-changed={ICON_DIR}");
+    println!("cargo:rerun-if-changed=../src/ui/ui.h");
+    println!("cargo:rerun-if-changed=../src/asteroid.h");
+}
+
+/// The enumerators of `enum name { ... }` in a C header: only identifiers, with or without an
+/// integer value, as the firmware's headers write them.
+fn c_enum(header: &str, name: &str) -> Vec<(String, i64)> {
+    let start = header.find(&format!("enum {name} {{")).unwrap_or_else(|| panic!("no enum {name}"));
+    let body = &header[start..];
+    let body = &body[body.find('{').unwrap() + 1..body.find('}').unwrap()];
+    let mut next = 0;
+    let mut out = Vec::new();
+    for entry in body.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (ident, value) = match entry.split_once('=') {
+            Some((i, v)) => (i.trim(), v.trim().parse::<i64>().unwrap_or_else(|_| panic!("{name}: {entry}"))),
+            None => (entry, next),
+        };
+        out.push((ident.to_string(), value));
+        next = value + 1;
+    }
+    out
+}
+
+/// codes.slint: a `Codes` global with one property per enumerator, lower-kebab (UI_LOCK is
+/// Codes.ui-lock); codes.rs: the same as Rust constants.
+fn codes(out: &std::path::Path) {
+    let ui_h = std::fs::read_to_string("../src/ui/ui.h").unwrap();
+    let asteroid_h = std::fs::read_to_string("../src/asteroid.h").unwrap();
+    let mut slint = String::from("export global Codes {\n");
+    let mut rust = String::new();
+    for (header, name, ty) in [
+        (&asteroid_h, "setting", "i32"),
+        (&ui_h, "ui_action", "i32"),
+        (&ui_h, "ui_clock_action", "i32"),
+        (&ui_h, "ui_media_action", "i32"),
+        (&ui_h, "ui_alarm_action", "i32"),
+        (&ui_h, "ui_event_kind", "u32"),
+    ] {
+        for (ident, value) in c_enum(header, name) {
+            writeln!(slint, "    out property <int> {}: {value};", ident.to_lowercase().replace('_', "-")).unwrap();
+            writeln!(rust, "pub const {ident}: {ty} = {value};").unwrap();
+        }
+    }
+    slint.push_str("}\n");
+    std::fs::write(out.join("codes.slint"), slint).unwrap();
+    std::fs::write(out.join("codes.rs"), rust).unwrap();
 }
 
 /// 50 segments of 1.2 degrees, 7.2 degrees apart from 12 o'clock clockwise, between radius

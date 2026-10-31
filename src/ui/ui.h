@@ -144,13 +144,13 @@ enum ui_event_kind {
 
 struct ui_event {
 	uint32_t kind;
-	int32_t value;
+	int32_t value, arg;	/* arg: the value of a UI_EVENT_SETTING_VALUE, value its setting */
 	struct ui_alarm alarm;
 };
 
 _Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 12,
 	       "ui types");
-_Static_assert(sizeof(struct ui_event) == 12, "ui_event");
+_Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
 	     uint32_t height);
