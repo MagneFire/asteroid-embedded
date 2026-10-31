@@ -118,7 +118,7 @@ export component Spinner {
 }
 
 // A 100 px dark disc with an icon at (200, 148), tappable, and a title line (bigger, as the
-// <h3> of the original) with a second line below at y ~ 260.
+// <h3> of the original) over a second line, the two centred on y = 260.
 export component StatusPage {
     in property <image> icon;
     in property <string> title;
@@ -160,28 +160,28 @@ export component StatusPage {
         }
     }
 
-    Text {
+    VerticalLayout {
         x: 16px;
-        y: 214px;
+        y: 260px - self.preferred-height / 2;
         width: 368px;
-        height: 32px;
-        text: root.title;
-        color: white;
-        font-size: 24px;
-        font-weight: 700;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
+        height: self.preferred-height;
 
-    Text {
-        x: 16px;
-        y: 248px;
-        width: 368px;
-        text: root.text;
-        color: white;
-        font-size: 20px;
-        horizontal-alignment: center;
-        wrap: word-wrap;
+        Text {
+            text: root.title;
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: root.text;
+            color: white;
+            font-size: 20px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
     }
 }
 
@@ -275,7 +275,7 @@ export component ListItem {
         background: touch.pressed ? #ffffff33 : #ffffff00;
         animate background {
             duration: 150ms;
-            easing: ease-out;
+            easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }
     }
 
@@ -325,6 +325,10 @@ export component LabeledSwitch {
 
     Rectangle {
         background: touch.pressed ? #ffffff33 : #ffffff00;
+        animate background {
+            duration: 150ms;
+            easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
     }
 
     Text {

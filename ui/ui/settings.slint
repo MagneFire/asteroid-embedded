@@ -7,7 +7,7 @@
 import { Face, Watchface } from "face.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
-import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Pill } from "controls.slint";
+import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page } from "controls.slint";
 
 // A 60 px check badge with a soft shadow, as the pickers mark the current choice.
 component Check {
@@ -135,7 +135,7 @@ export component SettingsApp {
 
     if root.page == 2: Page {
         VerticalLayout {
-            padding-top: 140px;
+            padding-top: 60px;
 
             LabeledSwitch {
                 text: "Enable";
@@ -255,10 +255,10 @@ export component SettingsApp {
             }
         }
 
-        Pill {
-            x: 90px;
-            y: 300px;
+        LabeledSwitch {
+            y: 290px;
             text: "Forget phone";
+            icon: @image-url("../icons/ios-trash-outline.svg");
             clicked => {
                 Face.setting-toggled(12);
             }
