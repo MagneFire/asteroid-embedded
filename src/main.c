@@ -3,6 +3,7 @@
  * console as an overlay, then brightness and panel sleep/wake, then a
  * reboot so the bootloader is back in fastboot for the next image. A
  * build-time TEST hangs or faults on purpose to exercise the crash path. */
+#include <stddef.h>
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -338,6 +339,70 @@ static void setting_toggled(int s)
 	show_settings();
 }
 
+/* The timer and the stopwatch are kept in the key-value store across
+ * reboots: the timer's duration and time left and, while it runs, the
+ * RTC second it ends at; the stopwatch's time and laps and, while it
+ * runs, the RTC second it started at. A timer that ended while the
+ * watch was off is back at its duration. */
+#define KV_TIMER	"timer"
+#define KV_STOPWATCH	"stopwatch"
+#define LAPS		99
+
+struct saved_timer {
+	uint32_t set_ms, left_ms, end_rtc;
+};
+
+struct saved_stopwatch {
+	uint32_t acc_ms, start_rtc, running, laps;
+	uint32_t lap_ms[LAPS];
+};
+
+static void save_timer(uint32_t set, uint32_t left, uint32_t end, uint32_t now)
+{
+	struct saved_timer v = { set, left, end ? pmic_rtc_read() + (end - now + 500) / 1000 : 0 };
+	kv_set(KV_TIMER, &v, sizeof v);
+}
+
+static void save_stopwatch(uint32_t acc, bool running, uint32_t start, uint32_t now, const uint32_t *lap,
+			   unsigned laps)
+{
+	struct saved_stopwatch v = {
+		.acc_ms = acc,
+		.start_rtc = running ? pmic_rtc_read() - (now - start) / 1000 : 0,
+		.running = running,
+		.laps = laps,
+	};
+	memcpy(v.lap_ms, lap, laps * sizeof lap[0]);
+	kv_set(KV_STOPWATCH, &v, offsetof(struct saved_stopwatch, lap_ms) + laps * sizeof lap[0]);
+}
+
+static void load_timer(uint32_t *set, uint32_t *left, uint32_t *end)
+{
+	struct saved_timer v;
+	if (kv_get(KV_TIMER, &v, sizeof v) != sizeof v || !v.set_ms)
+		return;
+	uint32_t rtc = pmic_rtc_read();
+	*set = v.set_ms;
+	*left = v.end_rtc && v.end_rtc <= rtc ? v.set_ms : v.left_ms;
+	if (v.end_rtc > rtc)
+		*end = time_ms() + (v.end_rtc - rtc) * 1000;
+}
+
+static unsigned load_stopwatch(uint32_t *acc, bool *running, uint32_t *start, uint32_t *lap)
+{
+	static struct saved_stopwatch v;
+	int n = kv_get(KV_STOPWATCH, &v, sizeof v);
+	unsigned head = offsetof(struct saved_stopwatch, lap_ms);
+	if (n < (int)head || v.laps > LAPS || n != (int)(head + v.laps * sizeof v.lap_ms[0]))
+		return 0;
+	uint32_t rtc = pmic_rtc_read();
+	*acc = v.acc_ms + (v.running && rtc > v.start_rtc ? (rtc - v.start_rtc) * 1000 : 0);
+	*running = v.running;
+	*start = time_ms();
+	memcpy(lap, v.lap_ms, v.laps * sizeof lap[0]);
+	return v.laps;
+}
+
 /* The clock set by hand: the time of day in minutes, keeping the date,
  * or a date, keeping the time. */
 static void set_clock(int kind, int v)
@@ -490,9 +555,12 @@ void main(void)
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
 	bool key_was = false, awake = true, woke = false, ringing = false, ring_timer = false, sw_running = false;
-	static uint32_t lap_ms[99];
-	unsigned laps = 0;
+	static uint32_t lap_ms[LAPS];
 	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
+	load_timer(&timer_set, &timer_left, &timer_end);
+	unsigned laps = load_stopwatch(&sw_acc, &sw_running, &sw_start, lap_ms);
+	if (have_ui)
+		ui_set_laps(lap_ms, laps);
 	uint32_t shown_timer = 1, shown_sw = 1;
 	int32_t passkey = -1;
 	uint32_t notify_seen = 0, bt_start_t = time_ms() + BT_START_MS;
@@ -675,6 +743,7 @@ void main(void)
 				if (!timer_end && a >= 1 && a <= 86399) {
 					timer_set = timer_left = (uint32_t)a * 1000;
 					shown_timer = UINT32_MAX;
+					save_timer(timer_set, timer_left, timer_end, now);
 				}
 				break;
 			case UI_EVENT_BRIGHTNESS:
@@ -725,6 +794,10 @@ void main(void)
 					lap_ms[0] = sw_acc + now - sw_start;
 					ui_set_laps(lap_ms, laps);
 				}
+				if (a >= UI_STOPWATCH_START)
+					save_stopwatch(sw_acc, sw_running, sw_start, now, lap_ms, laps);
+				else
+					save_timer(timer_set, timer_left, timer_end, now);
 				shown_timer = shown_sw = UINT32_MAX;
 				break;
 			}
