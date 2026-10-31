@@ -112,6 +112,8 @@ component Pages {
     in property <length> size: 400px;
     in property <bool> vertical;
     in property <bool> preview;
+    // In a preview, at the last app instead of the first.
+    in property <bool> last;
     property <float> k: self.size / 400px;
     property <length> scroll: pager.index * self.size - pager.drag;
     animate scroll {
@@ -127,6 +129,9 @@ component Pages {
             Face.launcher-position = root.scroll / root.size;
             Face.launcher-edges = 4 + (root.vertical ? (pager.index < Apps.list.length - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0) : (pager.index > 0 ? 1 : 0) + (pager.index < Apps.list.length - 1 ? 2 : 0));
         }
+    }
+    changed last => {
+        pager.index = self.last ? Apps.list.length - 1 : 0;
     }
     init => {
         self.report();
@@ -188,6 +193,8 @@ component Pages {
 component ThreeIcons {
     in property <length> size: 400px;
     in property <bool> preview;
+    // In a preview, at the last app instead of the first.
+    in property <bool> last;
     property <float> k: self.size / 400px;
     property <length> cell: self.size / 2;
     property <length> scroll: pager.index * self.cell - pager.drag;
@@ -204,6 +211,9 @@ component ThreeIcons {
             Face.launcher-position = root.scroll / root.cell;
             Face.launcher-edges = 4 + (pager.index > 0 ? 1 : 0) + (pager.index < Apps.list.length - 1 ? 2 : 0);
         }
+    }
+    changed last => {
+        pager.index = self.last ? Apps.list.length - 1 : 0;
     }
     init => {
         self.report();
@@ -263,6 +273,8 @@ component ThreeIcons {
 component TwoColumns {
     in property <length> size: 400px;
     in property <bool> preview;
+    // In a preview, at the last app instead of the first.
+    in property <bool> last;
     property <float> k: self.size / 400px;
     property <length> cell: self.size / 2;
     property <int> rows: Math.ceil(Apps.list.length / 2);
@@ -280,6 +292,9 @@ component TwoColumns {
             Face.launcher-position = 0;
             Face.launcher-edges = 4 + (pager.index < root.rows - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0);
         }
+    }
+    changed last => {
+        pager.index = self.last ? root.rows - 1 : 0;
     }
     init => {
         self.report();
@@ -343,6 +358,8 @@ component TwoColumns {
 component TurboList {
     in property <length> size: 400px;
     in property <bool> preview;
+    // In a preview, at the last app instead of the first.
+    in property <bool> last;
     property <float> k: self.size / 400px;
     property <length> line: self.size / 6;
     property <length> scroll: pager.index * self.line - pager.drag;
@@ -358,6 +375,9 @@ component TurboList {
         if !root.preview {
             Face.launcher-edges = 4 + (pager.index < Apps.list.length - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0);
         }
+    }
+    changed last => {
+        pager.index = self.last ? Apps.list.length - 1 : 0;
     }
     init => {
         self.report();
@@ -428,6 +448,8 @@ component TurboList {
 component ThreeByThree {
     in property <length> size: 400px;
     in property <bool> preview;
+    // In a preview, at the last app instead of the first.
+    in property <bool> last;
     property <float> k: self.size / 400px;
     property <length> margin: self.size * 0.026;
     property <length> cell: (self.size - 2 * self.margin) / 3;
@@ -449,6 +471,9 @@ component ThreeByThree {
         if !root.preview {
             Face.launcher-edges = 4 + (pager.index < root.stops - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0);
         }
+    }
+    changed last => {
+        pager.index = self.last ? root.stops - 1 : 0;
     }
     init => {
         self.report();
@@ -572,6 +597,8 @@ component Wheel {
 component SpeedDial {
     in property <length> size: 400px;
     in property <bool> preview;
+    // In a preview, at the last app instead of the first.
+    in property <bool> last;
     property <float> k: self.size / 400px;
     property <int> n: Apps.list.length;
     property <angle> step: 360deg / self.n;
@@ -601,6 +628,9 @@ component SpeedDial {
             Face.launcher-position = Math.mod(Math.mod(root.pos, root.n) + root.n, root.n);
             Face.launcher-edges = 4;
         }
+    }
+    changed last => {
+        self.index = self.last ? self.n - 1 : 0;
     }
     init => {
         self.report();
@@ -725,17 +755,18 @@ export component LauncherView {
     in property <length> size: 400px;
     in property <int> layout;
     in property <bool> preview;
+    in property <bool> last;
 
     width: self.size;
     height: self.size;
 
-    if root.layout == 0: Pages { size: root.size; preview: root.preview; }
-    if root.layout == 1: Pages { size: root.size; vertical: true; preview: root.preview; }
-    if root.layout == 2: ThreeIcons { size: root.size; preview: root.preview; }
-    if root.layout == 3: TwoColumns { size: root.size; preview: root.preview; }
-    if root.layout == 4: TurboList { size: root.size; preview: root.preview; }
-    if root.layout == 5: ThreeByThree { size: root.size; preview: root.preview; }
-    if root.layout == 6: SpeedDial { size: root.size; preview: root.preview; }
+    if root.layout == 0: Pages { size: root.size; preview: root.preview; last: root.last; }
+    if root.layout == 1: Pages { size: root.size; vertical: true; preview: root.preview; last: root.last; }
+    if root.layout == 2: ThreeIcons { size: root.size; preview: root.preview; last: root.last; }
+    if root.layout == 3: TwoColumns { size: root.size; preview: root.preview; last: root.last; }
+    if root.layout == 4: TurboList { size: root.size; preview: root.preview; last: root.last; }
+    if root.layout == 5: ThreeByThree { size: root.size; preview: root.preview; last: root.last; }
+    if root.layout == 6: SpeedDial { size: root.size; preview: root.preview; last: root.last; }
 }
 
 export component Launcher {

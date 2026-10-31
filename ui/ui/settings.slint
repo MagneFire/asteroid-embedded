@@ -39,6 +39,8 @@ export component SettingsApp {
 
     changed page => {
         Face.app-depth = self.page > 0 ? 1 : 0;
+        self.flip = false;
+        self.flipped = false;
     }
     changed back => {
         self.page = 0;
@@ -188,15 +190,31 @@ export component SettingsApp {
         }
     }
 
+    // The chosen launcher's preview turns between its first and last app every 5 s, first at
+    // once.
+    property <bool> flip;
+    property <bool> flipped;
+    Timer {
+        interval: root.flipped ? 5000ms : 1ms;
+        running: root.page == 4;
+        triggered => {
+            root.flip = !root.flip;
+            root.flipped = true;
+        }
+    }
+
     if root.page == 4: Page {
         Flickable {
             width: 400px;
             height: 400px;
-            content-height: Math.ceil(Apps.layouts.length / 2) * 160px + 80px;
+            content-height: Math.ceil(Apps.layouts.length / 2) * 160px;
+            init => {
+                self.content-y = -Math.clamp(Math.floor(Face.launcher / 2) * 160px + 80px - 200px, 0, self.content-height - 400px);
+            }
 
             for name[i] in Apps.layouts: Rectangle {
                 x: Math.mod(i, 2) * 200px;
-                y: 40px + Math.floor(i / 2) * 160px;
+                y: Math.floor(i / 2) * 160px;
                 width: 200px;
                 height: 160px;
                 clip: true;
@@ -206,6 +224,7 @@ export component SettingsApp {
                     size: 160px;
                     layout: i;
                     preview: true;
+                    last: Face.launcher == i && root.flip;
                 }
 
                 if Face.launcher == i: Rectangle {
@@ -213,7 +232,7 @@ export component SettingsApp {
                 }
 
                 if Face.launcher == i: Check {
-                    x: parent.width - self.width - 20px;
+                    x: parent.width - self.width;
                     y: parent.height - self.height;
                 }
 
