@@ -40,7 +40,7 @@ void stack_open_app(void);
 void stack_set_launcher(unsigned layout);
 void stack_indicators(void);
 void stack_pending(bool on);
-void stack_indicators_cpu(uint32_t *buf, uint32_t stride);
+void stack_indicators_cpu(uint32_t *buf, uint32_t stride, int dx, int dy);
 unsigned stack_screen(void);
 bool stack_moving(void);
 void stack_offset(int *x, int *y);

@@ -7,9 +7,9 @@
  * the panel on screen, call ui_tick once, then ui_update per panel
  * repaints its layer where it changed, on the GPU while it is on, and
  * returns the bounding box of the change; ui_render blends the
- * watchface and overlay layers over a finished XRGB8888 background on
- * the CPU; ui_repaint repaints a whole panel, on the GPU or the CPU,
- * for measuring. weekday 0 = Sunday, month 1-12;
+ * watchface, moved by (dx, dy), and overlay layers over a finished
+ * XRGB8888 background on the CPU; ui_repaint repaints a whole panel, on
+ * the GPU or the CPU, for measuring. weekday 0 = Sunday, month 1-12;
  * touch kind 0 down, 1 move, 2 up; a passkey below 0 hides the pairing
  * code. ui_set_clock also takes the RTC (seconds), against which the
  * notifications' times (RTC seconds) give their age; ui_set_connected
@@ -18,10 +18,9 @@
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
  * the watchface to its always-on form. The app panel shows the app set
- * with ui_set_app, none for -1. ui_set_settings shows the settings
- * (brightness in per cent), ui_set_face selects the watchface and
- * whether nightstand mode is on and in effect, ui_set_launcher the
- * launcher layout.
+ * with ui_set_app, none for -1. ui_set_settings shows the settings,
+ * ui_set_face selects the watchface and whether nightstand mode is on
+ * and in effect, ui_set_launcher the launcher layout.
  * ui_launcher_edges says which edges of the launcher lead somewhere
  * (left, right, top, bottom as bits 0-3) and, in bit 4, whether it is at
  * its start; ui_notes_edges does the same for the notifications, bit 4
@@ -42,8 +41,9 @@
  * UI_EVENT_DISMISS the id of a dismissed notification, UI_EVENT_TIMER_SET
  * the timer's new duration in seconds, UI_EVENT_BRIGHTNESS the
  * brightness in per cent, UI_EVENT_DISMISS_ALL all notifications
- * dismissed and UI_EVENT_SNOOZE the id of a notification put away for
- * the hours and minutes in its alarm.
+ * dismissed, UI_EVENT_SNOOZE the id of a notification put away for the
+ * hours and minutes in its alarm and UI_EVENT_SETTING_VALUE an enum
+ * setting in bits 8 and up set to the value in bits 0-7.
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -77,13 +77,13 @@ enum ui_clock_action {
 };
 enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
 enum ui_action {
-	UI_BRIGHTNESS_DOWN = 10,
+	UI_BRIGHTNESS_DOWN = 32,
 	UI_BRIGHTNESS_UP,
 	UI_FORGET_PHONE,
 	UI_WATCHFACE_FIRST,
-	UI_LOCK = 15,
+	UI_LOCK = 37,
 	UI_OPEN_SETTINGS,
-	UI_LAUNCHER_FIRST = 20
+	UI_LAUNCHER_FIRST = 48
 };
 #define UI_LAUNCHERS 7
 enum ui_media_action {
@@ -110,6 +110,13 @@ struct ui_colors {
 	struct ui_rgb center, outer;
 };
 
+/* Brightnesses in per cent, the nightstand delay in seconds, burn_in
+ * 0 off, 1 high, 2 medium, 3 low. */
+struct ui_settings {
+	uint8_t brightness, nightstand_brightness, nightstand_delay, burn_in;
+	bool bluetooth, vibration, aod, clock12, tilt, tap, fahrenheit, nightstand_aod;
+};
+
 enum ui_event_kind {
 	UI_EVENT_SETTING,
 	UI_EVENT_APP,
@@ -123,6 +130,7 @@ enum ui_event_kind {
 	UI_EVENT_BRIGHTNESS,
 	UI_EVENT_DISMISS_ALL,
 	UI_EVENT_SNOOZE,
+	UI_EVENT_SETTING_VALUE,
 };
 
 struct ui_event {
@@ -131,7 +139,8 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6, "ui types");
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 12,
+	       "ui types");
 _Static_assert(sizeof(struct ui_event) == 12, "ui_event");
 
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
@@ -158,7 +167,7 @@ void ui_set_launcher(int layout);
 unsigned ui_launcher_edges(void);
 unsigned ui_notes_edges(void);
 bool ui_app_colors(int app, struct ui_colors *out);
-void ui_set_settings(uint32_t brightness, bool bluetooth, bool vibration, bool aod, bool clock12);
+void ui_set_settings(const struct ui_settings *s);
 void ui_set_build(const char *build);
 void ui_set_face(int watchface, bool nightstand_setting, bool nightstand);
 void ui_set_alarms(const struct ui_alarm *alarms, uint32_t n);
@@ -174,7 +183,7 @@ bool ui_modal(void);
 void ui_touch(uint32_t panel, int kind, int x, int y);
 void ui_tick(void);
 bool ui_update(uint32_t panel, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h);
-void ui_render(uint32_t *buf, uint32_t stride_px);
+void ui_render(uint32_t *buf, uint32_t stride_px, int dx, int dy);
 void ui_repaint(uint32_t panel, bool gpu);
 void ui_panic(const char *msg, size_t len) __attribute__((noreturn));
 #endif

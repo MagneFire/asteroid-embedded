@@ -62,6 +62,14 @@ export global Face {
     in-out property <bool> vibration-on: true;
     in-out property <bool> aod-on: true;
     in-out property <bool> clock12;
+    in-out property <bool> tilt-on: true;
+    in-out property <bool> tap-on: true;
+    in-out property <bool> fahrenheit;
+    in-out property <int> nightstand-brightness: 30;
+    in-out property <int> nightstand-delay: 5;
+    in-out property <bool> nightstand-aod: true;
+    // Burn-in protection: 0 off, 1 high, 2 medium, 3 low.
+    in-out property <int> burn-in: 1;
     in-out property <string> build;
     in-out property <[AlarmItem]> alarms;
     in-out property <bool> alarm-ringing;
@@ -104,6 +112,12 @@ export global Face {
     callback clock-action(int);
     callback timer-set(int);
     callback brightness-set(int);
+    // A temperature in degrees Celsius as shown: in Celsius, or rounded to Fahrenheit.
+    public pure function temperature(c: int) -> string {
+        return self.fahrenheit ? Math.round(c * 9 / 5 + 32) + "°F" : c + "°C";
+    }
+    // An enum setting and the value to set it to.
+    callback setting-set(int, int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

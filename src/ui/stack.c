@@ -621,14 +621,14 @@ static void indicators(void)
 }
 
 /* The left indicator on the always-on face, drawn on the CPU into an
- * XRGB8888 buffer, while notifications are waiting. */
-void stack_indicators_cpu(uint32_t *buf, uint32_t stride)
+ * XRGB8888 buffer, while notifications are waiting, moved by (dx, dy). */
+void stack_indicators_cpu(uint32_t *buf, uint32_t stride, int dx, int dy)
 {
 	static uint32_t tex[IND_TEX * IND_TEX];
 	if (!pending)
 		return;
 	diamond(tex, IND_TEX, IND_HIGH_W, IND_HIGH_A);
-	int x0 = (int)IND_FAR - IND_TEX / 2, y0 = H / 2 - IND_TEX / 2;
+	int x0 = (int)IND_FAR - IND_TEX / 2 + dx, y0 = H / 2 - IND_TEX / 2 + dy;
 	for (int y = 0; y < IND_TEX; y++)
 		for (int x = 0; x < IND_TEX; x++) {
 			int px = x0 + x;

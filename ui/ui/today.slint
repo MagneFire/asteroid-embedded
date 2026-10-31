@@ -22,7 +22,7 @@ export component TodayScreen {
         y: 0;
         width: root.width * 0.45;
         height: 140px;
-        text: Face.weather-today.min + "°C\n" + Face.weather-today.max + "°C";
+        text: Face.temperature(Face.weather-today.min) + "\n" + Face.temperature(Face.weather-today.max);
         color: white;
         opacity: 0.8;
         font-size: 20px;

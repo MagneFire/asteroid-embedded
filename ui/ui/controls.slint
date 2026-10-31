@@ -310,11 +310,13 @@ export component ListItem {
 
 // The ListRow family: a 100 px row with a 24 px label from x = 60 to 236 and an 80 px action
 // centred at x = 300, the whole row lit while pressed. LabeledSwitch shows a check circle,
-// LabeledActionButton an icon; dim greys a row that does not apply.
+// LabeledActionButton an icon, OptionCycler a value in 28 px semi-condensed bold; dim greys a row
+// that does not apply.
 export component LabeledSwitch {
     in property <string> text;
     in property <bool> checked;
     in property <image> icon;
+    in property <string> value;
     in property <bool> dim;
     callback clicked();
 
@@ -344,13 +346,26 @@ export component LabeledSwitch {
         wrap: word-wrap;
     }
 
-    Image {
+    if root.value == "": Image {
         x: 260px;
         y: 10px;
         width: 80px;
         height: 80px;
         source: root.icon.width > 0 ? root.icon : root.checked ? @image-url("../icons/ios-checkmark-circle-outline.svg") : @image-url("../icons/ios-circle-outline.svg");
         colorize: white;
+    }
+
+    if root.value != "": Text {
+        x: 236px;
+        width: 128px;
+        height: parent.height;
+        text: root.value;
+        color: white;
+        font-family: "Noto Sans SemiCondensed Bold";
+        font-size: 28px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
     }
 
     touch := TouchArea {
@@ -545,3 +560,4 @@ export component Page {
 
     @children
 }
+

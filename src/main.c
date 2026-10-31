@@ -145,12 +145,41 @@ void power_request(bool sleep)
 		console_wake = true;
 }
 
+/* Nightstand mode is in effect while the watch is on its charger and
+ * for the nightstand delay after it comes off, as asteroid-launcher's
+ * nightstandDelayTimer keeps it, so a loose cable does not end it. */
+static bool nightstand_on(void)
+{
+	static bool was_usb;
+	static uint32_t lost_t;
+	bool usb = pmic_usb_present();
+	uint32_t now = time_ms();
+	if (was_usb && !usb)
+		lost_t = now | 1;
+	was_usb = usb;
+	return setting_get(SETTING_NIGHTSTAND) &&
+	       (usb || (lost_t && now - lost_t < (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000));
+}
+
 /* The always-on face: shown while asleep unless turned off, drawn on
  * the CPU so the GPU can stay off, with the panel in idle mode at 18 %
- * brightness, AsteroidOS's low power mode level on this watch. */
+ * brightness, AsteroidOS's low power mode level on this watch. Each
+ * minute it moves by a random amount against burn-in, as the launcher's
+ * burnInProtectionManager moves the grid: up to the watchface's margin,
+ * times 1, 1/2 or 1/4 for the high, medium and low levels, and the left
+ * indicator by up to two and four fin widths. */
 #define AOD_BRIGHTNESS 18
+#define FIN_PX 6
 static bool ambient;
 static uint32_t ambient_minute;
+
+static int burn_in_shift(uint32_t *seed, int range)
+{
+	*seed ^= *seed << 13;
+	*seed ^= *seed >> 17;
+	*seed ^= *seed << 5;
+	return range ? (int)(*seed % (uint32_t)(2 * range + 1)) - range : 0;
+}
 
 static void ambient_draw(void)
 {
@@ -160,8 +189,8 @@ static void ambient_draw(void)
 	ambient_minute = rtc / 60;
 	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, rtc);
 	ui_set_battery(bms_percent(), pmic_charging());
-	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
-		    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
+	bool ns = nightstand_on();
+	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
 	ui_tick();
 	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
 	for (unsigned i = 0; i < ARRAY_SIZE(panels); i++) {
@@ -173,9 +202,17 @@ static void ambient_draw(void)
 				dcache_clean_range(layer + r * fb.stride + x, w * 4);
 		}
 	}
+	/* The digital face leaves 54 px (20 px in nightstand mode) around
+	 * it, the classic one 14 px (24 px). */
+	static const uint8_t level[] = { 0, 4, 2, 1 };
+	uint32_t seed = rtc | 1;
+	int b = setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
+	int range = (setting_get(SETTING_WATCHFACE) ? (ns ? 24 : 14) : (ns ? 20 : 54)) * m / 4;
+	int dx = burn_in_shift(&seed, range), dy = burn_in_shift(&seed, range);
+	int ix = m ? burn_in_shift(&seed, FIN_PX) + FIN_PX : 0, iy = m ? burn_in_shift(&seed, 2 * FIN_PX) : 0;
 	memset(buf, 0, fb.stride * fb.height * 4);
-	ui_render(buf, fb.stride);
-	stack_indicators_cpu(buf, fb.stride);
+	ui_render(buf, fb.stride, dx, dy);
+	stack_indicators_cpu(buf, fb.stride, ix, iy);
 	display_flip();
 }
 
@@ -193,7 +230,6 @@ static void bluetooth_start(void)
 		log_printf("bt: host failed (%d)\n", r);
 }
 
-/* Nightstand mode is in effect while the watch is on its charger. */
 /* The mesh fades from its grey to the colours of the launcher page on
  * screen as the launcher comes in, t from 0 to 1. */
 static void mesh_colors(float t)
@@ -218,17 +254,31 @@ static void mesh_colors(float t)
 
 static void show_settings(void)
 {
-	ui_set_settings(setting_get(SETTING_BRIGHTNESS), setting_get(SETTING_BLUETOOTH), setting_get(SETTING_VIBRATION),
-			setting_get(SETTING_AOD), setting_get(SETTING_CLOCK12));
+	struct ui_settings u = {
+		.brightness = setting_get(SETTING_BRIGHTNESS),
+		.nightstand_brightness = setting_get(SETTING_NIGHTSTAND_BRIGHTNESS),
+		.nightstand_delay = setting_get(SETTING_NIGHTSTAND_DELAY),
+		.burn_in = setting_get(SETTING_BURN_IN),
+		.bluetooth = setting_get(SETTING_BLUETOOTH),
+		.vibration = setting_get(SETTING_VIBRATION),
+		.aod = setting_get(SETTING_AOD),
+		.clock12 = setting_get(SETTING_CLOCK12),
+		.tilt = setting_get(SETTING_TILT),
+		.tap = setting_get(SETTING_TAP),
+		.fahrenheit = setting_get(SETTING_FAHRENHEIT),
+		.nightstand_aod = setting_get(SETTING_NIGHTSTAND_AOD),
+	};
+	ui_set_settings(&u);
 	ui_set_launcher(setting_get(SETTING_LAUNCHER));
 	stack_set_launcher(setting_get(SETTING_LAUNCHER));
-	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
-		    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
+	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), nightstand_on());
 }
 
+/* In nightstand mode the screen takes the nightstand brightness. */
 static void set_brightness(void)
 {
-	display_set_brightness((uint8_t)(setting_get(SETTING_BRIGHTNESS) * 255 / 100));
+	int b = setting_get(nightstand_on() ? SETTING_NIGHTSTAND_BRIGHTNESS : SETTING_BRIGHTNESS);
+	display_set_brightness((uint8_t)(b * 255 / 100));
 }
 
 /* A setting changed from the UI: store it and put it into effect. */
@@ -261,8 +311,25 @@ static void setting_toggled(int s)
 			bt_host_stop();
 			bt_stop();
 		}
+	} else if (s == SETTING_NIGHTSTAND) {
+		setting_set(SETTING_NIGHTSTAND, !setting_get(SETTING_NIGHTSTAND));
+		set_brightness();
 	} else if (s >= 0 && s < SETTINGS) {
 		setting_set((enum setting)s, !setting_get((enum setting)s));
+	}
+	show_settings();
+}
+
+/* A setting set to a value from the UI, kept to the steps it offers. */
+static void setting_value(int s, int v)
+{
+	if (s == SETTING_NIGHTSTAND_BRIGHTNESS && v >= 10 && v <= 100) {
+		setting_set(SETTING_NIGHTSTAND_BRIGHTNESS, v / 10 * 10);
+		set_brightness();
+	} else if (s == SETTING_NIGHTSTAND_DELAY && v >= 0 && v <= 30) {
+		setting_set(SETTING_NIGHTSTAND_DELAY, v / 5 * 5);
+	} else if (s == SETTING_BURN_IN && v >= 0 && v <= 3) {
+		setting_set(SETTING_BURN_IN, v);
 	}
 	show_settings();
 }
@@ -419,7 +486,7 @@ void main(void)
 		bms_poll();
 		if (have_hub) {
 			hub_poll();
-			if (hub_tilted() && !awake)
+			if (hub_tilted() && !awake && setting_get(SETTING_TILT))
 				wake_request = true;
 		}
 		if (have_haptics)
@@ -431,7 +498,7 @@ void main(void)
 				continue;
 			}
 			if (!awake) {
-				if (t.event == TOUCH_DOWN)
+				if (t.event == TOUCH_DOWN && setting_get(SETTING_TAP))
 					wake_request = true;
 				continue;
 			}
@@ -550,6 +617,9 @@ void main(void)
 			case UI_EVENT_DISMISS_ALL:
 				notify_dismiss_all();
 				break;
+			case UI_EVENT_SETTING_VALUE:
+				setting_value(a >> 8, a & 0xff);
+				break;
 			case UI_EVENT_SNOOZE:
 				notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);
 				break;
@@ -664,7 +734,7 @@ void main(void)
 				log_printf("alarm: %s\n", ring_timer ? "dismissed" : "snoozed");
 				ringing = false;
 			}
-			ambient = have_ui && setting_get(SETTING_AOD);
+			ambient = have_ui && setting_get(nightstand_on() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
 			if (!ambient)
 				display_sleep();
 			if (have_ui) {
@@ -761,7 +831,7 @@ void main(void)
 			} else {
 				flatmesh_render(buf, now - t0);
 				if (have_ui)
-					ui_render(buf, fb.stride);
+					ui_render(buf, fb.stride, 0, 0);
 			}
 			if (!have_ui) {
 				draw_dot(buf);
@@ -785,8 +855,12 @@ void main(void)
 			}
 			ui_set_battery(bms_percent(), pmic_charging());
 			ui_set_connected(bt_host_connected());
-			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND),
-				    setting_get(SETTING_NIGHTSTAND) && pmic_usb_present());
+			static bool ns;
+			if (nightstand_on() != ns) {
+				ns = !ns;
+				set_brightness();
+			}
+			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
 		}
 		if (!awake && now - last >= ASLEEP_STATS_MS) {
 			last = now;

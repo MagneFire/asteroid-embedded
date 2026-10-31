@@ -101,6 +101,25 @@ pub struct UiColors {
     outer: UiRgb,
 }
 
+/// The settings as the firmware keeps them: brightnesses in per cent, the nightstand delay in
+/// seconds, burn_in 0 off, 1 high, 2 medium, 3 low.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct UiSettings {
+    brightness: u8,
+    nightstand_brightness: u8,
+    nightstand_delay: u8,
+    burn_in: u8,
+    bluetooth: bool,
+    vibration: bool,
+    aod: bool,
+    clock12: bool,
+    tilt: bool,
+    tap: bool,
+    fahrenheit: bool,
+    nightstand_aod: bool,
+}
+
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
 /// the setting, action, app, notification or alarm index it is about, and alarm the alarm as
 /// edited, or for a snoozed notification how long in its hour and minute.
@@ -124,9 +143,10 @@ const EVENT_TIMER_SET: u32 = 8;
 const EVENT_BRIGHTNESS: u32 = 9;
 const EVENT_DISMISS_ALL: u32 = 10;
 const EVENT_SNOOZE: u32 = 11;
+const EVENT_SETTING_VALUE: u32 = 12;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 12);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 12 && core::mem::size_of::<UiSettings>() == 12);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
@@ -259,6 +279,8 @@ pub unsafe extern "C" fn ui_init(
         face.on_timer_set(move |seconds| event(&queue, EVENT_TIMER_SET, seconds));
         let queue = events.clone();
         face.on_brightness_set(move |percent| event(&queue, EVENT_BRIGHTNESS, percent));
+        let queue = events.clone();
+        face.on_setting_set(move |setting, value| event(&queue, EVENT_SETTING_VALUE, setting << 8 | (value & 0xff)));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
             return false;
@@ -459,13 +481,24 @@ pub unsafe extern "C" fn ui_app_colors(app: i32, out: *mut UiColors) -> bool {
 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_set_settings(brightness: u32, bluetooth: bool, vibration: bool, aod: bool, clock12: bool) {
+pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
+    if settings.is_null() {
+        return;
+    }
+    let s = unsafe { *settings };
     each(|face| {
-        face.set_brightness(brightness.min(100) as i32);
-        face.set_bluetooth_on(bluetooth);
-        face.set_vibration_on(vibration);
-        face.set_aod_on(aod);
-        face.set_clock12(clock12);
+        face.set_brightness(s.brightness.min(100) as i32);
+        face.set_bluetooth_on(s.bluetooth);
+        face.set_vibration_on(s.vibration);
+        face.set_aod_on(s.aod);
+        face.set_clock12(s.clock12);
+        face.set_tilt_on(s.tilt);
+        face.set_tap_on(s.tap);
+        face.set_fahrenheit(s.fahrenheit);
+        face.set_nightstand_brightness(s.nightstand_brightness as i32);
+        face.set_nightstand_delay(s.nightstand_delay as i32);
+        face.set_nightstand_aod(s.nightstand_aod);
+        face.set_burn_in(s.burn_in as i32);
     });
 }
 
@@ -683,18 +716,23 @@ fn over(src: u32, dst: u32, keep: u32) -> u32 {
     src + ((v + (v >> 8)) >> 8)
 }
 
+/// Blends the watchface layer, moved by (dx, dy), and the overlay over buf.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32) {
+pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32, dx: i32, dy: i32) {
     let Some(ui) = ui() else { return };
     let stride = stride_px as usize;
     if buf.is_null() || stride < ui.width {
         return;
     }
     let fb = unsafe { core::slice::from_raw_parts_mut(buf, stride * ui.height) };
-    for layer in [&ui.panels[0].layer, &ui.panels[OVERLAY].layer] {
-        for y in 0..ui.height {
-            let row = &mut fb[y * stride..y * stride + ui.width];
-            let line = &layer[y * ui.stride..y * ui.stride + ui.width];
+    let (w, h) = (ui.width as i32, ui.height as i32);
+    for (layer, (dx, dy)) in [(&ui.panels[0].layer, (dx.clamp(-w, w), dy.clamp(-h, h))), (&ui.panels[OVERLAY].layer, (0, 0))] {
+        let (x0, x1) = (dx.max(0) as usize, (w + dx).min(w) as usize);
+        for y in dy.max(0) as usize..(h + dy).min(h) as usize {
+            let sy = (y as i32 - dy) as usize;
+            let sx = (x0 as i32 - dx) as usize;
+            let row = &mut fb[y * stride + x0..y * stride + x1];
+            let line = &layer[sy * ui.stride + sx..sy * ui.stride + sx + (x1 - x0)];
             for (d, s) in row.iter_mut().zip(line.iter()) {
                 match s.alpha {
                     0 => {}
