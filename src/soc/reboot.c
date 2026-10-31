@@ -15,11 +15,19 @@ void dload_clear(void)
 	dsb();
 }
 
+/* The restart reason in IMEM tells the bootloader what to do after the
+ * reset: this value makes it stay in fastboot. */
+#define RESTART_FASTBOOT	0x77665500u
+
+bool reboot_to_bootloader;
+
 void reboot(void)
 {
 	settings_flush();
 	irq_disable();
 	dload_clear();
+	if (reboot_to_bootloader)
+		writel(RESTART_FASTBOOT, IMEM_RESTART_REASON);
 	scm_wdog_debug_disable();
 	dcache_clean_invalidate_all();
 	writel(0, MPM2_PS_HOLD);

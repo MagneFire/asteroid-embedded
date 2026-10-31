@@ -450,8 +450,10 @@ static void handle_open(void)
 			ring_put(s, "busy\n", 5);
 			s->closing = true;
 		}
-	} else if (kind == REBOOT)
+	} else if (kind == REBOOT) {
+		reboot_to_bootloader = !strcmp(svc + 7, "bootloader");
 		s->closing = true;
+	}
 }
 
 static void handle_write(struct stream *s)

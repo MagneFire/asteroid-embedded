@@ -186,6 +186,7 @@ void dload_clear(void);
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
 int scm_wdog_debug_disable(void);
 void reboot(void) __attribute__((noreturn));
+extern bool reboot_to_bootloader;
 
 /* log (persistent RAM, survives a warm reset) */
 void log_init(void);

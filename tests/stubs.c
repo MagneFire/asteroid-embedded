@@ -90,6 +90,7 @@ __attribute__((weak)) void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, 
 __attribute__((weak)) void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
 						  const struct gpu_rect *parts, unsigned n) {}
 
+bool reboot_to_bootloader;
 void reboot(void)
 {
 	if (stub_reboot_jmp)

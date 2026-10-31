@@ -205,6 +205,7 @@ static void cmd_log(const char *args)
 
 static void cmd_reboot(const char *args)
 {
+	reboot_to_bootloader = !strcmp(args, "bootloader");
 	say("rebooting\n");
 	reboot();
 }
@@ -913,7 +914,7 @@ static const struct command commands[] = {
 	{ "help", "", cmd_help },
 	{ "status", "", cmd_status },
 	{ "log", "[lines]", cmd_log },
-	{ "reboot", "", cmd_reboot },
+	{ "reboot", "[bootloader]", cmd_reboot },
 	{ "bright", "<0-255>", cmd_bright },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
