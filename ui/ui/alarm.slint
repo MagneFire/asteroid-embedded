@@ -80,8 +80,8 @@ export component AlarmApp {
     width: 100%;
     height: 100%;
 
-    // Under a page being dragged back, the alarms show in the strip it uncovers. Kept
-    // while the page is on top, as LayerStack keeps the layer below, so it comes back as it was.
+    // Moved out to the left as a page slides in, and back in beside a page dragged back, kept
+    // meanwhile, as LayerStack keeps the layer below, so it comes back as it was.
     Rectangle {
         property <length> scroll: list.index * root.width - list.drag;
         animate scroll {
@@ -89,9 +89,12 @@ export component AlarmApp {
             easing: ease-out;
         }
 
-        x: 0;
-        width: root.page == 0 ? 400px : Face.peeking ? Face.peek : 0;
-        clip: true;
+        x: root.page == 0 ? 0 : Face.peeking ? Face.peek - 400px : -400px;
+        width: 400px;
+        animate x {
+            duration: Face.peeking ? 0ms : 200ms;
+            easing: ease-out-quint;
+        }
 
         list := Pager {
             item: root.width;
