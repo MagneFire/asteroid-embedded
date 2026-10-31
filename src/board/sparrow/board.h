@@ -1,10 +1,7 @@
-/* ASUS ZenWatch 2 (sparrow): a scaffold from the downstream device
- * tree, not yet run on the watch. The touch controller (ITE IT7260 at
- * 0x46 on QUP5, irq gpio 17, reset 16), the PNI EM7184 sensor hub (QUP2
- * at 0x28, irq gpio 111), the PM8226 vibrator and the gpio-keys power
- * key (gpio 37) have no drivers yet, so board.mk lists none and the
- * stubs in board/stubs.c stand in. Values marked unverified are the
- * mainline device tree's and need checking on the bench. */
+/* ASUS ZenWatch 2 (sparrow), the PR3 revision on the bench: what
+ * differs from watch to watch. Pins are TLMM gpio numbers; MPM pins are
+ * the MPM's wake-up sources. The power key is read through the PMIC's
+ * PON block like sturgeon's, so the gpio-keys line (gpio 37) is unused. */
 #ifndef BOARD_H
 #define BOARD_H
 
