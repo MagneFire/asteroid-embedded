@@ -22,6 +22,7 @@ static const struct {
 	[SETTING_NIGHTSTAND_DELAY] = { "nightstand.delay", 5 },
 	[SETTING_NIGHTSTAND_AOD] = { "nightstand.aod", 1 },
 	[SETTING_BURN_IN] = { "burnin", 1 },
+	[SETTING_CINEMA_AOD] = { "cinema.aod", 1 },
 };
 
 static uint8_t values[SETTINGS];

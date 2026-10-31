@@ -53,6 +53,7 @@ enum setting {
 	SETTING_NIGHTSTAND_DELAY,
 	SETTING_NIGHTSTAND_AOD,
 	SETTING_BURN_IN,
+	SETTING_CINEMA_AOD,
 	SETTINGS
 };
 int setting_get(enum setting s);

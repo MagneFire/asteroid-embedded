@@ -5,9 +5,12 @@
 // lighter disc with a dimmed icon. The toggles start at their first page each time the panel
 // comes in. The brightness toggle switches between 10 % and 100 %; held for 300 ms it turns into
 // a bar across the panel, the rest fading out, that sets the brightness from where the finger is
-// in steps of 10 %. While charging the bolt pulses and the bar's end swings. The numbers passed
-// to setting-toggled are the firmware's enum setting, 15 to lock and 16 for Settings.
+// in steps of 10 %. Cinema mode turns the always-on face off until it is left again, and power
+// off and reboot count down 3 s first. While charging the bolt pulses and the bar's end swings.
+// The numbers passed to setting-toggled are the firmware's enum setting, 37 to lock, 38 for
+// Settings, 39 to reboot, 40 to power off and 41 for cinema mode.
 import { Face } from "face.slint";
+import { Remorse } from "controls.slint";
 
 component Toggle {
     in property <image> icon;
@@ -45,7 +48,6 @@ component Toggle {
 }
 
 export component QuickSettings {
-    property <int> pages: 2;
     in-out property <int> page;
     property <length> drag;
     property <bool> dragging;
@@ -53,11 +55,21 @@ export component QuickSettings {
     property <length> strip: 3 * 112px + 2 * 16px;
     // The toggle under a press on the strip, which swipes between pages and so takes the press
     // from the toggles: an index into toggles, or -1.
-    property <length> at: strip-touch.pressed-x + root.page * (root.strip + 16px);
-    property <int> column: Math.floor(self.at / 128px);
-    property <length> left: Math.mod(self.at / 1px, 128) * 1px;
-    property <int> hit: root.page == 0 ? (self.column < 3 && self.left < 112px ? self.column : -1)
-        : self.at - root.strip - 16px >= (root.strip - 112px) / 2 && self.at - root.strip - 16px < (root.strip + 112px) / 2 ? 3 : -1;
+    // The toggles in AsteroidOS's default order, without WiFi and sound: three to a page, the
+    // last page's centred. A press is mapped to the toggle under it.
+    property <[{icon: image, on: bool, button: bool}]> toggles: [
+        { icon: @image-url("../icons/ios-sunny.svg"), on: Face.brightness > 10 },
+        { icon: Face.bluetooth-connected ? @image-url("../icons/ios-bluetooth-connected.svg") : @image-url("../icons/ios-bluetooth.svg"), on: Face.bluetooth-on },
+        { icon: @image-url("../icons/ios-watch-vibrating.svg"), on: Face.vibration-on },
+        { icon: @image-url("../icons/ios-film-outline.svg"), on: !Face.aod-on },
+        { icon: Face.aod-on ? @image-url("../icons/ios-watch-aod-on.svg") : @image-url("../icons/ios-watch-aod-off.svg"), on: Face.aod-on },
+        { icon: @image-url("../icons/ios-power-outline.svg"), button: true },
+        { icon: @image-url("../icons/ios-sync.svg"), button: true },
+    ];
+    property <int> pages: Math.ceil(self.toggles.length / 3);
+    property <length> local: strip-touch.pressed-x - root.pad(root.page);
+    property <int> column: Math.floor(self.local / 128px);
+    property <int> hit: self.local >= 0 && self.column < Math.min(3, self.toggles.length - 3 * root.page) && Math.mod(self.local / 1px, 128) < 112 ? 3 * root.page + self.column : -1;
     property <int> held: strip-touch.pressed && !root.dragging ? root.hit : -1;
     property <bool> scrubbing;
     property <float> shown: root.scrubbing ? 0 : 1;
@@ -81,6 +93,30 @@ export component QuickSettings {
         }
     }
 
+    // Where page p's toggles start in the strip.
+    pure function pad(p: int) -> length {
+        let n = Math.min(3, root.toggles.length - 3 * p);
+        return (root.strip - n * 112px - (n - 1) * 16px) / 2;
+    }
+
+    function press(i: int) {
+        if i == 0 {
+            Face.brightness-set(Face.brightness > 10 ? 10 : 100);
+        } else if i == 1 || i == 2 {
+            Face.setting-toggled(i);
+        } else if i == 3 {
+            Face.setting-toggled(41);
+        } else if i == 4 {
+            Face.setting-toggled(3);
+        } else if i == 5 {
+            remorse.action = "Power Off";
+            remorse.code = 40;
+        } else if i == 6 {
+            remorse.action = "Reboot";
+            remorse.code = 39;
+        }
+    }
+
     // From the finger's x across the panel, 15 % in from each side being the ends.
     function scrub(x: length) {
         let f = Math.clamp((x - root.width * 0.15) / (root.width * 0.7), 0, 1);
@@ -98,7 +134,7 @@ export component QuickSettings {
         opacity: root.shown;
         icon: @image-url("../icons/ios-unlock.svg");
         clicked => {
-            Face.setting-toggled(15);
+            Face.setting-toggled(37);
         }
     }
 
@@ -110,7 +146,7 @@ export component QuickSettings {
         opacity: root.shown;
         icon: @image-url("../icons/ios-settings.svg");
         clicked => {
-            Face.setting-toggled(16);
+            Face.setting-toggled(38);
         }
     }
 
@@ -130,53 +166,12 @@ export component QuickSettings {
                 easing: ease-out;
             }
 
-            HorizontalLayout {
-                x: 0;
-                width: root.strip;
-                spacing: 16px;
-
-                Toggle {
-                    icon: @image-url("../icons/ios-sunny.svg");
-                    on: Face.brightness > 10;
-                    held: root.held == 0;
-                    clicked => {
-                        Face.brightness-set(Face.brightness > 10 ? 10 : 100);
-                    }
-                }
-
-                Toggle {
-                    icon: Face.bluetooth-connected ? @image-url("../icons/ios-bluetooth-connected.svg") : @image-url("../icons/ios-bluetooth.svg");
-                    on: Face.bluetooth-on;
-                    held: root.held == 1;
-                    clicked => {
-                        Face.setting-toggled(1);
-                    }
-                }
-
-                Toggle {
-                    icon: @image-url("../icons/ios-watch-vibrating.svg");
-                    on: Face.vibration-on;
-                    held: root.held == 2;
-                    clicked => {
-                        Face.setting-toggled(2);
-                    }
-                }
-            }
-
-            HorizontalLayout {
-                x: root.strip + 16px;
-                width: root.strip;
-                spacing: 16px;
-                alignment: center;
-
-                Toggle {
-                    icon: Face.aod-on ? @image-url("../icons/ios-watch-aod-on.svg") : @image-url("../icons/ios-watch-aod-off.svg");
-                    on: Face.aod-on;
-                    held: root.held == 3;
-                    clicked => {
-                        Face.setting-toggled(3);
-                    }
-                }
+            for t[i] in root.toggles: Toggle {
+                x: Math.floor(i / 3) * (root.strip + 16px) + root.pad(Math.floor(i / 3)) + Math.mod(i, 3) * 128px;
+                icon: t.icon;
+                on: t.on;
+                button: t.button;
+                held: root.held == i;
             }
         }
 
@@ -193,11 +188,7 @@ export component QuickSettings {
         strip-touch := TouchArea {
             clicked => {
                 if !root.swiped && root.hit >= 0 {
-                    if root.hit == 0 {
-                        Face.brightness-set(Face.brightness > 10 ? 10 : 100);
-                    } else {
-                        Face.setting-toggled(root.hit);
-                    }
+                    root.press(root.hit);
                 }
             }
             moved => {
@@ -331,4 +322,6 @@ export component QuickSettings {
         horizontal-alignment: center;
         vertical-alignment: center;
     }
+
+    remorse := Remorse { }
 }

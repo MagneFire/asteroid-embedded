@@ -88,6 +88,7 @@ enum ui_action {
 	UI_OPEN_SETTINGS,
 	UI_REBOOT,
 	UI_POWER_OFF,
+	UI_CINEMA,
 	UI_LAUNCHER_FIRST = 48
 };
 #define UI_LAUNCHERS 7

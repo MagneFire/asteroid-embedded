@@ -300,6 +300,15 @@ static void setting_toggled(int s)
 		power_request(true);
 	} else if (s == UI_OPEN_SETTINGS) {
 		open_app(UI_APP_SETTINGS);
+	} else if (s == UI_CINEMA) {
+		/* Cinema mode is the always-on face off, the state before it
+		 * kept to go back to, as the quick panel's cinemaToggle does. */
+		if (setting_get(SETTING_AOD)) {
+			setting_set(SETTING_CINEMA_AOD, 1);
+			setting_set(SETTING_AOD, 0);
+		} else {
+			setting_set(SETTING_AOD, setting_get(SETTING_CINEMA_AOD));
+		}
 	} else if (s == UI_REBOOT || s == UI_POWER_OFF) {
 		log_printf("%s\n", s == UI_REBOOT ? "rebooting" : "powering off");
 		if (s == UI_POWER_OFF)
