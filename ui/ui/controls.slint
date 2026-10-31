@@ -210,12 +210,14 @@ export component PageDot {
     }
 }
 
-// Text centred when it fits, otherwise held for 2 s, scrolled to its end and back, over and over.
+// Text centred when it fits, otherwise held for 2 s, scrolled to its end and back, over and over,
+// each way taking 1 s per box width of text.
 export component Marquee inherits Rectangle {
     in property <string> text;
     in property <length> font-size: 28px;
     in property <int> font-weight: 300;
     property <length> over: Math.max(0, label.preferred-width - self.width);
+    property <duration> travel: label.preferred-width / Math.max(1px, self.width) * 1000ms;
     property <length> shift;
     property <int> phase;
 
@@ -233,12 +235,12 @@ export component Marquee inherits Rectangle {
     }
 
     animate shift {
-        duration: root.phase == 1 || root.phase == 3 ? Math.max(1000, root.over / root.width * 1000) * 1ms : 0ms;
-        easing: ease-in-out;
+        duration: root.phase == 1 || root.phase == 3 ? root.travel : 0ms;
+        easing: cubic-bezier(0.455, 0.03, 0.515, 0.955);
     }
 
     Timer {
-        interval: root.phase == 0 ? 2000ms : root.phase == 2 ? 400ms : Math.max(1000, root.over / root.width * 1000) * 1ms;
+        interval: root.phase == 0 ? 2000ms : root.phase == 2 ? 400ms : root.travel;
         running: root.over > 0;
         triggered => {
             root.phase = Math.mod(root.phase + 1, 4);
