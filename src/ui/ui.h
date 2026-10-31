@@ -26,10 +26,10 @@
  * (left, right, top, bottom as bits 0-3) and, in bit 4, whether it is at
  * its start; ui_notes_edges does the same for the notifications, bit 4
  * meaning the newest is on screen; ui_launcher_colors gives its mesh
- * colours, or false to keep
- * the mesh grey. ui_set_ringing shows a ringing alarm or timer,
- * ui_set_timer and ui_set_stopwatch their state, ui_set_laps the
- * stopwatch's time at each lap, newest first.
+ * colours, or false to keep the mesh grey. ui_set_screen says which
+ * panel the stack has on screen, under any app. ui_set_ringing shows a
+ * ringing alarm or timer, ui_set_timer and ui_set_stopwatch their
+ * state, ui_set_laps the stopwatch's time at each lap, newest first.
  *
  * ui_next_event hands out what the user did, oldest first, one per call,
  * with its value: UI_EVENT_SETTING an enum setting toggled or an enum
@@ -148,6 +148,7 @@ void ui_set_media(const char *title, uint32_t title_len, const char *artist, uin
 void ui_app_peek(int px);
 void ui_app_peek_end(bool back);
 int ui_app_depth(void);
+void ui_set_screen(unsigned panel);
 bool ui_launcher_colors(struct ui_colors *out);
 void ui_set_launcher(int layout);
 unsigned ui_launcher_edges(void);

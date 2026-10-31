@@ -46,6 +46,9 @@ export global Face {
     in-out property <bool> peeking;
     in-out property <int> launcher;
     in-out property <float> launcher-position;
+    // The panel the screen stack has on screen, under any app: 0 the watchface, 1 the
+    // notifications, 2 Today, 3 the launcher, 5 the quick settings.
+    in-out property <int> screen;
     // Edges of the launcher leading somewhere (left, right, top, bottom as bits 0-3) and bit 4
     // while it is scrolled to its start.
     in-out property <int> launcher-edges: 4;

@@ -399,6 +399,12 @@ pub extern "C" fn ui_launcher_edges() -> u32 {
     ui.screens[LAUNCHER].global::<Face>().get_launcher_edges() as u32
 }
 
+/// Which panel the stack has on screen, under any app.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_screen(panel: u32) {
+    each(|face| face.set_screen(panel as i32));
+}
+
 /// The mesh colours of the launcher page on screen, blended between the two pages it is between;
 /// false for the layouts that keep the mesh grey.
 #[unsafe(no_mangle)]

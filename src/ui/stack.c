@@ -87,6 +87,7 @@ void stack_sleep(uint32_t now_ms)
 	stack_home();
 	app_open = open;
 	slept_t = now_ms;
+	ui_set_screen(screen);
 }
 
 void stack_wake(uint32_t now_ms)
@@ -362,6 +363,9 @@ void stack_update(uint32_t now_ms)
 		fade = fade + step < 1.0f ? fade + step : 1.0f;
 	else
 		fade = fade - step > 0.0f ? fade - step : 0.0f;
+	static unsigned shown = UI_PANELS;
+	if (screen != shown)
+		ui_set_screen(shown = screen);
 	/* The app's indicators pop out again as it goes a page in or out. */
 	if (app_open && ui_app_depth() != depth) {
 		depth = ui_app_depth();

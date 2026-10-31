@@ -55,6 +55,12 @@ export component Pager inherits TouchArea {
     callback tapped(length, length);
     callback crossed(length);
 
+    // Goes to item i at once.
+    public function jump(i: int) {
+        self.anim = 0ms;
+        self.index = i;
+    }
+
     moved => {
         if self.cross && !self.dragging && !self.crossing && Math.abs(self.across) > 10px && Math.abs(self.across) > Math.abs(self.pos - self.start) {
             self.crossing = true;
@@ -295,6 +301,13 @@ component TwoColumns {
             Face.launcher-edges = 4 + (pager.index < root.rows - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0);
         }
     }
+    // Back at the first app whenever the watchface comes back.
+    property <bool> home: Face.screen == 0;
+    changed home => {
+        if self.home && !self.preview {
+            pager.jump(0);
+        }
+    }
     changed last => {
         pager.index = self.last ? root.rows - 1 : 0;
     }
@@ -381,6 +394,13 @@ component TurboList {
     function report() {
         if !root.preview {
             Face.launcher-edges = 4 + (pager.index < Apps.list.length - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0);
+        }
+    }
+    // Back at the first app whenever the watchface comes back.
+    property <bool> home: Face.screen == 0;
+    changed home => {
+        if self.home && !self.preview {
+            pager.jump(0);
         }
     }
     changed last => {
@@ -491,6 +511,13 @@ component ThreeByThree {
     function report() {
         if !root.preview {
             Face.launcher-edges = 4 + (pager.index < root.stops - 1 ? 8 : 0) + (pager.index == 0 ? 16 : 0);
+        }
+    }
+    // Back at the first app whenever the watchface comes back.
+    property <bool> home: Face.screen == 0;
+    changed home => {
+        if self.home && !self.preview {
+            pager.jump(0);
         }
     }
     changed last => {
