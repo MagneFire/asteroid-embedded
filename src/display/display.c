@@ -11,8 +11,10 @@
 #include "asteroid.h"
 #include "display.h"
 
+#define DSI_MDP_DONE		BIT(8)
+
 struct fb fb;
-static bool cmd_mode, kicked;
+static bool cmd_mode, kicked, dsi_pending;
 static uint32_t frames, waits, timeouts;
 static void (*idle_hook)(void);
 void display_set_idle_hook(void (*fn)(void)) { idle_hook = fn; }
@@ -43,6 +45,8 @@ static void pp_wait(void)
 static void kick(void)
 {
 	dsb();
+	writel((readl(DSI_INT_CTRL) & 0x02020202) | DSI_MDP_DONE, DSI_INT_CTRL);
+	dsi_pending = true;
 	writel(CTL_FLUSH_RGB0, MDP_CTL0 + CTL_FLUSH);
 	writel(1, MDP_CTL0 + CTL_START);
 	kicked = true;
@@ -116,8 +120,107 @@ bool display_init(void)
 
 uint32_t *display_backbuffer(void) { return fb.buf[fb.back]; }
 
+/* While the screen sleeps, between frames, the display rests as the
+ * vendor's command-mode idle path leaves it: the last frame done on the
+ * DSI side too, the clock lane and data lane 0 in ultra-low-power state
+ * and the MDP and DSI clocks gated, so nothing in MDSS reads memory
+ * when the cluster powers down and XO stops. The power domain stays on
+ * and keeps the registers the bootloader set up. Waking, the bus and
+ * MDP clocks come back first, then escape, byte and pixel once the DSI
+ * PLL reports lock again; leaving ULPS takes 1 ms after clearing lane
+ * 0's PHY errors, then the lanes are forced to the stop state.
+ * display_rest says whether the cluster may power down: not while a
+ * frame is still on its way to the panel; if only the lanes refuse
+ * ULPS, the display stays clocked and the cluster may still go. */
+#define ULPS_LANES		(BIT(4) | BIT(0))
+#define CBCR_HW_CTL		BIT(1)
+#define CBCR_OFF		BIT(31)
+
+static const uint32_t mdp_clocks[] = { MDSS_AXI_CBCR, MDSS_MDP_CBCR, MDSS_MDP_LUT_CBCR, MDSS_VSYNC_CBCR };
+static const uint32_t dsi_clocks[] = { MDSS_ESC0_CBCR, MDSS_BYTE0_CBCR, MDSS_PCLK0_CBCR };
+static bool resting;
+
+static void clock_set(uint32_t cbcr, bool on)
+{
+	uint32_t v = readl(cbcr);
+	if (v & CBCR_HW_CTL)
+		log_printf("display: clock %08lx under hardware control\n", cbcr);
+	writel(on ? v | 1 : v & ~1u, cbcr);
+	for (int i = 0; !(readl(cbcr) & CBCR_OFF) != on; i++) {
+		if (i == 1000) {
+			log_printf("display: clock %08lx stuck %s, %08lx\n", cbcr, on ? "off" : "on", readl(cbcr));
+			return;
+		}
+		delay_us(1);
+	}
+}
+
+static bool pll_locked(void)
+{
+	writel(0x0d, DSI_PLL_LKDET_CFG2);
+	writel(0x0c, DSI_PLL_LKDET_CFG2);
+	delay_us(1);
+	writel(0x0d, DSI_PLL_LKDET_CFG2);
+	for (int i = 0; i < 10; i++) {
+		if (readl(DSI_PLL_STATUS) & 1)
+			return true;
+		delay_us(50);
+	}
+	return false;
+}
+
+bool display_rest(void)
+{
+	if (resting)
+		return true;
+	pp_wait();
+	uint32_t t0 = time_us();
+	while (dsi_pending && !(readl(DSI_INT_CTRL) & DSI_MDP_DONE)) {
+		if (time_us() - t0 > 100000) {
+			log_printf("display: frame not done on DSI, not resting\n");
+			return false;
+		}
+	}
+	dsi_pending = false;
+	writel(ULPS_LANES, DSI_LANE_CTRL);
+	delay_us(100);
+	if (readl(DSI_LANE_STATUS) & ULPS_LANES << 8) {
+		log_printf("display: lanes not in ULPS, status %08lx, not resting\n", readl(DSI_LANE_STATUS));
+		writel(0, DSI_LANE_CTRL);
+		return true;
+	}
+	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
+		clock_set(dsi_clocks[i], false);
+	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
+		clock_set(mdp_clocks[i], false);
+	resting = true;
+	return true;
+}
+
+void display_active(void)
+{
+	if (!resting)
+		return;
+	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
+		clock_set(mdp_clocks[i], true);
+	if (!pll_locked())
+		log_printf("display: DSI PLL not locked, status %08lx\n", readl(DSI_PLL_STATUS));
+	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
+		clock_set(dsi_clocks[i], true);
+	uint32_t err = readl(DSI_DLN0_PHY_ERR);
+	if (err & 0x011111)
+		writel(err, DSI_DLN0_PHY_ERR);
+	writel(ULPS_LANES << 8, DSI_LANE_CTRL);
+	delay_us(1000);
+	writel(ULPS_LANES << 16, DSI_LANE_CTRL);
+	writel(0, DSI_LANE_CTRL);
+	delay_us(100);
+	resting = false;
+}
+
 void display_flip(void)
 {
+	display_active();
 	uint32_t *buf = fb.buf[fb.back];
 	dcache_clean_range(buf, fb.stride * fb.height * 4);
 	pp_wait();
@@ -132,12 +235,14 @@ uint32_t display_waits(void) { return waits; }
 
 void display_set_brightness(uint8_t level)
 {
+	display_active();
 	pp_wait();
 	dsi_dcs_write(0x51, &level, 1);
 }
 
 void display_sleep(void)
 {
+	display_active();
 	pp_wait();
 	dsi_dcs_write(0x28, NULL, 0);
 	dsi_dcs_write(0x10, NULL, 0);
@@ -145,6 +250,7 @@ void display_sleep(void)
 
 void display_wake(void)
 {
+	display_active();
 	dsi_dcs_write(0x11, NULL, 0);
 	delay_ms(120);
 	dsi_dcs_write(0x29, NULL, 0);
@@ -155,6 +261,7 @@ void display_wake(void)
  * command page 0 and sends a NOP followed by 150 ms. */
 void display_idle(bool on)
 {
+	display_active();
 	static const uint8_t zero = 0;
 	pp_wait();
 	dsi_dcs_write(0xfe, &zero, 1);

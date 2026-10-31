@@ -1043,7 +1043,8 @@ void main(void)
 		}
 #endif
 		if ((!have_display || !awake) && !haptics_busy() && !screenshot_busy() && timer_ticks()) {
-			bool cluster = !awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
+			bool quiet = !have_display || awake || display_rest();
+			bool cluster = quiet && !awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
 			if (!awake)
 				cpu_clock_slow(true);
 			if (cluster) {

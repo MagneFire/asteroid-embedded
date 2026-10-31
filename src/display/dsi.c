@@ -1,7 +1,8 @@
 /* DCS commands through the DSI controller's command DMA: the packet
  * (data, data, type, flags) is read from memory, the transfer is started
  * with the software trigger and completion is the DMA-done bit in
- * INT_CTRL. Type 0x05 is a DCS short write without parameter, 0x15 with
+ * INT_CTRL, cleared before each command; the MDP-done bit is left for
+ * display_rest. Type 0x05 is a DCS short write without parameter, 0x15 with
  * one, 0x39 a long write; flag 0x80 marks the last packet. */
 #include <string.h>
 #include "asteroid.h"
@@ -29,7 +30,7 @@ int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n)
 	dcache_clean_range(packet, sizeof packet);
 	writel((uint32_t)(uintptr_t)packet, DSI_DMA_CMD_OFFSET);
 	writel(len, DSI_DMA_CMD_LENGTH);
-	writel(0x03030303, DSI_INT_CTRL);
+	writel(0x03030203, DSI_INT_CTRL);
 	writel(1, DSI_CMD_MODE_DMA_SW_TRIGGER);
 	dsb();
 	uint32_t t0 = time_us();
