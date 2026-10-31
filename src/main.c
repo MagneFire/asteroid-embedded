@@ -18,6 +18,7 @@
 #include "bt/bt.h"
 #include "notify/notify.h"
 #include "sensors/hub.h"
+#include "sensors/steps.h"
 #include "media/media.h"
 #include "weather/weather.h"
 #include "screenshot/screenshot.h"
@@ -368,7 +369,7 @@ void main(void)
 	pmic_usb_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
-	bool have_hub = hub_init();
+	bool have_hub = hub_init(), steps_awake = false;
 	power_init(have_display, have_ui, have_hub);
 	console_init();
 	usb_init("asteroid-" BOARD_NAME);
@@ -402,6 +403,8 @@ void main(void)
 		if (bt_start_t && now - bt_start_t < 0x80000000u) {
 			bt_start_t = 0;
 			weather_load();
+			if (have_hub)
+				steps_init();
 			if (setting_get(SETTING_BLUETOOTH))
 				bluetooth_start();
 			if (have_display)
@@ -418,6 +421,9 @@ void main(void)
 			hub_poll();
 			if (hub_tilted() && !power_awake() && setting_get(SETTING_TILT))
 				power_request(false);
+			if (steps_awake && !power_awake())
+				steps_save();
+			steps_awake = power_awake();
 		}
 		if (have_haptics)
 			haptics_poll();
@@ -685,6 +691,8 @@ void main(void)
 				snprintf(addr_text, sizeof addr_text, "%02X:%02X:%02X:%02X:%02X:%02X", addr[5], addr[4], addr[3],
 					 addr[2], addr[1], addr[0]);
 			ui_set_info(addr_text, now / 1000);
+			if (have_hub)
+				steps_poll();
 			power_tick();
 			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 		}

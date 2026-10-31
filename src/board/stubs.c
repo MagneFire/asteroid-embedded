@@ -20,6 +20,10 @@ WEAK bool haptics_busy(void) { return false; }
 WEAK bool hub_init(void) { return false; }
 WEAK void hub_poll(void) {}
 WEAK int hub_send(const uint8_t *p, unsigned n) { return -1; }
+WEAK void hub_set_time(void) {}
+WEAK uint32_t hub_steps(void) { return HUB_NONE; }
+WEAK void hub_heart_rate_on(bool on) {}
+WEAK uint32_t hub_heart_rate(uint8_t *status) { return HUB_NONE; }
 WEAK bool hub_tilted(void) { return false; }
 WEAK bool hub_can_sleep(void) { return true; }
 WEAK void hub_sleep(bool asleep) {}

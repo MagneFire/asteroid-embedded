@@ -12,7 +12,10 @@
  * while 65 is high and for a while after, until the message is in. The
  * sensors only start with their calibration set, which comes from the
  * nvdata partition: the accelerometer offsets as three int16 and the
- * pressure offset as text. */
+ * pressure offset as text. The MCU is then given the time in UTC
+ * milliseconds and its step counter started; the count is lost while the
+ * AP sleeps, so it is flushed on every wake. Heart rate runs on request:
+ * the MCU sends the rate in bpm with an accuracy status. */
 #include <string.h>
 #include "asteroid.h"
 #include "hub.h"
@@ -38,15 +41,21 @@
 
 enum { CH_CONTROL, CH_SERVICE, CH_LOG = 4 };
 enum { T_REQUEST, T_RESPONSE, T_EVENT };
+#define TAG_TIME	0x0c
 #define TAG_VERSION	0x0f
+#define TAG_STEPS	0x30
+#define TAG_HEART_RATE	0x32
 #define TAG_WRIST_TILT	0x33
 #define CMD_ACTIVATE	0x00
+#define CMD_DEACTIVATE	0x01
+#define CMD_SET_TIME	0x01
 #define CMD_BATCH	0x03
+#define CMD_FLUSH	0x04
 #define CMD_PARAMETER	0x13
 #define TILT_PERIOD_MS	10
 #define CMD_EVENT	0x10
 
-enum state { S_OFF, S_BOOT, S_VERSION, S_HANDSHAKE, S_PARAMETER, S_TILT, S_TILT_BATCH, S_READY, S_FAILED };
+enum state { S_OFF, S_BOOT, S_VERSION, S_HANDSHAKE, S_PARAMETER, S_TILT, S_TILT_BATCH, S_TIME, S_STEPS, S_READY, S_FAILED };
 
 static enum state state;
 static uint32_t state_t;
@@ -66,6 +75,19 @@ static uint8_t parameters[][8] = {
 	{ 0x10, 6 }, { 0x16, 4 }, { 0x17, 4, 5 }, { 0x11, 4 },
 };
 static uint32_t tilts;
+static uint32_t steps = HUB_NONE, heart_rate = HUB_NONE;
+static uint8_t heart_status;
+static bool heart_on;
+
+static void time_request(uint8_t *m)
+{
+	uint64_t ms = (uint64_t)pmic_rtc_read() * 1000;
+	m[0] = CH_SERVICE;
+	m[1] = T_REQUEST;
+	m[2] = TAG_TIME;
+	m[3] = CMD_SET_TIME;
+	memcpy(m + 4, &ms, sizeof ms);
+}
 
 static uint16_t crc16(const uint8_t *p, unsigned n)
 {
@@ -154,8 +176,16 @@ static void request(void)
 	}
 	else if (state == S_TILT)
 		send(tilt_on, sizeof tilt_on);
-	else
+	else if (state == S_TILT_BATCH)
 		send(tilt_batch, sizeof tilt_batch);
+	else if (state == S_TIME) {
+		uint8_t m[12];
+		time_request(m);
+		send(m, sizeof m);
+	} else {
+		static const uint8_t steps_on[] = { CH_SERVICE, T_REQUEST, TAG_STEPS, CMD_ACTIVATE };
+		send(steps_on, sizeof steps_on);
+	}
 	tries++;
 	state_t = time_ms();
 }
@@ -229,7 +259,35 @@ static void frame(const uint8_t *p, unsigned n)
 	if (state == S_TILT_BATCH && n >= 5 && p[0] == CH_SERVICE && p[1] == T_RESPONSE && p[2] == TAG_WRIST_TILT &&
 	    p[3] == CMD_BATCH) {
 		log_printf("hub: wrist tilt every %u ms (%u)\n", TILT_PERIOD_MS, p[4]);
+		enter(S_TIME);
+		request();
+		return;
+	}
+	if (state == S_TIME && n >= 5 && p[0] == CH_SERVICE && p[1] == T_RESPONSE && p[2] == TAG_TIME &&
+	    p[3] == CMD_SET_TIME) {
+		log_printf("hub: time set (%u)\n", p[4]);
+		enter(S_STEPS);
+		request();
+		return;
+	}
+	if (state == S_STEPS && n >= 5 && p[0] == CH_SERVICE && p[1] == T_RESPONSE && p[2] == TAG_STEPS &&
+	    p[3] == CMD_ACTIVATE) {
+		log_printf("hub: step counter %s (%u)\n", p[4] ? "failed" : "on", p[4]);
 		enter(S_READY);
+		return;
+	}
+	if (n >= 8 && p[0] == CH_SERVICE && p[1] == T_EVENT && p[2] == TAG_STEPS && p[3] == CMD_EVENT) {
+		memcpy(&steps, p + n - 4 - (n - 4) % 4, 4);
+		return;
+	}
+	if (n >= 9 && p[0] == CH_SERVICE && p[1] == T_EVENT && p[2] == TAG_HEART_RATE && p[3] == CMD_EVENT) {
+		memcpy(&heart_rate, p + 4, 4);
+		heart_status = p[8];
+		return;
+	}
+	if (state == S_READY && n >= 4 && p[0] == CH_SERVICE && p[1] == T_RESPONSE) {
+		if (n >= 5 && p[3] != CMD_FLUSH && p[4])
+			log_printf("hub: tag %02x command %02x failed (%u)\n", p[2], p[3], p[4]);
 		return;
 	}
 	if (n >= 4 && p[0] == CH_SERVICE && p[1] == T_EVENT && p[2] == TAG_WRIST_TILT && p[3] == CMD_EVENT) {
@@ -296,11 +354,12 @@ void hub_poll(void)
 	if (state == S_BOOT && now - state_t >= BOOT_MS) {
 		enter(S_VERSION);
 		request();
-	} else if (state >= S_VERSION && state <= S_TILT_BATCH && now - state_t >= REPLY_MS) {
+	} else if (state >= S_VERSION && state <= S_STEPS && now - state_t >= REPLY_MS) {
 		if (tries == TRIES) {
 			log_printf("hub: no %s reply, mcu status %u\n",
 				   state == S_VERSION ? "version" : state == S_HANDSHAKE ? "handshake" :
-				   state == S_PARAMETER ? "parameter" : "wrist tilt",
+				   state == S_PARAMETER ? "parameter" : state == S_TIME ? "time" :
+				   state == S_STEPS ? "step counter" : "wrist tilt",
 				   tlmm_get(GPIO_MCU_STATUS));
 			enter(S_FAILED);
 		} else {
@@ -312,6 +371,35 @@ void hub_poll(void)
 int hub_send(const uint8_t *p, unsigned n)
 {
 	return state == S_READY ? send(p, n) : -1;
+}
+
+void hub_set_time(void)
+{
+	uint8_t m[12];
+	time_request(m);
+	hub_send(m, sizeof m);
+}
+
+uint32_t hub_steps(void)
+{
+	return steps;
+}
+
+void hub_heart_rate_on(bool on)
+{
+	uint8_t m[] = { CH_SERVICE, T_REQUEST, TAG_HEART_RATE, on ? CMD_ACTIVATE : CMD_DEACTIVATE };
+	if (on == heart_on || hub_send(m, sizeof m))
+		return;
+	heart_on = on;
+	heart_rate = HUB_NONE;
+	log_printf("hub: heart rate %s\n", on ? "on" : "off");
+}
+
+uint32_t hub_heart_rate(uint8_t *status)
+{
+	if (status)
+		*status = heart_status;
+	return heart_on ? heart_rate : HUB_NONE;
 }
 
 bool hub_tilted(void)
@@ -334,15 +422,21 @@ void hub_sleep(bool asleep)
 		wake_t = time_ms();
 		mcu_wakes++;
 	}
+	if (!asleep && state == S_READY) {
+		static const uint8_t flush[] = { CH_SERVICE, T_REQUEST, TAG_STEPS, CMD_FLUSH };
+		send(flush, sizeof flush);
+	}
 }
 
 void hub_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[] = { "off", "booting", "version", "handshake", "parameter", "wrist tilt",
-					     "tilt batch", "ready", "failed" };
+					     "tilt batch", "time", "step counter", "ready", "failed" };
 	uint32_t rxb, txb, err;
 	uart_dm_stats(UART, &rxb, &txb, &err);
 	say("hub: %s, version %s, %lu tilts, %lu mcu wakes, %lu frames, %lu bad, uart %lu/%lu/%lu, mcu status %u wake %u\n",
 	    names[state], version[0] ? version : "?", tilts, mcu_wakes, frames, bad_frames, rxb, txb, err, tlmm_get(GPIO_MCU_STATUS),
 	    tlmm_get(GPIO_MCU_WAKE));
+	say("hub: steps %ld, heart rate %s %ld status %u\n", steps == HUB_NONE ? -1L : (long)steps, heart_on ? "on" : "off",
+	    heart_rate == HUB_NONE ? -1L : (long)heart_rate, heart_status);
 }

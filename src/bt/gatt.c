@@ -7,6 +7,7 @@
  * 20-byte notifications, paced by the free mbufs from bt_poll. */
 #include <string.h>
 #include "asteroid.h"
+#include "sensors/hub.h"
 #include "host/ble_hs.h"
 #include "bt.h"
 #include "notify/notify.h"
@@ -73,6 +74,7 @@ static int set_time(const uint8_t *p, unsigned n)
 		return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
 	uint32_t secs = epoch_from_civil(&c);
 	pmic_rtc_write(secs);
+	hub_set_time();
 	log_printf("bt: time set to %04lu-%02lu-%02lu %02lu:%02lu:%02lu (rtc %lu)\n", c.year, c.month, c.day, c.hour,
 		   c.minute, c.second, secs);
 	return 0;
