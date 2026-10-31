@@ -1,5 +1,8 @@
 /* User settings, one byte each in the key-value store under their own
- * key, read on first use. Changing one only stores it; main applies it. */
+ * key, read on first use. Changing one only marks it; main applies it,
+ * and settings_poll writes the changed ones to the store once they have
+ * been quiet for FLUSH_MS (a brightness drag is many changes), or
+ * settings_flush right away before a sleep or a reboot. */
 #include "asteroid.h"
 #include "storage/storage.h"
 
@@ -25,8 +28,12 @@ static const struct {
 	[SETTING_CINEMA_AOD] = { "cinema.aod", 1 },
 };
 
+#define FLUSH_MS 2000
+
 static uint8_t values[SETTINGS];
 static bool loaded;
+static uint32_t dirty, last_set;
+_Static_assert(SETTINGS <= 32, "dirty mask too small");
 
 const char *setting_name(enum setting s)
 {
@@ -47,6 +54,24 @@ int setting_get(enum setting s)
 void setting_set(enum setting s, int v)
 {
 	setting_get(s);
+	if (values[s] == (uint8_t)v)
+		return;
 	values[s] = (uint8_t)v;
-	kv_set(table[s].key, &values[s], 1);
+	dirty |= 1u << s;
+	last_set = time_ms();
+}
+
+void settings_flush(void)
+{
+	for (unsigned i = 0; dirty && i < SETTINGS; i++)
+		if (dirty & 1u << i) {
+			dirty &= ~(1u << i);
+			kv_set(table[i].key, &values[i], 1);
+		}
+}
+
+void settings_poll(uint32_t now)
+{
+	if (dirty && now - last_set >= FLUSH_MS)
+		settings_flush();
 }

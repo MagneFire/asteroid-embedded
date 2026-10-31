@@ -58,6 +58,8 @@ enum setting {
 };
 int setting_get(enum setting s);
 void setting_set(enum setting s, int v);
+void settings_flush(void);	/* write changed settings to the store now */
+void settings_poll(uint32_t now);	/* write them once they have been quiet for a while */
 const char *setting_name(enum setting s);
 void settings_changed(void);
 

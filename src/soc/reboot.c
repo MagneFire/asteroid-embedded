@@ -17,6 +17,7 @@ void dload_clear(void)
 
 void reboot(void)
 {
+	settings_flush();
 	irq_disable();
 	dload_clear();
 	scm_wdog_debug_disable();

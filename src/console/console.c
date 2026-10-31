@@ -162,6 +162,7 @@ static void cmd_set(const char *args)
 				return;
 			}
 			setting_set((enum setting)i, (int)v);
+			settings_flush();
 			settings_changed();
 		}
 		say("%s %d\n", name, setting_get((enum setting)i));
@@ -173,9 +174,11 @@ static void cmd_set(const char *args)
 
 static void cmd_aod(const char *args)
 {
-	if (!strcmp(args, "on") || !strcmp(args, "off"))
+	if (!strcmp(args, "on") || !strcmp(args, "off")) {
 		setting_set(SETTING_AOD, !strcmp(args, "on"));
-	else if (*args)
+		settings_flush();
+		settings_changed();
+	} else if (*args)
 		say("usage: aod [on|off]\n");
 	say("aod %s\n", setting_get(SETTING_AOD) ? "on" : "off");
 }

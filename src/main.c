@@ -846,6 +846,7 @@ void main(void)
 			weather_seen = weather_serial();
 			show_weather();
 		}
+		settings_poll(now);
 		if (console_settings) {
 			console_settings = false;
 			if (have_display)
@@ -870,6 +871,7 @@ void main(void)
 				log_printf("alarm: %s\n", ring_timer ? "dismissed" : "snoozed");
 				ringing = false;
 			}
+			settings_flush();
 			ambient = have_ui && setting_get(nightstand_on() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
 			if (!ambient)
 				display_sleep();
