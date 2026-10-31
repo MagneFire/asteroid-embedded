@@ -29,6 +29,7 @@
 const char build_id[] = GITREV;
 
 #define SLEEP_AFTER_MS 10000
+#define CHARGER_WAKE_MS 3000
 #define RING_MS 30000
 #define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
@@ -542,6 +543,7 @@ void main(void)
 		log_set_sink(sink_fbcon);
 	tlmm_irq_init();
 	pmic_power_key_irq_init();
+	pmic_usb_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
 	bool have_hub = hub_init();
@@ -554,6 +556,7 @@ void main(void)
 	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
 	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
 	bool sleep_request = false, wake_request = false, gpu_off = false;
+	bool charger_wake = false;
 	bool key_was = false, awake = true, woke = false, ringing = false, ring_timer = false, sw_running = false;
 	static uint32_t lap_ms[LAPS];
 	uint32_t alarm_t = 0, ring_t = 0, timer_set = 300000, timer_left = 300000, timer_end = 0, sw_acc = 0, sw_start = 0;
@@ -632,6 +635,15 @@ void main(void)
 			dot_y = t.y;
 		}
 		pmic_power_key_irq();
+		/* A cable plugged in shows the screen for CHARGER_WAKE_MS, as
+		 * mce does. */
+		if (pmic_usb_irq() && pmic_usb_present()) {
+			log_printf("usb: cable plugged in\n");
+			if (!awake)
+				charger_wake = true;
+			else if (now - last_activity > SLEEP_AFTER_MS - CHARGER_WAKE_MS)
+				last_activity = now - (SLEEP_AFTER_MS - CHARGER_WAKE_MS);
+		}
 		bool key = pmic_power_key();
 		if (key != key_was) {
 			key_was = key;
@@ -848,6 +860,11 @@ void main(void)
 			wake_request |= console_wake && !awake;
 			console_sleep = console_wake = false;
 		}
+		/* The short charger wake only when nothing else wakes the watch. */
+		if (charger_wake && !awake && !wake_request)
+			wake_request = true;
+		else
+			charger_wake = false;
 		if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 			if (ringing) {
 				if (!ring_timer)
@@ -897,6 +914,9 @@ void main(void)
 			awake = true;
 			asleep_ms += now - asleep_t;
 			last_activity = now = time_ms();
+			if (charger_wake)
+				last_activity -= SLEEP_AFTER_MS - CHARGER_WAKE_MS;
+			charger_wake = false;
 			last_clock = 0;
 			woke = true;
 			if (have_ui)

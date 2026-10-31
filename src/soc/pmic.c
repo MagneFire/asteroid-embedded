@@ -72,13 +72,25 @@ bool pmic_power_key(void)
 #define PON_INT_EN_SET		0x000815
 #define PON_KPDPWR		BIT(0)
 
-static int pon_apid = -1;
-static volatile bool key_irq;
+static int pon_apid = -1, usb_apid = -1;
+static volatile bool key_irq, usb_irq;
 
+/* The power key and the USB path share the PMIC's interrupt line; each
+ * is masked until the main loop has handled it. One that comes with
+ * neither status bit set masks both. */
 static void spmi_periph_irq(void)
 {
-	spmi_irq_enable(pon_apid, false);
-	key_irq = true;
+	bool key = pon_apid >= 0 && spmi_irq_status(pon_apid), usb = usb_apid >= 0 && spmi_irq_status(usb_apid);
+	if (key || !usb) {
+		if (pon_apid >= 0)
+			spmi_irq_enable(pon_apid, false);
+		key_irq = true;
+	}
+	if (usb || !key) {
+		if (usb_apid >= 0)
+			spmi_irq_enable(usb_apid, false);
+		usb_irq = usb_apid >= 0;
+	}
 }
 
 void pmic_power_key_irq_init(void)
@@ -379,6 +391,42 @@ bool pmic_charging(void)
 bool pmic_usb_present(void)
 {
 	return pmic_read(SMBB_USB + SMBB_RT_STS) & USB_RT_VALID;
+}
+
+/* The USB path's valid interrupt on its rising edge only, so a cable
+ * plugged in wakes the watch from its deepest sleep too. */
+#define USB_INT_SET_TYPE	(SMBB_USB + 0x11)
+#define USB_INT_POLARITY_HIGH	(SMBB_USB + 0x12)
+#define USB_INT_POLARITY_LOW	(SMBB_USB + 0x13)
+#define USB_INT_LATCHED_CLR	(SMBB_USB + 0x14)
+#define USB_INT_EN_SET		(SMBB_USB + 0x15)
+
+void pmic_usb_irq_init(void)
+{
+	usb_apid = spmi_apid(0, SMBB_USB >> 8);
+	if (usb_apid < 0) {
+		log_printf("pmic: no interrupt mapping for USB\n");
+		return;
+	}
+	pmic_write(USB_INT_SET_TYPE, pmic_read(USB_INT_SET_TYPE) | USB_RT_VALID);
+	pmic_write(USB_INT_POLARITY_HIGH, pmic_read(USB_INT_POLARITY_HIGH) | USB_RT_VALID);
+	pmic_write(USB_INT_POLARITY_LOW, pmic_read(USB_INT_POLARITY_LOW) & ~USB_RT_VALID);
+	pmic_write(USB_INT_LATCHED_CLR, USB_RT_VALID);
+	pmic_write(USB_INT_EN_SET, USB_RT_VALID);
+	spmi_irq_clear(usb_apid, spmi_irq_status(usb_apid));
+	spmi_irq_enable(usb_apid, true);
+}
+
+/* Whether the USB interrupt fired since the last call. */
+bool pmic_usb_irq(void)
+{
+	if (!usb_irq)
+		return false;
+	usb_irq = false;
+	pmic_write(USB_INT_LATCHED_CLR, USB_RT_VALID);
+	spmi_irq_clear(usb_apid, spmi_irq_status(usb_apid));
+	spmi_irq_enable(usb_apid, true);
+	return true;
 }
 
 int pmic_battery_status(void)

@@ -154,6 +154,8 @@ int pmic_iadc_gain(void);
 const char *pmic_charger_status(void);
 bool pmic_charging(void);
 bool pmic_usb_present(void);
+void pmic_usb_irq_init(void);
+bool pmic_usb_irq(void);
 enum { BAT_DISCHARGING, BAT_CHARGING, BAT_FULL };
 int pmic_battery_status(void);
 int32_t pmic_battery_ua(void);
