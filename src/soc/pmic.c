@@ -15,6 +15,7 @@
 #define PON_PS_HOLD_RESET_CTL	0x00085a
 #define PON_PS_HOLD_RESET_CTL2	0x00085b
 #define RESET_TYPE_WARM		0x1
+#define RESET_TYPE_SHUTDOWN	0x4
 #define S2_RESET_EN		BIT(7)
 #define SMPS2_MODE		0x011745
 #define SMPS_MODE_AUTO		0x40
@@ -41,6 +42,16 @@ void pmic_init(void)
 }
 
 const char *pmic_pon_reason(void) { return reason; }
+
+/* Makes the next PS_HOLD drop power the watch off instead of resetting
+ * it; the power key, or a charger, turns it back on. */
+void pmic_shutdown_mode(void)
+{
+	pmic_write(PON_PS_HOLD_RESET_CTL2, 0);
+	delay_us(300);
+	pmic_write(PON_PS_HOLD_RESET_CTL, RESET_TYPE_SHUTDOWN);
+	pmic_write(PON_PS_HOLD_RESET_CTL2, S2_RESET_EN);
+}
 
 /* Power key: the PON block's real-time status, bit 0 = KPDPWR_N low. */
 #define PON_INT_RT_STS		0x000810

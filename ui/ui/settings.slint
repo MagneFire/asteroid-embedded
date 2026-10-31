@@ -2,15 +2,15 @@
 // slides in from the right. The pages are the ones the firmware has settings for: Display
 // (brightness, always on, burn-in protection, tilt and tap to wake), Nightstand (with its
 // brightness, delay and always on), Watchface and Launcher pickers, Time and Date, Units (12 hour
-// clock, Fahrenheit), Bluetooth (on/off, connection, forgetting the phone) and About. Rows call
-// setting-toggled with the firmware's enum setting, 34 to forget the paired phone, 35 + n to pick
-// watchface n and 48 + n to pick launcher n, setting-set with an enum setting and its value,
-// brightness-set with a brightness in per cent, and time-set and date-set with the time or date
-// set.
+// clock, Fahrenheit), Bluetooth (on/off, connection, forgetting the phone), Power (off, reboot)
+// and About. Rows call setting-toggled with the firmware's enum setting, 34 to forget the paired
+// phone, 35 + n to pick watchface n, 48 + n to pick launcher n, 39 to reboot and 40 to power off,
+// setting-set with an enum setting and its value, brightness-set with a brightness in per cent,
+// and time-set and date-set with the time or date set.
 import { Face, Watchface } from "face.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
-import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton } from "controls.slint";
+import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton, Remorse } from "controls.slint";
 
 // A 60 px check badge with a soft shadow, as the pickers mark the current choice.
 component Check {
@@ -36,7 +36,7 @@ component Check {
 
 export component SettingsApp {
     // 0 the list, then 1 Display, 2 Nightstand, 3 Watchface, 4 Launcher, 5 Units, 6 Bluetooth,
-    // 7 About, 8 Time, 9 Date.
+    // 7 About, 8 Time, 9 Date, 10 Power.
     in-out property <int> page;
     property <int> back: Face.back-count;
 
@@ -100,6 +100,7 @@ export component SettingsApp {
                     { icon: @image-url("../icons/ios-date-outline.svg"), title: "Date", page: 9 },
                     { icon: @image-url("../icons/ios-units-outline.svg"), title: "Units", page: 5 },
                     { icon: @image-url("../icons/ios-bluetooth-outline.svg"), title: "Bluetooth", page: 6 },
+                    { icon: @image-url("../icons/ios-power-outline.svg"), title: "Power", page: 10 },
                     { icon: @image-url("../icons/ios-help-circle-outline.svg"), title: "About", page: 7 },
                 ]: ListItem {
                     icon: item.icon;
@@ -539,6 +540,34 @@ export component SettingsApp {
         PageHeader {
             text: "Date";
         }
+    }
+
+    // PowerPage: Power Off and Reboot rows, each after a 3 s countdown that a tap cancels
+    // (RemorseTimer). A reboot ends in the bootloader's fastboot, as the firmware is booted from
+    // there.
+    if root.page == 10: Page {
+        VerticalLayout {
+            y: 80px;
+            height: self.preferred-height;
+
+            for item[i] in [
+                { icon: @image-url("../icons/ios-power-outline.svg"), title: "Power Off", action: 40 },
+                { icon: @image-url("../icons/ios-sync.svg"), title: "Reboot", action: 39 },
+            ]: ListItem {
+                icon: item.icon;
+                title: item.title;
+                clicked => {
+                    remorse.action = item.title;
+                    remorse.code = item.action;
+                }
+            }
+        }
+
+        PageHeader {
+            text: "Power";
+        }
+
+        remorse := Remorse { }
     }
 
     if root.page == 7: Page {

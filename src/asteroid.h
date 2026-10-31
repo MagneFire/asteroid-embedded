@@ -140,6 +140,7 @@ void spmi_irq_clear(int apid, uint32_t bits);
 uint8_t pmic_read(uint32_t addr);
 void pmic_write(uint32_t addr, uint8_t val);
 void pmic_init(void);
+void pmic_shutdown_mode(void);
 const char *pmic_pon_reason(void);
 bool pmic_power_key(void);
 void pmic_power_key_irq_init(void);

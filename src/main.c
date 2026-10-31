@@ -300,6 +300,11 @@ static void setting_toggled(int s)
 		power_request(true);
 	} else if (s == UI_OPEN_SETTINGS) {
 		open_app(UI_APP_SETTINGS);
+	} else if (s == UI_REBOOT || s == UI_POWER_OFF) {
+		log_printf("%s\n", s == UI_REBOOT ? "rebooting" : "powering off");
+		if (s == UI_POWER_OFF)
+			pmic_shutdown_mode();
+		reboot();
 	} else if (s == UI_FORGET_PHONE) {
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 	} else if (s == SETTING_BLUETOOTH) {
