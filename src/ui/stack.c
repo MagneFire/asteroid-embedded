@@ -47,6 +47,8 @@ static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] 
 static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
 static unsigned launcher;
+static const uint32_t *layers;
+static uint32_t layer_px;
 static int W, H, fx, fy, from_x, from_y, off, from_off, peek;
 static unsigned screen, gesture;
 static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back, opening;
@@ -61,10 +63,12 @@ static int rest_y(unsigned s) { return s == UI_PANEL_BOTTOM ? -H : s == UI_PANEL
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int absi(int v) { return v < 0 ? -v : v; }
 
-void stack_init(uint32_t width, uint32_t height)
+void stack_init(uint32_t width, uint32_t height, const uint32_t *layer_base, uint32_t panel_px)
 {
 	W = width;
 	H = height;
+	layers = layer_base;
+	layer_px = panel_px;
 	stack_home();
 }
 
@@ -437,7 +441,7 @@ void stack_update(uint32_t now_ms)
  * part of it. */
 void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
-	const uint32_t *px = (const uint32_t *)(uintptr_t)(UI_LAYER_BASE + panel * UI_LAYER_STRIDE);
+	const uint32_t *px = layers + panel * layer_px;
 	for (uint32_t b = y / BAND; b < BANDS && b * BAND < y + h && b * BAND < (uint32_t)H; b++) {
 		uint32_t r0 = b * BAND, r1 = r0 + BAND < (uint32_t)H ? r0 + BAND : (uint32_t)H;
 		bool whole = x == 0 && w >= (uint32_t)W && y <= r0 && y + h >= r1;
@@ -488,7 +492,7 @@ static void layer(unsigned panel, int x, int y, float alpha)
 		else
 			parts[n++] = (struct gpu_rect){ x0, b * BAND, x1 - x0, r1 - b * BAND };
 	}
-	gpu_draw_layer_parts(UI_LAYER_BASE + panel * UI_LAYER_STRIDE, W, H, fb.stride * 4, x, y, alpha, parts, n);
+	gpu_draw_layer_parts((uint32_t)(uintptr_t)(layers + panel * layer_px), W, H, fb.stride * 4, x, y, alpha, parts, n);
 }
 
 /* Towards the launcher the mesh takes the launcher's colours instead of

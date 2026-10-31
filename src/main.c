@@ -356,7 +356,7 @@ void main(void)
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
 					       fb.width, fb.height);
 	if (have_ui) {
-		stack_init(fb.width, fb.height);
+		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
 		for (unsigned p = 0; p < UI_PANELS; p++)
 			dcache_clean_range(layers + p * (UI_LAYER_STRIDE / 4), fb.stride * fb.height * 4);
 	}

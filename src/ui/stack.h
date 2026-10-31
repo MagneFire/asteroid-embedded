@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void stack_init(uint32_t width, uint32_t height);
+void stack_init(uint32_t width, uint32_t height, const uint32_t *layers, uint32_t layer_px);
 void stack_touch(int kind, int x, int y, uint32_t now_ms);
 void stack_update(uint32_t now_ms);
 void stack_compose(void (*background)(int x, int y, float alpha));

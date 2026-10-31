@@ -8,6 +8,8 @@
 #include "stubs.h"
 #include "storage/storage.h"
 #include "ui/ui.h"
+#include "display/display.h"
+#include "gpu/draw.h"
 
 const char build_id[] = "hosttest";
 uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
@@ -69,6 +71,22 @@ void media_write(uint16_t chr, const uint8_t *p, unsigned n) {}
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_save(const uint8_t addr[6]) { return -1; }
+
+struct fb fb;
+__attribute__((weak)) void ui_touch(uint32_t panel, int kind, int x, int y) {}
+__attribute__((weak)) bool ui_modal(void) { return false; }
+__attribute__((weak)) void ui_app_peek(int px) {}
+__attribute__((weak)) void ui_app_peek_end(bool back) {}
+__attribute__((weak)) int ui_app_depth(void) { return 0; }
+__attribute__((weak)) void ui_set_screen(unsigned panel) {}
+__attribute__((weak)) unsigned ui_launcher_edges(void) { return 0; }
+__attribute__((weak)) unsigned ui_notes_edges(void) { return 0; }
+__attribute__((weak)) void ui_set_app(int app) {}
+__attribute__((weak)) void ui_hide_notification(void) {}
+__attribute__((weak)) void *gpu_alloc(uint32_t size, uint32_t align) { return NULL; }
+__attribute__((weak)) void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha) {}
+__attribute__((weak)) void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
+						  const struct gpu_rect *parts, unsigned n) {}
 
 void reboot(void)
 {
