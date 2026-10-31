@@ -240,6 +240,11 @@ usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *count)
  * full there; commands run from the main loop, where it can wait. */
 static bool cdc_in_cb;
 
+static size_t cdc_room(void *ctx)
+{
+	return tud_cdc_write_available();
+}
+
 static void cdc_out(const char *s, size_t n, void *ctx)
 {
 	while (n) {
@@ -272,7 +277,7 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
 	cdc_in_cb = true;
 	if (dtr)
-		console_attach(cdc_out, NULL, true);
+		console_attach(cdc_out, cdc_room, NULL, true);
 	else
 		console_detach();
 	cdc_in_cb = false;

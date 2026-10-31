@@ -22,6 +22,10 @@ struct zone {
 static char previous[RECORD_CAP + 1];
 static bool have_previous;
 static void (*sink)(const char *s, size_t n);
+/* Bytes put in the console ring since boot, counting those it held then:
+ * the positions log_read works with, which keep their meaning while the
+ * ring wraps. */
+static uint32_t written;
 
 static void console_put(char c)
 {
@@ -30,6 +34,7 @@ static void console_put(char c)
 	z->start = (z->start + 1) % CONSOLE_CAP;
 	if (z->size < CONSOLE_CAP)
 		z->size++;
+	written++;
 }
 
 void log_init(void)
@@ -40,6 +45,7 @@ void log_init(void)
 		z->start = 0;
 		z->size = 0;
 	}
+	written = z->size;
 	volatile struct zone *r = RECORD;
 	if (r->sig == SIG && r->size > 0 && r->size <= RECORD_CAP) {
 		for (uint32_t i = 0; i < r->size; i++)
@@ -102,13 +108,22 @@ void log_record(const char *text)
 	dsb();
 }
 
-void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
+uint32_t log_end(void)
+{
+	return written;
+}
+
+/* Where the last `lines` lines start. */
+uint32_t log_lines_from(unsigned lines)
 {
 	volatile struct zone *z = CONSOLE;
-	uint32_t size = z->size, base = (z->start + CONSOLE_CAP - size) % CONSOLE_CAP, from = 0;
+	uint32_t flags = irq_save();
+	uint32_t size = z->size, base = (z->start + CONSOLE_CAP - size) % CONSOLE_CAP, end = written;
+	irq_restore(flags);
+	uint32_t from = 0;
 	unsigned seen = 0;
 	if (!lines)
-		return;
+		return end;
 	for (uint32_t i = size; i-- > 0;) {
 		if (!(i % 4096))
 			wdt_feed();
@@ -117,16 +132,27 @@ void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), v
 			break;
 		}
 	}
-	char buf[128];
+	return end - size + from;
+}
+
+/* Copies up to max bytes from *pos towards end and moves *pos on; what
+ * was overwritten since *pos was taken is skipped. */
+size_t log_read(uint32_t *pos, uint32_t end, char *buf, size_t max)
+{
+	volatile struct zone *z = CONSOLE;
+	uint32_t flags = irq_save();
+	uint32_t size = z->size, start = z->start, w = written;
+	if (w - *pos > size)
+		*pos = w - size;
+	if (end - *pos > w - *pos)
+		*pos = end;
 	size_t n = 0;
-	for (uint32_t i = from; i < size; i++) {
-		buf[n++] = (char)z->data[(base + i) % CONSOLE_CAP];
-		if (n == sizeof buf || i + 1 == size) {
-			wdt_feed();
-			out(buf, n, ctx);
-			n = 0;
-		}
+	while (n < max && *pos != end && *pos != w) {
+		buf[n++] = (char)z->data[(start + CONSOLE_CAP - (w - *pos)) % CONSOLE_CAP];
+		(*pos)++;
 	}
+	irq_restore(flags);
+	return n;
 }
 
 void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)

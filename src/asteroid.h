@@ -194,7 +194,9 @@ void log_record(const char *text);
 const char *log_previous_record(void);
 void log_set_sink(void (*fn)(const char *s, size_t n));
 void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
-void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
+uint32_t log_end(void);
+uint32_t log_lines_from(unsigned lines);
+size_t log_read(uint32_t *pos, uint32_t end, char *buf, size_t max);
 
 /* display (see display/display.h) */
 void fbcon_puts(const char *s);

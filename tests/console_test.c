@@ -18,13 +18,15 @@ static void collect(const char *s, size_t n, void *ctx)
 }
 
 static void *done_ctx;
+static size_t room_left = 5;
+static size_t small_room(void *ctx) { return room_left; }
 static void exec_done(void *ctx) { done_ctx = ctx; }
 
 static const char *run(const char *line)
 {
 	out_len = 0;
 	out[0] = 0;
-	console_exec(line, collect, NULL, NULL);
+	console_exec(line, collect, NULL, NULL, NULL);
 	console_poll();
 	return out;
 }
@@ -66,6 +68,53 @@ int main(void)
 	CHECK(strstr(out, "charger discharging\n"));
 
 	CHECK(!strcmp(run("log 2"), "line two\nline three\n"));
+
+	/* A sink that takes 5 bytes a pass gets the log over several passes,
+	 * the console busy meanwhile, and done once it is all out. */
+	out_len = 0;
+	out[0] = 0;
+	done_ctx = NULL;
+	CHECK(console_exec("log 3", collect, small_room, &out_len, exec_done));
+	int passes = 0;
+	while (!done_ctx && passes < 100) {
+		console_poll();
+		passes++;
+		if (!done_ctx)
+			CHECK(!console_exec("echo busy", collect, NULL, NULL, NULL));
+	}
+	CHECK(!strcmp(out, "line one\nline two\nline three\n"));
+	CHECK(passes == 6 && done_ctx == &out_len);
+	done_ctx = NULL;
+
+	/* No room holds the output back without losing any; no room for 2 s
+	 * ends the command; a cancel ends it without done. */
+	out_len = 0;
+	out[0] = 0;
+	CHECK(console_exec("log 3", collect, small_room, &out_len, exec_done));
+	console_poll();
+	room_left = 0;
+	console_poll();
+	console_poll();
+	CHECK(!strcmp(out, "line ") && !done_ctx);
+	room_left = 5;
+	while (!done_ctx && passes++ < 200)
+		console_poll();
+	CHECK(!strcmp(out, "line one\nline two\nline three\n"));
+	done_ctx = NULL;
+	CHECK(console_exec("log 3", collect, small_room, &out_len, exec_done));
+	console_poll();
+	room_left = 0;
+	stub_ms += 2500;
+	console_poll();
+	CHECK(done_ctx == &out_len);
+	done_ctx = NULL;
+	room_left = 5;
+	CHECK(console_exec("log 3", collect, small_room, &out_len, exec_done));
+	console_poll();
+	console_cancel(&out_len);
+	console_poll();
+	CHECK(!done_ctx && console_exec("echo after", collect, NULL, NULL, NULL));
+	console_poll();
 	CHECK(!strcmp(run("rtc 5000"), "rtc 5000\n"));
 	CHECK(stub_rtc == 5000);
 	run("bright 128");
@@ -77,7 +126,7 @@ int main(void)
 	CHECK(!stub_asleep);
 
 	out_len = 0;
-	console_attach(collect, NULL, true);
+	console_attach(collect, NULL, NULL, true);
 	CHECK(!strcmp(out, "> "));
 	out_len = 0;
 	console_input("ecx\x7fho hi\r\n", 11);
@@ -103,16 +152,16 @@ int main(void)
 	console_poll();
 	CHECK(out_len == 0);
 	/* A line typed on a shell that closes before it ran never runs. */
-	console_attach(collect, NULL, true);
+	console_attach(collect, NULL, NULL, true);
 	console_input("echo late\r", 10);
 	console_detach();
-	console_attach(collect, NULL, true);
+	console_attach(collect, NULL, NULL, true);
 	out_len = 0;
 	console_poll();
 	CHECK(out_len == 0);
 	console_detach();
 
-	console_attach(collect, NULL, false);
+	console_attach(collect, NULL, NULL, false);
 	out_len = 0;
 	console_input("echo raw\n", 9);
 	console_poll();
@@ -122,18 +171,18 @@ int main(void)
 	/* An exec job waits for console_poll, is refused while one is
 	 * pending, and can be cancelled before or muted while it runs. */
 	out_len = 0;
-	CHECK(console_exec("echo first", collect, &out_len, exec_done));
-	CHECK(!console_exec("echo second", collect, &out_len, exec_done));
+	CHECK(console_exec("echo first", collect, NULL, &out_len, exec_done));
+	CHECK(!console_exec("echo second", collect, NULL, &out_len, exec_done));
 	CHECK(out_len == 0 && !done_ctx);
 	console_poll();
 	CHECK(!strcmp(out, "first\n") && done_ctx == &out_len);
 	done_ctx = NULL;
 	out_len = 0;
-	CHECK(console_exec("echo dropped", collect, &out_len, exec_done));
+	CHECK(console_exec("echo dropped", collect, NULL, &out_len, exec_done));
 	console_cancel(&out_len);
 	console_poll();
 	CHECK(out_len == 0 && !done_ctx);
-	CHECK(console_exec("echo kept", collect, &out_len, exec_done));
+	CHECK(console_exec("echo kept", collect, NULL, &out_len, exec_done));
 	console_cancel(&done_ctx);
 	console_poll();
 	CHECK(!strcmp(out, "kept\n") && done_ctx == &out_len);

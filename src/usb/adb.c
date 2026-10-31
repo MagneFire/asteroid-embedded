@@ -177,6 +177,14 @@ static bool drain(struct stream *s)
 	return s->kind != FREE && s->local == local;
 }
 
+/* What a stream's ring takes without waiting, for the console to pace
+ * long output by. */
+static size_t stream_room(void *ctx)
+{
+	struct stream *s = ctx;
+	return s->kind == FREE ? 0 : ring_free(s);
+}
+
 static void stream_out(const char *s, size_t n, void *ctx)
 {
 	struct stream *st = ctx;
@@ -434,9 +442,9 @@ static void handle_open(void)
 	s->file = NULL;
 	queue_ctrl(A_OKAY, s->local, s->remote);
 	if (kind == SHELL)
-		console_attach(stream_out, s, true);
+		console_attach(stream_out, stream_room, s, true);
 	else if (kind == EXEC) {
-		if (!console_exec(svc + 6, stream_out, s, exec_done)) {
+		if (!console_exec(svc + 6, stream_out, stream_room, s, exec_done)) {
 			ring_put(s, "busy\n", 5);
 			s->closing = true;
 		}

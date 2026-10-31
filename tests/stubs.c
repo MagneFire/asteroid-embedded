@@ -112,11 +112,28 @@ void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t
 {
 }
 
-void log_tail(unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx)
+static const char stub_log[] = "line one\nline two\nline three\n";
+
+uint32_t log_end(void)
 {
-	static const char *log[] = { "line one\n", "line two\n", "line three\n" };
-	for (unsigned i = lines < 3 ? 3 - lines : 0; i < 3; i++)
-		out(log[i], strlen(log[i]), ctx);
+	return sizeof stub_log - 1;
+}
+
+uint32_t log_lines_from(unsigned lines)
+{
+	uint32_t i = sizeof stub_log - 1;
+	for (unsigned seen = 0; lines && i > 0; i--)
+		if (stub_log[i - 1] == '\n' && i < sizeof stub_log - 1 && ++seen == lines)
+			return i;
+	return lines ? 0 : i;
+}
+
+size_t log_read(uint32_t *pos, uint32_t end, char *buf, size_t max)
+{
+	size_t n = 0;
+	while (n < max && *pos < end)
+		buf[n++] = stub_log[(*pos)++];
+	return n;
 }
 
 static struct emmc_info stub_emmc;

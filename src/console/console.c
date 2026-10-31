@@ -2,7 +2,9 @@
  * that are edited into a line and run on return; with echo on, the
  * terminal is taken to be in raw mode, so output newlines become CRLF and
  * a prompt is shown. console_exec runs a single line for a caller with
- * its own output. */
+ * its own output. A sink can say how much it takes without waiting; a
+ * command with more to say than that continues on later passes of the
+ * main loop, and the prompt or the caller's done comes when it ends. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -21,6 +23,7 @@
 #define PROMPT		"> "
 
 typedef void (*out_fn)(const char *s, size_t n, void *ctx);
+typedef size_t (*room_fn)(void *ctx);
 
 struct command {
 	const char *name, *usage;
@@ -31,11 +34,15 @@ static char line[LINE_LEN];
 static size_t line_len;
 static bool last_cr;
 static out_fn term_out;
+static room_fn term_room;
 static void *term_ctx;
 static bool term_echo;
 
 static out_fn cur_out;
+static room_fn cur_room;
 static void *cur_ctx;
+/* The rest of a command, run on each pass until it returns false. */
+static bool (*more)(void);
 static bool cur_crlf;
 
 /* Lines arrive from the USB stack (CDC and adb callbacks), which also
@@ -48,6 +55,7 @@ static struct {
 	bool pending, terminal;
 	char line[LINE_LEN];
 	out_fn out;
+	room_fn room;
 	void *ctx;
 	void (*done)(void *ctx);
 } job;
@@ -140,6 +148,41 @@ static void log_out(const char *s, size_t n, void *ctx)
 	emit(s, n);
 }
 
+/* How much the sink takes now: at most a few KiB per pass, half of it
+ * where newlines turn into CRLF. */
+static size_t room(void)
+{
+	size_t r = cur_room ? cur_room(cur_ctx) : SIZE_MAX;
+	if (r > 4096)
+		r = 4096;
+	return cur_crlf ? r / 2 : r;
+}
+
+/* A sink that takes nothing for this long (a host that stopped reading)
+ * ends the command, as a stream's own wait for room does. */
+#define STALL_MS	2000
+
+static uint32_t log_pos, log_stop, log_t;
+
+static bool log_more(void)
+{
+	char buf[512];
+	if (!cur_out)
+		return false;
+	size_t r = room();
+	if (!r)
+		return time_ms() - log_t < STALL_MS;
+	log_t = time_ms();
+	while (r) {
+		size_t n = log_read(&log_pos, log_stop, buf, r < sizeof buf ? r : sizeof buf);
+		if (!n)
+			return false;
+		emit(buf, n);
+		r -= n;
+	}
+	return log_pos != log_stop;
+}
+
 static void cmd_log(const char *args)
 {
 	uint32_t n = 20;
@@ -149,10 +192,14 @@ static void cmd_log(const char *args)
 	}
 	while (*args == ' ')
 		args++;
-	if (*args)
+	if (*args) {
 		log_grep(args, n, log_out, NULL);
-	else
-		log_tail(n, log_out, NULL);
+		return;
+	}
+	log_pos = log_lines_from(n);
+	log_stop = log_end();
+	log_t = time_ms();
+	more = log_more;
 }
 
 static void cmd_reboot(const char *args)
@@ -924,6 +971,7 @@ static void run(const char *text)
 static void use_terminal(void)
 {
 	cur_out = term_out;
+	cur_room = term_room;
 	cur_ctx = term_ctx;
 	cur_crlf = term_echo;
 }
@@ -941,6 +989,7 @@ void console_init(void)
 	term_out = NULL;
 	cur_out = NULL;
 	job.pending = running = false;
+	more = NULL;
 }
 
 static bool busy(void)
@@ -1000,12 +1049,13 @@ void console_input(const char *buf, size_t n)
 	}
 }
 
-bool console_exec(const char *text, out_fn out, void *ctx, void (*done)(void *ctx))
+bool console_exec(const char *text, out_fn out, room_fn room, void *ctx, void (*done)(void *ctx))
 {
 	if (busy())
 		return false;
 	job.terminal = false;
 	job.out = out;
+	job.room = room;
 	job.ctx = ctx;
 	job.done = done;
 	queue(text);
@@ -1018,6 +1068,7 @@ void console_cancel(void *ctx)
 		return;
 	if (running) {
 		cur_out = NULL;
+		cur_room = NULL;
 		cur_ctx = NULL;
 		job.done = NULL;
 	} else {
@@ -1025,23 +1076,12 @@ void console_cancel(void *ctx)
 	}
 }
 
-void console_poll(void)
+static void finish(void)
 {
-	if (!job.pending || running)
-		return;
-	job.pending = false;
-	running = true;
 	bool term = job.terminal;
-	if (term) {
-		use_terminal();
-	} else {
-		cur_out = job.out;
-		cur_ctx = job.ctx;
-		cur_crlf = false;
-	}
-	run(job.line);
 	void (*done)(void *) = job.done;
 	void *ctx = job.ctx;
+	more = NULL;
 	running = false;
 	use_terminal();
 	if (term)
@@ -1050,9 +1090,36 @@ void console_poll(void)
 		done(ctx);
 }
 
-void console_attach(out_fn out, void *ctx, bool echo)
+void console_poll(void)
+{
+	if (running) {
+		if (more && more())
+			return;
+		finish();
+		return;
+	}
+	if (!job.pending)
+		return;
+	job.pending = false;
+	running = true;
+	if (job.terminal) {
+		use_terminal();
+	} else {
+		cur_out = job.out;
+		cur_room = job.room;
+		cur_ctx = job.ctx;
+		cur_crlf = false;
+	}
+	run(job.line);
+	if (more && more())
+		return;
+	finish();
+}
+
+void console_attach(out_fn out, room_fn room, void *ctx, bool echo)
 {
 	term_out = out;
+	term_room = room;
 	term_ctx = ctx;
 	term_echo = echo;
 	line_len = 0;
@@ -1067,6 +1134,7 @@ void console_attach(out_fn out, void *ctx, bool echo)
 void console_detach(void)
 {
 	term_out = NULL;
+	term_room = NULL;
 	term_ctx = NULL;
 	term_echo = false;
 	line_len = 0;
