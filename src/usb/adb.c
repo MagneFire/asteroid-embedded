@@ -4,7 +4,9 @@
  * replies are queued and drained one transfer at a time by adb_poll, so
  * adb_rx itself sends at most once. Services: an interactive console
  * ("shell:"), one-shot console commands ("shell:<cmd>"), "reboot:" and
- * the file sync protocol against the RAM file table. No authentication. */
+ * the file sync protocol against the RAM file table. No authentication.
+ * A console's end of input (ctrl-D) closes it once the command typed
+ * before it has run, so a line and the ctrl-D may arrive together. */
 #include <string.h>
 #include "asteroid.h"
 #include "console/console.h"
@@ -43,7 +45,7 @@ enum { RP_NONE, RP_RECV, RP_LIST };
 
 struct stream {
 	uint8_t kind;
-	bool waiting, closing;
+	bool waiting, closing, eof;
 	uint32_t local, remote;
 	uint8_t ring[RING];
 	uint32_t head, count;
@@ -434,7 +436,7 @@ static void handle_open(void)
 		next_id = 1;
 	s->remote = rx_arg0;
 	s->head = s->count = 0;
-	s->waiting = s->closing = false;
+	s->waiting = s->closing = s->eof = false;
 	s->sstate = SY_HDR;
 	s->reply = RP_NONE;
 	s->hdr_len = 0;
@@ -456,16 +458,14 @@ static void handle_write(struct stream *s)
 {
 	if (s->kind == SHELL) {
 		const char *p = (const char *)rx_data;
-		uint32_t n = rx_len;
-		for (uint32_t i = 0; i < rx_len; i++)
+		uint32_t n = s->eof ? 0 : rx_len;
+		for (uint32_t i = 0; i < n; i++)
 			if (p[i] == 0x04) {
 				n = i;
-				s->closing = true;
+				s->eof = true;
 				break;
 			}
 		console_input(p, n);
-		if (s->closing)
-			console_detach();
 	} else if (s->kind == SYNC)
 		sync_input(s, rx_data, rx_len);
 	queue_ctrl(A_OKAY, s->local, s->remote);
@@ -516,8 +516,23 @@ static void build(uint32_t cmd, uint32_t arg0, uint32_t arg1, uint32_t len)
 	tx_off = 0;
 }
 
+/* A console at its end of input closes once nothing is queued or
+ * running, so what was typed before the ctrl-D still runs and its
+ * output goes out ahead of the close. */
+static void close_at_eof(void)
+{
+	for (unsigned i = 0; i < STREAMS; i++) {
+		struct stream *s = &streams[i];
+		if (s->kind == SHELL && s->eof && !s->closing && !console_busy()) {
+			console_detach();
+			s->closing = true;
+		}
+	}
+}
+
 static bool next_message(void)
 {
+	close_at_eof();
 	if (cnxn_pending) {
 		cnxn_pending = false;
 		memcpy(tx + HDR, banner, banner_len);

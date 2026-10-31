@@ -11,5 +11,6 @@ void console_cancel(void *ctx);
 void console_attach(void (*out)(const char *s, size_t n, void *ctx), size_t (*room)(void *ctx), void *ctx,
 		    bool echo);
 void console_detach(void);
+bool console_busy(void);
 void console_poll(void);
 #endif

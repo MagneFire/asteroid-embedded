@@ -1013,6 +1013,12 @@ static bool busy(void)
 	return job.pending || running;
 }
 
+/* A command is queued or running. */
+bool console_busy(void)
+{
+	return busy();
+}
+
 static void queue(const char *text)
 {
 	size_t n = strlen(text);

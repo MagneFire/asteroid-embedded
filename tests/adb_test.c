@@ -323,9 +323,19 @@ static void test_interactive(void)
 		if (m.cmd == A_CLSE && m.arg0 == 0 && m.arg1 == 32)
 			closed = true;
 	CHECK(closed);
-	host_send(A_WRTE, 30, dev, "\x04", 1);
+	/* A line and the end of input in one write: the line still runs
+	 * and its output goes out before the close. */
+	host_send(A_WRTE, 30, dev, "echo bye\n\x04junk", 14);
 	expect(A_OKAY, dev, 30, NULL, 0);
+	expect(A_WRTE, dev, 30, "echo bye\r\nbye\r\n> ", 17);
+	host_send(A_OKAY, 30, dev, NULL, 0);
 	expect(A_CLSE, dev, 30, NULL, 0);
+	dev = open_stream(34, "shell:");
+	expect(A_WRTE, dev, 34, "> ", 2);
+	host_send(A_OKAY, 34, dev, NULL, 0);
+	host_send(A_WRTE, 34, dev, "\x04", 1);
+	expect(A_OKAY, dev, 34, NULL, 0);
+	expect(A_CLSE, dev, 34, NULL, 0);
 
 	static uint8_t big[20000];
 	dev = open_stream(33, "sync:");
