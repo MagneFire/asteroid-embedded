@@ -97,7 +97,7 @@ pub struct UiColors {
 
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
 /// the setting, action, app, notification or alarm index it is about, and alarm the alarm as
-/// edited.
+/// edited, or for a snoozed notification how long in its hour and minute.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct UiEvent {
@@ -116,6 +116,8 @@ const EVENT_ALARM_DELETE: u32 = 6;
 const EVENT_DISMISS: u32 = 7;
 const EVENT_TIMER_SET: u32 = 8;
 const EVENT_BRIGHTNESS: u32 = 9;
+const EVENT_DISMISS_ALL: u32 = 10;
+const EVENT_SNOOZE: u32 = 11;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiEvent>() == 12);
@@ -234,6 +236,13 @@ pub unsafe extern "C" fn ui_init(
         face.on_notification_opened(move |id| queue.borrow_mut().push(id));
         let queue = events.clone();
         face.on_notification_dismissed(move |id| event(&queue, EVENT_DISMISS, id));
+        let queue = events.clone();
+        face.on_notifications_cleared(move || event(&queue, EVENT_DISMISS_ALL, 0));
+        let queue = events.clone();
+        face.on_notification_snoozed(move |id, minutes| {
+            let alarm = UiAlarm { hour: (minutes / 60) as u8, minute: (minutes % 60) as u8, ..Default::default() };
+            queue.borrow_mut().push_back(UiEvent { kind: EVENT_SNOOZE, value: id, alarm });
+        });
         let queue = events.clone();
         face.on_media_action(move |action| event(&queue, EVENT_MEDIA, action));
         let queue = events.clone();

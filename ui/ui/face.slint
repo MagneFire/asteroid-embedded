@@ -92,6 +92,9 @@ export global Face {
     in-out property <[Day]> weather-forecast;
     callback notification-opened(int);
     callback notification-dismissed(int);
+    callback notifications-cleared();
+    // A notification's id and for how many minutes to put it away.
+    callback notification-snoozed(int, int);
     callback media-action(int);
     callback app-opened(int);
     callback setting-toggled(int);
