@@ -205,6 +205,7 @@ static void show_settings(void)
 		.tap = setting_get(SETTING_TAP),
 		.fahrenheit = setting_get(SETTING_FAHRENHEIT),
 		.nightstand_aod = setting_get(SETTING_NIGHTSTAND_AOD),
+		.nightstand_rotate = setting_get(SETTING_NIGHTSTAND_ROTATE),
 	};
 	ui_set_settings(&u);
 	ui_set_launcher(setting_get(SETTING_LAUNCHER));

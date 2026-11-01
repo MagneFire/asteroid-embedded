@@ -263,6 +263,14 @@ export component SettingsApp {
                             Face.setting-toggled(Codes.setting-nightstand-aod);
                         }
                     }
+
+                    LabeledSwitch {
+                        text: "Auto rotate";
+                        checked: Face.nightstand-rotate;
+                        clicked => {
+                            Face.setting-toggled(Codes.setting-nightstand-rotate);
+                        }
+                    }
                 }
             }
         }

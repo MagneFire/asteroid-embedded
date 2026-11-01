@@ -129,6 +129,7 @@ pub struct UiSettings {
     tap: bool,
     fahrenheit: bool,
     nightstand_aod: bool,
+    nightstand_rotate: bool,
 }
 
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
@@ -151,7 +152,7 @@ use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiTile>() == 6);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 12);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 13);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
@@ -576,6 +577,7 @@ pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
         face.set_nightstand_brightness(s.nightstand_brightness as i32);
         face.set_nightstand_delay(s.nightstand_delay as i32);
         face.set_nightstand_aod(s.nightstand_aod);
+        face.set_nightstand_rotate(s.nightstand_rotate);
         face.set_burn_in(s.burn_in as i32);
     });
 }

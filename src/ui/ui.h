@@ -162,7 +162,7 @@ struct ui_tile {
  * 0 off, 1 high, 2 medium, 3 low. */
 struct ui_settings {
 	uint8_t brightness, nightstand_brightness, nightstand_delay, burn_in;
-	bool bluetooth, vibration, aod, clock12, tilt, tap, fahrenheit, nightstand_aod;
+	bool bluetooth, vibration, aod, clock12, tilt, tap, fahrenheit, nightstand_aod, nightstand_rotate;
 };
 
 enum ui_event_kind {
@@ -191,7 +191,7 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 12 &&
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 13 &&
 	       sizeof(struct ui_tile) == 6, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
