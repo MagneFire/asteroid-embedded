@@ -17,6 +17,7 @@
 #include "media/media.h"
 #include "audio/speaker.h"
 #include "ui/ui.h"
+#include "ui/rotation.h"
 #include "power.h"
 #include "console.h"
 
@@ -235,6 +236,22 @@ static void cmd_awake(const char *args)
 	if (on)
 		power_request(false);
 	say("awake %s\n", on ? "held" : "released");
+}
+
+/* rotate [0|90|180|270|auto]: turns the screen as in nightstand mode,
+ * held at that angle until auto, for testing. */
+static void cmd_rotate(const char *args)
+{
+	if (*args) {
+		uint32_t a;
+		bool any = !strcmp(args, "auto");
+		if (!any && (!parse_num(&args, 10, &a) || a % 90 || a >= 360)) {
+			say("usage: rotate [0|90|180|270|auto]\n");
+			return;
+		}
+		rotation_hold(any ? -1 : (int)a, time_ms());
+	}
+	say("rotation %d\n", rotation_angle());
 }
 
 static void cmd_set(const char *args)
@@ -919,6 +936,7 @@ static const struct command commands[] = {
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
 	{ "awake", "on|off", cmd_awake },
+	{ "rotate", "[0|90|180|270|auto]", cmd_rotate },
 	{ "aod", "[on|off]", cmd_aod },
 	{ "set", "[name [value]]", cmd_set },
 	{ "rtc", "[seconds]", cmd_rtc },
