@@ -104,6 +104,7 @@
 #define START_POLL_MS		10
 #define INIT_MS			2000
 #define CHECK_MS		2000
+#define CHECK_MAX_MS		10000
 #define DRAIN_MS		60000
 #define PIN_STUCK_MS		100
 #define RESTARTS		3
@@ -135,6 +136,7 @@ static bool corrupt;
 /* The interrupt chain. */
 static volatile bool busy, claimed, kick, check_due;
 static volatile uint32_t chain_end_t;
+static uint32_t check_t;
 static uint8_t rx[FIFO_WINDOW], wake_buf, count_buf[2];
 static unsigned remaining, offset, chunk = FIFO_WINDOW;
 
@@ -698,6 +700,13 @@ void hub_poll(void)
 	}
 	if (ap_suspended && now - chain_end_t >= DRAIN_MS)
 		kick = true;
+	/* Checked after a quiet spell, or anyway after a while: a hub that
+	 * holds its pin high keeps the chains going and is never quiet. */
+	if (check_due && !busy && (now - chain_end_t >= CHECK_MS || now - check_t >= CHECK_MAX_MS)) {
+		check_due = false;
+		check_t = now;
+		health();
+	}
 	if (!busy && (kick || (tlmm_get(GPIO_IRQ) && now - chain_end_t >= PIN_STUCK_MS))) {
 		uint32_t flags = irq_save();
 		if (!busy) {
@@ -705,10 +714,6 @@ void hub_poll(void)
 			chain_start();
 		}
 		irq_restore(flags);
-	}
-	if (check_due && !busy && now - chain_end_t >= CHECK_MS) {
-		check_due = false;
-		health();
 	}
 }
 
