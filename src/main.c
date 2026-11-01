@@ -345,7 +345,7 @@ static void show_weather(void)
 	ui_set_weather(w->city, strlen(w->city), n, ids, lo, hi);
 }
 
-void main(void)
+void main(uint32_t machtype, const void *fdt)
 {
 	cpu_clock_init();
 	mmu_init();

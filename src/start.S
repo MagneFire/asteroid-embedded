@@ -20,6 +20,8 @@ _start:
         .text
 reset:
         cpsid   if
+        mov     r6, r1                          /* machine type and device tree */
+        mov     r8, r2                          /* for main, past the cache code */
         ldr     sp, =__stack_svc_top
         bl      dcache_clean_invalidate_all
         mrc     p15, 0, r0, c1, c0, 0
@@ -66,6 +68,8 @@ reset:
         strlo   r2, [r0], #4
         blo     1b
 
+        mov     r0, r6
+        mov     r1, r8
         bl      main
 2:      wfi
         b       2b
