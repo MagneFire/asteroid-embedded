@@ -262,6 +262,8 @@ pub unsafe extern "C" fn ui_init(
         };
         screen.set_kind(kind as i32);
         screen.global::<Icons>().on_get(|name, w, h| crate::icons::icon(&name, w, h));
+        screen.global::<Theme>().set_width(width as f32);
+        screen.global::<Theme>().set_height(height as f32);
         let face = screen.global::<Face>();
         face.set_notes(notes.clone().into());
         face.set_weather_forecast(forecast.clone().into());
@@ -336,6 +338,15 @@ pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32
         face.set_day(day.clamp(1, 31) as i32);
         face.set_month(month.clamp(1, 12) as i32);
         face.set_year(year.clamp(2000, 2099) as i32);
+    });
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_board(name: *const u8, len: u32, heart_rate: bool) {
+    let name = unsafe { text(name, len) };
+    each(|face| {
+        face.set_board(name.clone());
+        face.set_has_heart_rate(heart_rate);
     });
 }
 

@@ -1,3 +1,4 @@
+import { Theme } from "theme.slint";
 // The watch state, in the Face global the firmware sets on every Screen, and the classic
 // watchface: time, date, battery and today's weather. The always-on face (ambient) keeps only
 // the time, date and battery, in white.
@@ -114,6 +115,9 @@ export global Face {
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
     in-out property <string> notification-icon;
+    // The watch's codename and whether it has a heart rate sensor, from the firmware.
+    in property <string> board;
+    in property <bool> has-heart-rate: true;
     in-out property <string> notification-app;
     in-out property <string> notification-summary;
     in-out property <string> notification-body;
@@ -168,8 +172,8 @@ export global Face {
 }
 
 export component Watchface {
-    in property <length> size: 400px;
-    property <float> k: self.size / 400px;
+    in property <length> size: 100 * Theme.unit;
+    property <float> k: self.size / (100 * Theme.unit);
     property <bool> show-seconds;
     property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -184,7 +188,7 @@ export component Watchface {
         height: root.height * 0.07;
         text: Face.condition(Face.weather-today.id) + "  " + Face.weather-today.max + "° / " + Face.weather-today.min + "°";
         color: #ffffffc0;
-        font-size: 20px * root.k;
+        font-size: 5 * Theme.unit * root.k;
         horizontal-alignment: center;
         vertical-alignment: center;
         overflow: elide;
@@ -197,7 +201,7 @@ export component Watchface {
         height: root.height * 0.36;
         text: (Face.clock12 ? (Math.mod(Face.hour + 11, 12) + 1) + "" : Face.two-digits(Face.hour)) + ":" + Face.two-digits(Face.minute);
         color: white;
-        font-size: 110px * root.k;
+        font-size: 27.5 * Theme.unit * root.k;
         horizontal-alignment: center;
         vertical-alignment: center;
         animate y { duration: Face.ambient ? 0ms : 250ms; easing: ease-out; }
@@ -216,7 +220,7 @@ export component Watchface {
         height: root.height * 0.12;
         text: Face.two-digits(Face.second);
         color: white;
-        font-size: 36px * root.k;
+        font-size: 9 * Theme.unit * root.k;
         horizontal-alignment: center;
         vertical-alignment: center;
         opacity: root.show-seconds && !Face.ambient ? 1 : 0;
@@ -230,7 +234,7 @@ export component Watchface {
         height: root.height * 0.08;
         text: root.weekdays[Face.weekday];
         color: white;
-        font-size: 24px * root.k;
+        font-size: 6 * Theme.unit * root.k;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -242,7 +246,7 @@ export component Watchface {
         height: root.height * 0.08;
         text: Face.day + " " + root.months[Face.month - 1];
         color: white;
-        font-size: 24px * root.k;
+        font-size: 6 * Theme.unit * root.k;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -252,24 +256,24 @@ export component Watchface {
         width: root.width;
         y: root.height * 0.82;
         height: root.height * 0.07;
-        spacing: 8px;
+        spacing: 2 * Theme.unit;
         alignment: center;
 
         VerticalLayout {
             alignment: center;
             HorizontalLayout {
-                spacing: 1px;
+                spacing: 0.25 * Theme.unit;
                 Rectangle {
-                    width: 28px;
-                    height: 14px;
-                    border-width: 1.5px;
+                    width: 7 * Theme.unit;
+                    height: 3.5 * Theme.unit;
+                    border-width: 0.375 * Theme.unit;
                     border-color: white;
-                    border-radius: 2px;
+                    border-radius: 0.5 * Theme.unit;
                     Rectangle {
-                        x: 3px;
-                        y: 3px;
-                        width: (parent.width - 6px) * clamp(Face.battery-percent, 0, 100) / 100;
-                        height: parent.height - 6px;
+                        x: 0.75 * Theme.unit;
+                        y: 0.75 * Theme.unit;
+                        width: (parent.width - 1.5 * Theme.unit) * clamp(Face.battery-percent, 0, 100) / 100;
+                        height: parent.height - 1.5 * Theme.unit;
                         background: white;
                         opacity: Face.charging && !Face.ambient ? pulse : 1;
                         property <float> pulse: 0.55 + 0.45 * Math.sin(animation-tick() / 1s * 180deg);
@@ -278,8 +282,8 @@ export component Watchface {
                 VerticalLayout {
                     alignment: center;
                     Rectangle {
-                        width: 2px;
-                        height: 6px;
+                        width: 0.5 * Theme.unit;
+                        height: 1.5 * Theme.unit;
                         background: white;
                     }
                 }
@@ -289,7 +293,7 @@ export component Watchface {
         Text {
             text: (Face.charging ? "+" : "") + Face.battery-percent + "%";
             color: white;
-            font-size: 20px * root.k;
+            font-size: 5 * Theme.unit * root.k;
             vertical-alignment: center;
         }
     }

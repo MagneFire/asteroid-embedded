@@ -4,6 +4,7 @@
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { IconButton, Marquee, StatusPage } from "controls.slint";
+import { Theme } from "theme.slint";
 
 export component MusicScreen {
     width: 100%;
@@ -17,25 +18,25 @@ export component MusicScreen {
 
     if Face.bluetooth-connected: Rectangle {
         Marquee {
-            x: 80px;
-            y: 28px;
-            width: 240px;
-            height: 40px;
+            x: 20 * Theme.unit;
+            y: 7 * Theme.unit;
+            width: 60 * Theme.unit;
+            height: 10 * Theme.unit;
             text: Face.media-title;
             font-weight: 700;
         }
 
         Marquee {
-            x: 60px;
-            y: 64px;
-            width: 280px;
-            height: 40px;
+            x: 15 * Theme.unit;
+            y: 16 * Theme.unit;
+            width: 70 * Theme.unit;
+            height: 10 * Theme.unit;
             text: Face.media-artist;
         }
 
         IconButton {
-            x: 12px;
-            y: 160px;
+            x: 3 * Theme.unit;
+            y: 40 * Theme.unit;
             icon: "ios-arrow-dropleft";
             clicked => {
                 Face.media-action(Codes.ui-media-previous);
@@ -43,9 +44,9 @@ export component MusicScreen {
         }
 
         IconButton {
-            x: 120px;
-            y: 120px;
-            size: 160px;
+            x: 30 * Theme.unit;
+            y: 30 * Theme.unit;
+            size: 40 * Theme.unit;
             icon: Face.media-playing ? "ios-pause" : "ios-play";
             clicked => {
                 Face.media-action(Face.media-playing ? Codes.ui-media-pause : Codes.ui-media-play);
@@ -53,8 +54,8 @@ export component MusicScreen {
         }
 
         IconButton {
-            x: 308px;
-            y: 160px;
+            x: 77 * Theme.unit;
+            y: 40 * Theme.unit;
             icon: "ios-arrow-dropright";
             clicked => {
                 Face.media-action(Codes.ui-media-next);
@@ -62,8 +63,8 @@ export component MusicScreen {
         }
 
         IconButton {
-            x: 64px;
-            y: 272px;
+            x: 16 * Theme.unit;
+            y: 68 * Theme.unit;
             icon: "ios-volume-down";
             clicked => {
                 Face.media-action(Codes.ui-media-volume-down);
@@ -71,11 +72,11 @@ export component MusicScreen {
         }
 
         Rectangle {
-            x: 144px;
-            y: 308px;
-            width: 112px;
-            height: 8px;
-            border-radius: 4px;
+            x: 36 * Theme.unit;
+            y: 77 * Theme.unit;
+            width: 28 * Theme.unit;
+            height: 2 * Theme.unit;
+            border-radius: 1 * Theme.unit;
             background: #ffffff99;
             clip: true;
 
@@ -88,8 +89,8 @@ export component MusicScreen {
         }
 
         IconButton {
-            x: 256px;
-            y: 272px;
+            x: 64 * Theme.unit;
+            y: 68 * Theme.unit;
             icon: "ios-volume-up";
             clicked => {
                 Face.media-action(Codes.ui-media-volume-up);

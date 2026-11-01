@@ -10,6 +10,7 @@
 import { Face, Note } from "face.slint";
 import { Pill, PageHeader, Page } from "controls.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 global Notes {
     // How long ago, from seconds: Now, then minutes, hours and days.
@@ -28,67 +29,67 @@ component NotificationView {
     out property <length> content-height: column.preferred-height;
     property <int> age: Face.now - self.note.time;
 
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
 
     Rectangle {
-        x: 60px;
-        width: 280px;
-        height: 400px;
+        x: 15 * Theme.unit;
+        width: 70 * Theme.unit;
+        height: 100 * Theme.unit;
 
         column := VerticalLayout {
             y: root.offset;
-            width: 280px;
+            width: 70 * Theme.unit;
             height: self.preferred-height;
             alignment: start;
-            padding-top: 60px;
-            padding-bottom: 40px;
+            padding-top: 15 * Theme.unit;
+            padding-bottom: 10 * Theme.unit;
 
             HorizontalLayout {
-                height: 40px;
+                height: 10 * Theme.unit;
 
                 Text {
-                    width: 224px;
+                    width: 56 * Theme.unit;
                     text: root.note.app;
                     color: white;
-                    font-size: 24px;
+                    font-size: 6 * Theme.unit;
                     overflow: elide;
                 }
 
                 Text {
-                    width: 56px;
+                    width: 14 * Theme.unit;
                     text: Notes.ago(root.age);
                     color: white;
-                    font-size: 24px;
+                    font-size: 6 * Theme.unit;
                     horizontal-alignment: right;
                 }
             }
 
             Rectangle {
-                height: 12px;
+                height: 3 * Theme.unit;
             }
 
             Text {
                 text: root.note.summary;
                 color: white;
-                font-size: 28px;
+                font-size: 7 * Theme.unit;
                 font-weight: 700;
                 overflow: elide;
             }
 
             Rectangle {
-                height: 4px;
+                height: 1 * Theme.unit;
             }
 
             Text {
                 text: root.note.body;
                 color: white;
-                font-size: 28px;
+                font-size: 7 * Theme.unit;
                 wrap: word-wrap;
             }
 
             Rectangle {
-                height: 40px;
+                height: 10 * Theme.unit;
             }
 
             HorizontalLayout {
@@ -112,15 +113,15 @@ component Actions {
     callback snooze();
     property <int> age: Face.now - self.note.time;
 
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
 
     VerticalLayout {
-        x: 90px;
-        y: 48px;
-        width: 220px;
-        height: 304px;
-        spacing: 32px;
+        x: 22.5 * Theme.unit;
+        y: 12 * Theme.unit;
+        width: 55 * Theme.unit;
+        height: 76 * Theme.unit;
+        spacing: 8 * Theme.unit;
 
         Pill {
             text: "Snooze";
@@ -145,13 +146,13 @@ component Actions {
     }
 
     HorizontalLayout {
-        y: 400px - 12px - 34px;
-        height: 34px;
+        y: 100 * Theme.unit - 3 * Theme.unit - 8.5 * Theme.unit;
+        height: 8.5 * Theme.unit;
         alignment: center;
 
         Image {
-            width: 34px;
-            height: 34px;
+            width: 8.5 * Theme.unit;
+            height: 8.5 * Theme.unit;
             source: Icons.get(Notes.icon(root.note), self.width, self.height);
             colorize: white;
         }
@@ -159,7 +160,7 @@ component Actions {
         Text {
             text: Notes.ago(root.age);
             color: #b0b0b0;
-            font-size: 24px;
+            font-size: 6 * Theme.unit;
             vertical-alignment: center;
         }
     }
@@ -171,21 +172,21 @@ component SnoozeTimes {
 
     x: 0;
     y: 0;
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
 
     for t[i] in [{ label: "10m", minutes: 10 }, { label: "30m", minutes: 30 }, { label: "1h", minutes: 60 }, { label: "3h", minutes: 180 }]: Rectangle {
-        x: 80px + Math.mod(i, 2) * 136px;
-        y: 80px + Math.floor(i / 2) * 136px;
-        width: 104px;
-        height: 104px;
-        border-radius: 52px;
+        x: 20 * Theme.unit + Math.mod(i, 2) * 34 * Theme.unit;
+        y: 20 * Theme.unit + Math.floor(i / 2) * 34 * Theme.unit;
+        width: 26 * Theme.unit;
+        height: 26 * Theme.unit;
+        border-radius: 13 * Theme.unit;
         background: touch.pressed ? #22222299 : #222222bb;
 
         Text {
             text: t.label;
             color: white;
-            font-size: 32px;
+            font-size: 8 * Theme.unit;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -224,12 +225,12 @@ export component NoteList {
     property <float> vy;
     property <length> last-x;
     property <length> last-y;
-    property <length> scroll: self.page * 400px - (self.axis == 1 ? self.drag : 0);
+    property <length> scroll: self.page * 100 * Theme.unit - (self.axis == 1 ? self.drag : 0);
     animate scroll {
         duration: root.axis == 1 ? 0ms : 100ms;
         easing: linear;
     }
-    property <length> lift: Math.clamp((self.actions ? 400px : 0) + (self.axis == 3 ? self.vdrag : 0), 0, 400px);
+    property <length> lift: Math.clamp((self.actions ? 100 * Theme.unit : 0) + (self.axis == 3 ? self.vdrag : 0), 0, 100 * Theme.unit);
     animate lift {
         duration: root.axis == 3 ? 0ms : 100ms;
         easing: linear;
@@ -260,10 +261,10 @@ export component NoteList {
 
     if root.count == 0: Rectangle {
         Image {
-            x: 146px;
-            y: 110px;
-            width: 108px;
-            height: 108px;
+            x: 36.5 * Theme.unit;
+            y: 27.5 * Theme.unit;
+            width: 27 * Theme.unit;
+            height: 27 * Theme.unit;
             source: Icons.get("ios-mail-outline", self.width, self.height);
             colorize: white;
             opacity: 0.8;
@@ -271,12 +272,12 @@ export component NoteList {
 
         Text {
             x: 0;
-            y: 234px;
-            width: 400px;
+            y: 58.5 * Theme.unit;
+            width: 100 * Theme.unit;
             text: "No notifications";
             color: white;
             opacity: 0.8;
-            font-size: 24px;
+            font-size: 6 * Theme.unit;
             horizontal-alignment: center;
         }
     }
@@ -286,16 +287,16 @@ export component NoteList {
         moved => {
             let dx = self.mouse-x - self.pressed-x;
             let dy = self.mouse-y - self.pressed-y;
-            if root.axis == 0 && (Math.abs(dx) > 10px || Math.abs(dy) > 10px) {
+            if root.axis == 0 && (Math.abs(dx) > 2.5 * Theme.unit || Math.abs(dy) > 2.5 * Theme.unit) {
                 root.axis = Math.abs(dx) > Math.abs(dy) ? (root.actions ? 4 : 1) : root.actions || (root.offset == 0 && dy > 0) ? 3 : 2;
             }
             root.moves += 1;
-            root.vx += ((self.mouse-x - root.last-x) / 1px - root.vx) / root.moves;
-            root.vy += ((self.mouse-y - root.last-y) / 1px - root.vy) / root.moves;
+            root.vx += ((self.mouse-x - root.last-x) / (0.25 * Theme.unit) - root.vx) / root.moves;
+            root.vy += ((self.mouse-y - root.last-y) / (0.25 * Theme.unit) - root.vy) / root.moves;
             root.last-x = self.mouse-x;
             root.last-y = self.mouse-y;
             if root.axis == 1 {
-                root.drag = Math.clamp(dx, (root.page + 1 - Math.max(1, root.count)) * 400px, root.page * 400px);
+                root.drag = Math.clamp(dx, (root.page + 1 - Math.max(1, root.count)) * 100 * Theme.unit, root.page * 100 * Theme.unit);
             } else if root.axis == 2 || root.axis == 3 {
                 root.vdrag = dy;
             }
@@ -312,14 +313,14 @@ export component NoteList {
                 root.last-y = self.mouse-y;
             }
             if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-                let live = self.mouse-x > -1000px;
+                let live = self.mouse-x > -250 * Theme.unit;
                 if root.axis == 1 && live {
-                    let n = root.drag < -200px || (root.vx < -10 && root.drag < 0) ? 1 : root.drag > 200px || (root.vx > 10 && root.drag > 0) ? -1 : 0;
+                    let n = root.drag < -50 * Theme.unit || (root.vx < -10 && root.drag < 0) ? 1 : root.drag > 50 * Theme.unit || (root.vx > 10 && root.drag > 0) ? -1 : 0;
                     root.page = Math.clamp(root.page + n, 0, Math.max(0, root.count - 1));
                 } else if root.axis == 2 && live {
-                    root.offset = Math.clamp(root.offset + root.vdrag, Math.min(0, 400px - root.page-height), 0);
+                    root.offset = Math.clamp(root.offset + root.vdrag, Math.min(0, 100 * Theme.unit - root.page-height), 0);
                 } else if root.axis == 3 && live {
-                    root.actions = root.actions ? !(root.vdrag < -200px || (root.vy < -10 && root.vdrag < 0)) : root.vdrag > 200px || (root.vy > 10 && root.vdrag > 0);
+                    root.actions = root.actions ? !(root.vdrag < -50 * Theme.unit || (root.vy < -10 && root.vdrag < 0)) : root.vdrag > 50 * Theme.unit || (root.vy > 10 && root.vdrag > 0);
                 }
                 root.axis = 0;
                 root.drag = 0;
@@ -330,11 +331,11 @@ export component NoteList {
 
     for note[i] in Face.notes: NotificationView {
         property <bool> shown: i == root.current;
-        x: (root.count - 1 - i) * 400px - root.scroll;
+        x: (root.count - 1 - i) * 100 * Theme.unit - root.scroll;
         y: root.lift;
-        visible: self.x > -400px && self.x < 400px;
+        visible: self.x > -100 * Theme.unit && self.x < 100 * Theme.unit;
         note: note;
-        offset: self.shown ? Math.clamp(root.offset + (root.axis == 2 ? root.vdrag : 0), Math.min(0, 400px - self.content-height), 0) : 0;
+        offset: self.shown ? Math.clamp(root.offset + (root.axis == 2 ? root.vdrag : 0), Math.min(0, 100 * Theme.unit - self.content-height), 0) : 0;
         init => {
             if self.shown {
                 root.page-height = self.content-height;
@@ -349,8 +350,8 @@ export component NoteList {
 
     // Snooze slides in over the actions as a LayerStack page, pushing them out to the left.
     if root.count > 0 && root.lift > 0: Actions {
-        x: root.snoozing ? -400px : 0;
-        y: root.lift - 400px;
+        x: root.snoozing ? -100 * Theme.unit : 0;
+        y: root.lift - 100 * Theme.unit;
         animate x {
             duration: 200ms;
             easing: ease-out-quint;
@@ -364,31 +365,31 @@ export component NoteList {
     // The icon strip: 32 px icons at y = 20, the current one in the middle, newer ones to its
     // right, then a grey separator and clock.
     if root.count > 0 && root.lift == 0: Rectangle {
-        property <length> cx: 184px + root.current * 32px;
-        y: 20px;
-        height: 32px;
+        property <length> cx: 46 * Theme.unit + root.current * 8 * Theme.unit;
+        y: 5 * Theme.unit;
+        height: 8 * Theme.unit;
         clip: true;
 
         for note[i] in Face.notes: Image {
-            x: parent.cx - i * 32px;
-            width: 32px;
-            height: 32px;
-            visible: self.x > -32px && self.x < 400px;
+            x: parent.cx - i * 8 * Theme.unit;
+            width: 8 * Theme.unit;
+            height: 8 * Theme.unit;
+            visible: self.x > -8 * Theme.unit && self.x < 100 * Theme.unit;
             source: Icons.get(Notes.icon(note), self.width, self.height);
             colorize: i == root.current ? white : #8e8e8e;
         }
 
         Rectangle {
-            x: parent.cx + 35px;
-            width: 1px;
-            height: 32px;
+            x: parent.cx + 8.75 * Theme.unit;
+            width: 0.25 * Theme.unit;
+            height: 8 * Theme.unit;
             background: #8e8e8e;
         }
 
         Image {
-            x: parent.cx + 39px;
-            width: 32px;
-            height: 32px;
+            x: parent.cx + 9.75 * Theme.unit;
+            width: 8 * Theme.unit;
+            height: 8 * Theme.unit;
             source: Icons.get("ios-time", self.width, self.height);
             colorize: #8e8e8e;
         }
@@ -398,7 +399,7 @@ export component NoteList {
         TouchArea {
             // A drag right goes back to the actions.
             pointer-event(e) => {
-                if e.kind == PointerEventKind.up && self.mouse-x - self.pressed-x > 60px {
+                if e.kind == PointerEventKind.up && self.mouse-x - self.pressed-x > 15 * Theme.unit {
                     root.snoozing = false;
                 }
             }

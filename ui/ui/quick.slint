@@ -13,13 +13,14 @@ import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 component Toggle {
     in property <string> icon;
     in property <bool> on;
     in property <bool> button;
     in property <bool> held;
-    in property <length> size: 112px;
+    in property <length> size: 28 * Theme.unit;
     callback clicked();
     property <bool> down: touch.pressed || root.held;
 
@@ -54,7 +55,7 @@ export component QuickSettings {
     property <length> drag;
     property <bool> dragging;
     property <bool> swiped;
-    property <length> strip: 3 * 112px + 2 * 16px;
+    property <length> strip: 3 * 28 * Theme.unit + 2 * 4 * Theme.unit;
     // The toggle under a press on the strip, which swipes between pages and so takes the press
     // from the toggles: an index into toggles, or -1.
     // The toggles in AsteroidOS's default order, without WiFi and sound: three to a page, the
@@ -70,8 +71,8 @@ export component QuickSettings {
     ];
     property <int> pages: Math.ceil(self.toggles.length / 3);
     property <length> local: strip-touch.pressed-x - root.pad(root.page);
-    property <int> column: Math.floor(self.local / 128px);
-    property <int> hit: self.local >= 0 && self.column < Math.min(3, self.toggles.length - 3 * root.page) && Math.mod(self.local / 1px, 128) < 112 ? 3 * root.page + self.column : -1;
+    property <int> column: Math.floor(self.local / (32 * Theme.unit));
+    property <int> hit: self.local >= 0 && self.column < Math.min(3, self.toggles.length - 3 * root.page) && Math.mod(self.local / (0.25 * Theme.unit), 128) < 112 ? 3 * root.page + self.column : -1;
     property <int> held: strip-touch.pressed && !root.dragging ? root.hit : -1;
     property <bool> scrubbing;
     property <float> shown: root.scrubbing ? 0 : 1;
@@ -98,7 +99,7 @@ export component QuickSettings {
     // Where page p's toggles start in the strip.
     pure function pad(p: int) -> length {
         let n = Math.min(3, root.toggles.length - 3 * p);
-        return (root.strip - n * 112px - (n - 1) * 16px) / 2;
+        return (root.strip - n * 28 * Theme.unit - (n - 1) * 4 * Theme.unit) / 2;
     }
 
     function press(i: int) {
@@ -131,9 +132,9 @@ export component QuickSettings {
     }
 
     Toggle {
-        x: root.width / 2 - 16px - self.width;
-        y: 32px;
-        size: 96px;
+        x: root.width / 2 - 4 * Theme.unit - self.width;
+        y: 8 * Theme.unit;
+        size: 24 * Theme.unit;
         button: true;
         opacity: root.shown;
         icon: "ios-unlock";
@@ -143,9 +144,9 @@ export component QuickSettings {
     }
 
     Toggle {
-        x: root.width / 2 + 16px;
-        y: 32px;
-        size: 96px;
+        x: root.width / 2 + 4 * Theme.unit;
+        y: 8 * Theme.unit;
+        size: 24 * Theme.unit;
         button: true;
         opacity: root.shown;
         icon: "ios-settings";
@@ -156,14 +157,14 @@ export component QuickSettings {
 
     Rectangle {
         x: (root.width - root.strip) / 2;
-        y: 144px;
+        y: 36 * Theme.unit;
         width: root.strip;
-        height: 112px;
+        height: 28 * Theme.unit;
         clip: true;
 
         Rectangle {
-            x: -root.page * (root.strip + 16px) + root.drag;
-            width: root.pages * (root.strip + 16px);
+            x: -root.page * (root.strip + 4 * Theme.unit) + root.drag;
+            width: root.pages * (root.strip + 4 * Theme.unit);
             opacity: root.shown;
             animate x {
                 duration: root.dragging ? 0ms : 150ms;
@@ -171,7 +172,7 @@ export component QuickSettings {
             }
 
             for t[i] in root.toggles: Toggle {
-                x: Math.floor(i / 3) * (root.strip + 16px) + root.pad(Math.floor(i / 3)) + Math.mod(i, 3) * 128px;
+                x: Math.floor(i / 3) * (root.strip + 4 * Theme.unit) + root.pad(Math.floor(i / 3)) + Math.mod(i, 3) * 32 * Theme.unit;
                 icon: t.icon;
                 on: t.on;
                 button: t.button;
@@ -200,7 +201,7 @@ export component QuickSettings {
                     root.scrub(self.mouse-x + parent.x);
                     return;
                 }
-                if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 10px {
+                if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 2.5 * Theme.unit {
                     root.dragging = true;
                     root.swiped = true;
                 }
@@ -215,7 +216,7 @@ export component QuickSettings {
                 if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
                     root.scrubbing = false;
                     if root.dragging {
-                        root.page = Math.clamp(root.page + (root.drag < -40px ? 1 : root.drag > 40px ? -1 : 0), 0, root.pages - 1);
+                        root.page = Math.clamp(root.page + (root.drag < -10 * Theme.unit ? 1 : root.drag > 10 * Theme.unit ? -1 : 0), 0, root.pages - 1);
                         root.drag = 0;
                         root.dragging = false;
                     }
@@ -225,21 +226,21 @@ export component QuickSettings {
     }
 
     for i in root.pages: Rectangle {
-        x: root.width / 2 + (i - (root.pages - 1) / 2) * 20px - 8px;
-        y: 272px;
-        width: 16px;
-        height: 16px;
-        border-radius: 8px;
+        x: root.width / 2 + (i - (root.pages - 1) / 2) * 5 * Theme.unit - 2 * Theme.unit;
+        y: 68 * Theme.unit;
+        width: 4 * Theme.unit;
+        height: 4 * Theme.unit;
+        border-radius: 2 * Theme.unit;
         background: white;
         opacity: (i == root.page ? 0.5 : 0.25) * root.shown;
     }
 
     Rectangle {
-        x: (root.width - 202px) / 2;
-        y: 304px;
-        width: 202px;
-        height: 32px;
-        border-radius: 16px;
+        x: (root.width - 50.5 * Theme.unit) / 2;
+        y: 76 * Theme.unit;
+        width: 50.5 * Theme.unit;
+        height: 8 * Theme.unit;
+        border-radius: 4 * Theme.unit;
         background: #ffffff33;
         clip: true;
         opacity: root.shown;
@@ -252,9 +253,9 @@ export component QuickSettings {
         }
 
         if Face.charging: Image {
-            x: (parent.width - 32px) / 2;
-            width: 32px;
-            height: 32px;
+            x: (parent.width - 8 * Theme.unit) / 2;
+            width: 8 * Theme.unit;
+            height: 8 * Theme.unit;
             source: Icons.get("ios-flash", self.width, self.height);
             colorize: white;
             opacity: root.pulse;
@@ -263,14 +264,14 @@ export component QuickSettings {
 
     Text {
         x: 0;
-        y: 340px;
+        y: 85 * Theme.unit;
         width: root.width;
-        height: 50px;
+        height: 12.5 * Theme.unit;
         text: Face.battery-percent + "%";
         color: white;
         opacity: root.shown;
         font-family: "Noto Sans Condensed Medium";
-        font-size: 36px;
+        font-size: 9 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -279,10 +280,10 @@ export component QuickSettings {
     // and its name where the battery bar was.
     Rectangle {
         x: root.width * 0.1;
-        y: (root.height - 80px) / 2;
+        y: (root.height - 20 * Theme.unit) / 2;
         width: root.width * 0.8;
-        height: 80px;
-        border-radius: 40px;
+        height: 20 * Theme.unit;
+        border-radius: 10 * Theme.unit;
         background: #212121bf;
         clip: true;
         opacity: 1 - root.shown;
@@ -301,28 +302,28 @@ export component QuickSettings {
 
     Text {
         x: 0;
-        y: 32px;
+        y: 8 * Theme.unit;
         width: root.width;
-        height: 112px;
+        height: 28 * Theme.unit;
         text: Face.brightness + "%";
         color: white;
         opacity: (1 - root.shown) * 0.9;
         font-family: "Noto Sans SemiCondensed SemiBold";
-        font-size: 48px;
+        font-size: 12 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     Text {
         x: 0;
-        y: 320px - 12px - 32px;
+        y: 80 * Theme.unit - 3 * Theme.unit - 8 * Theme.unit;
         width: root.width;
-        height: 64px;
+        height: 16 * Theme.unit;
         text: "Brightness";
         color: white;
         opacity: (1 - root.shown) * 0.9;
         font-family: "Noto Sans Condensed Medium";
-        font-size: 48px;
+        font-size: 12 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }

@@ -4,6 +4,7 @@ import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { IconButton, StatusPage } from "controls.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 export component Overlay {
     width: 100%;
@@ -20,15 +21,15 @@ export component Overlay {
             width: root.width;
             height: root.height;
             alignment: center;
-            spacing: 12px;
+            spacing: 3 * Theme.unit;
 
             HorizontalLayout {
                 alignment: center;
-                padding-top: 12px;
+                padding-top: 3 * Theme.unit;
 
                 Image {
-                    width: 80px;
-                    height: 80px;
+                    width: 20 * Theme.unit;
+                    height: 20 * Theme.unit;
                     source: Icons.get(Face.notification-icon != "" ? Face.notification-icon : "ios-mail-outline", self.width, self.height);
                     colorize: white;
                 }
@@ -38,10 +39,10 @@ export component Overlay {
                 alignment: center;
 
                 Text {
-                    width: 360px;
+                    width: 90 * Theme.unit;
                     text: Face.notification-summary;
                     color: white;
-                    font-size: 24px;
+                    font-size: 6 * Theme.unit;
                     font-weight: 700;
                     horizontal-alignment: center;
                     overflow: elide;
@@ -52,11 +53,11 @@ export component Overlay {
                 alignment: center;
 
                 Text {
-                    width: 320px;
-                    max-height: 4 * 33px;
+                    width: 80 * Theme.unit;
+                    max-height: 4 * 8.25 * Theme.unit;
                     text: Face.notification-body;
                     color: white;
-                    font-size: 24px;
+                    font-size: 6 * Theme.unit;
                     font-weight: Face.notification-summary == "" ? 700 : 300;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -84,58 +85,58 @@ export component Overlay {
     // grey cancel and confirm buttons below it (setting-toggled 42 and 43).
     if Face.passkey >= 0: Rectangle {
         Rectangle {
-            x: 58px;
-            y: 58px;
-            width: 284px;
-            height: 284px;
-            border-radius: 142px;
+            x: 14.5 * Theme.unit;
+            y: 14.5 * Theme.unit;
+            width: 71 * Theme.unit;
+            height: 71 * Theme.unit;
+            border-radius: 35.5 * Theme.unit;
             background: #00000040;
         }
 
         Rectangle {
-            x: 60px;
-            y: 60px;
-            width: 280px;
-            height: 280px;
-            border-radius: 140px;
+            x: 15 * Theme.unit;
+            y: 15 * Theme.unit;
+            width: 70 * Theme.unit;
+            height: 70 * Theme.unit;
+            border-radius: 35 * Theme.unit;
             background: #f4f4f4;
         }
 
         Image {
-            x: 160px;
-            y: 80px;
-            width: 80px;
-            height: 80px;
+            x: 40 * Theme.unit;
+            y: 20 * Theme.unit;
+            width: 20 * Theme.unit;
+            height: 20 * Theme.unit;
             source: Icons.get("ios-bluetooth", self.width, self.height);
             colorize: #666666;
         }
 
         Text {
-            x: 60px;
-            y: 172px;
-            width: 280px;
+            x: 15 * Theme.unit;
+            y: 43 * Theme.unit;
+            width: 70 * Theme.unit;
             text: "Pass Key:";
             color: #666666;
-            font-size: 20px;
+            font-size: 5 * Theme.unit;
             horizontal-alignment: center;
         }
 
         Text {
-            x: 60px;
-            y: 200px;
-            width: 280px;
-            height: 40px;
+            x: 15 * Theme.unit;
+            y: 50 * Theme.unit;
+            width: 70 * Theme.unit;
+            height: 10 * Theme.unit;
             text: Face.two-digits(Math.floor(Face.passkey / 10000)) + Face.two-digits(Math.mod(Math.floor(Face.passkey / 100), 100)) + Face.two-digits(Math.mod(Face.passkey, 100));
             color: #666666;
-            font-size: 28px;
+            font-size: 7 * Theme.unit;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
 
         IconButton {
-            x: 112px;
-            y: 236px;
+            x: 28 * Theme.unit;
+            y: 59 * Theme.unit;
             color: #666666;
             icon: "ios-close-circle-outline";
             clicked => {
@@ -144,8 +145,8 @@ export component Overlay {
         }
 
         IconButton {
-            x: 208px;
-            y: 236px;
+            x: 52 * Theme.unit;
+            y: 59 * Theme.unit;
             color: #666666;
             icon: "ios-checkmark-circle-outline";
             clicked => {
@@ -165,21 +166,21 @@ export component Overlay {
         }
 
         Text {
-            x: 76px;
-            y: 224px;
-            width: 248px;
-            height: 176px;
+            x: 19 * Theme.unit;
+            y: 56 * Theme.unit;
+            width: 62 * Theme.unit;
+            height: 44 * Theme.unit;
             text: Face.ringing-timer ? Face.two-digits(Math.floor(Face.timer-set-ms / 3600000)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 60000), 60)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 1000), 60)) : (Face.clock12 ? Face.two-digits(Math.mod(Face.hour, 12)) : Face.two-digits(Face.hour)) + ":" + Face.two-digits(Face.minute) + (Face.clock12 ? (Face.hour >= 12 ? "PM" : "AM") : "");
             color: white;
-            font-size: Face.ringing-timer ? 32px : 60px;
+            font-size: Face.ringing-timer ? 8 * Theme.unit : 15 * Theme.unit;
             horizontal-alignment: center;
             vertical-alignment: center;
             wrap: word-wrap;
         }
 
         IconButton {
-            x: 12px;
-            y: 160px;
+            x: 3 * Theme.unit;
+            y: 40 * Theme.unit;
             icon: "ios-checkmark-circle-outline";
             clicked => {
                 Face.alarm-action(Codes.ui-alarm-dismiss);
@@ -187,8 +188,8 @@ export component Overlay {
         }
 
         IconButton {
-            x: 308px;
-            y: 160px;
+            x: 77 * Theme.unit;
+            y: 40 * Theme.unit;
             icon: Face.ringing-timer ? "ios-refresh-circle-outline" : "ios-sleep-circle-outline";
             clicked => {
                 Face.alarm-action(Codes.ui-alarm-snooze);

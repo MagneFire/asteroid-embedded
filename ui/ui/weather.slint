@@ -5,6 +5,7 @@ import { Face, Day } from "face.slint";
 import { PageDot, StatusPage } from "controls.slint";
 import { Pager } from "launcher.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 // A temperature in a 120 px circle, its caption and arrow above and below: Min: over a
 // downward arrow, an upward arrow over Max:.
@@ -12,8 +13,8 @@ component Temperature {
     in property <int> degrees;
     in property <bool> high;
 
-    width: 120px;
-    height: 120px;
+    width: 30 * Theme.unit;
+    height: 30 * Theme.unit;
 
     Text {
         width: parent.width;
@@ -21,28 +22,28 @@ component Temperature {
         text: Face.temperature(root.degrees);
         color: white;
         font-family: "Noto Sans ExtraCondensed ExtraLight";
-        font-size: 60px;
+        font-size: 15 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     Text {
-        y: root.high ? 40px : -40px;
+        y: root.high ? 10 * Theme.unit : -10 * Theme.unit;
         width: parent.width;
         height: parent.height;
         text: root.high ? "Max:" : "Min:";
         color: #ffffff99;
-        font-size: 20px;
+        font-size: 5 * Theme.unit;
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     Image {
-        x: 48px;
-        y: root.high ? 8px : 88px;
-        width: 24px;
-        height: 24px;
+        x: 12 * Theme.unit;
+        y: root.high ? 2 * Theme.unit : 22 * Theme.unit;
+        width: 6 * Theme.unit;
+        height: 6 * Theme.unit;
         source: Icons.get(root.high ? "triangle-up" : "triangle-down", self.width, self.height);
         colorize: #ffffff88;
     }
@@ -65,78 +66,78 @@ export component WeatherScreen {
     }
 
     if Face.weather-valid: Rectangle {
-        property <length> scroll: pager.index * 400px - pager.drag;
+        property <length> scroll: pager.index * 100 * Theme.unit - pager.drag;
         animate scroll {
             duration: pager.dragging ? 0ms : pager.anim;
             easing: ease-out;
         }
 
         pager := Pager {
-            item: 400px;
+            item: 100 * Theme.unit;
             count: root.pages;
             limit: 1;
         }
 
         for i in root.pages: Rectangle {
-            x: i * 400px - parent.scroll;
+            x: i * 100 * Theme.unit - parent.scroll;
             y: 0;
-            width: 400px;
-            height: 400px;
-            visible: self.x > -400px && self.x < 400px;
+            width: 100 * Theme.unit;
+            height: 100 * Theme.unit;
+            visible: self.x > -100 * Theme.unit && self.x < 100 * Theme.unit;
 
             Text {
                 x: 0;
                 y: 0;
-                width: 400px;
-                height: 168px;
+                width: 100 * Theme.unit;
+                height: 42 * Theme.unit;
                 text: i == 0 ? "Today" : i == 1 ? "Tomorrow" : root.weekdays[Math.mod(Face.weekday + i, 7)];
                 color: white;
                 font-family: "Noto Sans SemiCondensed ExtraLight";
-                font-size: 40px;
+                font-size: 10 * Theme.unit;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
 
             Image {
-                x: 152px;
-                y: 152px;
-                width: 96px;
-                height: 96px;
+                x: 38 * Theme.unit;
+                y: 38 * Theme.unit;
+                width: 24 * Theme.unit;
+                height: 24 * Theme.unit;
                 source: Icons.get(Face.weather-icon(root.day(i).id), self.width, self.height);
                 colorize: white;
             }
 
             Temperature {
-                x: 20px;
-                y: 140px;
+                x: 5 * Theme.unit;
+                y: 35 * Theme.unit;
                 degrees: root.day(i).min;
             }
 
             Temperature {
-                x: 260px;
-                y: 140px;
+                x: 65 * Theme.unit;
+                y: 35 * Theme.unit;
                 degrees: root.day(i).max;
                 high: true;
             }
         }
 
         Text {
-            x: 76px;
-            y: 224px;
-            width: 248px;
-            height: 176px;
+            x: 19 * Theme.unit;
+            y: 56 * Theme.unit;
+            width: 62 * Theme.unit;
+            height: 44 * Theme.unit;
             text: Face.weather-city;
             color: white;
             font-family: "Noto Sans SemiCondensed ExtraLight";
-            font-size: Face.weather-city.character-count > 16 ? 34px : Face.weather-city.character-count > 14 ? 36px : 40px;
+            font-size: Face.weather-city.character-count > 16 ? 8.5 * Theme.unit : Face.weather-city.character-count > 14 ? 9 * Theme.unit : 10 * Theme.unit;
             horizontal-alignment: center;
             vertical-alignment: center;
             wrap: word-wrap;
         }
 
         if root.pages > 1: PageDot {
-            x: (400px - self.width) / 2;
-            y: 400px - 15px - 12px;
+            x: (100 * Theme.unit - self.width) / 2;
+            y: 100 * Theme.unit - 3.75 * Theme.unit - 3 * Theme.unit;
             count: root.pages;
             current: pager.index;
         }

@@ -3,10 +3,11 @@
 // The firmware reads Face.flashlight-on for the brightness.
 import { Face } from "face.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 export component FlashlightScreen {
     property <bool> on: Face.flashlight-on;
-    property <length> size: self.on ? 400px : 180px;
+    property <length> size: self.on ? 100 * Theme.unit : 45 * Theme.unit;
     animate size {
         duration: 100ms;
         easing: ease-in;
@@ -20,8 +21,8 @@ export component FlashlightScreen {
     }
 
     disc := Rectangle {
-        x: 200px - root.size / 2;
-        y: 200px - root.size / 2;
+        x: 50 * Theme.unit - root.size / 2;
+        y: 50 * Theme.unit - root.size / 2;
         width: root.size;
         height: root.size;
         border-radius: root.size / 2;

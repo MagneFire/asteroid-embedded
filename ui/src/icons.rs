@@ -1,12 +1,10 @@
 // Icons drawn from their outlines (build.rs's icons.rs) at the size the screen shows them, once:
 // drawing a path every frame costs about a millisecond per icon here, a cached image almost
-// nothing. Each is an alpha map in memory that is never freed, as the icons the Slint compiler
-// embeds are, so it is drawn the same way: one byte a pixel, coloured by colorize.
-use alloc::boxed::Box;
+// nothing. The images are white with the coverage as alpha, for Slint's colorize. The cache keeps
+// the most recently used up to CACHE_BYTES; an image still shown stays alive until it is not.
 use alloc::collections::BTreeMap;
 use core::cell::RefCell;
-use i_slint_core::graphics::euclid::{point2, size2};
-use i_slint_core::graphics::{Image, ImageInner, IntRect, StaticTexture, StaticTextures, TexturePixelFormat};
+use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
 use zeno::{Command, Fill, Mask, Vector};
 
 include!(concat!(env!("OUT_DIR"), "/icons.rs"));
@@ -67,26 +65,26 @@ fn draw(name: &str, w: u32, h: u32) -> Image {
             *a = (*a).max(m);
         }
     }
-    let data: &'static [u8] = Box::leak(alpha.into_boxed_slice());
-    let texture: &'static [StaticTexture] = Box::leak(Box::new([StaticTexture {
-        rect: IntRect::new(point2(0, 0), size2(w as i32, h as i32)),
-        format: TexturePixelFormat::AlphaMap,
-        color: i_slint_core::Color::from_rgb_u8(255, 255, 255),
-        index: 0,
-    }]));
-    let textures = Box::leak(Box::new(StaticTextures {
-        size: size2(w, h),
-        original_size: size2(w, h),
-        data: data.into(),
-        textures: texture[..].into(),
-    }));
-    Image::from(ImageInner::StaticTextures(textures))
+    let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
+    for (px, a) in buf.make_mut_slice().iter_mut().zip(alpha) {
+        *px = Rgba8Pixel { r: a, g: a, b: a, a };
+    }
+    Image::from_rgba8_premultiplied(buf)
 }
 
-struct Cache(RefCell<BTreeMap<(&'static str, u32, u32), Image>>);
+const CACHE_BYTES: u32 = 4 << 20;
+
+/// The images by (name, width, height), each with when it was last used.
+struct Cache {
+    images: BTreeMap<(&'static str, u32, u32), (Image, u32)>,
+    bytes: u32,
+    uses: u32,
+}
+
+struct Shared(RefCell<Cache>);
 // The UI runs on one thread.
-unsafe impl Sync for Cache {}
-static CACHE: Cache = Cache(RefCell::new(BTreeMap::new()));
+unsafe impl Sync for Shared {}
+static CACHE: Shared = Shared(RefCell::new(Cache { images: BTreeMap::new(), bytes: 0, uses: 0 }));
 
 /// Whether there is an icon called name.
 pub fn exists(name: &str) -> bool {
@@ -101,10 +99,20 @@ pub fn icon(name: &str, w: f32, h: f32) -> Image {
         return Image::default();
     }
     let key = (ICONS[i].0, w, h);
-    if let Some(img) = CACHE.0.borrow().get(&key) {
+    let mut cache = CACHE.0.borrow_mut();
+    cache.uses += 1;
+    let now = cache.uses;
+    if let Some((img, used)) = cache.images.get_mut(&key) {
+        *used = now;
         return img.clone();
     }
+    while cache.bytes + w * h * 4 > CACHE_BYTES {
+        let Some(old) = cache.images.iter().min_by_key(|e| e.1.1).map(|e| *e.0) else { break };
+        cache.images.remove(&old);
+        cache.bytes -= old.1 * old.2 * 4;
+    }
     let img = draw(name, w, h);
-    CACHE.0.borrow_mut().insert(key, img.clone());
+    cache.images.insert(key, (img.clone(), now));
+    cache.bytes += w * h * 4;
     img
 }

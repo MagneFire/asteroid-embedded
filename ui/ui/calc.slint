@@ -5,6 +5,7 @@
 // size. A tap on the number negates it.
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
+import { Theme } from "theme.slint";
 
 struct Key {
     label: string,
@@ -17,9 +18,9 @@ struct Key {
 export component CalculatorScreen {
     // The content box leaves 32 px at the sides and 28 px at the bottom; the display takes its
     // top quarter, the keys the rest below a 4 px gap, 8 px apart.
-    property <length> key-w: (336px - 4 * 8px) / 5;
-    property <length> key-h: (372px / 4 * 3 - 4px - 3 * 8px) / 4;
-    property <length> display-h: 372px / 4;
+    property <length> key-w: (84 * Theme.unit - 4 * 2 * Theme.unit) / 5;
+    property <length> key-h: (93 * Theme.unit / 4 * 3 - 1 * Theme.unit - 3 * 2 * Theme.unit) / 4;
+    property <length> display-h: 93 * Theme.unit / 4;
     property <[Key]> keys: [
         { label: "÷", key: Codes.ui-calc-divide, up: 1.14, right: 0.7 },
         { label: "7", key: 7, up: 1.1, right: 0 },
@@ -43,7 +44,7 @@ export component CalculatorScreen {
     ];
     // The number's size steps down with its length.
     property <int> n: Face.calc-length;
-    property <length> display-size: self.n <= 5 ? 60px : self.n == 6 ? 56px : self.n == 7 ? 52px : self.n == 8 ? 50px : self.n == 9 ? 48px : self.n <= 11 ? 44px : self.n == 12 ? 42px : self.n == 13 ? 40px : self.n == 14 ? 38px : 36px;
+    property <length> display-size: self.n <= 5 ? 15 * Theme.unit : self.n == 6 ? 14 * Theme.unit : self.n == 7 ? 13 * Theme.unit : self.n == 8 ? 12.5 * Theme.unit : self.n == 9 ? 12 * Theme.unit : self.n <= 11 ? 11 * Theme.unit : self.n == 12 ? 10.5 * Theme.unit : self.n == 13 ? 10 * Theme.unit : self.n == 14 ? 9.5 * Theme.unit : 9 * Theme.unit;
 
     width: 100%;
     height: 100%;
@@ -51,16 +52,16 @@ export component CalculatorScreen {
     Rectangle {
         x: 0;
         y: 0;
-        width: 400px;
+        width: 100 * Theme.unit;
         height: root.display-h;
         background: #bb19381F;
     }
 
     Text {
-        x: 68px;
+        x: 17 * Theme.unit;
         y: 0;
-        width: 264px;
-        height: root.display-h - 8px;
+        width: 66 * Theme.unit;
+        height: root.display-h - 2 * Theme.unit;
         text: Face.calc-shown;
         color: white;
         font-family: "Noto Sans Condensed Medium";
@@ -71,9 +72,9 @@ export component CalculatorScreen {
     }
 
     TouchArea {
-        x: 32px;
+        x: 8 * Theme.unit;
         y: 0;
-        width: 336px;
+        width: 84 * Theme.unit;
         height: root.display-h;
         clicked => {
             Face.calc-key(Codes.ui-calc-negate);
@@ -92,8 +93,8 @@ export component CalculatorScreen {
             easing: self.down ? ease-out-expo : ease-in-expo;
         }
 
-        x: 32px + Math.mod(i, 5) * (root.key-w + 8px);
-        y: root.display-h + 4px + Math.floor(i / 5) * (root.key-h + 8px);
+        x: 8 * Theme.unit + Math.mod(i, 5) * (root.key-w + 2 * Theme.unit);
+        y: root.display-h + 1 * Theme.unit + Math.floor(i / 5) * (root.key-h + 2 * Theme.unit);
         width: root.key-w;
         height: root.key-h;
         z: self.down ? 2 : 0;

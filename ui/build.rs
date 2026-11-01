@@ -1,14 +1,14 @@
-// Compiles the .slint files with fonts and icons embedded as pixel data for the software renderer.
-// The icons, the UI's own and the AsteroidOS Ionicons set for notifications, are stored as outlines
-// for the firmware to draw at the size it shows them. The nightstand battery
-// ring is generated too: each of its segments a small SVG cut to its bounding box, with its
-// position, since paths cannot be drawn at run time here. The codes the UI and the firmware
-// exchange (the settings, the actions, the event kinds) are read from the C headers into a Slint
-// global and Rust constants, so neither side keeps its own copy.
+// Compiles the .slint files for the software renderer. The UI is not built for a screen size: its
+// lengths are fractions of the screen (Theme.unit), set when the firmware starts. So the icons,
+// the UI's own and the AsteroidOS Ionicons set for notifications, are stored as outlines for the
+// firmware to draw at the size it shows them, and so are the generated shapes: the nightstand
+// battery ring, the heart rate arc and the Diamonds tiles, each a small SVG cut to its bounding
+// box, with its position and size. The codes the UI and the firmware exchange (the settings, the
+// actions, the event kinds) are read from the C headers into a Slint global and Rust constants,
+// so neither side keeps its own copy.
 //
-// The .slint files are laid out in px of a UI_PX screen. A board's screen of another size
-// (ASTEROID_UI_SIZE, in pixels) scales them by the compiler's constant scale factor, which also
-// renders the images at their scaled size here, so the firmware draws them unscaled.
+// The generators work in px of a UI_PX screen, the size the .slint files were first drawn at,
+// and write their lengths in Theme units.
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::pen::SvgPen;
 use skrifa::outline::DrawSettings;
@@ -27,25 +27,16 @@ const ICON_QUAD: i16 = -5;
 const ICON_CUBIC: i16 = -6;
 const ICON_CLOSE: i16 = -7;
 
-/// The screen's size in pixels.
-fn screen_px() -> u32 {
-    std::env::var("ASTEROID_UI_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(UI_PX)
+/// A length laid out in px of a UI_PX screen, as the UI writes it: in units of Theme.unit, a
+/// hundredth of the screen.
+fn units(px: f64) -> String {
+    format!("{} * Theme.unit", (px * 100.0 / UI_PX as f64 * 1e4).round() / 1e4)
 }
 
-/// The step in px of the smallest whole number of screen pixels, 5 px (4 pixels) for a 320 pixel
-/// screen: generated shapes whose boxes are put on it land on whole pixels, sized as drawn.
-fn pixel_grid() -> f64 {
-    let (mut a, mut b) = (UI_PX, screen_px());
-    while b != 0 {
-        (a, b) = (b, a % b);
-    }
-    (UI_PX / a) as f64
-}
-
-/// A white polygon (points in px) as an SVG cut to its bounding box on the pixel grid, written to
-/// path, and the box's position.
-fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64) {
-    let g = pixel_grid();
+/// A white polygon (points in px) as an SVG cut to its bounding box on whole px, written to path,
+/// and the box's position and size.
+fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64, f64, f64) {
+    let g = 1.0;
     let x0 = (pts.iter().map(|p| p.0).fold(f64::MAX, f64::min) / g).floor() * g;
     let y0 = (pts.iter().map(|p| p.1).fold(f64::MAX, f64::min) / g).floor() * g;
     let x1 = (pts.iter().map(|p| p.0).fold(f64::MIN, f64::max) / g).ceil() * g;
@@ -58,7 +49,7 @@ fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64) {
         h = y1 - y0
     );
     std::fs::write(path, svg).unwrap();
-    (x0, y0)
+    (x0, y0, x1 - x0, y1 - y0)
 }
 
 /// icons.rs: every icon's outline, for the firmware to draw at whatever size the screen shows it.
@@ -69,11 +60,19 @@ fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64) {
 fn icon_outlines(out: &std::path::Path) {
     use usvg::tiny_skia_path::PathSegment;
     let mut files = std::collections::BTreeMap::new();
-    for dir in [ICON_DIR, "icons"] {
+    let generated = |sub: &str| (out.join(sub).display().to_string(), format!("{sub}/"));
+    let dirs = [
+        (ICON_DIR.to_string(), String::new()),
+        ("icons".to_string(), String::new()),
+        generated("ring"),
+        generated("heart-arc"),
+        generated("game"),
+    ];
+    for (dir, prefix) in &dirs {
         for e in std::fs::read_dir(dir).unwrap() {
             let name = e.unwrap().file_name().into_string().unwrap();
             if let Some(stem) = name.strip_suffix(".svg") {
-                files.insert(stem.to_string(), format!("{dir}/{name}"));
+                files.insert(format!("{prefix}{stem}"), format!("{dir}/{name}"));
             }
         }
     }
@@ -145,25 +144,21 @@ fn collect_paths(group: &usvg::Group, out: &mut Vec<(usvg::tiny_skia_path::Path,
 fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
-    icon_outlines(&out);
     ring(&out);
     heart_arc(&out);
     game_shapes(&out);
+    icon_outlines(&out);
     codes(&out);
 
     let config = slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRendererNoFonts)
-        .with_include_paths(vec![out])
-        .with_scale_factor(screen_px() as f32 / UI_PX as f32);
+        .with_include_paths(vec![out, std::env::current_dir().unwrap().join("ui")]);
     slint_build::compile_with_config("ui/watchface.slint", config).unwrap();
     println!("cargo:rerun-if-changed=fonts");
     println!("cargo:rerun-if-changed=icons");
     println!("cargo:rerun-if-changed={ICON_DIR}");
     println!("cargo:rerun-if-changed=../src/ui/ui.h");
     println!("cargo:rerun-if-changed=../src/asteroid.h");
-    println!("cargo:rerun-if-env-changed=ASTEROID_BOARD");
-    println!("cargo:rerun-if-env-changed=ASTEROID_HEART_RATE");
-    println!("cargo:rerun-if-env-changed=ASTEROID_UI_SIZE");
 }
 
 /// The enumerators of `enum name { ... }` in a C header: only identifiers, with or without an
@@ -194,11 +189,7 @@ fn c_enum(header: &str, name: &str) -> Vec<(String, i64)> {
 fn codes(out: &std::path::Path) {
     let ui_h = std::fs::read_to_string("../src/ui/ui.h").unwrap();
     let asteroid_h = std::fs::read_to_string("../src/asteroid.h").unwrap();
-    let board = std::env::var("ASTEROID_BOARD").unwrap_or_else(|_| "sturgeon".into());
-    let heart_rate = std::env::var("ASTEROID_HEART_RATE").map_or(true, |v| v != "0");
-    let mut slint = format!(
-        "export global Codes {{\n    out property <string> board: \"{board}\";\n    out property <bool> heart-rate: {heart_rate};\n"
-    );
+    let mut slint = String::from("export global Codes {\n");
     let mut rust = String::new();
     for (header, name, ty) in [
         (&asteroid_h, "setting", "i32"),
@@ -231,13 +222,14 @@ fn heart_arc(out: &std::path::Path) {
     let (r, half, c) = (size / 2.9, size * 0.034 / 2.0, size / 2.0);
     let dir = out.join("heart-arc");
     std::fs::create_dir_all(&dir).unwrap();
-    let mut slint = String::from("export global HeartArc {\n");
+    let mut slint = String::from("import { Theme } from \"theme.slint\";\nexport global HeartArc {\n");
     let mut list = |name: &str, polys: Vec<Vec<(f64, f64)>>| {
-        writeln!(slint, "    out property <[{{img: image, x: length, y: length}}]> {name}: [").unwrap();
+        writeln!(slint, "    out property <[{{img: string, x: length, y: length, w: length, h: length}}]> {name}: [").unwrap();
         for (i, pts) in polys.iter().enumerate() {
             let path = dir.join(format!("{name}-{i}.svg"));
-            let (x0, y0) = polygon_svg(&path, pts);
-            writeln!(slint, "        {{ img: @image-url(\"{}\"), x: {x0}px, y: {y0}px }},", path.display()).unwrap();
+            let (x0, y0, w, h) = polygon_svg(&path, pts);
+            writeln!(slint, "        {{ img: \"heart-arc/{name}-{i}\", x: {}, y: {}, w: {}, h: {} }},", units(x0), units(y0), units(w), units(h))
+                .unwrap();
         }
         slint.push_str("    ];\n");
     };
@@ -311,7 +303,7 @@ fn game_shapes(out: &std::path::Path) {
     let font_data = std::fs::read("fonts/NotoSans-Bold.ttf").unwrap();
     let font = FontRef::new(&font_data).unwrap();
     let cap = |px: f32| font.metrics(Size::new(px), LocationRef::default()).cap_height.unwrap_or(px * 0.7);
-    let mut slint = String::from("export global GameShapes {\n");
+    let mut slint = String::from("import { Theme } from \"theme.slint\";\nexport global GameShapes {\n");
     let mut shape = |name: &str, w: f64, h: f64, angle: f64| {
         let bbox = ((w + h) / 2.0_f64.sqrt()).ceil();
         let (x, y, c) = ((bbox - w) / 2.0, (bbox - h) / 2.0, bbox / 2.0);
@@ -320,8 +312,8 @@ fn game_shapes(out: &std::path::Path) {
         );
         let path = dir.join(format!("{name}.svg"));
         std::fs::write(&path, svg).unwrap();
-        writeln!(slint, "    out property <image> {name}: @image-url(\"{}\");", path.display()).unwrap();
-        writeln!(slint, "    out property <length> {name}-size: {bbox}px;").unwrap();
+        writeln!(slint, "    out property <string> {name}: \"game/{name}\";").unwrap();
+        writeln!(slint, "    out property <length> {name}-size: {};", units(bbox)).unwrap();
     };
     shape("tile", tile, tile, 45.0);
     shape("box-left", size * 0.3, size * 0.12, 45.0);
@@ -338,14 +330,13 @@ fn game_shapes(out: &std::path::Path) {
             x = -width as f64 / 2.0,
             y = h * 0.6 + 12.0 * 1.36 / 2.0 + cap(12.0) as f64 / 2.0 - h / 2.0,
         );
-        let path = dir.join(format!("{name}.svg"));
-        std::fs::write(&path, svg).unwrap();
-        writeln!(slint, "    out property <image> {name}: @image-url(\"{}\");", path.display()).unwrap();
+        std::fs::write(dir.join(format!("{name}.svg")), svg).unwrap();
+        writeln!(slint, "    out property <string> {name}: \"game/{name}\";").unwrap();
     }
     let digit_px = 28.0;
     let advance = font.glyph_metrics(Size::new(20.0), LocationRef::default()).advance_width(font.charmap().map('0').unwrap()).unwrap();
     for (name, angle) in [("digits-left", 45.0), ("digits-right", -45.0)] {
-        writeln!(slint, "    out property <[image]> {name}: [").unwrap();
+        writeln!(slint, "    out property <[string]> {name}: [").unwrap();
         for d in 0..10 {
             let (paths, width) = glyph_paths(&font, &d.to_string(), 20.0, "white");
             let svg = format!(
@@ -354,17 +345,16 @@ fn game_shapes(out: &std::path::Path) {
                 x = -width / 2.0,
                 y = cap(20.0) / 2.0,
             );
-            let path = dir.join(format!("{name}-{d}.svg"));
-            std::fs::write(&path, svg).unwrap();
-            writeln!(slint, "        @image-url(\"{}\"),", path.display()).unwrap();
+            std::fs::write(dir.join(format!("{name}-{d}.svg")), svg).unwrap();
+            writeln!(slint, "        \"game/{name}-{d}\",").unwrap();
         }
         slint.push_str("    ];\n");
     }
-    writeln!(slint, "    out property <length> digit-size: {digit_px}px;").unwrap();
-    writeln!(slint, "    out property <length> digit-advance: {advance:.2}px;").unwrap();
+    writeln!(slint, "    out property <length> digit-size: {};", units(digit_px)).unwrap();
+    writeln!(slint, "    out property <length> digit-advance: {};", units(advance as f64)).unwrap();
     // The number's centre line, above the box's centre.
-    writeln!(slint, "    out property <length> number-offset: {:.2}px;", h * 0.1 + 20.0 * 1.36 / 2.0 - h / 2.0).unwrap();
-    writeln!(slint, "    out property <length> pitch: {}px;", field / 4.0).unwrap();
+    writeln!(slint, "    out property <length> number-offset: {};", units(h * 0.1 + 20.0 * 1.36 / 2.0 - h / 2.0)).unwrap();
+    writeln!(slint, "    out property <length> pitch: {};", units(field / 4.0)).unwrap();
     slint.push_str("}\n");
     std::fs::write(out.join("game_shapes.slint"), slint).unwrap();
 }
@@ -375,7 +365,9 @@ fn ring(out: &std::path::Path) {
     let size = UI_PX as f64;
     let dir = out.join("ring");
     std::fs::create_dir_all(&dir).unwrap();
-    let mut slint = String::from("export global Ring {\n    out property <[{img: image, x: length, y: length}]> segments: [\n");
+    let mut slint = String::from(
+        "import { Theme } from \"theme.slint\";\nexport global Ring {\n    out property <[{img: string, x: length, y: length, w: length, h: length}]> segments: [\n",
+    );
     for i in 0..50 {
         let a0 = (-90.0 + i as f64 * 7.2_f64).to_radians();
         let a1 = a0 + 1.2_f64.to_radians();
@@ -384,8 +376,8 @@ fn ring(out: &std::path::Path) {
             .map(|&(r, a)| (size / 2.0 + r * size * a.cos(), size / 2.0 + r * size * a.sin()))
             .collect();
         let path = dir.join(format!("{i}.svg"));
-        let (x0, y0) = polygon_svg(&path, &pts);
-        writeln!(slint, "        {{ img: @image-url(\"{}\"), x: {x0}px, y: {y0}px }},", path.display()).unwrap();
+        let (x0, y0, w, h) = polygon_svg(&path, &pts);
+        writeln!(slint, "        {{ img: \"ring/{i}\", x: {}, y: {}, w: {}, h: {} }},", units(x0), units(y0), units(w), units(h)).unwrap();
     }
     slint.push_str("    ];\n}\n");
     std::fs::write(out.join("ring.slint"), slint).unwrap();

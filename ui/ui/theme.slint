@@ -1,0 +1,7 @@
+// The screen the UI is laid out on: every size is a fraction of it, in units of one hundredth of
+// its shorter side. The firmware sets the size from the panel; the defaults are for the previewer.
+export global Theme {
+    in property <length> width: 400px;
+    in property <length> height: 400px;
+    out property <length> unit: Math.min(self.width, self.height) / 100;
+}

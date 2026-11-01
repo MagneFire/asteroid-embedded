@@ -5,6 +5,8 @@
 // for, so the selector can show it small.
 import { Face } from "face.slint";
 import { Ring } from "ring.slint";
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
 
 component Label {
     in property <length> s;
@@ -22,10 +24,10 @@ component Label {
 
     // A label centred at (cx, cy) of the face, over a soft black halo.
     for d[i] in [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]: Text {
-        x: root.s * root.cx - 200px + d[0] * root.s * 0.006;
-        y: root.s * root.cy - 100px + d[1] * root.s * 0.006;
-        width: 400px;
-        height: 200px;
+        x: root.s * root.cx - 50 * Theme.unit + d[0] * root.s * 0.006;
+        y: root.s * root.cy - 25 * Theme.unit + d[1] * root.s * 0.006;
+        width: 100 * Theme.unit;
+        height: 50 * Theme.unit;
         text: root.text;
         color: i == 0 ? transparent : #00000048;
         font-size: root.font-size;
@@ -36,10 +38,10 @@ component Label {
     }
 
     Text {
-        x: root.s * root.cx - 200px;
-        y: root.s * root.cy - 100px;
-        width: 400px;
-        height: 200px;
+        x: root.s * root.cx - 50 * Theme.unit;
+        y: root.s * root.cy - 25 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 50 * Theme.unit;
         text: root.text;
         color: white;
         font-size: root.font-size;
@@ -51,7 +53,7 @@ component Label {
 }
 
 export component DigitalFace {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
     property <bool> nightstand: Face.nightstand && !self.preview;
     property <length> s: self.size * (self.nightstand ? 0.86 : 1);
@@ -72,7 +74,7 @@ export component DigitalFace {
             cx: 0.379;
             cy: 0.487;
             text: Face.two-digits(root.hour);
-            font-size: Math.round(root.s * 0.36 / 1px) * 1px;
+            font-size: Math.round(root.s * 0.36 / (0.25 * Theme.unit)) * (0.25 * Theme.unit);
             family: "Roboto";
             weight: 500;
         }
@@ -82,7 +84,7 @@ export component DigitalFace {
             cx: 0.717;
             cy: 0.45;
             text: Face.two-digits(Face.minute);
-            font-size: Math.round(root.s * 0.18 / 1px) * 1px;
+            font-size: Math.round(root.s * 0.18 / (0.25 * Theme.unit)) * (0.25 * Theme.unit);
             family: "Roboto";
             weight: 300;
         }
@@ -92,7 +94,7 @@ export component DigitalFace {
             cx: 0.898;
             cy: 0.368;
             text: Face.hour < 12 ? "AM" : "PM";
-            font-size: Math.round(root.s * 0.065 / 1px) * 1px;
+            font-size: Math.round(root.s * 0.065 / (0.25 * Theme.unit)) * (0.25 * Theme.unit);
             family: "Raleway";
             weight: 300;
         }
@@ -102,7 +104,7 @@ export component DigitalFace {
             cx: 0.719;
             cy: 0.587;
             text: Face.day + " " + root.months[Face.month - 1];
-            font-size: Math.round(root.s * 0.076 / 1px) * 1px;
+            font-size: Math.round(root.s * 0.076 / (0.25 * Theme.unit)) * (0.25 * Theme.unit);
             family: "Raleway";
             weight: 300;
         }
@@ -112,7 +114,9 @@ export component DigitalFace {
     for seg[i] in root.nightstand ? Ring.segments : []: Image {
         x: seg.x;
         y: seg.y;
-        source: seg.img;
+        width: seg.w;
+        height: seg.h;
+        source: Icons.get(seg.img, self.width, self.height);
         visible: i == 0 || i < Face.battery-percent / 2;
         colorize: Face.battery-percent < 34 ? red : Face.battery-percent < 67 ? yellow : #51ff0de6;
     }

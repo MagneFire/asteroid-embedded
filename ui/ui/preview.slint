@@ -8,6 +8,7 @@ import { WeatherScreen } from "weather.slint";
 import { Launcher } from "launcher.slint";
 import { AppScreen } from "apps.slint";
 import { Overlay } from "overlay.slint";
+import { Theme } from "theme.slint";
 
 export component Preview inherits Window {
     in-out property <int> hour <=> Face.hour;
@@ -45,8 +46,8 @@ export component Preview inherits Window {
     in property <brush> backdrop: #303030;
     in property <bool> round-mask;
 
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
     background: root.backdrop;
     default-font-family: "Noto Sans";
     default-font-weight: 300;
@@ -59,12 +60,12 @@ export component Preview inherits Window {
     Overlay { }
 
     if root.round-mask: Rectangle {
-        x: -100px;
-        y: -100px;
-        width: root.width + 200px;
-        height: root.height + 200px;
+        x: -25 * Theme.unit;
+        y: -25 * Theme.unit;
+        width: root.width + 50 * Theme.unit;
+        height: root.height + 50 * Theme.unit;
         border-radius: self.width / 2;
-        border-width: 100px;
+        border-width: 25 * Theme.unit;
         border-color: #000000c0;
     }
 }

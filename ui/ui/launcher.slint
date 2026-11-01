@@ -7,6 +7,7 @@
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 export struct App {
     id: int,
@@ -17,7 +18,7 @@ export struct App {
 }
 
 export global Apps {
-    // The Heart Rate app only where the watch has the sensor (Codes.heart-rate).
+    // The Heart Rate app only where the watch has the sensor (Face.has-heart-rate).
     property <[App]> all: [
         { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
         { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },
@@ -41,7 +42,7 @@ export global Apps {
         { id: 3, name: "Timer", icon: "ios-timer-outline", center: #A6005F, outer: #0C0003 },
         { id: 5, name: "Weather", icon: "launcher-cloudy-outline", center: #990019, outer: #0C0200 },
     ];
-    out property <[App]> list: Codes.heart-rate ? all : without-heart-rate;
+    out property <[App]> list: Face.has-heart-rate ? all : without-heart-rate;
     out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
 }
 
@@ -53,7 +54,7 @@ export global Apps {
 // crossed when let go.
 export component Pager inherits TouchArea {
     in property <bool> horizontal: true;
-    in property <length> item: 400px;
+    in property <length> item: 100 * Theme.unit;
     in property <int> count: 1;
     in property <bool> wrap;
     // At most this many items per flick, 0 for no limit.
@@ -81,12 +82,12 @@ export component Pager inherits TouchArea {
     }
 
     moved => {
-        if self.cross && !self.dragging && !self.crossing && Math.abs(self.across) > 10px && Math.abs(self.across) > Math.abs(self.pos - self.start) {
+        if self.cross && !self.dragging && !self.crossing && Math.abs(self.across) > 2.5 * Theme.unit && Math.abs(self.across) > Math.abs(self.pos - self.start) {
             self.crossing = true;
         }
         if self.crossing {
             self.cross-drag = self.across;
-        } else if !self.dragging && Math.abs(self.pos - self.start) > 10px {
+        } else if !self.dragging && Math.abs(self.pos - self.start) > 2.5 * Theme.unit {
             self.dragging = true;
             self.vel = 0;
             self.last = self.pos;
@@ -96,7 +97,7 @@ export component Pager inherits TouchArea {
             self.drag = self.wrap ? self.pos - self.start : Math.clamp(self.pos - self.start, (self.index + 1 - self.count) * self.item, self.index * self.item);
             let dt = (animation-tick() - self.last-t) / 1ms;
             if dt > 0 {
-                self.vel = self.vel * 0.4 + (self.pos - self.last) / 1px / dt * 0.6;
+                self.vel = self.vel * 0.4 + (self.pos - self.last) / (0.25 * Theme.unit) / dt * 0.6;
                 self.last = self.pos;
                 self.last-t = animation-tick();
             }
@@ -111,15 +112,15 @@ export component Pager inherits TouchArea {
         }
         if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
             if self.crossing {
-                self.crossed(self.mouse-x > -1000px ? self.cross-drag : 0);
-            } else if self.dragging && self.mouse-x > -1000px {
+                self.crossed(self.mouse-x > -250 * Theme.unit ? self.cross-drag : 0);
+            } else if self.dragging && self.mouse-x > -250 * Theme.unit {
                 let v = animation-tick() - self.last-t > 100ms ? 0 : Math.clamp(self.vel, -2.5, 2.5);
-                let projected = (self.index * self.item - self.drag) / 1px - v * Math.abs(v) / 0.003;
-                let free = Math.round(projected / (self.item / 1px));
+                let projected = (self.index * self.item - self.drag) / (0.25 * Theme.unit) - v * Math.abs(v) / 0.003;
+                let free = Math.round(projected / (self.item / (0.25 * Theme.unit)));
                 let n = self.limit > 0 ? Math.clamp(free, self.index - self.limit, self.index + self.limit) : free;
                 let from = self.index * self.item - self.drag;
                 self.index = self.wrap ? n : Math.clamp(n, 0, self.count - 1);
-                self.anim = Math.clamp(1.7 * Math.abs(self.index * self.item - from) / 1px / Math.max(Math.abs(v), 1), 150, 600) * 1ms;
+                self.anim = Math.clamp(1.7 * Math.abs(self.index * self.item - from) / (0.25 * Theme.unit) / Math.max(Math.abs(v), 1), 150, 600) * 1ms;
             } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
                 self.tapped(self.mouse-x, self.mouse-y);
             }
@@ -134,12 +135,12 @@ export component Pager inherits TouchArea {
 // 000-default-horizontal and 000-vertical: one app per page, a white disc with a grey icon and
 // name.
 component Pages {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> vertical;
     in property <bool> preview;
     // In a preview, at the last app instead of the first.
     in property <bool> last;
-    property <float> k: self.size / 400px;
+    property <float> k: self.size / (100 * Theme.unit);
     property <length> scroll: pager.index * self.size - pager.drag;
     animate scroll {
         duration: pager.dragging ? 0ms : pager.anim;
@@ -173,30 +174,30 @@ component Pages {
         visible: self.x > -root.size && self.x < root.size && self.y > -root.size && self.y < root.size;
 
         Rectangle {
-            x: (parent.width - 260px * root.k) / 2;
-            y: (parent.height - 260px * root.k) / 2;
-            width: 260px * root.k;
+            x: (parent.width - 65 * Theme.unit * root.k) / 2;
+            y: (parent.height - 65 * Theme.unit * root.k) / 2;
+            width: 65 * Theme.unit * root.k;
             height: self.width;
             border-radius: self.width / 2;
             background: pager.pressed && !pager.dragging && pager.index == i ? #dddddd99 : #f8f8f8;
         }
 
         Image {
-            x: (parent.width - 120px * root.k) / 2;
-            y: (parent.height - 120px * root.k) / 2 - 12px * root.k;
-            width: 120px * root.k;
+            x: (parent.width - 30 * Theme.unit * root.k) / 2;
+            y: (parent.height - 30 * Theme.unit * root.k) / 2 - 3 * Theme.unit * root.k;
+            width: 30 * Theme.unit * root.k;
             height: self.width;
             source: Icons.get(app.icon, self.width, self.height);
             colorize: pager.pressed && !pager.dragging && pager.index == i ? #333 : #666;
         }
 
         Text {
-            x: (parent.width - 200px * root.k) / 2;
-            y: (parent.height + 120px * root.k) / 2 - 2px * root.k;
-            width: 200px * root.k;
+            x: (parent.width - 50 * Theme.unit * root.k) / 2;
+            y: (parent.height + 30 * Theme.unit * root.k) / 2 - 0.5 * Theme.unit * root.k;
+            width: 50 * Theme.unit * root.k;
             text: app.name.to-uppercase();
             color: pager.pressed && !pager.dragging && pager.index == i ? #333 : #666;
-            font-size: Math.round(20 * root.k) * 1px;
+            font-size: Math.round(20 * root.k) * (0.25 * Theme.unit);
             font-weight: 600;
             horizontal-alignment: center;
         }
@@ -216,11 +217,11 @@ component Pages {
 // 001-three-icons-horizontal: half-size discs, the current one centred with half of each
 // neighbour beside it, names in white below.
 component ThreeIcons {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
     // In a preview, at the last app instead of the first.
     in property <bool> last;
-    property <float> k: self.size / 400px;
+    property <float> k: self.size / (100 * Theme.unit);
     property <length> cell: self.size / 2;
     property <length> scroll: pager.index * self.cell - pager.drag;
     animate scroll {
@@ -277,7 +278,7 @@ component ThreeIcons {
             width: parent.width;
             text: app.name.to-uppercase();
             color: white;
-            font-size: Math.round(20 * root.k) * 1px;
+            font-size: Math.round(20 * root.k) * (0.25 * Theme.unit);
             font-family: "Noto Sans SemiCondensed Bold";
             horizontal-alignment: center;
         }
@@ -298,11 +299,11 @@ component ThreeIcons {
 
 // 002-two-columns: two discs per row, the current row centred, scrolling by rows.
 component TwoColumns {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
     // In a preview, at the last app instead of the first.
     in property <bool> last;
-    property <float> k: self.size / 400px;
+    property <float> k: self.size / (100 * Theme.unit);
     property <length> cell: self.size / 2;
     property <int> rows: Math.ceil(Apps.list.length / 2);
     property <length> scroll: pager.index * self.cell - pager.drag;
@@ -339,7 +340,7 @@ component TwoColumns {
 
     for app[i] in Apps.list: Rectangle {
         property <int> column: Math.mod(i, 2);
-        x: (self.column == 0 ? 0 : root.cell) + (self.column == 0 ? 9px : -9px) * root.k;
+        x: (self.column == 0 ? 0 : root.cell) + (self.column == 0 ? 2.25 * Theme.unit : -2.25 * Theme.unit) * root.k;
         y: root.size / 2 - root.cell / 2 + Math.floor(i / 2) * root.cell - root.scroll;
         width: root.cell;
         height: root.cell;
@@ -368,7 +369,7 @@ component TwoColumns {
             width: parent.width;
             text: app.name.to-uppercase();
             color: white;
-            font-size: Math.round(20 * root.k) * 1px;
+            font-size: Math.round(20 * root.k) * (0.25 * Theme.unit);
             font-family: "Noto Sans SemiCondensed Bold";
             horizontal-alignment: center;
         }
@@ -395,11 +396,11 @@ component TwoColumns {
 // 003-turbo-list: a list of small discs in each app's colour with its name, bending along the
 // left of the round screen, shrinking and fading away from the centre row. No mesh colours.
 component TurboList {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
     // In a preview, at the last app instead of the first.
     in property <bool> last;
-    property <float> k: self.size / 400px;
+    property <float> k: self.size / (100 * Theme.unit);
     property <length> line: self.size / 6;
     property <length> scroll: pager.index * self.line - pager.drag;
     animate scroll {
@@ -435,9 +436,9 @@ component TurboList {
     for app[i] in Apps.list: Rectangle {
         property <length> d: i * root.line - root.scroll;
         property <length> r: root.size / 2;
-        property <length> bezel: Math.abs(self.d) >= self.r ? self.r : self.r - Math.sqrt(Math.pow(self.r / 1px, 2) - Math.pow(self.d / 1px, 2)) * 1px;
+        property <length> bezel: Math.abs(self.d) >= self.r ? self.r : self.r - Math.sqrt(Math.pow(self.r / (0.25 * Theme.unit), 2) - Math.pow(self.d / (0.25 * Theme.unit), 2)) * (0.25 * Theme.unit);
         property <float> n: 1 - self.bezel / self.r;
-        x: self.bezel + 20px * root.k;
+        x: self.bezel + 5 * Theme.unit * root.k;
         y: root.size / 2 - root.line / 2 + self.d;
         width: root.size - self.x;
         height: root.line;
@@ -465,12 +466,12 @@ component TurboList {
         }
 
         Text {
-            x: parent.height * 0.8 + 16px * root.k;
+            x: parent.height * 0.8 + 4 * Theme.unit * root.k;
             width: parent.width - self.x;
             height: parent.height;
             text: app.name;
             color: white;
-            font-size: Math.round((Math.pow(2.71828, parent.n) - 1) * 6 * root.k) * 4px;
+            font-size: Math.round((Math.pow(2.71828, parent.n) - 1) * 6 * root.k) * 1 * Theme.unit;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -495,11 +496,11 @@ component TurboList {
 // colour, 144 px above the centre when held in the lower half, otherwise below, for a second;
 // letting go still opens the app. No mesh colours.
 component ThreeByThree {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
     // In a preview, at the last app instead of the first.
     in property <bool> last;
-    property <float> k: self.size / 400px;
+    property <float> k: self.size / (100 * Theme.unit);
     property <length> margin: self.size * 0.026;
     property <length> cell: (self.size - 2 * self.margin) / 3;
     property <length> spacer: self.size / 6;
@@ -510,7 +511,7 @@ component ThreeByThree {
     property <int> held: -1;
     // The title: 0 hidden, 1 sliding in and shown, 2 sliding out; away is where it slides from.
     property <int> title;
-    property <length> away: (self.held-y > self.size * 0.48 ? -248px : 248px) * self.k;
+    property <length> away: (self.held-y > self.size * 0.48 ? -62 * Theme.unit : 62 * Theme.unit) * self.k;
     property <length> held-y;
     property <bool> titled;
     property <bool> pressed: pager.pressed;
@@ -606,7 +607,7 @@ component ThreeByThree {
             easing: ease-in-sine;
         }
         y: root.size / 2 + self.offset - self.height / 2;
-        height: 96px * root.k;
+        height: 24 * Theme.unit * root.k;
         opacity: root.title == 1 ? 1 : 0;
         animate opacity {
             duration: root.title == 2 ? 200ms : 0ms;
@@ -614,7 +615,7 @@ component ThreeByThree {
         }
 
         Rectangle {
-            y: (root.held-y > root.size * 0.48 ? -8px : 8px) * root.k;
+            y: (root.held-y > root.size * 0.48 ? -2 * Theme.unit : 2 * Theme.unit) * root.k;
             background: Apps.list[root.held].center;
             opacity: 0.85;
         }
@@ -624,7 +625,7 @@ component ThreeByThree {
             height: parent.height;
             text: Apps.list[root.held].name.to-uppercase();
             color: white;
-            font-size: Math.round(36 * root.k) * 1px;
+            font-size: Math.round(36 * root.k) * (0.25 * Theme.unit);
             font-family: "Noto Sans Condensed Medium";
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -687,11 +688,11 @@ component Wheel {
 // the right half, the left half beyond the fade, and 4 px strips of the fade. A tap opens the
 // selected app, or the disc tapped.
 component SpeedDial {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
     // In a preview, at the last app instead of the first.
     in property <bool> last;
-    property <float> k: self.size / 400px;
+    property <float> k: self.size / (100 * Theme.unit);
     property <int> n: Apps.list.length;
     property <angle> step: 360deg / Math.min(self.n, 8);
     property <length> bar: self.size * 0.26;
@@ -734,7 +735,7 @@ component SpeedDial {
     Rectangle {
         x: -root.size * 0.4;
         y: (root.size - root.size * 0.26) / 2;
-        width: root.size * 0.4 + root.size / 2 + root.size * 0.26 / 2 + root.orbit - root.disc / 2 - 4px * root.k;
+        width: root.size * 0.4 + root.size / 2 + root.size * 0.26 / 2 + root.orbit - root.disc / 2 - 1 * Theme.unit * root.k;
         height: root.size * 0.26;
         border-radius: self.height / 2;
         background: #00000066;
@@ -747,7 +748,7 @@ component SpeedDial {
         height: root.size * 0.26;
         text: Apps.list[root.selected].name;
         color: white;
-        font-size: Math.round(48 * root.k) * 1px;
+        font-size: Math.round(48 * root.k) * (0.25 * Theme.unit);
         font-family: "Noto Sans SemiCondensed Bold";
         vertical-alignment: center;
         overflow: elide;
@@ -755,7 +756,7 @@ component SpeedDial {
 
     property <length> mask: root.bar / 2;
     property <length> fade: root.mask * 1.6;
-    property <int> strips: Math.ceil((root.fade - root.mask) / 4px);
+    property <int> strips: Math.ceil((root.fade - root.mask) / (1 * Theme.unit));
 
     for part in [
         { x: 0.5, y: 0, w: 0.5, h: 1 },
@@ -797,8 +798,8 @@ component SpeedDial {
 
     TouchArea {
         enabled: !root.preview;
-        property <angle> a: Math.atan2((self.mouse-y - root.size / 2) / 1px, (self.mouse-x - root.size / 2) / 1px);
-        property <angle> a0: Math.atan2((self.pressed-y - root.size / 2) / 1px, (self.pressed-x - root.size / 2) / 1px);
+        property <angle> a: Math.atan2((self.mouse-y - root.size / 2) / (0.25 * Theme.unit), (self.mouse-x - root.size / 2) / (0.25 * Theme.unit));
+        property <angle> a0: Math.atan2((self.pressed-y - root.size / 2) / (0.25 * Theme.unit), (self.pressed-x - root.size / 2) / (0.25 * Theme.unit));
 
         moved => {
             let d = Math.mod(self.a - self.a0 + 540deg, 360deg) - 180deg;
@@ -820,7 +821,7 @@ component SpeedDial {
         }
         pointer-event(e) => {
             if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-                if root.turning && self.mouse-x > -1000px {
+                if root.turning && self.mouse-x > -250 * Theme.unit {
                     let v = animation-tick() - root.last-t > 100ms ? 0 : Math.clamp(root.vel, -1, 1);
                     let coast = v * Math.abs(v) / 0.001 * 1deg;
                     root.index = Math.round(root.index - (root.turn + coast) / root.step);
@@ -828,7 +829,7 @@ component SpeedDial {
                 } else if !root.turning && e.kind == PointerEventKind.up && self.mouse-x >= 0 {
                     let dx = self.mouse-x - root.size / 2;
                     let dy = self.mouse-y - root.size / 2;
-                    let r = Math.sqrt(Math.pow(dx / 1px, 2) + Math.pow(dy / 1px, 2)) * 1px;
+                    let r = Math.sqrt(Math.pow(dx / (0.25 * Theme.unit), 2) + Math.pow(dy / (0.25 * Theme.unit), 2)) * (0.25 * Theme.unit);
                     if r > root.orbit - root.disc / 2 && r < root.orbit + root.disc / 2 {
                         let rel = Math.round(self.a / root.step);
                         Face.app-opened(Apps.list[Math.mod(Math.mod(root.index + rel, root.n) + root.n, root.n)].id);
@@ -844,7 +845,7 @@ component SpeedDial {
 }
 
 export component LauncherView {
-    in property <length> size: 400px;
+    in property <length> size: 100 * Theme.unit;
     in property <int> layout;
     in property <bool> preview;
     in property <bool> last;

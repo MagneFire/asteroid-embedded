@@ -5,6 +5,7 @@
 import { Face } from "face.slint";
 import { Pager } from "launcher.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 // A title over a band that fades out downwards, 80 px tall.
 export component PageHeader {
@@ -12,21 +13,21 @@ export component PageHeader {
 
     x: 0;
     y: 0;
-    width: 400px;
-    height: 80px;
+    width: 100 * Theme.unit;
+    height: 20 * Theme.unit;
 
     Rectangle {
         background: @linear-gradient(180deg, #000000dd 20%, #00000055 80%, #00000000 100%);
     }
 
     Text {
-        x: 100px;
-        width: parent.width - 200px;
+        x: 25 * Theme.unit;
+        width: parent.width - 50 * Theme.unit;
         height: parent.height;
         text: root.text;
         color: white;
         font-family: "Noto Sans SemiCondensed Light";
-        font-size: 28px;
+        font-size: 7 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
         wrap: word-wrap;
@@ -36,7 +37,7 @@ export component PageHeader {
 // An icon, 80 px and white by default, dimmed while pressed.
 export component IconButton {
     in property <string> icon;
-    in property <length> size: 80px;
+    in property <length> size: 20 * Theme.unit;
     in property <color> color: white;
     callback clicked();
 
@@ -71,7 +72,7 @@ export component Spinner {
     in property <bool> wrap: true;
     in property <bool> interactive: true;
     in-out property <int> value;
-    property <length> step: 48px;
+    property <length> step: 12 * Theme.unit;
     property <length> scroll: pager.index * self.step - pager.drag;
     property <duration> shown: -1ms;
     property <bool> dragging: pager.dragging;
@@ -108,7 +109,7 @@ export component Spinner {
         visible: root.wrap || (self.n >= 0 && self.n < root.count);
         text: root.labels.length > 0 ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : root.plain ? (self.v + root.first) + "" : Face.two-digits(self.v + root.first);
         color: white;
-        font-size: Math.round(22 + 17 * self.near) * 1px;
+        font-size: Math.round(22 + 17 * self.near) * (0.25 * Theme.unit);
         opacity: (0.6 + 0.4 * self.near) * self.fade;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -134,48 +135,48 @@ export component StatusPage {
 
     x: 0;
     y: 0;
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
 
     Rectangle {
-        x: 150px;
-        y: 98px;
-        width: 100px;
-        height: 100px;
-        border-radius: 50px;
+        x: 37.5 * Theme.unit;
+        y: 24.5 * Theme.unit;
+        width: 25 * Theme.unit;
+        height: 25 * Theme.unit;
+        border-radius: 12.5 * Theme.unit;
         background: black;
         opacity: root.active ? 0.4 : 0.2;
     }
 
     Image {
-        x: 162px;
-        y: 110px;
-        width: 76px;
-        height: 76px;
+        x: 40.5 * Theme.unit;
+        y: 27.5 * Theme.unit;
+        width: 19 * Theme.unit;
+        height: 19 * Theme.unit;
         source: Icons.get(root.icon, self.width, self.height);
         colorize: white;
     }
 
     TouchArea {
-        x: 150px;
-        y: 98px;
-        width: 100px;
-        height: 100px;
+        x: 37.5 * Theme.unit;
+        y: 24.5 * Theme.unit;
+        width: 25 * Theme.unit;
+        height: 25 * Theme.unit;
         clicked => {
             root.clicked();
         }
     }
 
     VerticalLayout {
-        x: 16px;
-        y: 260px - self.preferred-height / 2;
-        width: 368px;
+        x: 4 * Theme.unit;
+        y: 65 * Theme.unit - self.preferred-height / 2;
+        width: 92 * Theme.unit;
         height: self.preferred-height;
 
         Text {
             text: root.title;
             color: white;
-            font-size: 24px;
+            font-size: 6 * Theme.unit;
             font-weight: 700;
             horizontal-alignment: center;
             wrap: word-wrap;
@@ -184,7 +185,7 @@ export component StatusPage {
         Text {
             text: root.text;
             color: white;
-            font-size: 20px;
+            font-size: 5 * Theme.unit;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
@@ -196,7 +197,7 @@ export component PageDot {
     in property <int> count;
     in property <int> current;
     in property <bool> extra;
-    in property <length> size: 12px;
+    in property <length> size: 3 * Theme.unit;
 
     width: (self.count + (self.extra ? 1 : 0)) * self.size * 1.25 - self.size * 0.25;
     height: self.size;
@@ -217,7 +218,7 @@ export component PageDot {
         text: "+";
         color: white;
         opacity: root.current == root.count ? 1 : 0.5;
-        font-size: Math.round(root.size / 1px * 1.4) * 1px;
+        font-size: Math.round(root.size / (0.25 * Theme.unit) * 1.4) * (0.25 * Theme.unit);
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -227,10 +228,10 @@ export component PageDot {
 // each way taking 1 s per box width of text.
 export component Marquee inherits Rectangle {
     in property <string> text;
-    in property <length> font-size: 28px;
+    in property <length> font-size: 7 * Theme.unit;
     in property <int> font-weight: 300;
     property <length> over: Math.max(0, label.preferred-width - self.width);
-    property <duration> travel: label.preferred-width / Math.max(1px, self.width) * 1000ms;
+    property <duration> travel: label.preferred-width / Math.max(0.25 * Theme.unit, self.width) * 1000ms;
     property <length> shift;
     property <int> phase;
 
@@ -274,8 +275,8 @@ export component ListItem {
     in property <string> title;
     callback clicked();
 
-    width: 400px;
-    height: 84px;
+    width: 100 * Theme.unit;
+    height: 21 * Theme.unit;
 
     Rectangle {
         background: touch.pressed ? #ffffff33 : #ffffff00;
@@ -286,22 +287,22 @@ export component ListItem {
     }
 
     Image {
-        x: 72px;
-        y: 12px;
-        width: 60px;
-        height: 60px;
+        x: 18 * Theme.unit;
+        y: 3 * Theme.unit;
+        width: 15 * Theme.unit;
+        height: 15 * Theme.unit;
         source: Icons.get(root.icon, self.width, self.height);
         colorize: white;
     }
 
     Text {
-        x: 156px;
-        width: parent.width - self.x - 8px;
+        x: 39 * Theme.unit;
+        width: parent.width - self.x - 2 * Theme.unit;
         height: parent.height;
         text: root.title;
         color: white;
         font-family: "Noto Sans SemiCondensed Light";
-        font-size: 36px;
+        font-size: 9 * Theme.unit;
         vertical-alignment: center;
         overflow: elide;
     }
@@ -325,8 +326,8 @@ export component LabeledSwitch {
     in property <bool> dim;
     callback clicked();
 
-    width: 400px;
-    height: 100px;
+    width: 100 * Theme.unit;
+    height: 25 * Theme.unit;
     opacity: self.dim ? 0.4 : 1;
     animate opacity {
         duration: 200ms;
@@ -341,33 +342,33 @@ export component LabeledSwitch {
     }
 
     Text {
-        x: 60px;
-        width: 176px;
+        x: 15 * Theme.unit;
+        width: 44 * Theme.unit;
         height: parent.height;
         text: root.text;
         color: white;
-        font-size: 24px;
+        font-size: 6 * Theme.unit;
         vertical-alignment: center;
         wrap: word-wrap;
     }
 
     if root.value == "": Image {
-        x: 260px;
-        y: 10px;
-        width: 80px;
-        height: 80px;
+        x: 65 * Theme.unit;
+        y: 2.5 * Theme.unit;
+        width: 20 * Theme.unit;
+        height: 20 * Theme.unit;
         source: Icons.get(root.icon != "" ? root.icon : root.checked ? "ios-checkmark-circle-outline" : "ios-circle-outline", self.width, self.height);
         colorize: white;
     }
 
     if root.value != "": Text {
-        x: 236px;
-        width: 128px;
+        x: 59 * Theme.unit;
+        width: 32 * Theme.unit;
         height: parent.height;
         text: root.value;
         color: white;
         font-family: "Noto Sans SemiCondensed Bold";
-        font-size: 28px;
+        font-size: 7 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
         wrap: word-wrap;
@@ -396,23 +397,23 @@ export component IntSelector {
     property <bool> tracking;
 
     function track(x: length) {
-        let f = Math.clamp((x - 33px) / (266px - 66px), 0, 1);
+        let f = Math.clamp((x - 8.25 * Theme.unit) / (66.5 * Theme.unit - 16.5 * Theme.unit), 0, 1);
         let v = Math.clamp(Math.round((root.min + f * (root.max - root.min)) / root.step) * root.step, root.min, root.max);
         if v != root.value {
             root.set(v);
         }
     }
 
-    width: 400px;
-    height: 100px;
+    width: 100 * Theme.unit;
+    height: 25 * Theme.unit;
 
     Rectangle {
-        x: 67px;
-        y: 17px;
-        width: 266px;
-        height: 66px;
-        border-radius: 33px;
-        border-width: 2.5px;
+        x: 16.75 * Theme.unit;
+        y: 4.25 * Theme.unit;
+        width: 66.5 * Theme.unit;
+        height: 16.5 * Theme.unit;
+        border-radius: 8.25 * Theme.unit;
+        border-width: 0.625 * Theme.unit;
         border-color: white;
         clip: true;
 
@@ -432,7 +433,7 @@ export component IntSelector {
                 if !root.tracking {
                     let dx = Math.abs(self.mouse-x - self.pressed-x);
                     let dy = Math.abs(self.mouse-y - self.pressed-y);
-                    if (dx < 8px && dy < 8px) || dx < dy {
+                    if (dx < 2 * Theme.unit && dy < 2 * Theme.unit) || dx < dy {
                         return;
                     }
                     root.tracking = true;
@@ -457,21 +458,21 @@ export component IntSelector {
     }
 
     Text {
-        x: 67px;
-        y: 17px;
-        width: 266px;
-        height: 66px;
+        x: 16.75 * Theme.unit;
+        y: 4.25 * Theme.unit;
+        width: 66.5 * Theme.unit;
+        height: 16.5 * Theme.unit;
         text: root.value + root.unit;
         color: white;
-        font-size: root.tracking ? 33px : 26px;
+        font-size: root.tracking ? 8.25 * Theme.unit : 6.5 * Theme.unit;
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     IconButton {
-        x: 61px;
-        y: 10px;
+        x: 15.25 * Theme.unit;
+        y: 2.5 * Theme.unit;
         icon: "ios-remove";
         opacity: root.value <= root.min ? 0.3 : 1;
         clicked => {
@@ -480,8 +481,8 @@ export component IntSelector {
     }
 
     IconButton {
-        x: 259px;
-        y: 10px;
+        x: 64.75 * Theme.unit;
+        y: 2.5 * Theme.unit;
         icon: "ios-add";
         opacity: root.value >= root.max ? 0.3 : 1;
         clicked => {
@@ -495,23 +496,23 @@ export component IntSelector {
 export component RowLabel {
     in property <string> text;
 
-    width: 400px;
-    height: 48px;
+    width: 100 * Theme.unit;
+    height: 12 * Theme.unit;
 
     Text {
         width: parent.width;
         height: parent.height;
         text: root.text;
         color: white;
-        font-size: 24px;
+        font-size: 6 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: bottom;
     }
 }
 
 export component RowSeparator inherits Rectangle {
-    width: 400px;
-    height: 1px;
+    width: 100 * Theme.unit;
+    height: 0.25 * Theme.unit;
     background: #ffffff40;
 }
 
@@ -520,8 +521,8 @@ export component Pill {
     in property <string> text;
     callback clicked();
 
-    width: 220px;
-    height: 80px;
+    width: 55 * Theme.unit;
+    height: 20 * Theme.unit;
 
     Rectangle {
         border-radius: self.height / 2;
@@ -533,7 +534,7 @@ export component Pill {
         height: parent.height;
         text: root.text;
         color: white;
-        font-size: 32px;
+        font-size: 8 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -548,12 +549,12 @@ export component Pill {
 // A page pushed on top of another, sliding in from the right over 200 ms like LayerStack, and
 // following the back gesture aside (Face.peek).
 export component Page {
-    property <length> offset: 400px;
+    property <length> offset: 100 * Theme.unit;
 
     x: self.offset + Face.peek;
     y: 0;
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
     animate x {
         duration: Face.peeking ? 0ms : 200ms;
         easing: ease-out-quint;
@@ -577,8 +578,8 @@ export component Remorse inherits Rectangle {
 
     x: 0;
     y: 0;
-    width: 400px;
-    height: 400px;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
     background: #000000cc;
     opacity: self.code >= 0 ? 1 : 0;
     visible: self.code >= 0 || self.opacity > 0;
@@ -591,33 +592,33 @@ export component Remorse inherits Rectangle {
     }
 
     Text {
-        y: 128px;
-        width: 400px;
-        height: 24px;
+        y: 32 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 6 * Theme.unit;
         text: root.action;
         color: white;
-        font-size: 24px;
+        font-size: 6 * Theme.unit;
         horizontal-alignment: center;
     }
 
     Text {
-        y: 156px;
-        width: 400px;
-        height: 88px;
+        y: 39 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 22 * Theme.unit;
         text: root.left;
         color: white;
         font-family: "Noto Sans SemiCondensed SemiBold";
-        font-size: 72px;
+        font-size: 18 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     Text {
-        y: 248px;
-        width: 400px;
+        y: 62 * Theme.unit;
+        width: 100 * Theme.unit;
         text: "Tap to cancel";
         color: white;
-        font-size: 24px;
+        font-size: 6 * Theme.unit;
         horizontal-alignment: center;
     }
 

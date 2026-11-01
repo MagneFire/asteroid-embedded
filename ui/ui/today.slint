@@ -3,16 +3,17 @@
 // always empty here as nothing provides one.
 import { Face } from "face.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 export component TodayScreen {
     width: 100%;
     height: 100%;
 
     if Face.weather-valid: Image {
-        x: root.width / 2 - 60px;
-        y: 70px - 30px;
-        width: 60px;
-        height: 60px;
+        x: root.width / 2 - 15 * Theme.unit;
+        y: 17.5 * Theme.unit - 7.5 * Theme.unit;
+        width: 15 * Theme.unit;
+        height: 15 * Theme.unit;
         source: Icons.get(Face.weather-icon(Face.weather-today.id), self.width, self.height);
         colorize: white;
         opacity: 0.8;
@@ -22,19 +23,19 @@ export component TodayScreen {
         x: root.width * 0.55;
         y: 0;
         width: root.width * 0.45;
-        height: 140px;
+        height: 35 * Theme.unit;
         text: Face.temperature(Face.weather-today.min) + "\n" + Face.temperature(Face.weather-today.max);
         color: white;
         opacity: 0.8;
-        font-size: 20px;
+        font-size: 5 * Theme.unit;
         vertical-alignment: center;
     }
 
     Image {
-        x: (root.width - 108px) / 2;
-        y: (root.height - 108px) / 2 + (Face.weather-valid ? 4px : -36px);
-        width: 108px;
-        height: 108px;
+        x: (root.width - 27 * Theme.unit) / 2;
+        y: (root.height - 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit);
+        width: 27 * Theme.unit;
+        height: 27 * Theme.unit;
         source: Icons.get("ios-calendar-outline", self.width, self.height);
         colorize: white;
         opacity: 0.8;
@@ -42,12 +43,12 @@ export component TodayScreen {
 
     Text {
         x: 0;
-        y: (root.height + 108px) / 2 + (Face.weather-valid ? 4px : -36px) + 16px;
+        y: (root.height + 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit) + 4 * Theme.unit;
         width: root.width;
         text: "No events today";
         color: white;
         opacity: 0.8;
-        font-size: 24px;
+        font-size: 6 * Theme.unit;
         horizontal-alignment: center;
     }
 }

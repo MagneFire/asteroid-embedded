@@ -7,6 +7,7 @@ import { Codes } from "codes.slint";
 import { IconButton, Spinner, PageDot } from "controls.slint";
 import { Pager } from "launcher.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 // Hours, minutes and seconds on three spinners with their unit raised beside each, and one
 // button to start or pause. While it runs the spinners follow the time left; turned by hand
@@ -40,10 +41,10 @@ export component TimerApp {
     }
 
     hours := Spinner {
-        x: 64px;
-        y: 59px;
-        width: 53px;
-        height: 280px;
+        x: 16 * Theme.unit;
+        y: 14.75 * Theme.unit;
+        width: 13.25 * Theme.unit;
+        height: 70 * Theme.unit;
         count: 24;
         wrap: false;
         interactive: !Face.timer-running;
@@ -51,10 +52,10 @@ export component TimerApp {
     }
 
     minutes := Spinner {
-        x: 116px;
-        y: 59px;
-        width: 167px;
-        height: 280px;
+        x: 29 * Theme.unit;
+        y: 14.75 * Theme.unit;
+        width: 41.75 * Theme.unit;
+        height: 70 * Theme.unit;
         count: 60;
         wrap: false;
         interactive: !Face.timer-running;
@@ -62,10 +63,10 @@ export component TimerApp {
     }
 
     seconds := Spinner {
-        x: 283px;
-        y: 59px;
-        width: 53px;
-        height: 280px;
+        x: 70.75 * Theme.unit;
+        y: 14.75 * Theme.unit;
+        width: 13.25 * Theme.unit;
+        height: 70 * Theme.unit;
         count: 60;
         wrap: false;
         interactive: !Face.timer-running;
@@ -73,23 +74,23 @@ export component TimerApp {
     }
 
     for unit[i] in ["h", "m", "s"]: Text {
-        x: [120px, 234px, 337px][i] - 15px;
-        y: 160px;
-        width: 30px;
-        height: 36px;
+        x: [30 * Theme.unit, 58.5 * Theme.unit, 84.25 * Theme.unit][i] - 3.75 * Theme.unit;
+        y: 40 * Theme.unit;
+        width: 7.5 * Theme.unit;
+        height: 9 * Theme.unit;
         text: unit;
         color: white;
         opacity: 0.9;
         font-family: "Roboto";
         font-weight: 500;
-        font-size: 26px;
+        font-size: 6.5 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     if root.chosen > 0 || Face.timer-running: IconButton {
-        x: 160px;
-        y: 308px;
+        x: 40 * Theme.unit;
+        y: 77 * Theme.unit;
         icon: Face.timer-running ? "ios-pause" : "ios-timer-outline";
         clicked => {
             Face.clock-action(Codes.ui-timer-start);
@@ -115,7 +116,7 @@ component Sup {
         if root.unit != "": Text {
             text: root.unit;
             color: root.color;
-            font-size: Math.round(root.size * 0.58 / 1px) * 1px;
+            font-size: Math.round(root.size * 0.58 / (0.25 * Theme.unit)) * (0.25 * Theme.unit);
             vertical-alignment: top;
         }
     }
@@ -128,12 +129,12 @@ component Sup {
 export component StopwatchApp {
     property <int> ms: Face.stopwatch-ms;
     property <bool> paused: !Face.stopwatch-running && self.ms > 0;
-    property <length> scroll: pages.index * 400px - pages.drag;
+    property <length> scroll: pages.index * 100 * Theme.unit - pages.drag;
     property <bool> blink;
     // How far the laps are scrolled up, and how far they can go: from 120 px down, 80 px rows and
     // an 80 px gap below the last.
     property <length> laps-scroll;
-    property <length> laps-end: Math.min(0, 400px - 120px - (Face.stopwatch-laps.length + 1) * 80px - 80px);
+    property <length> laps-end: Math.min(0, 100 * Theme.unit - 30 * Theme.unit - (Face.stopwatch-laps.length + 1) * 20 * Theme.unit - 20 * Theme.unit);
     property <length> laps-y: Math.clamp(self.laps-scroll + pages.cross-drag, self.laps-end, 0);
     animate scroll {
         duration: pages.dragging ? 0ms : pages.anim;
@@ -170,14 +171,14 @@ export component StopwatchApp {
 
     Rectangle {
         x: -root.scroll;
-        width: 400px;
-        height: 400px;
+        width: 100 * Theme.unit;
+        height: 100 * Theme.unit;
 
         VerticalLayout {
             x: 0;
             y: 0;
-            width: 400px;
-            height: 400px;
+            width: 100 * Theme.unit;
+            height: 100 * Theme.unit;
             alignment: center;
             opacity: root.paused && root.blink ? 0 : 1;
             animate opacity {
@@ -190,7 +191,7 @@ export component StopwatchApp {
                 Sup {
                     value: Math.floor(root.ms / 3600000);
                     unit: "h";
-                    size: 100px;
+                    size: 25 * Theme.unit;
                 }
             }
 
@@ -200,14 +201,14 @@ export component StopwatchApp {
                 Sup {
                     value: root.pad(Math.floor(Math.mod(root.ms, 3600000) / 60000));
                     unit: "m";
-                    size: 70px;
+                    size: 17.5 * Theme.unit;
                     color: #CCCCF3;
                 }
 
                 Sup {
                     value: root.pad(Math.floor(Math.mod(root.ms, 60000) / 1000));
                     unit: "s";
-                    size: 70px;
+                    size: 17.5 * Theme.unit;
                     color: #CCCCF3;
                 }
             }
@@ -218,7 +219,7 @@ export component StopwatchApp {
                 Sup {
                     value: root.pad(Math.floor(Math.mod(root.ms, 3600000) / 60000));
                     unit: "m";
-                    size: 100px;
+                    size: 25 * Theme.unit;
                 }
             }
 
@@ -228,13 +229,13 @@ export component StopwatchApp {
                 Sup {
                     value: root.pad(Math.floor(Math.mod(root.ms, 60000) / 1000));
                     unit: "s";
-                    size: 70px;
+                    size: 17.5 * Theme.unit;
                     color: #CCCCF3;
                 }
 
                 Sup {
                     value: Math.floor(Math.mod(root.ms, 1000) / 100);
-                    size: 70px;
+                    size: 17.5 * Theme.unit;
                     color: #CCCCF3;
                 }
             }
@@ -245,12 +246,12 @@ export component StopwatchApp {
                 Sup {
                     value: root.pad(Math.floor(root.ms / 1000));
                     unit: "s";
-                    size: 100px;
+                    size: 25 * Theme.unit;
                 }
 
                 Sup {
                     value: Math.floor(Math.mod(root.ms, 1000) / 100);
-                    size: 70px;
+                    size: 17.5 * Theme.unit;
                     color: #CCCCF3;
                 }
             }
@@ -265,66 +266,66 @@ export component StopwatchApp {
         }
 
         if root.paused: Image {
-            x: 152px;
-            y: 290px;
-            width: 96px;
-            height: 96px;
+            x: 38 * Theme.unit;
+            y: 72.5 * Theme.unit;
+            width: 24 * Theme.unit;
+            height: 24 * Theme.unit;
             source: Icons.get("ios-refresh", self.width, self.height);
             colorize: white;
         }
     }
 
     Rectangle {
-        x: 400px - root.scroll;
-        width: 400px;
-        height: 400px;
+        x: 100 * Theme.unit - root.scroll;
+        width: 100 * Theme.unit;
+        height: 100 * Theme.unit;
         clip: true;
 
         for k[i] in Face.stopwatch-laps.length + 1: Rectangle {
-            y: 120px + i * 80px + root.laps-y;
-            width: 400px;
-            height: 80px;
-            visible: self.y < 400px && self.y > -80px;
+            y: 30 * Theme.unit + i * 20 * Theme.unit + root.laps-y;
+            width: 100 * Theme.unit;
+            height: 20 * Theme.unit;
+            visible: self.y < 100 * Theme.unit && self.y > -20 * Theme.unit;
 
             HorizontalLayout {
-                x: 60px;
-                width: 280px;
+                x: 15 * Theme.unit;
+                width: 70 * Theme.unit;
                 height: parent.height;
-                spacing: 12px;
+                spacing: 3 * Theme.unit;
                 alignment: start;
 
                 Text {
                     text: "L" + (i == 0 ? Face.stopwatch-laps.length + 1 : Face.stopwatch-laps.length - (i - 1));
                     color: #CCCCF3;
                     opacity: 0.6;
-                    font-size: 24px;
+                    font-size: 6 * Theme.unit;
                     vertical-alignment: center;
                 }
 
                 Text {
                     text: i == 0 ? root.run-text(root.ms - (Face.stopwatch-laps.length > 0 ? Face.stopwatch-laps[0] : 0)) : root.lap-text(root.split(i - 1));
                     color: white;
-                    font-size: 32px;
+                    font-size: 8 * Theme.unit;
                     vertical-alignment: center;
                 }
             }
 
             if i != 0 && i < Face.stopwatch-laps.length: Text {
-                x: 140px;
-                width: 200px;
-                height: 80px;
+                x: 35 * Theme.unit;
+                width: 50 * Theme.unit;
+                height: 20 * Theme.unit;
                 text: root.delta-text(root.split(i - 1) - root.split(i));
                 color: root.split(i - 1) - root.split(i) <= 0 ? #AAEE44 : #FF6644;
-                font-size: 24px;
+                font-size: 6 * Theme.unit;
                 horizontal-alignment: right;
                 vertical-alignment: center;
             }
 
             Rectangle {
                 x: 0;
-                y: parent.height - 1px;
-                width: 400px;
-                height: 1px;
+                y: parent.height - 0.25 * Theme.unit;
+                width: 100 * Theme.unit;
+                height: 0.25 * Theme.unit;
                 background: #ffffff40;
             }
         }
@@ -332,19 +333,19 @@ export component StopwatchApp {
         Rectangle {
             x: 0;
             y: 0;
-            width: 400px;
-            height: 160px;
+            width: 100 * Theme.unit;
+            height: 40 * Theme.unit;
             background: @linear-gradient(180deg, #000000ff 0%, #00000000 100%);
         }
 
         Text {
             x: 0;
             y: 0;
-            width: 400px;
-            height: 160px;
+            width: 100 * Theme.unit;
+            height: 40 * Theme.unit;
             text: Face.stopwatch-laps.length < 2 ? root.lap-text(root.ms - (Face.stopwatch-laps.length > 0 ? Face.stopwatch-laps[0] : 0)) : root.delta-text((root.ms - Face.stopwatch-laps[0]) - root.split(0));
             color: Face.stopwatch-laps.length < 2 ? #CCCCF3 : (root.ms - Face.stopwatch-laps[0]) - root.split(0) <= 0 ? #AAEE44 : #FF6644;
-            font-size: 48px;
+            font-size: 12 * Theme.unit;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -354,7 +355,7 @@ export component StopwatchApp {
     // The pages take the taps too, so a swipe can start on them: on the time a tap starts or
     // stops it, on the reset button resets it, on the lap page's header records a lap.
     pages := Pager {
-        item: 400px;
+        item: 100 * Theme.unit;
         count: 2;
         limit: 1;
         cross: self.index == 1;
@@ -363,10 +364,10 @@ export component StopwatchApp {
         }
         tapped(x, y) => {
             if self.index == 1 {
-                if y < 160px {
+                if y < 40 * Theme.unit {
                     Face.clock-action(Codes.ui-stopwatch-lap);
                 }
-            } else if root.paused && y > 280px && x > 140px && x < 260px {
+            } else if root.paused && y > 70 * Theme.unit && x > 35 * Theme.unit && x < 65 * Theme.unit {
                 Face.clock-action(Codes.ui-stopwatch-reset);
                 self.index = 0;
             } else {
@@ -377,10 +378,10 @@ export component StopwatchApp {
     }
 
     if !(root.paused && pages.index == 0): PageDot {
-        x: (400px - self.width) / 2;
-        y: 384px;
+        x: (100 * Theme.unit - self.width) / 2;
+        y: 96 * Theme.unit;
         count: 2;
         current: pages.index;
-        size: 8px;
+        size: 2 * Theme.unit;
     }
 }

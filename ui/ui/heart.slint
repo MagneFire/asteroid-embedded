@@ -6,6 +6,7 @@
 import { Face } from "face.slint";
 import { HeartArc } from "heart_arc.slint";
 import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
 
 export component HeartRateScreen {
     property <int> bpm: Face.heart-rate;
@@ -14,7 +15,7 @@ export component HeartRateScreen {
     property <duration> started;
     property <bool> pulse-out;
     property <bool> blink: true;
-    property <length> r: 400px / 2.9;
+    property <length> r: 100 * Theme.unit / 2.9;
     // How far round the arc reaches, 0 to 1 of its 310 degrees: 30 s to grow while measuring.
     property <float> reach: self.bpm > 0 ? 1 : Math.min(1, (animation-tick() - self.started) / 30s);
     // With each beat both ends pull back 6 degrees as the heart grows, and come back as it shrinks.
@@ -60,7 +61,9 @@ export component HeartRateScreen {
     for seg[i] in HeartArc.segments: Image {
         x: seg.x;
         y: seg.y;
-        source: seg.img;
+        width: seg.w;
+        height: seg.h;
+        source: Icons.get(seg.img, self.width, self.height);
         colorize: #38ff12;
         opacity: 0.4;
         visible: (115 + i >= root.start && 116 + i <= root.e1) || (root.split && 115 + i >= root.g2 && 116 + i <= root.end);
@@ -75,7 +78,9 @@ export component HeartRateScreen {
     ]: Image {
         x: cap.img.x;
         y: cap.img.y;
-        source: cap.img.img;
+        width: cap.img.w;
+        height: cap.img.h;
+        source: Icons.get(cap.img.img, self.width, self.height);
         colorize: #38ff12;
         opacity: 0.4;
         visible: cap.on;
@@ -83,12 +88,12 @@ export component HeartRateScreen {
     Text {
         x: 0;
         y: 0;
-        width: 400px;
-        height: 400px;
+        width: 100 * Theme.unit;
+        height: 100 * Theme.unit;
         text: root.bpm > 0 ? root.bpm : "Measuring…";
         color: white;
-        font-size: root.bpm > 0 ? (root.bpm >= 100 ? 116px : 132px) : 24px;
-        letter-spacing: root.bpm > 0 ? -3.2px : 0;
+        font-size: root.bpm > 0 ? (root.bpm >= 100 ? 29 * Theme.unit : 33 * Theme.unit) : 6 * Theme.unit;
+        letter-spacing: root.bpm > 0 ? -0.8 * Theme.unit : 0;
         horizontal-alignment: center;
         vertical-alignment: center;
         opacity: root.bpm > 0 || root.blink ? 1 : 0;
@@ -107,25 +112,27 @@ export component HeartRateScreen {
     }
 
     if root.last > 0: Text {
-        x: 200px + root.r * Math.cos(root.last-deg * 1deg) - 30px;
-        y: 200px + root.r * Math.sin(root.last-deg * 1deg) - 20px;
-        width: 60px;
-        height: 40px;
+        x: 50 * Theme.unit + root.r * Math.cos(root.last-deg * 1deg) - 7.5 * Theme.unit;
+        y: 50 * Theme.unit + root.r * Math.sin(root.last-deg * 1deg) - 5 * Theme.unit;
+        width: 15 * Theme.unit;
+        height: 10 * Theme.unit;
         text: root.last;
         color: white;
-        font-size: 34px;
+        font-size: 8.5 * Theme.unit;
         font-weight: 700;
-        letter-spacing: -0.4px;
+        letter-spacing: -0.1 * Theme.unit;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     // The arrow inside it, pointing at the current rate in the middle.
     if root.last > 0: Image {
-        property <{img: image, x: length, y: length}> arrow: HeartArc.arrows[Math.round(root.last-deg) - 140];
+        property <{img: string, x: length, y: length, w: length, h: length}> arrow: HeartArc.arrows[Math.round(root.last-deg) - 140];
         x: self.arrow.x;
         y: self.arrow.y;
-        source: self.arrow.img;
+        width: self.arrow.w;
+        height: self.arrow.h;
+        source: Icons.get(self.arrow.img, self.width, self.height);
         colorize: #38ff12;
         opacity: 0.4;
     }
@@ -138,15 +145,15 @@ export component HeartRateScreen {
         }
     }
 
-    property <length> heart: root.pulse-out ? 104px : 80px;
+    property <length> heart: root.pulse-out ? 26 * Theme.unit : 20 * Theme.unit;
     animate heart {
         duration: root.bpm > 0 ? 20000ms / root.bpm : 100ms;
         easing: ease-in-out-sine;
     }
 
     Image {
-        x: 200px - root.heart * 0.6;
-        y: 324px - root.heart * 0.6;
+        x: 50 * Theme.unit - root.heart * 0.6;
+        y: 81 * Theme.unit - root.heart * 0.6;
         width: root.heart * 1.2;
         height: root.heart * 1.2;
         source: Icons.get("ios-heart", self.width, self.height);
@@ -155,12 +162,12 @@ export component HeartRateScreen {
 
     Text {
         x: 0;
-        y: 324px - 15px;
-        width: 400px;
-        height: 34px;
+        y: 81 * Theme.unit - 3.75 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 8.5 * Theme.unit;
         text: "bpm";
         color: white;
-        font-size: Math.round(root.heart * 0.22 / 1px) * 1px;
+        font-size: Math.round(root.heart * 0.22 / (0.25 * Theme.unit)) * (0.25 * Theme.unit);
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
