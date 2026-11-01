@@ -200,6 +200,7 @@ static struct gpu_shader *cur_vs;
 static uint32_t fs_total_in, pvt_mem, fence, seqno, target_w, target_h;
 static float *quads;
 static unsigned quad_i;
+static float turn_c = 1.0f, turn_s;
 static bool drawn;
 static volatile uint32_t *fence_ptr;
 
@@ -323,6 +324,8 @@ void gpu_draw_begin(const struct gpu_target *t)
 	target_w = w;
 	target_h = h;
 	quad_i = 0;
+	turn_c = 1.0f;
+	turn_s = 0.0f;
 	if ((t->base & 31) || (pitch_px & 31))
 		log_printf("gpu: target %08lx pitch %lu not 32-byte / 32-pixel aligned\n", t->base, t->pitch_bytes);
 	gpu_ring_reserve(512);
@@ -605,7 +608,26 @@ static void quad(float *q, int x, int y, uint32_t width, uint32_t height, float 
 		x1, y1, 0, 1, u1, v1,
 		x0, y1, 0, 1, u0, v1,
 	};
+	gpu_draw_turn_vertices(v, 6, 6);
 	memcpy(q, v, sizeof v);
+}
+
+void gpu_draw_turn(float c, float s)
+{
+	turn_c = c;
+	turn_s = s;
+}
+
+/* Clockwise on the screen, in clip space with y up. */
+void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride)
+{
+	if (turn_s == 0.0f && turn_c == 1.0f)
+		return;
+	for (unsigned i = 0; i < n; i++, v += stride) {
+		float x = v[0], y = v[1];
+		v[0] = x * turn_c + y * turn_s;
+		v[1] = y * turn_c - x * turn_s;
+	}
 }
 
 void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
