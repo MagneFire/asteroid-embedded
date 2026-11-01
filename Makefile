@@ -10,7 +10,11 @@ SIZE    := $(CROSS)size
 DTC     ?= dtc
 WATCH   ?= sturgeon
 TEST    ?=
-include src/board/$(WATCH)/board.mk
+# Until the UI sizes itself at runtime it is still built for one watch.
+UI_SIZE_sturgeon := 400
+UI_SIZE_sparrow  := 320
+HEART_RATE_sturgeon := 1
+HEART_RATE_sparrow  := 0
 
 BUILD  := build
 TUSB   := third_party/tinyusb/src
@@ -19,12 +23,13 @@ MBEDTLS := third_party/mbedtls
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/power.c src/sensors/steps.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/power.c src/sensors/steps.c src/sensors/hub.c src/sensors/hub_em7184.c \
+        src/input/touch.c src/input/touch_it7260.c src/input/haptics.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
-        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/stubs.c $(BOARD_SRCS) \
+        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
-        src/lib/libc.c src/lib/fmt.c src/ui/ui.c src/ui/stack.c \
+        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c \
         src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
         src/bt/hci.c src/bt/bcm.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
@@ -44,7 +49,7 @@ OBJS := $(patsubst %,$(BUILD)/%.o,$(SRCS))
 CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -ffreestanding -nostdlib \
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
-          -Isrc -Isrc/board/$(WATCH) -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
+          -Isrc -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
           -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"'
@@ -85,12 +90,12 @@ $(BUILD)/$(NIMBLE)/%.c.o $(BUILD)/$(MBEDTLS)/%.c.o: CFLAGS += $(THIRD_PARTY_CFLA
 
 $(BUILD)/src/version.c.o: $(BUILD)/gitrev.h
 $(BUILD)/src/%.c.o: CFLAGS += -Werror
-$(BUILD)/%.c.o: %.c $(BUILD)/config.h $(BUILD)/watch.mk
+$(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS) $(BUILD)/watch.mk
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" ASTEROID_BOARD=$(WATCH) ASTEROID_UI_SIZE=$(BOARD_UI_SIZE) ASTEROID_HEART_RATE=$(BOARD_HEART_RATE) \
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" ASTEROID_BOARD=$(WATCH) ASTEROID_UI_SIZE=$(UI_SIZE_$(WATCH)) ASTEROID_HEART_RATE=$(HEART_RATE_$(WATCH)) \
 		$(CARGO) build --release --target armv7a-none-eabihf
 	@touch $@
 
@@ -109,11 +114,14 @@ $(BUILD)/%.dtb: dts/%.dts
 	@mkdir -p $(BUILD)
 	$(DTC) -q -I dts -O dtb -o $@ $<
 
-$(BUILD)/qcdt-$(WATCH).img: $(BUILD)/$(WATCH).dtb tools/qcdt.py
-	python3 tools/qcdt.py -o $@ $<
+# One tree per watch: each bootloader picks the one whose board-id it has.
+DTBS := $(patsubst dts/%.dts,$(BUILD)/%.dtb,$(wildcard dts/*.dts))
 
-$(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt-$(WATCH).img tools/mkbootimg.py
-	python3 tools/mkbootimg.py --kernel $(BUILD)/asteroid.bin --dt $(BUILD)/qcdt-$(WATCH).img -o $@
+$(BUILD)/qcdt.img: $(DTBS) tools/qcdt.py
+	python3 tools/qcdt.py -o $@ $(DTBS)
+
+$(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt.img tools/mkbootimg.py
+	python3 tools/mkbootimg.py --kernel $(BUILD)/asteroid.bin --dt $(BUILD)/qcdt.img -o $@
 
 run: $(BUILD)/asteroid.img
 	python3 tools/run.py $(RUNFLAGS)
@@ -122,7 +130,7 @@ SLINT_VIEWER ?= $(or $(shell command -v slint-viewer 2>/dev/null),$(HOME)/.cargo
 
 # The UI is laid out for 400 px; for another screen size the viewer scales it as the build does,
 # one window pixel to a screen pixel.
-PREVIEW_SCALE = $(if $(filter 400,$(BOARD_UI_SIZE)),,SLINT_SCALE_FACTOR=$(shell awk 'BEGIN { print $(BOARD_UI_SIZE) / 400 }'))
+PREVIEW_SCALE = $(if $(filter 400,$(UI_SIZE_$(WATCH))),,SLINT_SCALE_FACTOR=$(shell awk 'BEGIN { print $(UI_SIZE_$(WATCH)) / 400 }'))
 
 preview: $(UI_LIB)
 	$(PREVIEW_SCALE) $(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/note_icons.slint)))) \
@@ -133,7 +141,7 @@ disasm: $(BUILD)/asteroid.elf
 
 HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
-               -U_FORTIFY_SOURCE -I src -I src/board/$(WATCH) -I tests -DHOST_TEST -include tests/host.h \
+               -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/sensors/orient.c src/ui/rotation.c
 PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c

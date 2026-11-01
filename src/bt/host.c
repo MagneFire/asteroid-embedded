@@ -231,6 +231,7 @@ static int init(void)
 	ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 	bt_store_init();
 	ble_svc_gap_init();
+	ble_svc_gap_device_name_set(board->name);
 	ble_svc_gatt_init();
 	int rc = bt_gatt_init();
 	if (rc)

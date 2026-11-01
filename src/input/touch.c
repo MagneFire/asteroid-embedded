@@ -12,14 +12,14 @@
 #include "display/display.h"
 #include "touch.h"
 
-#define QUP		BOARD_TOUCH_QUP
+#define QUP		(board->touch_pins.i2c.qup)
 #define F11_CTRL58	0x64
 #define PALM_SIZE	40
-#define ADDR		BOARD_TOUCH_ADDR
+#define ADDR		(board->touch_pins.i2c.addr)
 #define PDT_START	0xe9
 #define PAGE_SELECT	0xff
-#define GPIO_ATTN	BOARD_TOUCH_ATTN
-#define GPIO_RESET	BOARD_TOUCH_RESET
+#define GPIO_ATTN	(board->touch_pins.irq)
+#define GPIO_RESET	(board->touch_pins.reset)
 
 struct fn {
 	uint8_t query, cmd, ctrl, data, intr, number;
@@ -213,7 +213,7 @@ static struct {
 	uint32_t t0, ms, last;
 } fake;
 
-void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms)
+static void rmi4_inject(int x0, int y0, int x1, int y1, uint32_t ms)
 {
 	fake.x0 = x0;
 	fake.y0 = y0;
@@ -247,7 +247,7 @@ static void fake_poll(void)
 	irq_enable();
 }
 
-bool touch_poll(struct touch *t)
+static bool rmi4_poll(struct touch *t)
 {
 	i2c_qup_poll(QUP);
 	if (fake.active)
@@ -261,18 +261,18 @@ bool touch_poll(struct touch *t)
 	return true;
 }
 
-void touch_stats(uint32_t *att, uint32_t *err)
+static void rmi4_stats(uint32_t *att, uint32_t *err)
 {
 	*att = attentions;
 	*err = errors;
 }
 
-bool touch_init(void)
+static bool rmi4_init(void)
 {
 	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	power_on();
 	uint8_t e[6];
-	int ret = i2c_qup_init(QUP, BOARD_TOUCH_SDA, BOARD_TOUCH_SCL, 3, 384000);
+	int ret = i2c_qup_init(QUP, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 384000);
 	if (!ret)
 		ret = rd(PAGE_SELECT, e, 1);
 	if (ret) {
@@ -329,3 +329,10 @@ bool touch_init(void)
 	present = true;
 	return true;
 }
+
+const struct touch_driver touch_rmi4 = {
+	.init = rmi4_init,
+	.poll = rmi4_poll,
+	.stats = rmi4_stats,
+	.inject = rmi4_inject,
+};

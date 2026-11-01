@@ -30,10 +30,10 @@
 #include "hub.h"
 #include "power.h"
 
-#define QUP		BOARD_HUB_QUP
-#define ADDR		BOARD_HUB_ADDR
-#define GPIO_IRQ	BOARD_HUB_IRQ
-#define MPM_PIN_IRQ	BOARD_HUB_MPM
+#define QUP		(board->hub_pins.i2c.qup)
+#define ADDR		(board->hub_pins.i2c.addr)
+#define GPIO_IRQ	(board->hub_pins.irq)
+#define MPM_PIN_IRQ	(board->hub_pins.mpm)
 #define FIRMWARE	"em7184.fw"
 #define BUS_HZ		384000
 
@@ -657,10 +657,10 @@ static void log_pending(void)
 	}
 }
 
-bool hub_init(void)
+static bool em7184_init(void)
 {
 	tlmm_config(GPIO_IRQ, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
-	int r = i2c_qup_init(QUP, BOARD_HUB_SDA, BOARD_HUB_SCL, BOARD_HUB_FUNC, BUS_HZ);
+	int r = i2c_qup_init(QUP, board->hub_pins.i2c.sda, board->hub_pins.i2c.scl, board->hub_pins.i2c.func, BUS_HZ);
 	if (!r)
 		r = rd(REG_PRODUCT_ID, product, sizeof product);
 	if (r) {
@@ -678,7 +678,7 @@ bool hub_init(void)
 	return true;
 }
 
-void hub_poll(void)
+static void em7184_poll(void)
 {
 	if (state == S_OFF || state == S_FAILED)
 		return;
@@ -728,7 +728,7 @@ void hub_poll(void)
 
 /* For the bench: one byte reads that register and returns its value,
  * more write the rest to the register in the first. */
-int hub_send(const uint8_t *p, unsigned n)
+static int em7184_send(const uint8_t *p, unsigned n)
 {
 	if (!bus_ok || !n || n > 1 + PARAM_WRITE_MAX)
 		return -1;
@@ -740,20 +740,20 @@ int hub_send(const uint8_t *p, unsigned n)
 }
 
 /* The hub keeps its own time (31.25 us ticks) and needs no wall clock. */
-void hub_set_time(void)
+static void em7184_set_time(void)
 {
 }
 
-uint32_t hub_steps(void)
+static uint32_t em7184_steps(void)
 {
 	return steps;
 }
 
-void hub_heart_rate_on(bool on)
+static void em7184_heart_rate_on(bool on)
 {
 }
 
-uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
+static uint32_t em7184_heart_rate(uint8_t *status, unsigned *readings)
 {
 	if (status)
 		*status = 0;
@@ -762,7 +762,7 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 	return HUB_NONE;
 }
 
-void hub_accel_on(bool on)
+static void em7184_accel_on(bool on)
 {
 	if (on == accel_on || state != S_READY)
 		return;
@@ -780,7 +780,7 @@ void hub_accel_on(bool on)
 
 /* The newest sample since the last call: x to the right of the screen,
  * y to its top, z out of it. */
-bool hub_accel(int16_t v[3])
+static bool em7184_accel(int16_t v[3])
 {
 	uint32_t flags = irq_save();
 	bool fresh = accel_on && accel_new;
@@ -793,14 +793,14 @@ bool hub_accel(int16_t v[3])
 	return fresh;
 }
 
-bool hub_tilted(void)
+static bool em7184_tilted(void)
 {
 	bool t = tilted;
 	tilted = false;
 	return t;
 }
 
-bool hub_can_sleep(void)
+static bool em7184_can_sleep(void)
 {
 	if (state == S_START)
 		return false;
@@ -811,7 +811,7 @@ bool hub_can_sleep(void)
 
 /* Told once per sleep, not at every cluster collapse: the flag is
  * cleared from hub_poll when the screen comes on. */
-void hub_sleep(bool asleep)
+static void em7184_sleep(bool asleep)
 {
 	if (!asleep || state != S_READY || ap_suspended)
 		return;
@@ -822,7 +822,7 @@ void hub_sleep(bool asleep)
 		ap_suspended = true;
 }
 
-void hub_status(void (*say)(const char *fmt, ...))
+static void em7184_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[] = { "off", "starting", "ready", "failed" };
 	say("hub: %s, product %02x rev %02x, rom %04x ram %04x, image crc %08lx, %u restarts\n", names[state], product[0],
@@ -855,3 +855,19 @@ void hub_status(void (*say)(const char *fmt, ...))
 	    (unsigned long)errors, chunk, ap_suspended ? "suspended" : "awake", tlmm_get(GPIO_IRQ));
 	say("hub: accelerometer %s %d %d %d\n", accel_on ? "on" : "off", accel[0], accel[1], accel[2]);
 }
+
+const struct hub_driver hub_em7184 = {
+	.init = em7184_init,
+	.poll = em7184_poll,
+	.send = em7184_send,
+	.set_time = em7184_set_time,
+	.steps = em7184_steps,
+	.heart_rate_on = em7184_heart_rate_on,
+	.heart_rate = em7184_heart_rate,
+	.tilted = em7184_tilted,
+	.accel_on = em7184_accel_on,
+	.accel = em7184_accel,
+	.can_sleep = em7184_can_sleep,
+	.sleep = em7184_sleep,
+	.status = em7184_status,
+};

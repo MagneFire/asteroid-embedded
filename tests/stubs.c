@@ -12,6 +12,9 @@
 #include "gpu/draw.h"
 
 const char build_id[] = "hosttest";
+static const struct board host_board = { .name = "host", .compatible = "host" };
+const struct board *board = &host_board;
+const char *board_detected_by = "test";
 uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
 bool stub_asleep;
 jmp_buf *stub_reboot_jmp;

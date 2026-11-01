@@ -259,12 +259,12 @@ uint32_t pmic_battery_mv(void)
 #define USB_RT_VALID		BIT(1)
 #define CHG_EN			BIT(7)
 #define CHG_ON_BAT_FORCE	BIT(0)
-#define VDDMAX_MV		BOARD_CHG_VDD_MAX_MV
-#define VDDSAFE_MV		BOARD_CHG_VDD_SAFE_MV
-#define VINMIN_MV		BOARD_CHG_VIN_MIN_MV
-#define IBATMAX_MA		BOARD_CHG_IBAT_MAX_MA
-#define IBATSAFE_MA		BOARD_CHG_IBAT_SAFE_MA
-#define ITERM_MA		BOARD_CHG_ITERM_MA
+#define VDDMAX_MV		(board->chg.vdd_max_mv)
+#define VDDSAFE_MV		(board->chg.vdd_safe_mv)
+#define VINMIN_MV		(board->chg.vin_min_mv)
+#define IBATMAX_MA		(board->chg.ibat_max_ma)
+#define IBATSAFE_MA		(board->chg.ibat_safe_ma)
+#define ITERM_MA		(board->chg.iterm_ma)
 #define RESUME_DELTA_MV		100
 #define VBATDET_ERR_MV		50
 #define TCHG_MINS		150
@@ -274,16 +274,8 @@ uint32_t pmic_battery_mv(void)
 #define EOC_COUNT		10
 #define TRIM_MAX_DELTA_MV	80
 
-/* The board's limits have to land on a register step: 10 mV from 3.24 V
- * for the voltages, 50 mV from 4.0 V for the input minimum and 50 mA for
- * the currents. */
-_Static_assert(VDDMAX_MV >= 3240 && VDDMAX_MV % 10 == 0 && VDDSAFE_MV >= VDDMAX_MV && VDDSAFE_MV % 10 == 0,
-	       "charger voltage off the 10 mV steps");
-_Static_assert(VINMIN_MV >= 4000 && VINMIN_MV % 50 == 0 && 0x0c + (VINMIN_MV - 4000) / 50 <= 0x3f,
-	       "charger input minimum off the 50 mV steps");
-_Static_assert(IBATMAX_MA % 50 == 0 && IBATMAX_MA / 50 <= 0x3f && IBATSAFE_MA % 50 == 0 && IBATSAFE_MA / 50 <= 0x3f &&
-		       IBATMAX_MA <= IBATSAFE_MA,
-	       "charger current off the 50 mA steps");
+/* The board's limits land on a register step; board.h's BOARD_CHG_CHECK
+ * checks each table. */
 
 static uint8_t trim_center;
 static int32_t vddmax_delta_mv;
@@ -604,7 +596,7 @@ void pmic_charger_poll(void)
 }
 
 /* Battery current through the current ADC across the external sense
- * resistor (BOARD_RSENSE_UOHM): each reading is calibrated with a
+ * resistor (the board's rsense_uohm): each reading is calibrated with a
  * gain conversion (17.857 mV reference) and an offset conversion of the
  * same input with its terminals shorted. */
 #define IADC			0x003600
@@ -621,7 +613,7 @@ void pmic_charger_poll(void)
 #define IADC_CH_GAIN		3
 #define IADC_CH_EXT_OFFSET	5
 #define IADC_GAIN_UV		17857
-#define RSENSE_UOHM		BOARD_RSENSE_UOHM
+#define RSENSE_UOHM		((int)board->rsense_uohm)
 
 static int iadc_raw(uint8_t chan)
 {

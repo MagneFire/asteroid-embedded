@@ -53,6 +53,18 @@ static void kick(void)
 	frames++;
 }
 
+/* The size of the picture the bootloader left on the panel, 0 x 0 if
+ * the display is off; it is the panel's own size. */
+void display_splash_size(uint32_t *w, uint32_t *h)
+{
+	*w = *h = 0;
+	if (!(readl(MDP_GDSCR) & BIT(31)) || !readl(PIPE + PIPE_SRC0_ADDR))
+		return;
+	uint32_t img = readl(PIPE + PIPE_SRC_IMG_SIZE);
+	*w = img & 0xffff;
+	*h = img >> 16;
+}
+
 bool display_init(void)
 {
 	if (!(readl(MDP_GDSCR) & BIT(31))) {
@@ -82,24 +94,24 @@ bool display_init(void)
 		   readl(MDP_PP0 + PP_TEAR_CHECK_EN), readl(MDP_PP0 + PP_SYNC_CONFIG_VSYNC),
 		   readl(MDP_PP0 + PP_SYNC_CONFIG_HEIGHT), readl(MDP_PP0 + PP_VSYNC_INIT_VAL),
 		   readl(MDP_PP0 + PP_SYNC_THRESH), readl(MDP_PP0 + PP_START_POS),
-		   readl(MDP_PP0 + PP_RD_PTR_IRQ), readl(TLMM_GPIO_CFG(BOARD_PANEL_TE_GPIO)));
+		   readl(MDP_PP0 + PP_RD_PTR_IRQ), readl(TLMM_GPIO_CFG(board->panel.te_gpio)));
 	/* Tear check: the TE gpio carries the panel's TE line into the MDP
 	 * (function 1, input, pull-down). The vsync counter runs at 19.2 MHz
 	 * over the panel's lines (height + porches) at its refresh rate and
 	 * is resynchronised by TE; a kick then starts at the vertical blank. */
-	writel(1 | 1 << 2, TLMM_GPIO_CFG(BOARD_PANEL_TE_GPIO));
-	uint32_t edges = 0, level = readl(TLMM_GPIO_IO(BOARD_PANEL_TE_GPIO)) & 1, t0 = time_us();
+	writel(1 | 1 << 2, TLMM_GPIO_CFG(board->panel.te_gpio));
+	uint32_t edges = 0, level = readl(TLMM_GPIO_IO(board->panel.te_gpio)) & 1, t0 = time_us();
 	while (time_us() - t0 < 100000) {
-		uint32_t l = readl(TLMM_GPIO_IO(BOARD_PANEL_TE_GPIO)) & 1;
+		uint32_t l = readl(TLMM_GPIO_IO(board->panel.te_gpio)) & 1;
 		if (l != level) {
 			edges++;
 			level = l;
 		}
 	}
 	log_printf("display: te gpio %lu edges in 100 ms\n", edges);
-	uint32_t vclks_line = 19200000 / (BOARD_PANEL_LINES * BOARD_PANEL_HZ);
+	uint32_t vclks_line = 19200000 / (board->panel.lines * board->panel.hz);
 	writel(PP_VSYNC_COUNTER_EN | PP_VSYNC_IN_EN | vclks_line, MDP_PP0 + PP_SYNC_CONFIG_VSYNC);
-	writel(BOARD_PANEL_LINES, MDP_PP0 + PP_SYNC_CONFIG_HEIGHT);
+	writel(board->panel.lines, MDP_PP0 + PP_SYNC_CONFIG_HEIGHT);
 	writel(fb.height, MDP_PP0 + PP_VSYNC_INIT_VAL);
 	writel(fb.height + 1, MDP_PP0 + PP_RD_PTR_IRQ);
 	writel(fb.height, MDP_PP0 + PP_START_POS);
@@ -112,7 +124,7 @@ bool display_init(void)
 	writel(SRC_FORMAT_XRGB8888, PIPE + PIPE_SRC_FORMAT);
 	writel(UNPACK_XRGB, PIPE + PIPE_SRC_UNPACK);
 	writel(fb.stride * 4, PIPE + PIPE_SRC_YSTRIDE);
-	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | (BOARD_PANEL_FLIP_UD ? PIPE_FLIP_UD : 0),
+	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | (board->panel.flip_ud ? PIPE_FLIP_UD : 0),
 	       PIPE + PIPE_SRC_OP_MODE);
 	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
@@ -260,8 +272,6 @@ void display_wake(void)
 /* Idle mode keeps the panel showing its memory with fewer colours and
  * less power, for the always-on face. The command sequences are the
  * panel's, from the board. */
-#include "panel.h"
-
 static void dcs_sequence(const struct dcs_step *steps, unsigned n)
 {
 	for (unsigned i = 0; i < n; i++) {
@@ -276,7 +286,7 @@ void display_idle(bool on)
 	display_active();
 	pp_wait();
 	if (on)
-		dcs_sequence(panel_idle_on, sizeof panel_idle_on / sizeof panel_idle_on[0]);
+		dcs_sequence(board->panel.idle_on, board->panel.idle_on_n);
 	else
-		dcs_sequence(panel_idle_off, sizeof panel_idle_off / sizeof panel_idle_off[0]);
+		dcs_sequence(board->panel.idle_off, board->panel.idle_off_n);
 }

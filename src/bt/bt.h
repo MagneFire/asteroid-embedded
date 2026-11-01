@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define BT_UART		BOARD_BT_UART
+#define BT_UART		(board->bt.uart)
 
 #define HCI_COMMAND	1
 #define HCI_ACL		2

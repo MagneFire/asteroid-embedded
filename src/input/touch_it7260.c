@@ -15,10 +15,10 @@
 #include "display/display.h"
 #include "touch.h"
 
-#define QUP		BOARD_TOUCH_QUP
-#define ADDR		BOARD_TOUCH_ADDR
-#define GPIO_IRQ	BOARD_TOUCH_IRQ
-#define GPIO_RESET	BOARD_TOUCH_RESET
+#define QUP		(board->touch_pins.i2c.qup)
+#define ADDR		(board->touch_pins.i2c.addr)
+#define GPIO_IRQ	(board->touch_pins.irq)
+#define GPIO_RESET	(board->touch_pins.reset)
 
 #define BUF_COMMAND	0x20
 #define BUF_QUERY	0x80
@@ -261,7 +261,7 @@ static struct {
 	uint32_t t0, ms, last;
 } fake;
 
-void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms)
+static void it7260_inject(int x0, int y0, int x1, int y1, uint32_t ms)
 {
 	fake.x0 = x0;
 	fake.y0 = y0;
@@ -366,7 +366,7 @@ static void apply_mode(void)
 	tlmm_irq_enable(GPIO_IRQ, true);
 }
 
-void touch_sleep(bool on)
+static void it7260_sleep(bool on)
 {
 	if (!present)
 		return;
@@ -377,7 +377,7 @@ void touch_sleep(bool on)
 	mode_wait = on ? IDLE_DELAY_MS : 0;
 }
 
-uint32_t touch_next_ms(void)
+static uint32_t it7260_next_ms(void)
 {
 	if (!present || mode_set || mode_fails >= RETRIES)
 		return UINT32_MAX;
@@ -385,7 +385,7 @@ uint32_t touch_next_ms(void)
 	return gone >= mode_wait ? 1 : mode_wait - gone;
 }
 
-bool touch_poll(struct touch *t)
+static bool it7260_poll(struct touch *t)
 {
 	i2c_qup_poll(QUP);
 	stall_poll();
@@ -407,18 +407,18 @@ bool touch_poll(struct touch *t)
 	return true;
 }
 
-void touch_stats(uint32_t *att, uint32_t *err)
+static void it7260_stats(uint32_t *att, uint32_t *err)
 {
 	*att = attentions;
 	*err = errors;
 }
 
-bool touch_init(void)
+static bool it7260_init(void)
 {
 	tlmm_config(GPIO_IRQ, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	power_on();
 	uint8_t q = 0xff;
-	int ret = i2c_qup_init(QUP, BOARD_TOUCH_SDA, BOARD_TOUCH_SCL, 3, 384000);
+	int ret = i2c_qup_init(QUP, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 384000);
 	if (!ret)
 		ret = wait_ready(50, 10, &q);
 	if (ret) {
@@ -452,3 +452,12 @@ bool touch_init(void)
 	tlmm_irq_enable(GPIO_IRQ, true);
 	return true;
 }
+
+const struct touch_driver touch_it7260 = {
+	.init = it7260_init,
+	.poll = it7260_poll,
+	.stats = it7260_stats,
+	.inject = it7260_inject,
+	.sleep = it7260_sleep,
+	.next_ms = it7260_next_ms,
+};

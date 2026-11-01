@@ -16,7 +16,6 @@ static uint8_t pool[POOL_SIZE] __attribute__((aligned(64)));
 static uint32_t used;
 static unsigned nfiles;
 static struct { char name[40]; uint32_t off, size; } files[MAX_FILES];
-static const char *const dirs[] = { BOARD_FIRMWARE_DIRS };
 
 static int open_system(void)
 {
@@ -49,12 +48,13 @@ const void *firmware_get(const char *name, uint32_t *size)
 		return NULL;
 	}
 	for (unsigned i = 0; ; i++) {
-		if (i == sizeof dirs / sizeof dirs[0]) {
+		const char *dir = board->firmware_dirs[i];
+		if (!dir) {
 			log_printf("firmware: %s: %d\n", name, r);
 			return NULL;
 		}
-		size_t dlen = strlen(dirs[i]);
-		memcpy(path, dirs[i], dlen);
+		size_t dlen = strlen(dir);
+		memcpy(path, dir, dlen);
 		memcpy(path + dlen, name, len + 1);
 		if (!(r = ext4_lookup(&fs, path, &in)))
 			break;

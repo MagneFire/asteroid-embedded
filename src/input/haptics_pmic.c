@@ -3,7 +3,6 @@
  * to 3.1 V) and bit 7 of EN_CTL switches the motor. Its state survives
  * the watch's sleep and a warm reset, so init switches it off first. */
 #include "asteroid.h"
-#include "input/haptics.h"
 
 #define VIB_TYPE		0x01c004
 #define VIB_SUBTYPE		0x01c005
@@ -12,22 +11,27 @@
 #define VTG_LEVEL		0x1f
 #define EN_MOTOR		BIT(7)
 
-#define LEVEL			(BOARD_VIB_MV / 100)
-_Static_assert(LEVEL >= 12 && LEVEL <= 31, "BOARD_VIB_MV out of the vibrator's 1200-3100 mV");
+#define LEVEL_MIN		12	/* 1.2 V */
+#define LEVEL_MAX		31	/* 3.1 V */
 
-bool haptics_motor_init(void)
+static bool pm8226_init(void)
 {
+	uint8_t level = (uint8_t)(board->motor_pins.vib_mv / 100);
+	if (level < LEVEL_MIN || level > LEVEL_MAX)
+		level = level < LEVEL_MIN ? LEVEL_MIN : LEVEL_MAX;
 	pmic_write(VIB_EN_CTL, 0);
 	uint8_t vtg = pmic_read(VIB_VTG_CTL);
-	pmic_write(VIB_VTG_CTL, (uint8_t)((vtg & ~VTG_LEVEL) | LEVEL));
+	pmic_write(VIB_VTG_CTL, (uint8_t)((vtg & ~VTG_LEVEL) | level));
 	vtg = pmic_read(VIB_VTG_CTL);
 	uint8_t en = pmic_read(VIB_EN_CTL);
 	log_printf("haptics: pm8226 vibrator type %02x.%02x vtg %02x en %02x, %u mV\n", pmic_read(VIB_TYPE),
-		   pmic_read(VIB_SUBTYPE), vtg, en, LEVEL * 100);
-	return (vtg & VTG_LEVEL) == LEVEL && !(en & EN_MOTOR);
+		   pmic_read(VIB_SUBTYPE), vtg, en, level * 100);
+	return (vtg & VTG_LEVEL) == level && !(en & EN_MOTOR);
 }
 
-void haptics_motor(bool on)
+static void pm8226_set(bool on)
 {
 	pmic_write(VIB_EN_CTL, on ? EN_MOTOR : 0);
 }
+
+const struct motor_driver motor_pm8226 = { .init = pm8226_init, .set = pm8226_set };

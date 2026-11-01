@@ -9,7 +9,7 @@
 
 /* The mesh is a disc of points: scaled to reach past a round screen's
  * edge, or further out to the corners of a square one. */
-#define SCALE (BOARD_PANEL_ROUND ? 1.2f : 1.45f)
+#define SCALE (board->panel.round ? 1.2f : 1.45f)
 #define DEFAULT_CENTER 0x888888u
 #define DEFAULT_OUTER 0x000000u
 
@@ -233,7 +233,7 @@ unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, 
 	animate(t_ms, look_vertex, &l);
 	/* The window is the round screen, or on a square one the circle
 	 * through its corners, so the background fills it. */
-	float radius = BOARD_PANEL_ROUND ? 0.5f : 0.72f;
+	float radius = board->panel.round ? 0.5f : 0.72f;
 	float cx = 0.5f + dx, cy = 0.5f + dy, inner = radius * 0.99879546f;
 	float *o = out;
 	for (int t = 0; t < FLATMESH_INDICES / 3; t++) {

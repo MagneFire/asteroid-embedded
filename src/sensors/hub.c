@@ -21,22 +21,22 @@
 #include "hub.h"
 #include "storage/storage.h"
 
-#define UART		BOARD_HUB_UART
-#define GPIO_UART	BOARD_HUB_GPIO
-#define FUNC_UART	BOARD_HUB_FUNC
-#define GPIO_WAKE_MCU	BOARD_HUB_WAKE_MCU
-#define GPIO_MCU_WAKE	BOARD_HUB_MCU_WAKE
-#define GPIO_RESET	BOARD_HUB_RESET
-#define GPIO_BOOT1	BOARD_HUB_BOOT1
-#define GPIO_AP_STATUS	BOARD_HUB_AP_STATUS
-#define GPIO_BOOT0	BOARD_HUB_BOOT0
-#define GPIO_MCU_STATUS	BOARD_HUB_MCU_STATUS
+#define UART		(board->hub_pins.uart)
+#define GPIO_UART	(board->hub_pins.gpio)
+#define FUNC_UART	(board->hub_pins.func)
+#define GPIO_WAKE_MCU	(board->hub_pins.wake_mcu)
+#define GPIO_MCU_WAKE	(board->hub_pins.mcu_wake)
+#define GPIO_RESET	(board->hub_pins.reset)
+#define GPIO_BOOT1	(board->hub_pins.boot1)
+#define GPIO_AP_STATUS	(board->hub_pins.ap_status)
+#define GPIO_BOOT0	(board->hub_pins.boot0)
+#define GPIO_MCU_STATUS	(board->hub_pins.mcu_status)
 
 #define RESET_MS	20
 #define BOOT_MS		500
 #define REPLY_MS	1000
 #define TRIES		5
-#define MPM_PIN_MCU_WAKE	BOARD_HUB_MPM
+#define MPM_PIN_MCU_WAKE	(board->hub_pins.mpm)
 #define WAKE_HOLD_MS	300
 
 enum { CH_CONTROL, CH_SERVICE, CH_LOG = 4 };
@@ -337,7 +337,7 @@ static void receive(void)
 		}
 }
 
-bool hub_init(void)
+static bool stm32_init(void)
 {
 	tlmm_config(GPIO_BOOT0, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
 	tlmm_set(GPIO_BOOT0, 0);
@@ -361,7 +361,7 @@ bool hub_init(void)
 	return true;
 }
 
-void hub_poll(void)
+static void stm32_poll(void)
 {
 	if (state == S_OFF || state == S_FAILED)
 		return;
@@ -386,19 +386,19 @@ void hub_poll(void)
 	}
 }
 
-int hub_send(const uint8_t *p, unsigned n)
+static int stm32_send(const uint8_t *p, unsigned n)
 {
 	return state == S_READY ? send(p, n) : -1;
 }
 
-void hub_set_time(void)
+static void stm32_set_time(void)
 {
 	uint8_t m[12];
 	time_request(m);
-	hub_send(m, sizeof m);
+	stm32_send(m, sizeof m);
 }
 
-uint32_t hub_steps(void)
+static uint32_t stm32_steps(void)
 {
 	return steps;
 }
@@ -406,11 +406,11 @@ uint32_t hub_steps(void)
 /* As the vendor HAL does for each sensor, the delay goes before the
  * activation: 200 ms, sensorfw's for heart rate. Activated without it,
  * the MCU sent no rate a second time. */
-void hub_heart_rate_on(bool on)
+static void stm32_heart_rate_on(bool on)
 {
 	static const uint8_t delay[] = { CH_SERVICE, T_REQUEST, TAG_HEART_RATE, CMD_SET_DELAY, HEART_RATE_DELAY_MS, 0, 0, 0 };
 	uint8_t m[] = { CH_SERVICE, T_REQUEST, TAG_HEART_RATE, on ? CMD_ACTIVATE : CMD_DEACTIVATE };
-	if (on == heart_on || (on && hub_send(delay, sizeof delay)) || hub_send(m, sizeof m))
+	if (on == heart_on || (on && stm32_send(delay, sizeof delay)) || stm32_send(m, sizeof m))
 		return;
 	heart_on = on;
 	heart_rate = HUB_NONE;
@@ -418,7 +418,7 @@ void hub_heart_rate_on(bool on)
 	log_printf("hub: heart rate %s\n", on ? "on" : "off");
 }
 
-uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
+static uint32_t stm32_heart_rate(uint8_t *status, unsigned *readings)
 {
 	if (status)
 		*status = heart_status;
@@ -427,11 +427,11 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 	return heart_on ? heart_rate : HUB_NONE;
 }
 
-void hub_accel_on(bool on)
+static void stm32_accel_on(bool on)
 {
 	static const uint8_t delay[] = { CH_SERVICE, T_REQUEST, TAG_ACCEL, CMD_SET_DELAY, ACCEL_DELAY_MS, 0, 0, 0 };
 	uint8_t m[] = { CH_SERVICE, T_REQUEST, TAG_ACCEL, on ? CMD_ACTIVATE : CMD_DEACTIVATE };
-	if (on == accel_on || (on && hub_send(delay, sizeof delay)) || hub_send(m, sizeof m))
+	if (on == accel_on || (on && stm32_send(delay, sizeof delay)) || stm32_send(m, sizeof m))
 		return;
 	accel_on = on;
 	accel_new = false;
@@ -440,7 +440,7 @@ void hub_accel_on(bool on)
 
 /* The newest sample since the last call: x to the right of the screen,
  * y to its top, z out of it, as Android has them. */
-bool hub_accel(int16_t v[3])
+static bool stm32_accel(int16_t v[3])
 {
 	if (!accel_on || !accel_new)
 		return false;
@@ -449,19 +449,19 @@ bool hub_accel(int16_t v[3])
 	return true;
 }
 
-bool hub_tilted(void)
+static bool stm32_tilted(void)
 {
 	bool t = tilted;
 	tilted = false;
 	return t;
 }
 
-bool hub_can_sleep(void)
+static bool stm32_can_sleep(void)
 {
 	return state != S_READY || (!tlmm_get(GPIO_MCU_WAKE) && time_ms() - wake_t >= WAKE_HOLD_MS);
 }
 
-void hub_sleep(bool asleep)
+static void stm32_sleep(bool asleep)
 {
 	if (state >= S_TILT && state <= S_READY)
 		tlmm_set(GPIO_AP_STATUS, !asleep);
@@ -475,7 +475,7 @@ void hub_sleep(bool asleep)
 	}
 }
 
-void hub_status(void (*say)(const char *fmt, ...))
+static void stm32_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[] = { "off", "booting", "version", "handshake", "parameter", "wrist tilt",
 					     "tilt batch", "time", "step counter", "ready", "failed" };
@@ -488,3 +488,19 @@ void hub_status(void (*say)(const char *fmt, ...))
 	    heart_rate == HUB_NONE ? -1L : (long)heart_rate, heart_status);
 	say("hub: accelerometer %s %d %d %d\n", accel_on ? "on" : "off", accel[0], accel[1], accel[2]);
 }
+
+const struct hub_driver hub_stm32 = {
+	.init = stm32_init,
+	.poll = stm32_poll,
+	.send = stm32_send,
+	.set_time = stm32_set_time,
+	.steps = stm32_steps,
+	.heart_rate_on = stm32_heart_rate_on,
+	.heart_rate = stm32_heart_rate,
+	.tilted = stm32_tilted,
+	.accel_on = stm32_accel_on,
+	.accel = stm32_accel,
+	.can_sleep = stm32_can_sleep,
+	.sleep = stm32_sleep,
+	.status = stm32_status,
+};

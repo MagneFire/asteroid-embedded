@@ -26,8 +26,7 @@
 
 #define MYNEWT_VAL_BLE_ATT_PREFERRED_MTU (256)
 #define MYNEWT_VAL_MSYS_1_BLOCK_COUNT (32)
-#include "board.h"
-#define MYNEWT_VAL_BLE_SVC_GAP_DEVICE_NAME BOARD_NAME
+#define MYNEWT_VAL_BLE_SVC_GAP_DEVICE_NAME "asteroid"
 #define MYNEWT_VAL_BLE_SVC_GAP_DEVICE_NAME_MAX_LENGTH (31)
 
 #include "../../../../third_party/nimble/porting/nimble/include/syscfg/syscfg.h"

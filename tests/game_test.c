@@ -42,7 +42,7 @@ int kv_set(const char *key, const void *val, unsigned len)
 }
 
 /* The board as a string of 16 values, rows top to bottom. */
-static void board(char *out)
+static void load_board(char *out)
 {
 	uint16_t c[4][4] = { 0 };
 	const struct ui_tile *t = game_tiles();
@@ -89,7 +89,7 @@ static unsigned count(void)
 static bool board_is(const char *want)
 {
 	char b[80];
-	board(b);
+	load_board(b);
 	if (strcmp(b, want))
 		fprintf(stderr, "board %s, want %s\n", b, want);
 	return !strcmp(b, want);
@@ -123,7 +123,7 @@ int main(void)
 	CHECK(!game_tick(1199));
 	CHECK(game_tick(1200));
 	CHECK(count() == 3);	/* the duplicate dropped, a new tile placed */
-	board(b);
+	load_board(b);
 	CHECK(b[0] == '4' && b[2] == '4');
 
 	load("2,2,2,2/0,0,0,0/0,0,0,0/0,0,0,0", 0, 0);
@@ -170,7 +170,7 @@ int main(void)
 	game_save();
 	CHECK(kv_writes == 1);
 	/* The saved board comes back. */
-	board(b);
+	load_board(b);
 	game_init();
 	CHECK(board_is(b) && game_best() == 300);
 	if (stub_failures)

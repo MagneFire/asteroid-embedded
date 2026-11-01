@@ -11,18 +11,18 @@
 #include "asteroid.h"
 #include "bt.h"
 
-#define GPIO_BT_UART		BOARD_BT_GPIO
-#define FUNC_BT_UART		BOARD_BT_FUNC
-#define GPIO_BT_DEV_WAKE	BOARD_BT_DEV_WAKE
-#define GPIO_BT_HOST_WAKE	BOARD_BT_HOST_WAKE
-#define GPIO_BT_REG_ON		BOARD_BT_REG_ON
-#define MPM_PIN_HOST_WAKE	BOARD_BT_MPM
-#define DEV_WAKE_ACTIVE		BOARD_BT_DEV_WAKE_ACTIVE
-#define HOST_WAKE_ACTIVE	BOARD_BT_HOST_WAKE_ACTIVE
+#define GPIO_BT_UART		(board->bt.gpio)
+#define FUNC_BT_UART		(board->bt.func)
+#define GPIO_BT_DEV_WAKE	(board->bt.dev_wake)
+#define GPIO_BT_HOST_WAKE	(board->bt.host_wake)
+#define GPIO_BT_REG_ON		(board->bt.reg_on)
+#define MPM_PIN_HOST_WAKE	(board->bt.mpm)
+#define DEV_WAKE_ACTIVE		(board->bt.dev_wake_active)
+#define HOST_WAKE_ACTIVE	(board->bt.host_wake_active)
 #define DEV_WAKE_IDLE_MS	1000
 #define BAUD_BOOT		115200
 #define BAUD_FAST		3000000
-#define PATCH_NAME		BOARD_BT_PATCH
+#define PATCH_NAME		(board->bt.patch)
 
 #define HCI_RESET		0x0c03
 #define HCI_READ_LOCAL_NAME	0x0c14
@@ -34,7 +34,6 @@
 #define BCM_DOWNLOAD_MINIDRIVER	0xfc2e
 #define BCM_LAUNCH_RAM		0xfc4e
 
-static const uint8_t sleep_mode[12] = BOARD_BT_SLEEP_MODE;
 
 static bool dev_awake = true;
 static uint32_t tx_t;
@@ -136,7 +135,7 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	memset(info, 0, sizeof *info);
 	uint32_t t0 = time_ms();
 	if (!hcd)
-		return fail(info, "patch file " PATCH_NAME, -1);
+		return fail(info, "patch file", -1);
 	if (running)
 		bt_stop();
 	hci_reset_parser();
@@ -173,7 +172,7 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 		if ((r = hci_cmd(BCM_WRITE_BD_ADDR, a, 6, NULL, NULL, 1000)))
 			return fail(info, "write bd_addr", r);
 	}
-	if ((r = hci_cmd(BCM_WRITE_SLEEP_MODE, sleep_mode, sizeof sleep_mode, NULL, NULL, 1000)))
+	if ((r = hci_cmd(BCM_WRITE_SLEEP_MODE, board->bt.sleep_mode, sizeof board->bt.sleep_mode, NULL, NULL, 1000)))
 		return fail(info, "sleep mode", r);
 	uint8_t rsp[249];
 	unsigned n = 9;

@@ -32,13 +32,13 @@
 #define CHAN_BATT_THERM		0x30
 #define CHAN_BATT_ID		0x31
 
-#define RSENSE_UOHM		BOARD_RSENSE_UOHM
-#define V_CUTOFF_UV		BOARD_BAT_CUTOFF_UV
+#define RSENSE_UOHM		((int)board->rsense_uohm)
+#define V_CUTOFF_UV		(board->battery->cutoff_uv)
 #define V_MAX_UV		4350000
 #define CHG_TERM_UA		20000
 #define TRIM_SEC		300
 #define FLAT_OCV_UV		3800000
-#define LOW_VOLTAGE_UV		BOARD_BAT_LOW_UV
+#define LOW_VOLTAGE_UV		(board->battery->low_uv)
 #define ADJUST_SOC_LOW		15
 #define HOLD_SOC_EST		3
 #define LOW_OCV_CORR_UV		100
@@ -60,50 +60,11 @@
 #define CHARGER_GONE_HOLD_S	10
 #define NONE			(-1000)
 
-#include "battery.h"
-
-/* The board's cells, told apart by the ID resistor in the pack; they
- * share the voltage table but not the internal resistance. battery.h
- * may give its own table as BATTERY_CELLS; otherwise these are
- * sturgeon's two cell makers. */
-struct cell {
-	const char *name;
-	int id_kohm, rbatt_mohm;
-	uint16_t rbatt_sf[31][5];
-};
-
-#ifdef BATTERY_CELLS
-static const struct cell cells[] = { BATTERY_CELLS };
-#else
-static const struct cell cells[] = {
-	{ "SCUD", 10, 496, {
-		{ 1926, 401, 100, 65, 47 }, { 1916, 401, 100, 65, 47 }, { 1767, 405, 102, 67, 48 },
-		{ 1681, 407, 105, 69, 49 }, { 1650, 414, 110, 72, 52 }, { 1598, 422, 116, 76, 54 },
-		{ 1570, 415, 124, 82, 58 }, { 1567, 396, 133, 90, 63 }, { 1568, 383, 122, 85, 61 },
-		{ 1585, 374, 103, 71, 52 }, { 1616, 376, 99, 66, 49 }, { 1658, 383, 101, 68, 51 },
-		{ 1711, 395, 104, 73, 54 }, { 1768, 415, 108, 78, 58 }, { 1855, 441, 110, 73, 50 },
-		{ 1954, 470, 105, 67, 48 }, { 2070, 501, 105, 68, 49 }, { 2070, 503, 105, 67, 48 },
-		{ 2171, 529, 103, 65, 47 }, { 2276, 565, 107, 68, 50 }, { 2336, 589, 111, 72, 51 },
-		{ 2474, 617, 116, 75, 53 }, { 2673, 649, 124, 77, 54 }, { 2990, 690, 126, 76, 54 },
-		{ 3396, 719, 126, 78, 59 }, { 3953, 764, 136, 89, 72 }, { 4767, 834, 157, 108, 84 },
-		{ 6044, 932, 179, 117, 78 }, { 8223, 1079, 191, 120, 87 }, { 14102, 1430, 241, 166, 142 },
-		{ 28204, 2860, 482, 332, 284 },
-	} },
-	{ "XWD", 470, 487, {
-		{ 2059, 415, 100, 64, 46 }, { 2053, 415, 100, 64, 46 }, { 1925, 416, 101, 65, 46 },
-		{ 1843, 416, 104, 67, 47 }, { 1808, 421, 107, 69, 49 }, { 1755, 431, 113, 73, 51 },
-		{ 1730, 422, 120, 77, 54 }, { 1725, 408, 128, 83, 58 }, { 1722, 400, 127, 86, 60 },
-		{ 1732, 392, 111, 77, 54 }, { 1762, 390, 101, 67, 48 }, { 1810, 394, 101, 68, 49 },
-		{ 1874, 405, 105, 71, 53 }, { 1958, 425, 108, 76, 56 }, { 2067, 455, 112, 72, 52 },
-		{ 2198, 492, 109, 67, 48 }, { 2345, 527, 107, 68, 49 }, { 2431, 556, 108, 67, 48 },
-		{ 2347, 575, 105, 65, 47 }, { 2534, 622, 111, 69, 50 }, { 2752, 653, 115, 72, 51 },
-		{ 3012, 689, 120, 75, 52 }, { 3324, 730, 127, 77, 53 }, { 3739, 767, 129, 77, 53 },
-		{ 4292, 808, 130, 78, 58 }, { 5049, 867, 141, 89, 70 }, { 6129, 957, 162, 109, 86 },
-		{ 7924, 1086, 197, 127, 86 }, { 11469, 1426, 233, 137, 92 }, { 22938, 2852, 344, 206, 128 },
-		{ 45877, 5703, 688, 411, 255 },
-	} },
-};
-#endif
+/* The cell's tables, from the board. */
+#define lut_temp	(board->battery->lut_temp)
+#define lut_pc		(board->battery->lut_pc)
+#define fcc_mah		(board->battery->fcc_mah)
+#define ocv_mv		(board->battery->ocv_mv)
 
 /* Battery thermistor: 0.1 C against mV at the ADC input, with a 68 kOhm
  * pull-up to 1.8 V. */
@@ -113,7 +74,7 @@ static const struct { int16_t t; int16_t mv; } therm[] = {
 	{ 450, 728 }, { 500, 694 }, { 550, 664 }, { 600, 638 }, { 650, 615 }, { 700, 595 },
 };
 
-static const struct cell *cell = &cells[0];
+static const struct battery_cell *cell;
 static int temp, die_mc, v0625_uv, v1250_uv;
 static int last_ocv_uv, last_ocv_temp, ocv_reading_at_100 = -1, prev_ocv_raw = -1;
 static int64_t sw_cc_uah;
@@ -851,7 +812,11 @@ void bms_init(void)
 	pmic_iadc_trim();
 	trim_sec = now_sec();
 	int ohm = ratiometric_mv(CHAN_BATT_ID), kohm = ohm > 0 && ohm < 1800 ? 68 * ohm / (1800 - ohm) : 0;
-	cell = ARRAY_SIZE(cells) > 1 && iabs(cells[1].id_kohm - kohm) < iabs(cells[0].id_kohm - kohm) ? &cells[1] : &cells[0];
+	const struct board_battery *b = board->battery;
+	cell = &b->cells[0];
+	for (unsigned i = 1; i < b->ncells; i++)
+		if (iabs(b->cells[i].id_kohm - kohm) < iabs(cell->id_kohm - kohm))
+			cell = &b->cells[i];
 	uint8_t stored = pmic_read(BMS_SOC_STORAGE), iavg = pmic_read(BMS_IAVG_STORAGE);
 	int stored_soc = (stored >> 1) ? (stored >> 1) - 1 : NONE;
 	status = pmic_battery_status();

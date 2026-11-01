@@ -138,6 +138,7 @@ static void cmd_status(const char *args)
 	uint32_t ms = time_ms();
 	say("uptime %lu.%03lu s\n", ms / 1000, ms % 1000);
 	say("build %s\n", build_id);
+	say("board %s (by %s)\n", board->name, board_detected_by);
 	say("timer ticks %lu\n", timer_ticks());
 	say("display frames %lu\n", display_frames());
 	say("battery %lu mV\n", pmic_battery_mv());

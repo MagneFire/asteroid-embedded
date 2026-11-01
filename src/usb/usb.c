@@ -311,7 +311,10 @@ void usb_init(const char *serialno)
 	controller_init();
 	gic_enable(IRQ_USB_HS, usb_irq);
 	gic_mask(IRQ_USB_HS);
-	adb_init(&transport, "ro.product.name=" BOARD_NAME ";ro.product.model=asteroid-embedded;ro.product.device=" BOARD_NAME);
+	static char banner[96];
+	snprintf(banner, sizeof banner, "ro.product.name=%s;ro.product.model=asteroid-embedded;ro.product.device=%s", board->name,
+		 board->name);
+	adb_init(&transport, banner);
 	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
 	if (!tusb_init(0, &rh)) {
 		log_printf("usb: stack init failed\n");

@@ -10,6 +10,7 @@ struct fb {
 };
 extern struct fb fb;
 
+void display_splash_size(uint32_t *w, uint32_t *h);
 bool display_init(void);
 uint32_t *display_backbuffer(void);
 void display_flip(void);

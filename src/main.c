@@ -357,6 +357,7 @@ void main(uint32_t machtype, const void *fdt)
 	irq_enable();
 	log_init();
 	log_printf("asteroid-embedded %s up, timer %lu Hz, scm %d\n", build_id, timer_hz(), scm);
+	board_detect(machtype, fdt);
 	spmi_init();
 	pmic_init();
 	if (rpm_init()) {
@@ -399,7 +400,9 @@ void main(uint32_t machtype, const void *fdt)
 	uint32_t shown_bpm = 0;
 	power_init(have_display, have_ui, have_hub);
 	console_init();
-	usb_init("asteroid-" BOARD_NAME);
+	static char serialno[24];
+	snprintf(serialno, sizeof serialno, "asteroid-%s", board->name);
+	usb_init(serialno);
 	if (have_display)
 		display_set_idle_hook(usb_poll);
 	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());

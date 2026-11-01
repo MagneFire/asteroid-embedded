@@ -4,13 +4,12 @@
  * signed real-time playback. The motor runs in real-time playback mode
  * and stands by when off. */
 #include "asteroid.h"
-#include "input/haptics.h"
 #include "storage/storage.h"
 
-#define QUP			BOARD_HAPTICS_QUP
-#define ADDR			BOARD_HAPTICS_ADDR
-#define GPIO_TRIGGER		BOARD_HAPTICS_TRIGGER
-#define GPIO_ENABLE		BOARD_HAPTICS_ENABLE
+#define QUP			(board->motor_pins.i2c.qup)
+#define ADDR			(board->motor_pins.i2c.addr)
+#define GPIO_TRIGGER		(board->motor_pins.trigger)
+#define GPIO_ENABLE		(board->motor_pins.enable)
 #define KV_CALIBRATION		"haptics.cal"
 
 #define REG_STATUS		0x00
@@ -73,14 +72,14 @@ static int calibrate(uint8_t *status)
 	return read_reg(REG_STATUS, status);
 }
 
-bool haptics_motor_init(void)
+static bool drv2605_init(void)
 {
 	tlmm_config(GPIO_TRIGGER, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
 	tlmm_set(GPIO_TRIGGER, 0);
 	tlmm_config(GPIO_ENABLE, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
 	tlmm_set(GPIO_ENABLE, 1);
 	delay_ms(10);
-	if (i2c_qup_init(QUP, BOARD_HAPTICS_SDA, BOARD_HAPTICS_SCL, 3, 384000))
+	if (i2c_qup_init(QUP, board->motor_pins.i2c.sda, board->motor_pins.i2c.scl, board->motor_pins.i2c.func, 384000))
 		return false;
 	uint8_t status, feedback, bemf;
 	int r;
@@ -123,7 +122,9 @@ bool haptics_motor_init(void)
 	return !r && !(cal & STATUS_DIAG);
 }
 
-void haptics_motor(bool on)
+static void drv2605_set(bool on)
 {
 	write_reg(REG_MODE, on ? MODE_RTP : MODE_STANDBY);
 }
+
+const struct motor_driver motor_drv2605 = { .init = drv2605_init, .set = drv2605_set };

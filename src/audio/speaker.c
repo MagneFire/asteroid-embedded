@@ -5,8 +5,8 @@
 #include "asteroid.h"
 #include "speaker.h"
 
-#define QUP		BOARD_SPEAKER_QUP
-#define ADDR		BOARD_SPEAKER_ADDR
+#define QUP		(board->speaker.qup)
+#define ADDR		(board->speaker.addr)
 #define REG_REV		0x03
 
 static int read_reg(uint8_t reg, uint16_t *val)
@@ -22,7 +22,9 @@ int speaker_probe(uint16_t *rev)
 {
 	static bool bus;
 	int r;
-	if (!bus && (r = i2c_qup_init(QUP, BOARD_SPEAKER_SDA, BOARD_SPEAKER_SCL, 3, 384000)))
+	if (!ADDR)
+		return -1;
+	if (!bus && (r = i2c_qup_init(QUP, board->speaker.sda, board->speaker.scl, board->speaker.func, 384000)))
 		return r;
 	bus = true;
 	return read_reg(REG_REV, rev);

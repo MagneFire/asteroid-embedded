@@ -1,7 +1,9 @@
 /* The physical memory map: every fixed DRAM region the firmware uses, in
  * one place, checked against each other. The bootloader loads the image
- * at IMG_BASE and puts the device tree at IMG_END; the framebuffer it
- * leaves on is at FB_BASE; everything else is ours to choose. The MMU
+ * at IMG_BASE and passes a device tree, at IMG_END on sparrow and inside
+ * the UI heap on sturgeon, read by board_detect before anything else; the
+ * framebuffer it leaves on is at FB_BASE; everything else is ours to
+ * choose. The MMU
  * table (mmu.c) and the linker script (ld/asteroid.ld.in, preprocessed)
  * are built from these names, so a change here moves everything. */
 #ifndef MEMMAP_H
