@@ -19,6 +19,9 @@
 #define BMS_IAVG_STORAGE	0x0040b1
 #define HOLD_OREG_DATA		BIT(0)
 #define CLEAR_CC		BIT(7)
+#define CLEAR_SW_CC		BIT(6)
+#define BMS_IADC_CH_SEL		0x003848
+#define BMS_IADC_EXT_RSENSE	1
 
 #define CHAN_DIE_TEMP		8
 #define CHAN_REF_625MV		9
@@ -826,8 +829,24 @@ static void status_check(void)
 	recalculate(false);
 }
 
+/* The counters measure across the sense resistor the monitor's own ADC
+ * is set to, and a bootloader may leave it on the internal one; the
+ * counts taken that way are of no use. */
+static void select_rsense(void)
+{
+	uint8_t sel = pmic_read(BMS_IADC_CH_SEL);
+	if ((sel & 7) == BMS_IADC_EXT_RSENSE)
+		return;
+	pmic_write(BMS_IADC_CH_SEL, (sel & ~7) | BMS_IADC_EXT_RSENSE);
+	pmic_write(BMS_CC_CLEAR_CTL, CLEAR_CC | CLEAR_SW_CC);
+	delay_us(100);
+	pmic_write(BMS_CC_CLEAR_CTL, 0);
+	log_printf("bms: counters moved to the external sense resistor (was channel %u)\n", sel & 7);
+}
+
 void bms_init(void)
 {
+	select_rsense();
 	int ohm = ratiometric_mv(CHAN_BATT_ID), kohm = ohm > 0 && ohm < 1800 ? 68 * ohm / (1800 - ohm) : 0;
 	cell = ARRAY_SIZE(cells) > 1 && iabs(cells[1].id_kohm - kohm) < iabs(cells[0].id_kohm - kohm) ? &cells[1] : &cells[0];
 	uint8_t stored = pmic_read(BMS_SOC_STORAGE), iavg = pmic_read(BMS_IAVG_STORAGE);
