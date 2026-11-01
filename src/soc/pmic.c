@@ -645,6 +645,25 @@ static int iadc_raw(uint8_t chan)
 	return -1;
 }
 
+/* The battery monitor's counters take their zero from the current ADC's
+ * offset trim, which drifts with temperature: measure the offset with
+ * the inputs shorted and store it, as the vendor's driver does every
+ * five minutes. */
+#define IADC_SEC_ACCESS		(IADC + 0xd0)
+#define IADC_OFFSET_MSB		(IADC + 0xf2)
+#define IADC_OFFSET_LSB		(IADC + 0xf3)
+
+void pmic_iadc_trim(void)
+{
+	int off = iadc_raw(IADC_CH_EXT_OFFSET);
+	if (off < 0)
+		return;
+	pmic_write(IADC_SEC_ACCESS, 0xa5);
+	pmic_write(IADC_OFFSET_MSB, off >> 8);
+	pmic_write(IADC_SEC_ACCESS, 0xa5);
+	pmic_write(IADC_OFFSET_LSB, off & 0xff);
+}
+
 /* Gain conversion minus offset conversion, or 0. */
 int pmic_iadc_gain(void)
 {

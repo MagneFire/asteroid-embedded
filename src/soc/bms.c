@@ -36,6 +36,7 @@
 #define V_CUTOFF_UV		BOARD_BAT_CUTOFF_UV
 #define V_MAX_UV		4350000
 #define CHG_TERM_UA		20000
+#define TRIM_SEC		300
 #define FLAT_OCV_UV		3800000
 #define LOW_VOLTAGE_UV		BOARD_BAT_LOW_UV
 #define ADJUST_SOC_LOW		15
@@ -118,7 +119,7 @@ static int last_ocv_uv, last_ocv_temp, ocv_reading_at_100 = -1, prev_ocv_raw = -
 static int64_t sw_cc_uah;
 static int last_cc_uah;
 static bool have_last_cc;
-static uint32_t tm_sec, last_recalc_sec, last_change_sec, charge_start_sec, charger_gone_sec, poll_sec;
+static uint32_t tm_sec, last_recalc_sec, last_change_sec, charge_start_sec, charger_gone_sec, poll_sec, trim_sec;
 static int iavg_samples[IAVG_SAMPLES], iavg_index, iavg_num;
 static bool first_uuc = true, first_soc = true;
 static int prev_pc_unusable = NONE, prev_uuc_iavg_ma;
@@ -847,6 +848,8 @@ static void select_rsense(void)
 void bms_init(void)
 {
 	select_rsense();
+	pmic_iadc_trim();
+	trim_sec = now_sec();
 	int ohm = ratiometric_mv(CHAN_BATT_ID), kohm = ohm > 0 && ohm < 1800 ? 68 * ohm / (1800 - ohm) : 0;
 	cell = ARRAY_SIZE(cells) > 1 && iabs(cells[1].id_kohm - kohm) < iabs(cells[0].id_kohm - kohm) ? &cells[1] : &cells[0];
 	uint8_t stored = pmic_read(BMS_SOC_STORAGE), iavg = pmic_read(BMS_IAVG_STORAGE);
@@ -877,6 +880,10 @@ void bms_poll(void)
 	if (now == poll_sec)
 		return;
 	poll_sec = now;
+	if (now - trim_sec >= TRIM_SEC) {
+		trim_sec = now;
+		pmic_iadc_trim();
+	}
 	bool usb = pmic_usb_present();
 	if (usb != usb_was) {
 		usb_was = usb;

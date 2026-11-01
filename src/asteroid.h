@@ -168,6 +168,7 @@ enum { BAT_DISCHARGING, BAT_CHARGING, BAT_FULL };
 int pmic_battery_status(void);
 int32_t pmic_battery_ua(void);
 int32_t pmic_battery_avg_ua(void);
+void pmic_iadc_trim(void);
 void pmic_charger_configure(void);
 void pmic_charger_poll(void);
 void bms_init(void);
