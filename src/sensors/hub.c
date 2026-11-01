@@ -42,6 +42,7 @@
 enum { CH_CONTROL, CH_SERVICE, CH_LOG = 4 };
 enum { T_REQUEST, T_RESPONSE, T_EVENT };
 #define TAG_TIME	0x0c
+#define TAG_ACCEL	0x10
 #define TAG_VERSION	0x0f
 #define TAG_STEPS	0x30
 #define TAG_HEART_RATE	0x32
@@ -55,6 +56,7 @@ enum { T_REQUEST, T_RESPONSE, T_EVENT };
 #define CMD_PARAMETER	0x13
 #define TILT_PERIOD_MS	10
 #define HEART_RATE_DELAY_MS	200
+#define ACCEL_DELAY_MS	100
 #define CMD_EVENT	0x10
 
 enum state { S_OFF, S_BOOT, S_VERSION, S_HANDSHAKE, S_PARAMETER, S_TILT, S_TILT_BATCH, S_TIME, S_STEPS, S_READY, S_FAILED };
@@ -81,6 +83,8 @@ static uint32_t steps = HUB_NONE, heart_rate = HUB_NONE;
 static uint8_t heart_status;
 static unsigned heart_readings;
 static bool heart_on;
+static bool accel_on, accel_new;
+static int16_t accel[3];
 
 static void time_request(uint8_t *m)
 {
@@ -289,6 +293,16 @@ static void frame(const uint8_t *p, unsigned n)
 		heart_readings++;
 		return;
 	}
+	/* Samples of 3 x int16 in the sensor's axes; the last one counts. */
+	if (n >= 10 && p[0] == CH_SERVICE && p[1] == T_EVENT && p[2] == TAG_ACCEL && p[3] == CMD_EVENT) {
+		const uint8_t *q = p + 4 + (n - 10) / 6 * 6;
+		int16_t a = (int16_t)(q[0] | q[1] << 8), b = (int16_t)(q[2] | q[3] << 8), c = (int16_t)(q[4] | q[5] << 8);
+		accel[0] = b;
+		accel[1] = (int16_t)-a;
+		accel[2] = c;
+		accel_new = true;
+		return;
+	}
 	if (state == S_READY && n >= 4 && p[0] == CH_SERVICE && p[1] == T_RESPONSE) {
 		if (n >= 5 && p[3] != CMD_FLUSH && p[4])
 			log_printf("hub: tag %02x command %02x failed (%u)\n", p[2], p[3], p[4]);
@@ -413,6 +427,28 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 	return heart_on ? heart_rate : HUB_NONE;
 }
 
+void hub_accel_on(bool on)
+{
+	static const uint8_t delay[] = { CH_SERVICE, T_REQUEST, TAG_ACCEL, CMD_SET_DELAY, ACCEL_DELAY_MS, 0, 0, 0 };
+	uint8_t m[] = { CH_SERVICE, T_REQUEST, TAG_ACCEL, on ? CMD_ACTIVATE : CMD_DEACTIVATE };
+	if (on == accel_on || (on && hub_send(delay, sizeof delay)) || hub_send(m, sizeof m))
+		return;
+	accel_on = on;
+	accel_new = false;
+	log_printf("hub: accelerometer %s\n", on ? "on" : "off");
+}
+
+/* The newest sample since the last call: x to the right of the screen,
+ * y to its top, z out of it, as Android has them. */
+bool hub_accel(int16_t v[3])
+{
+	if (!accel_on || !accel_new)
+		return false;
+	memcpy(v, accel, sizeof accel);
+	accel_new = false;
+	return true;
+}
+
 bool hub_tilted(void)
 {
 	bool t = tilted;
@@ -450,4 +486,5 @@ void hub_status(void (*say)(const char *fmt, ...))
 	    tlmm_get(GPIO_MCU_WAKE));
 	say("hub: steps %ld, heart rate %s %ld status %u\n", steps == HUB_NONE ? -1L : (long)steps, heart_on ? "on" : "off",
 	    heart_rate == HUB_NONE ? -1L : (long)heart_rate, heart_status);
+	say("hub: accelerometer %s %d %d %d\n", accel_on ? "on" : "off", accel[0], accel[1], accel[2]);
 }

@@ -12,6 +12,8 @@ uint32_t hub_steps(void);
 void hub_heart_rate_on(bool on);
 uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);
 bool hub_tilted(void);
+void hub_accel_on(bool on);
+bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);
 void hub_status(void (*say)(const char *fmt, ...));

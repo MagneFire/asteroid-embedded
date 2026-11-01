@@ -27,6 +27,8 @@ WEAK uint32_t hub_steps(void) { return HUB_NONE; }
 WEAK void hub_heart_rate_on(bool on) {}
 WEAK uint32_t hub_heart_rate(uint8_t *status, unsigned *readings) { return HUB_NONE; }
 WEAK bool hub_tilted(void) { return false; }
+WEAK void hub_accel_on(bool on) {}
+WEAK bool hub_accel(int16_t v[3]) { return false; }
 WEAK bool hub_can_sleep(void) { return true; }
 WEAK void hub_sleep(bool asleep) {}
 WEAK void hub_status(void (*say)(const char *fmt, ...)) { say("hub: no driver on this watch\n"); }

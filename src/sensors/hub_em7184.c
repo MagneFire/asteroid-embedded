@@ -81,6 +81,7 @@
 #define PARAM_POLL_MS		2
 #define PARAM_TRIES		100
 
+#define ID_ACCEL		1
 #define ID_STEP_COUNTER		19
 #define ID_WRIST_TILT		26
 #define ID_DEBUG		0xf5
@@ -93,6 +94,7 @@
 
 #define STEP_INTERVAL_MS	1000
 #define TILT_RATE_HZ		30
+#define ACCEL_RATE_HZ		10
 #define CONFIG_GAP_MS		20
 #define FIFO_SPARE		500
 
@@ -123,6 +125,9 @@ static volatile uint32_t steps = HUB_NONE;
 static uint32_t step_base;
 static uint16_t step_prev;
 static volatile bool tilted, initialized;
+static volatile bool accel_new;
+static volatile int16_t accel[3];
+static bool accel_on;
 static volatile uint32_t tilts, events, fifo_bytes, overflows, corrupt_reads, irqs, chains, errors;
 static uint8_t wake_prev;
 static struct { uint8_t id, a, b; } metas[8];
@@ -269,6 +274,10 @@ static void event(const uint8_t *p)
 			step_base += 0x10000;
 		step_prev = count;
 		steps = step_base + count;
+	} else if (p[0] == ID_ACCEL) {
+		for (int i = 0; i < 3; i++)
+			accel[i] = (int16_t)le16(p + 1 + 2 * i);
+		accel_new = true;
 	} else if (p[0] == ID_META) {
 		if (p[1] == META_INITIALIZED)
 			initialized = true;
@@ -753,6 +762,37 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 	return HUB_NONE;
 }
 
+void hub_accel_on(bool on)
+{
+	if (on == accel_on || state != S_READY)
+		return;
+	claim();
+	int r = sensor_rate(ID_ACCEL, on ? ACCEL_RATE_HZ : 0);
+	release();
+	if (r) {
+		log_printf("hub: accelerometer not %s (%d)\n", on ? "on" : "off", r);
+		return;
+	}
+	accel_on = on;
+	accel_new = false;
+	log_printf("hub: accelerometer %s\n", on ? "on" : "off");
+}
+
+/* The newest sample since the last call: x to the right of the screen,
+ * y to its top, z out of it. */
+bool hub_accel(int16_t v[3])
+{
+	uint32_t flags = irq_save();
+	bool fresh = accel_on && accel_new;
+	if (fresh) {
+		for (int i = 0; i < 3; i++)
+			v[i] = accel[i];
+		accel_new = false;
+	}
+	irq_restore(flags);
+	return fresh;
+}
+
 bool hub_tilted(void)
 {
 	bool t = tilted;
@@ -813,4 +853,5 @@ void hub_status(void (*say)(const char *fmt, ...))
 	    steps == HUB_NONE ? -1L : (long)steps, (unsigned long)tilts, (unsigned long)irqs, (unsigned long)chains,
 	    (unsigned long)fifo_bytes, (unsigned long)events, (unsigned long)overflows, (unsigned long)corrupt_reads,
 	    (unsigned long)errors, chunk, ap_suspended ? "suspended" : "awake", tlmm_get(GPIO_IRQ));
+	say("hub: accelerometer %s %d %d %d\n", accel_on ? "on" : "off", accel[0], accel[1], accel[2]);
 }
