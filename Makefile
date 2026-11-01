@@ -1,5 +1,5 @@
 # asteroid-embedded: bare-metal firmware for APQ8026 smartwatches.
-# make            build/asteroid.img for WATCH (sturgeon by default)
+# make            build/asteroid.img, for every supported watch
 # make run        boot it over fastboot, wait for the reboot, show the log
 # make test       host unit tests of the console, adb and the parsers
 CROSS   ?= arm-none-eabi-
@@ -8,13 +8,7 @@ OBJCOPY := $(CROSS)objcopy
 OBJDUMP := $(CROSS)objdump
 SIZE    := $(CROSS)size
 DTC     ?= dtc
-WATCH   ?= sturgeon
 TEST    ?=
-# Until the UI sizes itself at runtime it is still built for one watch.
-UI_SIZE_sturgeon := 400
-UI_SIZE_sparrow  := 320
-HEART_RATE_sturgeon := 1
-HEART_RATE_sparrow  := 0
 
 BUILD  := build
 TUSB   := third_party/tinyusb/src
@@ -73,11 +67,6 @@ $(BUILD)/config.h: FORCE
 	@echo '$(if $(TEST),#define TEST_$(shell echo $(TEST) | tr a-z A-Z) 1,)' > $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
-$(BUILD)/watch.mk: FORCE
-	@mkdir -p $(BUILD)
-	@echo 'WATCH := $(WATCH)' > $@.tmp
-	@cmp -s $@.tmp $@ || mv $@.tmp $@
-	@rm -f $@.tmp
 FORCE:
 
 $(BUILD)/%.S.o: %.S
@@ -94,8 +83,8 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
-$(UI_LIB): $(UI_SRCS) $(BUILD)/watch.mk
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" ASTEROID_BOARD=$(WATCH) ASTEROID_UI_SIZE=$(UI_SIZE_$(WATCH)) ASTEROID_HEART_RATE=$(HEART_RATE_$(WATCH)) \
+$(UI_LIB): $(UI_SRCS)
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" \
 		$(CARGO) build --release --target armv7a-none-eabihf
 	@touch $@
 
@@ -128,12 +117,10 @@ run: $(BUILD)/asteroid.img
 
 SLINT_VIEWER ?= $(or $(shell command -v slint-viewer 2>/dev/null),$(HOME)/.cargo/bin/slint-viewer)
 
-# The UI is laid out for 400 px; for another screen size the viewer scales it as the build does,
-# one window pixel to a screen pixel.
-PREVIEW_SCALE = $(if $(filter 400,$(UI_SIZE_$(WATCH))),,SLINT_SCALE_FACTOR=$(shell awk 'BEGIN { print $(UI_SIZE_$(WATCH)) / 400 }'))
-
+# The viewer lays the UI out on Theme's default screen; icons are drawn by the firmware, so the
+# viewer shows none.
 preview: $(UI_LIB)
-	$(PREVIEW_SCALE) $(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/note_icons.slint)))) \
+	$(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/codes.slint)))) \
 		--auto-reload --load-data tools/preview/watchface.json ui/ui/preview.slint
 
 disasm: $(BUILD)/asteroid.elf

@@ -12,19 +12,22 @@ from Homebrew's rustup, with `rustup target add armv7a-none-eabihf`). The
 user interface in `ui/` is a Slint crate built into a static library and
 linked into the image.
 
-    make                # build/asteroid.img for sturgeon
-    make WATCH=sparrow  # the same for sparrow
+    make                # build/asteroid.img, for every supported watch
 
-What differs between the watches (pins, buses, panel timing, the battery
-curve, the Bluetooth patch) is in `src/board/<watch>/`, with the drivers
-only that watch has listed in its `board.mk`.
+One image runs on both watches. The boot image holds a device tree per
+watch, each bootloader passes the one with its board-id, and the firmware
+picks the watch from that tree's `compatible`. What differs between the
+watches (pins, buses, panel timing, the battery curve, the Bluetooth
+patch, which drivers it has) is a table per watch in `src/board/<watch>.c`.
+The UI is laid out in fractions of the screen and draws its icons from
+outlines at the size it shows them, so it fits any screen size.
     make TEST=hang      # a build that stalls its main loop (watchdog test)
     make TEST=abort     # a build that takes a data abort
 
 The image carries no vendor firmware. The Adreno A3xx microcode
 (`a330_pm4.fw`, `a330_pfp.fw`), the Bluetooth patch and, on sparrow, the
 sensor hub firmware are read at boot from the watch's own Android system
-partition (the directories are listed per board in `board.h`).
+partition (the directories are listed in each watch's table).
 
 ## Run
 
