@@ -14,6 +14,7 @@
 #include "display/display.h"
 #include "ui/ui.h"
 #include "ui/stack.h"
+#include "ui/rotation.h"
 #include "bt/bt.h"
 #include "sensors/hub.h"
 #include "screenshot/screenshot.h"
@@ -140,6 +141,7 @@ static void ambient_draw(void)
 	memset(buf, 0, fb.stride * fb.height * 4);
 	ui_render(buf, fb.stride, dx, dy);
 	stack_indicators_cpu(buf, fb.stride, ix, iy);
+	rotation_buffer(buf, fb.stride);
 	display_flip();
 }
 

@@ -15,10 +15,12 @@
 #include "gpu/shaders.h"
 #include "ui/ui.h"
 #include "ui/stack.h"
+#include "ui/rotation.h"
 #include "bt/bt.h"
 #include "notify/notify.h"
 #include "sensors/hub.h"
 #include "sensors/steps.h"
+#include "sensors/orient.h"
 #include "media/media.h"
 #include "weather/weather.h"
 #include "screenshot/screenshot.h"
@@ -68,6 +70,7 @@ static void app_background(int x, int y, float alpha)
 		vbo = gpu_alloc(FLATMESH_GPU_ROUND_VERTICES * 32, 64);
 	unsigned n = flatmesh_vertices_gpu_look(vbo, mesh_t, app_center, app_outer, (float)x / fb.width,
 						(float)y / fb.height, alpha);
+	gpu_draw_turn_vertices(vbo, n, 8);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_blend(alpha < 1.0f);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
@@ -119,6 +122,10 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
 	uint32_t t1 = time_us();
 	gpu_draw_begin(&t);
+	float c, s;
+	rotation_turn(time_ms(), &c, &s);
+	gpu_draw_turn(c, s);
+	gpu_draw_turn_vertices(vbo, n, 8);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
 	if (with_layer)
@@ -376,6 +383,7 @@ void main(void)
 					       fb.width, fb.height);
 	if (have_ui) {
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
+		rotation_init(fb.width);
 		for (unsigned p = 0; p < UI_PANELS; p++)
 			dcache_clean_range(layers + p * (UI_LAYER_STRIDE / 4), fb.stride * fb.height * 4);
 	}
@@ -408,6 +416,8 @@ void main(void)
 	uint32_t shown_seq = 0, newest_seq = 0, media_seen = 0, weather_seen = 0, weather_day = 0;
 	uint32_t key_down_t = 0;
 	struct touch t;
+	struct orient orient;
+	orient_reset(&orient);
 	int down_x = 0, down_y = 0;
 	uint32_t down_t = 0;
 	if (have_display)
@@ -457,6 +467,17 @@ void main(void)
 				ui_set_heart_rate(shown_bpm = bpm);
 			if (measure && readings < 2)
 				power_activity(now);
+			/* In nightstand mode the screen turns with the watch, as
+			 * the launcher's OrientationSensor turns it, the sensor on
+			 * while the screen is; the always-on face keeps the turn. */
+			bool turn = have_ui && setting_get(SETTING_NIGHTSTAND_ROTATE) && power_nightstand();
+			hub_accel_on(turn && power_awake());
+			int16_t g[3];
+			if (hub_accel(g))
+				orient_update(&orient, g, now);
+			if (!turn)
+				orient_reset(&orient);
+			rotation_set(orient.angle, now);
 		}
 		/* The Flashlight app keeps the screen on and, while its light
 		 * is on, at full brightness, as asteroid-flashlight sets the
@@ -496,6 +517,8 @@ void main(void)
 				continue;
 			}
 			power_activity(now);
+			if (have_ui)
+				rotation_touch(&t.x, &t.y);
 			if (have_ui)
 				stack_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x,
 					    t.y, now);
@@ -710,7 +733,7 @@ void main(void)
 						for (uint32_t r = y; r < y + h; r++)
 							dcache_clean_range(layer + r * fb.stride + x, w * 4);
 				}
-				frame |= repainted || stack_animating(now);
+				frame |= repainted || stack_animating(now) || rotation_animating(now);
 				if (repainted) {
 					ui_repaints++;
 					ui_repaint_us += time_us() - u0;
@@ -727,8 +750,10 @@ void main(void)
 					gpu_flatmesh(buf, step * MESH_STEP_MS, have_ui);
 				} else {
 					flatmesh_render(buf, step * MESH_STEP_MS);
-					if (have_ui)
+					if (have_ui) {
 						ui_render(buf, fb.stride, 0, 0);
+						rotation_buffer(buf, fb.stride);
+					}
 				}
 				if (!have_ui) {
 					draw_dot(buf);
