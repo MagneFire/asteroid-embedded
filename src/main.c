@@ -484,6 +484,8 @@ void main(void)
 				if (t.event == TOUCH_DOWN && setting_get(SETTING_TAP)) {
 					power_request(false);
 					wake_touch = true;
+				} else if (t.event == TOUCH_UP) {
+					wake_touch = false;
 				}
 				continue;
 			}
