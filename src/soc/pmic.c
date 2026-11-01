@@ -604,7 +604,7 @@ void pmic_charger_poll(void)
 }
 
 /* Battery current through the current ADC across the external sense
- * resistor (9.7 mOhm on this watch): each reading is calibrated with a
+ * resistor (BOARD_RSENSE_UOHM): each reading is calibrated with a
  * gain conversion (17.857 mV reference) and an offset conversion of the
  * same input with its terminals shorted. */
 #define IADC			0x003600
@@ -621,7 +621,7 @@ void pmic_charger_poll(void)
 #define IADC_CH_GAIN		3
 #define IADC_CH_EXT_OFFSET	5
 #define IADC_GAIN_UV		17857
-#define RSENSE_UOHM		9700
+#define RSENSE_UOHM		BOARD_RSENSE_UOHM
 
 static int iadc_raw(uint8_t chan)
 {

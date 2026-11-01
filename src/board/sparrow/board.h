@@ -71,4 +71,7 @@
 #define BOARD_CHG_IBAT_MAX_MA	300
 #define BOARD_CHG_IBAT_SAFE_MA	600
 #define BOARD_CHG_ITERM_MA	20
+
+/* The battery current sense resistor. */
+#define BOARD_RSENSE_UOHM	10000
 #endif
