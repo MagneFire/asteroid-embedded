@@ -1,6 +1,6 @@
 // Compiles the .slint files with fonts and icons embedded as pixel data for the software renderer.
-// The notification icons are the AsteroidOS Ionicons set, resized to NOTE_ICON_PX and listed in a
-// generated Slint global, with their sorted names for the lookup by name. The nightstand battery
+// The icons, the UI's own and the AsteroidOS Ionicons set for notifications, are stored as outlines
+// for the firmware to draw at the size it shows them. The nightstand battery
 // ring is generated too: each of its segments a small SVG cut to its bounding box, with its
 // position, since paths cannot be drawn at run time here. The codes the UI and the firmware
 // exchange (the settings, the actions, the event kinds) are read from the C headers into a Slint
@@ -16,26 +16,16 @@ use skrifa::{FontRef, MetadataProvider};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-const NOTE_ICON_PX: u32 = 40;
 const UI_PX: u32 = 400;
 const ICON_DIR: &str = "../third_party/asteroid-icons-ion/src";
-
-fn resize(svg: &str, px: u32) -> String {
-    let Some(start) = svg.find("<svg") else { return svg.to_string() };
-    let end = start + svg[start..].find('>').unwrap_or(0);
-    let mut tag = svg[start..end].to_string();
-    for attr in ["width", "height"] {
-        if let Some(i) = tag.find(&format!(" {attr}=\"")) {
-            let v = i + attr.len() + 3;
-            let close = v + tag[v..].find('"').unwrap_or(0);
-            tag.replace_range(i..close + 1, "");
-        }
-    }
-    if !tag.contains("viewBox") {
-        tag.push_str(" viewBox=\"0 0 512 512\"");
-    }
-    format!("{}{tag} width=\"{px}\" height=\"{px}\"{}", &svg[..start], &svg[end..])
-}
+const ICON_UNIT: i32 = 8192;
+const ICON_NONZERO: i16 = -1;
+const ICON_EVENODD: i16 = -2;
+const ICON_MOVE: i16 = -3;
+const ICON_LINE: i16 = -4;
+const ICON_QUAD: i16 = -5;
+const ICON_CUBIC: i16 = -6;
+const ICON_CLOSE: i16 = -7;
 
 /// The screen's size in pixels.
 fn screen_px() -> u32 {
@@ -71,30 +61,91 @@ fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64) {
     (x0, y0)
 }
 
+/// icons.rs: every icon's outline, for the firmware to draw at whatever size the screen shows it.
+/// The UI's own icons and the Ionicons set (notification icons) go into one table sorted by name,
+/// the UI's copy winning where both have one. usvg resolves transforms, shapes and strokes into
+/// filled paths; their points are stored as i16 in 1/ICON_UNIT of the icon's box, each path
+/// starting with its fill rule (ICON_NONZERO, ICON_EVENODD) and its segments after it.
+fn icon_outlines(out: &std::path::Path) {
+    use usvg::tiny_skia_path::PathSegment;
+    let mut files = std::collections::BTreeMap::new();
+    for dir in [ICON_DIR, "icons"] {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let name = e.unwrap().file_name().into_string().unwrap();
+            if let Some(stem) = name.strip_suffix(".svg") {
+                files.insert(stem.to_string(), format!("{dir}/{name}"));
+            }
+        }
+    }
+    let mut data: Vec<i16> = Vec::new();
+    let mut table = String::from("static ICONS: &[(&str, u32, u32)] = &[\n");
+    for (name, path) in &files {
+        let svg = std::fs::read_to_string(path).unwrap();
+        let tree = usvg::Tree::from_str(&svg, &usvg::Options::default()).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let (w, h) = (tree.size().width(), tree.size().height());
+        let start = data.len();
+        let mut paths = Vec::new();
+        collect_paths(tree.root(), &mut paths);
+        for (p, evenodd) in paths {
+            data.push(if evenodd { ICON_EVENODD } else { ICON_NONZERO });
+            let pt = |x: f32, y: f32| [(x / w * ICON_UNIT as f32).round() as i16, (y / h * ICON_UNIT as f32).round() as i16];
+            for seg in p.segments() {
+                match seg {
+                    PathSegment::MoveTo(a) => { data.push(ICON_MOVE); data.extend(pt(a.x, a.y)); }
+                    PathSegment::LineTo(a) => { data.push(ICON_LINE); data.extend(pt(a.x, a.y)); }
+                    PathSegment::QuadTo(a, b) => { data.push(ICON_QUAD); data.extend(pt(a.x, a.y)); data.extend(pt(b.x, b.y)); }
+                    PathSegment::CubicTo(a, b, c) => {
+                        data.push(ICON_CUBIC);
+                        data.extend(pt(a.x, a.y));
+                        data.extend(pt(b.x, b.y));
+                        data.extend(pt(c.x, c.y));
+                    }
+                    PathSegment::Close => data.push(ICON_CLOSE),
+                }
+            }
+        }
+        writeln!(table, "    (\"{name}\", {start}, {}),", data.len() - start).unwrap();
+    }
+    table.push_str("];\n");
+    let mut rust = format!(
+        "pub const ICON_UNIT: i32 = {ICON_UNIT};\npub const ICON_NONZERO: i16 = {ICON_NONZERO};\n\
+         pub const ICON_EVENODD: i16 = {ICON_EVENODD};\npub const ICON_MOVE: i16 = {ICON_MOVE};\n\
+         pub const ICON_LINE: i16 = {ICON_LINE};\npub const ICON_QUAD: i16 = {ICON_QUAD};\n\
+         pub const ICON_CUBIC: i16 = {ICON_CUBIC};\npub const ICON_CLOSE: i16 = {ICON_CLOSE};\n"
+    );
+    rust.push_str(&table);
+    writeln!(rust, "static ICON_DATA: [i16; {}] = {:?};", data.len(), data).unwrap();
+    std::fs::write(out.join("icons.rs"), rust).unwrap();
+}
+
+/// The filled outlines of a group's visible paths, in the icon's coordinates: strokes become the
+/// outline of the stroke.
+fn collect_paths(group: &usvg::Group, out: &mut Vec<(usvg::tiny_skia_path::Path, bool)>) {
+    for node in group.children() {
+        match node {
+            usvg::Node::Group(g) => collect_paths(g, out),
+            usvg::Node::Path(p) if p.is_visible() => {
+                let ts = p.abs_transform();
+                if let Some(fill) = p.fill() {
+                    if let Some(d) = p.data().clone().transform(ts) {
+                        out.push((d, fill.rule() == usvg::FillRule::EvenOdd));
+                    }
+                }
+                if let Some(stroke) = p.stroke() {
+                    if let Some(d) = p.data().stroke(&stroke.to_tiny_skia(), 1.0).and_then(|d| d.transform(ts)) {
+                        out.push((d, false));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let dir = out.join("note-icons");
-    std::fs::create_dir_all(&dir).unwrap();
-    let mut names: Vec<String> = std::fs::read_dir(ICON_DIR)
-        .unwrap()
-        .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .filter_map(|n| n.strip_suffix(".svg").map(str::to_string))
-        .collect();
-    names.sort();
-    let mut slint = String::from("export global NoteIcons {\n    out property <[image]> list: [\n");
-    let mut rust = String::from("static NOTE_ICON_NAMES: &[&str] = &[\n");
-    for name in &names {
-        let svg = std::fs::read_to_string(format!("{ICON_DIR}/{name}.svg")).unwrap();
-        let path = dir.join(format!("{name}.svg"));
-        std::fs::write(&path, resize(&svg, NOTE_ICON_PX)).unwrap();
-        writeln!(slint, "        @image-url(\"{}\"),", path.display()).unwrap();
-        writeln!(rust, "    \"{name}\",").unwrap();
-    }
-    slint.push_str("    ];\n}\n");
-    rust.push_str("];\n");
-    std::fs::write(out.join("note_icons.slint"), slint).unwrap();
-    std::fs::write(out.join("note_icons.rs"), rust).unwrap();
 
+    icon_outlines(&out);
     ring(&out);
     heart_arc(&out);
     game_shapes(&out);

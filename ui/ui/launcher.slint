@@ -6,11 +6,12 @@
 // show it small. A tap opens the app over the screen stack.
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
+import { Icons } from "icons.slint";
 
 export struct App {
     id: int,
     name: string,
-    icon: image,
+    icon: string,
     center: color,
     outer: color,
 }
@@ -18,27 +19,27 @@ export struct App {
 export global Apps {
     // The Heart Rate app only where the watch has the sensor (Codes.heart-rate).
     property <[App]> all: [
-        { id: 2, name: "Alarm Clock", icon: @image-url("../icons/ios-alarm-outline.svg"), center: #CC9800, outer: #0C0500 },
-        { id: 8, name: "Calculator", icon: @image-url("../icons/ios-calculator-outline.svg"), center: #7CA600, outer: #0C0B00 },
-        { id: 9, name: "Diamonds", icon: @image-url("../icons/2048.svg"), center: #009933, outer: #000C00 },
-        { id: 7, name: "Flashlight", icon: @image-url("../icons/ios-bulb-outline.svg"), center: #00A698, outer: #000C07 },
-        { id: 6, name: "Heart Rate", icon: @image-url("../icons/ios-heart-outline.svg"), center: #0097A6, outer: #00060C },
-        { id: 0, name: "Music", icon: @image-url("../icons/ios-musical-notes-outline.svg"), center: #2577B3, outer: #000619 },
-        { id: 1, name: "Settings", icon: @image-url("../icons/ios-settings-outline.svg"), center: #0044A6, outer: #00010C },
-        { id: 4, name: "Stopwatch", icon: @image-url("../icons/ios-stopwatch-outline.svg"), center: #9800A6, outer: #0C0009 },
-        { id: 3, name: "Timer", icon: @image-url("../icons/ios-timer-outline.svg"), center: #A6005F, outer: #0C0003 },
-        { id: 5, name: "Weather", icon: @image-url("../icons/launcher-cloudy-outline.svg"), center: #990019, outer: #0C0200 },
+        { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
+        { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },
+        { id: 9, name: "Diamonds", icon: "2048", center: #009933, outer: #000C00 },
+        { id: 7, name: "Flashlight", icon: "ios-bulb-outline", center: #00A698, outer: #000C07 },
+        { id: 6, name: "Heart Rate", icon: "ios-heart-outline", center: #0097A6, outer: #00060C },
+        { id: 0, name: "Music", icon: "ios-musical-notes-outline", center: #2577B3, outer: #000619 },
+        { id: 1, name: "Settings", icon: "ios-settings-outline", center: #0044A6, outer: #00010C },
+        { id: 4, name: "Stopwatch", icon: "ios-stopwatch-outline", center: #9800A6, outer: #0C0009 },
+        { id: 3, name: "Timer", icon: "ios-timer-outline", center: #A6005F, outer: #0C0003 },
+        { id: 5, name: "Weather", icon: "launcher-cloudy-outline", center: #990019, outer: #0C0200 },
     ];
     property <[App]> without-heart-rate: [
-        { id: 2, name: "Alarm Clock", icon: @image-url("../icons/ios-alarm-outline.svg"), center: #CC9800, outer: #0C0500 },
-        { id: 8, name: "Calculator", icon: @image-url("../icons/ios-calculator-outline.svg"), center: #7CA600, outer: #0C0B00 },
-        { id: 9, name: "Diamonds", icon: @image-url("../icons/2048.svg"), center: #009933, outer: #000C00 },
-        { id: 7, name: "Flashlight", icon: @image-url("../icons/ios-bulb-outline.svg"), center: #00A698, outer: #000C07 },
-        { id: 0, name: "Music", icon: @image-url("../icons/ios-musical-notes-outline.svg"), center: #2577B3, outer: #000619 },
-        { id: 1, name: "Settings", icon: @image-url("../icons/ios-settings-outline.svg"), center: #0044A6, outer: #00010C },
-        { id: 4, name: "Stopwatch", icon: @image-url("../icons/ios-stopwatch-outline.svg"), center: #9800A6, outer: #0C0009 },
-        { id: 3, name: "Timer", icon: @image-url("../icons/ios-timer-outline.svg"), center: #A6005F, outer: #0C0003 },
-        { id: 5, name: "Weather", icon: @image-url("../icons/launcher-cloudy-outline.svg"), center: #990019, outer: #0C0200 },
+        { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
+        { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },
+        { id: 9, name: "Diamonds", icon: "2048", center: #009933, outer: #000C00 },
+        { id: 7, name: "Flashlight", icon: "ios-bulb-outline", center: #00A698, outer: #000C07 },
+        { id: 0, name: "Music", icon: "ios-musical-notes-outline", center: #2577B3, outer: #000619 },
+        { id: 1, name: "Settings", icon: "ios-settings-outline", center: #0044A6, outer: #00010C },
+        { id: 4, name: "Stopwatch", icon: "ios-stopwatch-outline", center: #9800A6, outer: #0C0009 },
+        { id: 3, name: "Timer", icon: "ios-timer-outline", center: #A6005F, outer: #0C0003 },
+        { id: 5, name: "Weather", icon: "launcher-cloudy-outline", center: #990019, outer: #0C0200 },
     ];
     out property <[App]> list: Codes.heart-rate ? all : without-heart-rate;
     out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
@@ -185,7 +186,7 @@ component Pages {
             y: (parent.height - 120px * root.k) / 2 - 12px * root.k;
             width: 120px * root.k;
             height: self.width;
-            source: app.icon;
+            source: Icons.get(app.icon, self.width, self.height);
             colorize: pager.pressed && !pager.dragging && pager.index == i ? #333 : #666;
         }
 
@@ -266,7 +267,7 @@ component ThreeIcons {
             y: parent.height * 0.2;
             width: parent.width * 0.6;
             height: self.width;
-            source: app.icon;
+            source: Icons.get(app.icon, self.width, self.height);
             colorize: pager.pressed && !pager.dragging && pager.index == i ? #444 : #666;
         }
 
@@ -357,7 +358,7 @@ component TwoColumns {
             y: parent.height * 0.225;
             width: parent.width * 0.55;
             height: self.width;
-            source: app.icon;
+            source: Icons.get(app.icon, self.width, self.height);
             colorize: #666;
         }
 
@@ -458,7 +459,7 @@ component TurboList {
             y: parent.height * 0.5 - self.width / 2;
             width: parent.height * 0.56;
             height: self.width;
-            source: app.icon;
+            source: Icons.get(app.icon, self.width, self.height);
             colorize: white;
             opacity: 0.9;
         }
@@ -574,7 +575,7 @@ component ThreeByThree {
             y: parent.height * 0.199;
             width: parent.width * 0.602;
             height: self.width;
-            source: app.icon;
+            source: Icons.get(app.icon, self.width, self.height);
             colorize: parent.down ? white : #555;
         }
     }
@@ -672,7 +673,7 @@ component Wheel {
             y: root.disc * 0.15;
             width: root.disc * 0.7;
             height: self.width;
-            source: app.icon;
+            source: Icons.get(app.icon, self.width, self.height);
             colorize: root.selected == i ? white : black;
             opacity: 0.9;
         }

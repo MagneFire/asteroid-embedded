@@ -12,6 +12,7 @@ import { Codes } from "codes.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
 import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton, Remorse } from "controls.slint";
+import { Icons } from "icons.slint";
 
 // A 60 px check badge with a soft shadow, as the pickers mark the current choice.
 component Check {
@@ -23,14 +24,14 @@ component Check {
         y: 2px;
         width: 60px;
         height: 60px;
-        source: @image-url("../icons/ios-checkmark-circle.svg");
+        source: Icons.get("ios-checkmark-circle", self.width, self.height);
         colorize: #00000060;
     }
 
     Image {
         width: 60px;
         height: 60px;
-        source: @image-url("../icons/ios-checkmark-circle.svg");
+        source: Icons.get("ios-checkmark-circle", self.width, self.height);
         colorize: white;
     }
 }
@@ -93,16 +94,16 @@ export component SettingsApp {
                 padding-bottom: 24px;
 
                 for item[i] in [
-                    { icon: @image-url("../icons/ios-display-outline.svg"), title: "Display", page: 1 },
-                    { icon: @image-url("../icons/ios-moon-outline.svg"), title: "Nightstand", page: 2 },
-                    { icon: @image-url("../icons/ios-watchface-outline.svg"), title: "Watchface", page: 3 },
-                    { icon: @image-url("../icons/ios-launcher-outline.svg"), title: "Launcher", page: 4 },
-                    { icon: @image-url("../icons/ios-clock-outline.svg"), title: "Time", page: 8 },
-                    { icon: @image-url("../icons/ios-date-outline.svg"), title: "Date", page: 9 },
-                    { icon: @image-url("../icons/ios-units-outline.svg"), title: "Units", page: 5 },
-                    { icon: @image-url("../icons/ios-bluetooth-outline.svg"), title: "Bluetooth", page: 6 },
-                    { icon: @image-url("../icons/ios-power-outline.svg"), title: "Power", page: 10 },
-                    { icon: @image-url("../icons/ios-help-circle-outline.svg"), title: "About", page: 7 },
+                    { icon: "ios-display-outline", title: "Display", page: 1 },
+                    { icon: "ios-moon-outline", title: "Nightstand", page: 2 },
+                    { icon: "ios-watchface-outline", title: "Watchface", page: 3 },
+                    { icon: "ios-launcher-outline", title: "Launcher", page: 4 },
+                    { icon: "ios-clock-outline", title: "Time", page: 8 },
+                    { icon: "ios-date-outline", title: "Date", page: 9 },
+                    { icon: "ios-units-outline", title: "Units", page: 5 },
+                    { icon: "ios-bluetooth-outline", title: "Bluetooth", page: 6 },
+                    { icon: "ios-power-outline", title: "Power", page: 10 },
+                    { icon: "ios-help-circle-outline", title: "About", page: 7 },
                 ]: ListItem {
                     icon: item.icon;
                     title: item.title;
@@ -400,7 +401,7 @@ export component SettingsApp {
 
     if root.page == 6: Page {
         StatusPage {
-            icon: Face.bluetooth-on ? @image-url("../icons/ios-bluetooth-outline.svg") : @image-url("../icons/ios-bluetooth-off-outline.svg");
+            icon: Face.bluetooth-on ? "ios-bluetooth-outline" : "ios-bluetooth-off-outline";
             active: Face.bluetooth-on;
             title: Face.bluetooth-on ? "Bluetooth on" : "Bluetooth off";
             text: Face.bluetooth-connected ? "Connected" : "Not connected";
@@ -412,7 +413,7 @@ export component SettingsApp {
         LabeledSwitch {
             y: 290px;
             text: "Forget phone";
-            icon: @image-url("../icons/ios-trash-outline.svg");
+            icon: "ios-trash-outline";
             dim: !Face.bluetooth-bonded;
             clicked => {
                 if Face.bluetooth-bonded {
@@ -477,7 +478,7 @@ export component SettingsApp {
         IconButton {
             x: (400px - self.width) / 2;
             y: 400px - 12px - self.height;
-            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            icon: "ios-checkmark-circle-outline";
             clicked => {
                 Face.time-set((time-hours.value + (Face.clock12 ? time-ampm.value * 12 : 0)) * 60 + time-minutes.value);
                 root.pop();
@@ -542,7 +543,7 @@ export component SettingsApp {
         IconButton {
             x: (400px - self.width) / 2;
             y: 400px - 12px - self.height;
-            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            icon: "ios-checkmark-circle-outline";
             clicked => {
                 Face.date-set(date-day.value + 1, date-month.value + 1, date-year.value + 2000);
                 root.pop();
@@ -563,8 +564,8 @@ export component SettingsApp {
             height: self.preferred-height;
 
             for item[i] in [
-                { icon: @image-url("../icons/ios-power-outline.svg"), title: "Power Off", action: Codes.ui-power-off },
-                { icon: @image-url("../icons/ios-sync.svg"), title: "Reboot", action: Codes.ui-reboot },
+                { icon: "ios-power-outline", title: "Power Off", action: Codes.ui-power-off },
+                { icon: "ios-sync", title: "Reboot", action: Codes.ui-reboot },
             ]: ListItem {
                 icon: item.icon;
                 title: item.title;
@@ -600,7 +601,7 @@ export component SettingsApp {
                     Image {
                         width: 160px;
                         height: 160px;
-                        source: @image-url("../icons/logo-asteroidos.svg");
+                        source: Icons.get("logo-asteroidos", self.width, self.height);
                         colorize: white;
                     }
                 }

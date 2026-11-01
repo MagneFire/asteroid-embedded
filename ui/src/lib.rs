@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+mod icons;
 mod paint;
 mod watch;
 

@@ -7,6 +7,7 @@
 import { Face, AlarmItem } from "face.slint";
 import { Pager } from "launcher.slint";
 import { PageHeader, IconButton, Spinner, Page } from "controls.slint";
+import { Icons } from "icons.slint";
 
 global Days {
     // Monday first, as the bits of days (bit 0 Sunday) and their names.
@@ -186,7 +187,7 @@ export component AlarmApp {
                 y: 120px;
                 width: 120px;
                 height: 120px;
-                source: alarm.on ? @image-url("../icons/ios-checkmark-circle-outline.svg") : @image-url("../icons/ios-circle-outline.svg");
+                source: Icons.get(alarm.on ? "ios-checkmark-circle-outline" : "ios-circle-outline", self.width, self.height);
                 colorize: white;
 
                 TouchArea {
@@ -199,7 +200,7 @@ export component AlarmApp {
             IconButton {
                 x: (root.width - self.width) / 2;
                 y: root.height - 12px - self.height;
-                icon: @image-url("../icons/ios-trash-circle.svg");
+                icon: "ios-trash-circle";
                 clicked => {
                     Face.alarm-deleted(i);
                 }
@@ -226,7 +227,7 @@ export component AlarmApp {
                 y: root.height / 2 - 20px - 50px + 12px;
                 width: 76px;
                 height: 76px;
-                source: @image-url("../icons/ios-add.svg");
+                source: Icons.get("ios-add", self.width, self.height);
                 colorize: white;
             }
 
@@ -343,7 +344,7 @@ export component AlarmApp {
         IconButton {
             x: (root.width - self.width) / 2;
             y: root.height - 12px - self.height;
-            icon: root.index < 0 ? @image-url("../icons/ios-arrow-dropright.svg") : @image-url("../icons/ios-checkmark-circle-outline.svg");
+            icon: root.index < 0 ? "ios-arrow-dropright" : "ios-checkmark-circle-outline";
             clicked => {
                 root.hour = hours.value + (Face.clock12 ? ampm.value * 12 : 0);
                 root.minute = minutes.value;
@@ -401,7 +402,7 @@ export component AlarmApp {
         IconButton {
             x: (root.width - self.width) / 2;
             y: root.height - 12px - self.height;
-            icon: root.index < 0 ? @image-url("../icons/ios-add-circle-outline.svg") : @image-url("../icons/ios-checkmark-circle-outline.svg");
+            icon: root.index < 0 ? "ios-add-circle-outline" : "ios-checkmark-circle-outline";
             clicked => {
                 Face.alarm-saved(root.index, root.hour, root.minute, root.days, true);
                 root.pop();

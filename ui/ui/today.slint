@@ -2,6 +2,7 @@
 // of the middle, lowest and highest temperature to its right) and today's agenda, which is
 // always empty here as nothing provides one.
 import { Face } from "face.slint";
+import { Icons } from "icons.slint";
 
 export component TodayScreen {
     width: 100%;
@@ -12,7 +13,7 @@ export component TodayScreen {
         y: 70px - 30px;
         width: 60px;
         height: 60px;
-        source: Face.weather-icon(Face.weather-today.id);
+        source: Icons.get(Face.weather-icon(Face.weather-today.id), self.width, self.height);
         colorize: white;
         opacity: 0.8;
     }
@@ -34,7 +35,7 @@ export component TodayScreen {
         y: (root.height - 108px) / 2 + (Face.weather-valid ? 4px : -36px);
         width: 108px;
         height: 108px;
-        source: @image-url("../icons/ios-calendar-outline.svg");
+        source: Icons.get("ios-calendar-outline", self.width, self.height);
         colorize: white;
         opacity: 0.8;
     }

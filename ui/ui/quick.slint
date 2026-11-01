@@ -12,9 +12,10 @@
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
+import { Icons } from "icons.slint";
 
 component Toggle {
-    in property <image> icon;
+    in property <string> icon;
     in property <bool> on;
     in property <bool> button;
     in property <bool> held;
@@ -36,7 +37,7 @@ component Toggle {
         y: (root.size - root.size / 2) / 2;
         width: root.size / 2;
         height: root.size / 2;
-        source: root.icon;
+        source: Icons.get(root.icon, self.width, self.height);
         colorize: root.down ? #d3d3d3 : white;
         opacity: root.down ? 0.5 : root.button || root.on ? 1 : 0.3;
     }
@@ -58,14 +59,14 @@ export component QuickSettings {
     // from the toggles: an index into toggles, or -1.
     // The toggles in AsteroidOS's default order, without WiFi and sound: three to a page, the
     // last page's centred. A press is mapped to the toggle under it.
-    property <[{icon: image, on: bool, button: bool}]> toggles: [
-        { icon: @image-url("../icons/ios-sunny.svg"), on: Face.brightness > 10 },
-        { icon: Face.bluetooth-connected ? @image-url("../icons/ios-bluetooth-connected.svg") : @image-url("../icons/ios-bluetooth.svg"), on: Face.bluetooth-on },
-        { icon: @image-url("../icons/ios-watch-vibrating.svg"), on: Face.vibration-on },
-        { icon: @image-url("../icons/ios-film-outline.svg"), on: !Face.aod-on },
-        { icon: Face.aod-on ? @image-url("../icons/ios-watch-aod-on.svg") : @image-url("../icons/ios-watch-aod-off.svg"), on: Face.aod-on },
-        { icon: @image-url("../icons/ios-power-outline.svg"), button: true },
-        { icon: @image-url("../icons/ios-sync.svg"), button: true },
+    property <[{icon: string, on: bool, button: bool}]> toggles: [
+        { icon: "ios-sunny", on: Face.brightness > 10 },
+        { icon: Face.bluetooth-connected ? "ios-bluetooth-connected" : "ios-bluetooth", on: Face.bluetooth-on },
+        { icon: "ios-watch-vibrating", on: Face.vibration-on },
+        { icon: "ios-film-outline", on: !Face.aod-on },
+        { icon: Face.aod-on ? "ios-watch-aod-on" : "ios-watch-aod-off", on: Face.aod-on },
+        { icon: "ios-power-outline", button: true },
+        { icon: "ios-sync", button: true },
     ];
     property <int> pages: Math.ceil(self.toggles.length / 3);
     property <length> local: strip-touch.pressed-x - root.pad(root.page);
@@ -135,7 +136,7 @@ export component QuickSettings {
         size: 96px;
         button: true;
         opacity: root.shown;
-        icon: @image-url("../icons/ios-unlock.svg");
+        icon: "ios-unlock";
         clicked => {
             Face.setting-toggled(Codes.ui-lock);
         }
@@ -147,7 +148,7 @@ export component QuickSettings {
         size: 96px;
         button: true;
         opacity: root.shown;
-        icon: @image-url("../icons/ios-settings.svg");
+        icon: "ios-settings";
         clicked => {
             Face.setting-toggled(Codes.ui-open-settings);
         }
@@ -254,7 +255,7 @@ export component QuickSettings {
             x: (parent.width - 32px) / 2;
             width: 32px;
             height: 32px;
-            source: @image-url("../icons/ios-flash.svg");
+            source: Icons.get("ios-flash", self.width, self.height);
             colorize: white;
             opacity: root.pulse;
         }

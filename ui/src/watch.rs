@@ -261,6 +261,7 @@ pub unsafe extern "C" fn ui_init(
             return false;
         };
         screen.set_kind(kind as i32);
+        screen.global::<Icons>().on_get(|name, w, h| crate::icons::icon(&name, w, h));
         let face = screen.global::<Face>();
         face.set_notes(notes.clone().into());
         face.set_weather_forecast(forecast.clone().into());
@@ -423,10 +424,9 @@ unsafe fn text(p: *const u8, len: u32) -> slint::SharedString {
     }
 }
 
-include!(concat!(env!("OUT_DIR"), "/note_icons.rs"));
 
-fn note_icon(name: &str) -> i32 {
-    NOTE_ICON_NAMES.binary_search(&name).map_or(-1, |i| i as i32)
+fn note_icon(name: &str) -> slint::SharedString {
+    if crate::icons::exists(name) { name.into() } else { slint::SharedString::new() }
 }
 
 #[unsafe(no_mangle)]
@@ -463,7 +463,7 @@ pub extern "C" fn ui_show_notification(id: i32) {
     let Some(note) = with_ui(|ui| ui.notes.iter().find(|n| n.id == id)).flatten() else { return };
     each(|face| {
         face.set_notification_id(note.id);
-        face.set_notification_icon(note.icon);
+        face.set_notification_icon(note.icon.clone());
         face.set_notification_app(note.app.clone());
         face.set_notification_summary(note.summary.clone());
         face.set_notification_body(note.body.clone());

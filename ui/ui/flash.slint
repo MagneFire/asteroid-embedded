@@ -2,6 +2,7 @@
 // light is on, with a bulb outline in it, that a tap shrinks to a grey disc with a filled bulb.
 // The firmware reads Face.flashlight-on for the brightness.
 import { Face } from "face.slint";
+import { Icons } from "icons.slint";
 
 export component FlashlightScreen {
     property <bool> on: Face.flashlight-on;
@@ -33,7 +34,7 @@ export component FlashlightScreen {
         Image {
             width: parent.width * 0.7;
             height: parent.height * 0.7;
-            source: root.on ? @image-url("../icons/ios-bulb-outline.svg") : @image-url("../icons/ios-bulb.svg");
+            source: Icons.get(root.on ? "ios-bulb-outline" : "ios-bulb", self.width, self.height);
             colorize: root.on ? #f0f0f0 : white;
         }
 

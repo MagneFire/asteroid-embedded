@@ -5,6 +5,7 @@
 // rate. The software renderer cannot rotate text, so the previous rate stays upright.
 import { Face } from "face.slint";
 import { HeartArc } from "heart_arc.slint";
+import { Icons } from "icons.slint";
 
 export component HeartRateScreen {
     property <int> bpm: Face.heart-rate;
@@ -148,7 +149,7 @@ export component HeartRateScreen {
         y: 324px - root.heart * 0.6;
         width: root.heart * 1.2;
         height: root.heart * 1.2;
-        source: @image-url("../icons/ios-heart.svg");
+        source: Icons.get("ios-heart", self.width, self.height);
         colorize: #e23b4e;
     }
 

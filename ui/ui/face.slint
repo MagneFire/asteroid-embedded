@@ -3,7 +3,8 @@
 // the time, date and battery, in white.
 export struct Note {
     id: int,
-    icon: int,
+    // The icon name, empty for the default.
+    icon: string,
     app: string,
     summary: string,
     body: string,
@@ -112,7 +113,7 @@ export global Face {
     in-out property <int> passkey: -1;
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
-    in-out property <int> notification-icon: -1;
+    in-out property <string> notification-icon;
     in-out property <string> notification-app;
     in-out property <string> notification-summary;
     in-out property <string> notification-body;
@@ -161,8 +162,8 @@ export global Face {
         return id >= 200 && id < 300 ? "Thunderstorm" : id >= 300 && id < 400 ? "Drizzle" : id == 511 ? "Freezing rain" : id >= 500 && id < 600 ? "Rain" : id >= 600 && id < 700 ? "Snow" : id >= 700 && id < 800 ? "Mist" : id == 800 ? "Clear" : id == 801 ? "Partly cloudy" : id > 801 && id < 900 ? "Cloudy" : "Unknown";
     }
 
-    public pure function weather-icon(id: int) -> image {
-        return id >= 200 && id < 300 ? @image-url("../icons/ios-thunderstorm-outline.svg") : id >= 300 && id < 400 ? @image-url("../icons/ios-drizzle-outline.svg") : id == 511 ? @image-url("../icons/ios-snow-outline.svg") : id >= 500 && id < 600 ? @image-url("../icons/ios-rainy-outline.svg") : id >= 600 && id < 700 ? @image-url("../icons/ios-snow-outline.svg") : id >= 700 && id < 800 ? @image-url("../icons/ios-cloudy-outline.svg") : id == 800 ? @image-url("../icons/ios-sunny-outline.svg") : id == 801 ? @image-url("../icons/ios-partly-sunny-outline.svg") : id > 801 && id < 900 ? @image-url("../icons/ios-cloudy-outline.svg") : @image-url("../icons/ios-alert-outline.svg");
+    public pure function weather-icon(id: int) -> string {
+        return id >= 200 && id < 300 ? "ios-thunderstorm-outline" : id >= 300 && id < 400 ? "ios-drizzle-outline" : id == 511 ? "ios-snow-outline" : id >= 500 && id < 600 ? "ios-rainy-outline" : id >= 600 && id < 700 ? "ios-snow-outline" : id >= 700 && id < 800 ? "ios-cloudy-outline" : id == 800 ? "ios-sunny-outline" : id == 801 ? "ios-partly-sunny-outline" : id > 801 && id < 900 ? "ios-cloudy-outline" : "ios-alert-outline";
     }
 }
 

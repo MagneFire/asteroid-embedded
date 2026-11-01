@@ -123,6 +123,8 @@ dependencies = [
  "skrifa",
  "slint",
  "slint-build",
+ "usvg",
+ "zeno",
 ]
 
 [[package]]

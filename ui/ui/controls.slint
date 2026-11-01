@@ -4,6 +4,7 @@
 // the notification pill button, and Page, which slides a pushed page in like LayerStack.
 import { Face } from "face.slint";
 import { Pager } from "launcher.slint";
+import { Icons } from "icons.slint";
 
 // A title over a band that fades out downwards, 80 px tall.
 export component PageHeader {
@@ -34,7 +35,7 @@ export component PageHeader {
 
 // An icon, 80 px and white by default, dimmed while pressed.
 export component IconButton {
-    in property <image> icon;
+    in property <string> icon;
     in property <length> size: 80px;
     in property <color> color: white;
     callback clicked();
@@ -45,7 +46,7 @@ export component IconButton {
     Image {
         width: parent.width;
         height: parent.height;
-        source: root.icon;
+        source: Icons.get(root.icon, self.width, self.height);
         colorize: root.color;
         opacity: touch.pressed ? 0.7 : 1;
     }
@@ -125,7 +126,7 @@ export component Spinner {
 // A 100 px dark disc with an icon at (200, 148), tappable, and a title line (bigger, as the
 // <h3> of the original) over a second line, the two centred on y = 260.
 export component StatusPage {
-    in property <image> icon;
+    in property <string> icon;
     in property <string> title;
     in property <string> text;
     in property <bool> active;
@@ -151,7 +152,7 @@ export component StatusPage {
         y: 110px;
         width: 76px;
         height: 76px;
-        source: root.icon;
+        source: Icons.get(root.icon, self.width, self.height);
         colorize: white;
     }
 
@@ -269,7 +270,7 @@ export component Marquee inherits Rectangle {
 // A row of the settings list: 84 px, a 60 px icon at x = 72, the title from x = 156 at 36 px,
 // the whole row lit while pressed.
 export component ListItem {
-    in property <image> icon;
+    in property <string> icon;
     in property <string> title;
     callback clicked();
 
@@ -289,7 +290,7 @@ export component ListItem {
         y: 12px;
         width: 60px;
         height: 60px;
-        source: root.icon;
+        source: Icons.get(root.icon, self.width, self.height);
         colorize: white;
     }
 
@@ -319,7 +320,7 @@ export component ListItem {
 export component LabeledSwitch {
     in property <string> text;
     in property <bool> checked;
-    in property <image> icon;
+    in property <string> icon;
     in property <string> value;
     in property <bool> dim;
     callback clicked();
@@ -355,7 +356,7 @@ export component LabeledSwitch {
         y: 10px;
         width: 80px;
         height: 80px;
-        source: root.icon.width > 0 ? root.icon : root.checked ? @image-url("../icons/ios-checkmark-circle-outline.svg") : @image-url("../icons/ios-circle-outline.svg");
+        source: Icons.get(root.icon != "" ? root.icon : root.checked ? "ios-checkmark-circle-outline" : "ios-circle-outline", self.width, self.height);
         colorize: white;
     }
 
@@ -471,7 +472,7 @@ export component IntSelector {
     IconButton {
         x: 61px;
         y: 10px;
-        icon: @image-url("../icons/ios-remove.svg");
+        icon: "ios-remove";
         opacity: root.value <= root.min ? 0.3 : 1;
         clicked => {
             root.down();
@@ -481,7 +482,7 @@ export component IntSelector {
     IconButton {
         x: 259px;
         y: 10px;
-        icon: @image-url("../icons/ios-add.svg");
+        icon: "ios-add";
         opacity: root.value >= root.max ? 0.3 : 1;
         clicked => {
             root.up();

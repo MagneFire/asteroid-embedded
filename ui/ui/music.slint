@@ -10,7 +10,7 @@ export component MusicScreen {
     height: 100%;
 
     if !Face.bluetooth-connected: StatusPage {
-        icon: @image-url("../icons/ios-sync.svg");
+        icon: "ios-sync";
         title: "No data";
         text: "Sync AsteroidOS with your phone.";
     }
@@ -36,7 +36,7 @@ export component MusicScreen {
         IconButton {
             x: 12px;
             y: 160px;
-            icon: @image-url("../icons/ios-arrow-dropleft.svg");
+            icon: "ios-arrow-dropleft";
             clicked => {
                 Face.media-action(Codes.ui-media-previous);
             }
@@ -46,7 +46,7 @@ export component MusicScreen {
             x: 120px;
             y: 120px;
             size: 160px;
-            icon: Face.media-playing ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-play.svg");
+            icon: Face.media-playing ? "ios-pause" : "ios-play";
             clicked => {
                 Face.media-action(Face.media-playing ? Codes.ui-media-pause : Codes.ui-media-play);
             }
@@ -55,7 +55,7 @@ export component MusicScreen {
         IconButton {
             x: 308px;
             y: 160px;
-            icon: @image-url("../icons/ios-arrow-dropright.svg");
+            icon: "ios-arrow-dropright";
             clicked => {
                 Face.media-action(Codes.ui-media-next);
             }
@@ -64,7 +64,7 @@ export component MusicScreen {
         IconButton {
             x: 64px;
             y: 272px;
-            icon: @image-url("../icons/ios-volume-down.svg");
+            icon: "ios-volume-down";
             clicked => {
                 Face.media-action(Codes.ui-media-volume-down);
             }
@@ -90,7 +90,7 @@ export component MusicScreen {
         IconButton {
             x: 256px;
             y: 272px;
-            icon: @image-url("../icons/ios-volume-up.svg");
+            icon: "ios-volume-up";
             clicked => {
                 Face.media-action(Codes.ui-media-volume-up);
             }

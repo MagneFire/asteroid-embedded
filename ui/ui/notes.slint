@@ -9,7 +9,7 @@
 // page is on screen, where a swipe left goes back to the watchface.
 import { Face, Note } from "face.slint";
 import { Pill, PageHeader, Page } from "controls.slint";
-import { NoteIcons } from "note_icons.slint";
+import { Icons } from "icons.slint";
 
 global Notes {
     // How long ago, from seconds: Now, then minutes, hours and days.
@@ -17,8 +17,8 @@ global Notes {
         return s < 60 ? "Now" : s < 3600 ? Math.floor(s / 60) + "m" : s < 216000 ? Math.floor(s / 3600) + "h" : Math.floor(s / 86400) + "d";
     }
 
-    public pure function icon(n: Note) -> image {
-        return n.icon >= 0 ? NoteIcons.list[n.icon] : @image-url("../icons/ios-mail-outline.svg");
+    public pure function icon(n: Note) -> string {
+        return n.icon != "" ? n.icon : "ios-mail-outline";
     }
 }
 
@@ -152,7 +152,7 @@ component Actions {
         Image {
             width: 34px;
             height: 34px;
-            source: Notes.icon(root.note);
+            source: Icons.get(Notes.icon(root.note), self.width, self.height);
             colorize: white;
         }
 
@@ -264,7 +264,7 @@ export component NoteList {
             y: 110px;
             width: 108px;
             height: 108px;
-            source: @image-url("../icons/ios-mail-outline.svg");
+            source: Icons.get("ios-mail-outline", self.width, self.height);
             colorize: white;
             opacity: 0.8;
         }
@@ -374,7 +374,7 @@ export component NoteList {
             width: 32px;
             height: 32px;
             visible: self.x > -32px && self.x < 400px;
-            source: Notes.icon(note);
+            source: Icons.get(Notes.icon(note), self.width, self.height);
             colorize: i == root.current ? white : #8e8e8e;
         }
 
@@ -389,7 +389,7 @@ export component NoteList {
             x: parent.cx + 39px;
             width: 32px;
             height: 32px;
-            source: @image-url("../icons/ios-time.svg");
+            source: Icons.get("ios-time", self.width, self.height);
             colorize: #8e8e8e;
         }
     }

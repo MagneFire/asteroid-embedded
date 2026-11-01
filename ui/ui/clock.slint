@@ -6,6 +6,7 @@ import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { IconButton, Spinner, PageDot } from "controls.slint";
 import { Pager } from "launcher.slint";
+import { Icons } from "icons.slint";
 
 // Hours, minutes and seconds on three spinners with their unit raised beside each, and one
 // button to start or pause. While it runs the spinners follow the time left; turned by hand
@@ -89,7 +90,7 @@ export component TimerApp {
     if root.chosen > 0 || Face.timer-running: IconButton {
         x: 160px;
         y: 308px;
-        icon: Face.timer-running ? @image-url("../icons/ios-pause.svg") : @image-url("../icons/ios-timer-outline.svg");
+        icon: Face.timer-running ? "ios-pause" : "ios-timer-outline";
         clicked => {
             Face.clock-action(Codes.ui-timer-start);
         }
@@ -268,7 +269,7 @@ export component StopwatchApp {
             y: 290px;
             width: 96px;
             height: 96px;
-            source: @image-url("../icons/ios-refresh.svg");
+            source: Icons.get("ios-refresh", self.width, self.height);
             colorize: white;
         }
     }

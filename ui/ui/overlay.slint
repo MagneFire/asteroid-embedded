@@ -1,9 +1,9 @@
 // Drawn over every screen: a notification that was opened or just came in, the
 // Bluetooth pairing code, or a ringing alarm or timer with dismiss and snooze buttons.
-import { NoteIcons } from "note_icons.slint";
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { IconButton, StatusPage } from "controls.slint";
+import { Icons } from "icons.slint";
 
 export component Overlay {
     width: 100%;
@@ -29,7 +29,7 @@ export component Overlay {
                 Image {
                     width: 80px;
                     height: 80px;
-                    source: Face.notification-icon >= 0 ? NoteIcons.list[Face.notification-icon] : @image-url("../icons/ios-mail-outline.svg");
+                    source: Icons.get(Face.notification-icon != "" ? Face.notification-icon : "ios-mail-outline", self.width, self.height);
                     colorize: white;
                 }
             }
@@ -106,7 +106,7 @@ export component Overlay {
             y: 80px;
             width: 80px;
             height: 80px;
-            source: @image-url("../icons/ios-bluetooth.svg");
+            source: Icons.get("ios-bluetooth", self.width, self.height);
             colorize: #666666;
         }
 
@@ -137,7 +137,7 @@ export component Overlay {
             x: 112px;
             y: 236px;
             color: #666666;
-            icon: @image-url("../icons/ios-close-circle-outline.svg");
+            icon: "ios-close-circle-outline";
             clicked => {
                 Face.setting-toggled(Codes.ui-pair-reject);
             }
@@ -147,7 +147,7 @@ export component Overlay {
             x: 208px;
             y: 236px;
             color: #666666;
-            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            icon: "ios-checkmark-circle-outline";
             clicked => {
                 Face.setting-toggled(Codes.ui-pair-accept);
             }
@@ -161,7 +161,7 @@ export component Overlay {
         background: @radial-gradient(circle, #333333 0%, #000000 100%);
 
         StatusPage {
-            icon: Face.ringing-timer ? @image-url("../icons/ios-timer-outline.svg") : @image-url("../icons/ios-alarm-outline.svg");
+            icon: Face.ringing-timer ? "ios-timer-outline" : "ios-alarm-outline";
         }
 
         Text {
@@ -180,7 +180,7 @@ export component Overlay {
         IconButton {
             x: 12px;
             y: 160px;
-            icon: @image-url("../icons/ios-checkmark-circle-outline.svg");
+            icon: "ios-checkmark-circle-outline";
             clicked => {
                 Face.alarm-action(Codes.ui-alarm-dismiss);
             }
@@ -189,7 +189,7 @@ export component Overlay {
         IconButton {
             x: 308px;
             y: 160px;
-            icon: Face.ringing-timer ? @image-url("../icons/ios-refresh-circle-outline.svg") : @image-url("../icons/ios-sleep-circle-outline.svg");
+            icon: Face.ringing-timer ? "ios-refresh-circle-outline" : "ios-sleep-circle-outline";
             clicked => {
                 Face.alarm-action(Codes.ui-alarm-snooze);
                 if Face.ringing-timer {
