@@ -821,6 +821,9 @@ void main(void)
 			uint32_t app = clockapps_next_ms(time_ms());
 			if (app < app_next)
 				app_next = app;
+			uint32_t tp = have_touch ? touch_next_ms() : UINT32_MAX;
+			if (tp < app_next)
+				app_next = tp;
 		}
 		power_idle(app_next);
 	}

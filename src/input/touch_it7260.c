@@ -377,6 +377,14 @@ void touch_sleep(bool on)
 	mode_wait = on ? IDLE_DELAY_MS : 0;
 }
 
+uint32_t touch_next_ms(void)
+{
+	if (!present || mode_set || mode_fails >= RETRIES)
+		return UINT32_MAX;
+	uint32_t gone = time_ms() - mode_t;
+	return gone >= mode_wait ? 1 : mode_wait - gone;
+}
+
 bool touch_poll(struct touch *t)
 {
 	i2c_qup_poll(QUP);

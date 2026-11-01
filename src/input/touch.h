@@ -17,4 +17,6 @@ void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms);
 /* The screen went off (on) or came back (off): a controller may scan
  * more slowly and report only a wake gesture while the screen is off. */
 void touch_sleep(bool on);
+/* How long until the driver has its own work to do, if it has any. */
+uint32_t touch_next_ms(void);
 #endif
