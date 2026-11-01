@@ -16,6 +16,7 @@
 struct fb fb;
 static bool cmd_mode, kicked, dsi_pending;
 static uint32_t frames, waits, timeouts;
+static uint32_t phy_ctrl, phy_regulator;
 static void (*idle_hook)(void);
 void display_set_idle_hook(void (*fn)(void)) { idle_hook = fn; }
 uint32_t display_timeouts(void) { return timeouts; }
@@ -128,6 +129,9 @@ bool display_init(void)
 	       PIPE + PIPE_SRC_OP_MODE);
 	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
+	phy_ctrl = readl(DSI_PHY_CTRL_0);
+	phy_regulator = readl(DSI_PHY_REGULATOR_CTRL_6);
+	log_printf("display: phy ctrl_0 %02lx regulator_6 %02lx\n", phy_ctrl, phy_regulator);
 	return true;
 }
 
@@ -135,12 +139,17 @@ uint32_t *display_backbuffer(void) { return fb.buf[fb.back]; }
 
 /* While the screen sleeps, between frames, the display rests as the
  * vendor's command-mode idle path leaves it: the last frame done on the
- * DSI side too, the clock lane and data lane 0 in ultra-low-power state
- * and the MDP and DSI clocks gated, so nothing in MDSS reads memory
- * when the cluster powers down and XO stops. The power domain stays on
- * and keeps the registers the bootloader set up. Waking, the bus and
- * MDP clocks come back first, then escape, byte and pixel once the DSI
- * PLL reports lock again; leaving ULPS takes 1 ms after clearing lane
+ * DSI side too, the clock lane and data lane 0 in ultra-low-power state,
+ * the DSI and MDP clocks gated, the DSI PLL behind them powered down and
+ * the register bus clock gated last, so nothing in MDSS reads memory
+ * when the cluster powers down and XO stops. With the panel asleep the
+ * DSI PHY is powered down too; under the always-on face it stays up and
+ * keeps the lanes in ULPS. The power domain stays on and keeps the
+ * registers the bootloader set up, the PLL's dividers among them.
+ * Waking, the register bus, then the bus and MDP clocks come back, the
+ * PHY's regulator and lanes are switched back on and the PLL goes
+ * through its power-up sequence until it reports lock, then escape,
+ * byte and pixel follow; leaving ULPS takes 1 ms after clearing lane
  * 0's PHY errors, then the lanes are forced to the stop state.
  * display_rest says whether the cluster may power down: not while a
  * frame is still on its way to the panel; if only the lanes refuse
@@ -151,7 +160,7 @@ uint32_t *display_backbuffer(void) { return fb.buf[fb.back]; }
 
 static const uint32_t mdp_clocks[] = { MDSS_AXI_CBCR, MDSS_MDP_CBCR, MDSS_MDP_LUT_CBCR, MDSS_VSYNC_CBCR };
 static const uint32_t dsi_clocks[] = { MDSS_ESC0_CBCR, MDSS_BYTE0_CBCR, MDSS_PCLK0_CBCR };
-static bool resting;
+static bool resting, panel_asleep, phy_off;
 
 static void clock_set(uint32_t cbcr, bool on)
 {
@@ -182,6 +191,61 @@ static bool pll_locked(void)
 	return false;
 }
 
+/* The PLL's power-up sequences are the vendor's for msm8226, tried in
+ * its order until one locks; each starts with a software reset, which
+ * keeps the divider settings. The first one retries the last steps with
+ * the power generator reset; the others reset it first. */
+struct pll_step { uint8_t reg, val; uint16_t us; };
+#define GLB	0x20
+#define PWRGEN	0x14
+#define CAL1	0x70
+static const struct pll_step seq_m[] = { { CAL1, 0x34, 0 }, { GLB, 0x01, 200 }, { GLB, 0x05, 200 }, { GLB, 0x0f, 600 } };
+static const struct pll_step seq_m_retry[] = { { PWRGEN, 0x00, 50 }, { GLB, 0x05, 100 }, { GLB, 0x0f, 600 } };
+static const struct pll_step seq_d[] = { { PWRGEN, 0x00, 50 }, { GLB, 0x01, 200 }, { GLB, 0x05, 200 }, { GLB, 0x07, 200 },
+					 { GLB, 0x05, 200 }, { GLB, 0x07, 200 }, { GLB, 0x0f, 600 } };
+static const struct pll_step seq_f1[] = { { PWRGEN, 0x00, 50 }, { GLB, 0x01, 200 }, { GLB, 0x05, 200 }, { GLB, 0x0f, 200 },
+					  { GLB, 0x0d, 200 }, { GLB, 0x0f, 600 } };
+static const struct pll_step seq_c[] = { { PWRGEN, 0x00, 50 }, { GLB, 0x01, 200 }, { GLB, 0x05, 200 }, { GLB, 0x0f, 600 } };
+static const struct pll_step seq_e[] = { { PWRGEN, 0x00, 50 }, { GLB, 0x01, 200 }, { GLB, 0x05, 200 }, { GLB, 0x0d, 1 },
+					 { GLB, 0x0f, 600 } };
+static const struct { const struct pll_step *steps; uint8_t n, retries; } pll_seqs[] = {
+	{ seq_m, ARRAY_SIZE(seq_m), 7 }, { seq_m, ARRAY_SIZE(seq_m), 7 },
+	{ seq_d, ARRAY_SIZE(seq_d), 0 }, { seq_d, ARRAY_SIZE(seq_d), 0 },
+	{ seq_f1, ARRAY_SIZE(seq_f1), 0 }, { seq_c, ARRAY_SIZE(seq_c), 0 }, { seq_e, ARRAY_SIZE(seq_e), 0 },
+};
+
+static void pll_steps(const struct pll_step *steps, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		writel(steps[i].val, DSI_PLL_GLB_CFG - GLB + steps[i].reg);
+		if (steps[i].us)
+			delay_us(steps[i].us);
+	}
+}
+
+static void pll_power_up(void)
+{
+	for (unsigned s = 0; s < ARRAY_SIZE(pll_seqs); s++) {
+		writel(1, DSI_PLL_TEST_CFG);
+		delay_us(1);
+		writel(0, DSI_PLL_TEST_CFG);
+		delay_us(1);
+		pll_steps(pll_seqs[s].steps, pll_seqs[s].n);
+		bool locked = pll_locked();
+		unsigned r = 0;
+		for (; !locked && r < pll_seqs[s].retries; r++) {
+			pll_steps(seq_m_retry, ARRAY_SIZE(seq_m_retry));
+			locked = pll_locked();
+		}
+		if (locked) {
+			if (s || r)
+				log_printf("display: DSI PLL locked with sequence %u after %u retries\n", s, r);
+			return;
+		}
+	}
+	log_printf("display: DSI PLL not locked, status %08lx\n", readl(DSI_PLL_STATUS));
+}
+
 bool display_rest(void)
 {
 	if (resting)
@@ -206,6 +270,14 @@ bool display_rest(void)
 		clock_set(dsi_clocks[i], false);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
 		clock_set(mdp_clocks[i], false);
+	phy_off = panel_asleep;
+	if (phy_off) {
+		writel(0, DSI_PHY_CTRL_0);
+		writel(0, DSI_PHY_REGULATOR_CTRL_6);
+	}
+	writel(0, DSI_PLL_GLB_CFG);
+	dsb();
+	clock_set(MDSS_AHB_CBCR, false);
 	resting = true;
 	return true;
 }
@@ -214,10 +286,16 @@ void display_active(void)
 {
 	if (!resting)
 		return;
+	clock_set(MDSS_AHB_CBCR, true);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
 		clock_set(mdp_clocks[i], true);
-	if (!pll_locked())
-		log_printf("display: DSI PLL not locked, status %08lx\n", readl(DSI_PLL_STATUS));
+	if (phy_off) {
+		writel(phy_regulator, DSI_PHY_REGULATOR_CTRL_6);
+		writel(phy_ctrl, DSI_PHY_CTRL_0);
+		delay_us(100);
+		phy_off = false;
+	}
+	pll_power_up();
 	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
 		clock_set(dsi_clocks[i], true);
 	uint32_t err = readl(DSI_DLN0_PHY_ERR);
@@ -259,11 +337,13 @@ void display_sleep(void)
 	pp_wait();
 	dsi_dcs_write(0x28, NULL, 0);
 	dsi_dcs_write(0x10, NULL, 0);
+	panel_asleep = true;
 }
 
 void display_wake(void)
 {
 	display_active();
+	panel_asleep = false;
 	dsi_dcs_write(0x11, NULL, 0);
 	delay_ms(120);
 	dsi_dcs_write(0x29, NULL, 0);

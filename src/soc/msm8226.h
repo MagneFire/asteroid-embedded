@@ -32,6 +32,7 @@
 
 #define MMSS_CC_BASE		0xfd8c0000u
 #define MDP_GDSCR		(MMSS_CC_BASE + 0x2304)
+#define MDSS_AHB_CBCR		(MMSS_CC_BASE + 0x2308)
 #define MDSS_AXI_CBCR		(MMSS_CC_BASE + 0x2310)
 #define MDSS_PCLK0_CBCR		(MMSS_CC_BASE + 0x2314)
 #define MDSS_MDP_CBCR		(MMSS_CC_BASE + 0x231c)
@@ -90,8 +91,12 @@
 #define DSI_LANE_STATUS		(DSI0_BASE + 0x0a8)
 #define DSI_LANE_CTRL		(DSI0_BASE + 0x0ac)
 #define DSI_DLN0_PHY_ERR	(DSI0_BASE + 0x0b4)
+#define DSI_PLL_GLB_CFG		0xfd922a20u
 #define DSI_PLL_LKDET_CFG2	0xfd922a64u
+#define DSI_PLL_TEST_CFG	0xfd922a68u
 #define DSI_PLL_STATUS		0xfd922ac0u
+#define DSI_PHY_CTRL_0		0xfd922c70u
+#define DSI_PHY_REGULATOR_CTRL_6 0xfd922d98u
 
 
 #define USB_HS_BASE		0xf9a55000u
