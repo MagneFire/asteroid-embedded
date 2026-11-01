@@ -28,6 +28,12 @@ void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void))
 		gic_enable(IRQ_WDT_BARK, bark);
 }
 
+void wdt_stop(void)
+{
+	writel(0, WDT_EN);
+	writel(1, WDT_RST);
+}
+
 void wdt_feed(void)
 {
 	writel(1, WDT_RST);

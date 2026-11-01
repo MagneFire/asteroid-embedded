@@ -250,17 +250,27 @@ void power_idle(uint32_t app_next_ms)
 		if (ambient && minute < next)
 			next = minute;
 	}
+	/* The watchdog counts on the sleep clock through a cluster power
+	 * collapse, where its bark cannot wake the core, so a wake that
+	 * comes late would end in a bite with no record. As the vendor
+	 * kernel does for suspend, it is off across a long sleep, and a
+	 * wake later than planned is logged instead. */
 	bool long_sleep = !awake && next > 1000;
+	uint32_t t0 = 0;
 	if (long_sleep) {
 		timer_set_period(next);
 		timer_next(next);
-		wdt_arm(next + 3000, next + 4000, NULL);
+		wdt_stop();
+		t0 = time_ms();
 	}
 	spm_idle(cluster);
 	if (long_sleep) {
+		uint32_t slept = time_ms() - t0;
 		wdt_arm(3000, 4000, NULL);
 		timer_set_period(1000);
 		timer_next(1);
+		if (slept > next + 1000)
+			log_printf("power: woke %lu ms after a %lu ms sleep\n", slept, next);
 	}
 	if (cluster) {
 		cpu_clock_unpark();

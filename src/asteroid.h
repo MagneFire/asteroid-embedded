@@ -135,6 +135,7 @@ void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 #define WDT_MAX_MS (0x0fffffffu / SLEEP_CLK_HZ * 1000u)	/* about 2.3 hours */
 void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void));
+void wdt_stop(void);
 void wdt_feed(void);
 void spmi_init(void);
 uint32_t spmi_version(void);
