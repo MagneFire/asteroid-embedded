@@ -39,7 +39,15 @@ int memcmp(const void *a, const void *b, size_t n)
 
 int bcmp(const void *a, const void *b, size_t n) { return memcmp(a, b, n); }
 
+void *memchr(const void *s, int c, size_t n)
+{
+	for (const uint8_t *p = s; n; n--, p++)
+		if (*p == (uint8_t)c) return (void *)p;
+	return NULL;
+}
+
 size_t strlen(const char *s) { const char *p = s; while (*p) p++; return (size_t)(p - s); }
+size_t strnlen(const char *s, size_t n) { size_t i = 0; while (i < n && s[i]) i++; return i; }
 int strcmp(const char *a, const char *b)
 {
 	while (*a && *a == *b) a++, b++;
