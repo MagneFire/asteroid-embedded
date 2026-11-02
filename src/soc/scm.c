@@ -31,3 +31,39 @@ int scm_wdog_debug_disable(void)
 	scm_call2(SCM_SVC_BOOT, SCM_DLOAD_CMD, 0, 0);
 	return ret;
 }
+
+/* The buffer-based convention: a command block in memory holds the
+ * request and room for the response, r2 carries its address, and the
+ * call is repeated while the secure world reports it interrupted. */
+#define SCM_SVC_MP		0x0c
+#define SCM_RESTORE_SEC_CFG	0x02
+#define SCM_INTERRUPTED		1
+
+static struct {
+	uint32_t len, buf_offset, resp_hdr_offset, id;
+	uint32_t req[2];
+	uint32_t resp_len, resp_buf_offset, is_complete;
+	uint32_t resp;
+} __attribute__((aligned(64))) scm_cmd;
+
+/* After its power domain collapsed, a device behind a TZ-managed SMMU
+ * (the display is device 1) can't be reached until the secure world has
+ * restored its configuration, with the SMMU's clocks running. */
+int scm_restore_sec_cfg(uint32_t device)
+{
+	scm_cmd = (typeof(scm_cmd)){ .len = sizeof scm_cmd, .buf_offset = 16, .resp_hdr_offset = 24,
+				     .id = SCM_SVC_MP << 10 | SCM_RESTORE_SEC_CFG, .req = { device, 0 } };
+	dcache_clean_invalidate_range(&scm_cmd, sizeof scm_cmd);
+	uint32_t context = 0;
+	register uint32_t r0 __asm__("r0");
+	do {
+		register uint32_t r1 __asm__("r1") = (uint32_t)(uintptr_t)&context;
+		register uint32_t r2 __asm__("r2") = (uint32_t)(uintptr_t)&scm_cmd;
+		r0 = SCM_INTERRUPTED;
+		__asm__ volatile("smc #0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "memory");
+	} while (r0 == SCM_INTERRUPTED);
+	dcache_invalidate_range(&scm_cmd, sizeof scm_cmd);
+	if (r0 || !scm_cmd.is_complete || scm_cmd.resp)
+		return r0 ? (int)r0 : -1;
+	return 0;
+}
