@@ -545,9 +545,14 @@ void main(uint32_t machtype, const void *fdt)
 			dot_y = t.y;
 		}
 		pmic_power_key_irq();
+		static uint32_t usb_check_t;
 		if (pmic_usb_irq() && pmic_usb_present()) {
 			log_printf("usb: cable plugged in\n");
+			usb_cable(true, true);
 			power_charger_plugged(now);
+		} else if (now - usb_check_t >= 1000) {
+			usb_check_t = now;
+			usb_cable(pmic_usb_present(), false);
 		}
 		bool key = pmic_power_key();
 		if (key != key_was) {
@@ -858,6 +863,9 @@ void main(uint32_t machtype, const void *fdt)
 			uint32_t tp = have_touch ? touch_next_ms() : UINT32_MAX;
 			if (tp < app_next)
 				app_next = tp;
+			uint32_t un = usb_next_ms();
+			if (un < app_next)
+				app_next = un;
 		}
 		power_idle(app_next);
 	}

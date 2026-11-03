@@ -29,37 +29,49 @@
 #define EP_ACM_OUT	0x04
 #define EP_ACM_IN	0x84
 enum { ITF_ACM_COMM = 0, ITF_ACM_DATA, ITF_ADB, ITF_COUNT };
+static bool cdc_attached;
+#define PORTSC_PHCD		BIT(23)
+static bool usb_down, usb_clocks_off;
 
-static void ulpi_write(uint8_t reg, uint8_t val)
+static int ulpi_write(uint8_t reg, uint8_t val)
 {
 	writel(ULPI_RUN | ULPI_WRITE | (uint32_t)reg << 16 | val, USB_ULPI_VIEWPORT);
+	uint32_t t0 = time_us();
 	while (readl(USB_ULPI_VIEWPORT) & ULPI_RUN)
-		;
+		if (time_us() - t0 > 10000) {
+			log_printf("usb: ulpi write %02x timed out\n", reg);
+			return -1;
+		}
+	return 0;
 }
 
 /* The PHY selection and the external session-valid wiring survive
  * neither a controller reset nor the stack's own reset, so they are
  * applied before and after the stack initialises. */
-static void phy_select(void)
+static int phy_select(void)
 {
 	writel(PORTSC_PTS_ULPI, USB_PORTSC);
-	ulpi_write(ULPI_MISC_A_SET, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
+	int r = ulpi_write(ULPI_MISC_A_SET, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
 	writel(readl(USB_GENCONFIG_2) | GEN2_SESS_VLD_CTRL_EN, USB_GENCONFIG_2);
 	writel(readl(USB_USBCMD) | USBCMD_SESS_VLD_CTRL, USB_USBCMD);
+	return r;
 }
 
-static void controller_init(void)
+static bool controller_init(void)
 {
 	writel(readl(GCC_USB_HS_AHB_CBCR) | 1, GCC_USB_HS_AHB_CBCR);
 	writel(readl(GCC_USB_HS_SYSTEM_CBCR) | 1, GCC_USB_HS_SYSTEM_CBCR);
 	delay_ms(1);
 	writel(0x00080002, USB_USBCMD);
 	delay_ms(2);
-	while (readl(USB_USBCMD) & 2)
-		;
-	phy_select();
+	for (int i = 0; i < 100000 && (readl(USB_USBCMD) & 2); i++)
+		delay_us(1);
+	bool ok = !(readl(USB_USBCMD) & 2);
+	if (phy_select())
+		ok = false;
 	writel(0, USB_SBUSCFG);
 	writel(0x08, USB_AHB_MODE);
+	return ok;
 }
 
 /* TinyUSB port hooks */
@@ -247,10 +259,13 @@ static size_t cdc_room(void *ctx)
 
 static void cdc_out(const char *s, size_t n, void *ctx)
 {
+	uint32_t t0 = time_ms();
 	while (n) {
 		uint32_t k = tud_cdc_write(s, (uint32_t)n);
 		if (!k) {
-			if (cdc_in_cb)
+			/* A host that stops reading loses the output after 1 s
+			 * rather than holding up the main loop. */
+			if (cdc_in_cb || time_ms() - t0 > 1000)
 				return;
 			tud_cdc_write_flush();
 			tud_task();
@@ -278,8 +293,9 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 	cdc_in_cb = true;
 	if (dtr)
 		console_attach(cdc_out, cdc_room, NULL, true);
-	else
+	else if (cdc_attached)
 		console_detach();
+	cdc_attached = dtr;
 	cdc_in_cb = false;
 	log_printf("usb: console %s\n", dtr ? "opened" : "closed");
 }
@@ -295,7 +311,194 @@ void tud_umount_cb(void) { log_printf("usb: unconfigured\n"); }
  * a newly attached host resets the port out of suspend. */
 bool usb_connected(void)
 {
+	if (usb_down)
+		return false;
 	return (readl(USB_PORTSC) & (PORTSC_CCS | PORTSC_SUSP)) == PORTSC_CCS;
+}
+
+/* Unplugged, the USB block rests as the vendor's suspend leaves it with
+ * VBUS sensed by the PMIC: the stack stopped, the PHY in low power mode
+ * (PHCD, then STP) and the controller's clocks off. Coming out of that the
+ * host does not enumerate the device again, so a cable plugged in brings
+ * it up from scratch, as the vendor's reset does: block reset, controller
+ * reset, PHY power-on reset around the board's PHY overrides, then the
+ * stack. */
+#define USBCMD_STP		BIT(30)
+#define PHY_POR			BIT(0)
+
+static bool clock_on(uint32_t cbcr)
+{
+	writel(readl(cbcr) | 1, cbcr);
+	for (int i = 0; i < 1000; i++) {
+		if (!(readl(cbcr) & BIT(31)))
+			return true;
+		delay_us(1);
+	}
+	return false;
+}
+
+static bool bits_wait(uint32_t addr, uint32_t mask, uint32_t want)
+{
+	for (int i = 0; i < 500000; i++) {
+		if ((readl(addr) & mask) == want)
+			return true;
+		delay_us(1);
+	}
+	return false;
+}
+
+static void phy_reset(void)
+{
+	writel(readl(USB_PHY_CTRL) | PHY_POR, USB_PHY_CTRL);
+	delay_us(15);
+	writel(readl(USB_PHY_CTRL) & ~PHY_POR, USB_PHY_CTRL);
+	dsb();
+}
+
+#define AHB2AHB_BYPASS		BIT(31)
+
+/* Unplugged, or a charger that never configures the device: the stack
+ * stops, then the PHY goes to low power mode and the clocks off. The
+ * clocks stay on if the PHY did not get there. */
+static void usb_collapse(const char *why)
+{
+	if (cdc_attached) {
+		console_detach();
+		cdc_attached = false;
+	}
+	tud_deinit(0);
+	adb_open = adb_tx_busy = adb_rx_queued = false;
+	adb_reset();
+	gic_mask(IRQ_USB_HS);
+	bool phcd = !ulpi_write(0x98, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
+	if (phcd) {
+		writel(readl(USB_PORTSC) | PORTSC_PHCD, USB_PORTSC);
+		phcd = bits_wait(USB_PORTSC, PORTSC_PHCD, PORTSC_PHCD);
+	}
+	if (phcd) {
+		writel(readl(USB_USBCMD) | USBCMD_STP, USB_USBCMD);
+		dsb();
+		writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
+		writel(readl(GCC_USB_HS_AHB_CBCR) & ~1u, GCC_USB_HS_AHB_CBCR);
+	}
+	usb_down = true;
+	usb_clocks_off = phcd;
+	log_printf("usb: %s, %s\n", why, phcd ? "phy in low power mode" : "phy did not enter low power mode, clocks left on");
+}
+
+/* Brings USB up from scratch. On any failure the stack is stopped
+ * again and USB stays down; usb_cable tries again later. */
+static bool usb_restore(void)
+{
+	uint32_t t0 = time_ms();
+	const char *fail = NULL;
+	if (!clock_on(GCC_USB_HS_AHB_CBCR) || !clock_on(GCC_USB_HS_SYSTEM_CBCR)) {
+		fail = "clocks";
+		goto out;
+	}
+	usb_clocks_off = false;
+	writel(readl(USB_USBCMD) & ~(USBCMD_STP | BIT(29)), USB_USBCMD);
+	writel(readl(USB_PORTSC) & ~PORTSC_PHCD, USB_PORTSC);
+	bits_wait(USB_PORTSC, PORTSC_PHCD, 0);
+	/* The vendor turns AHB2AHB bypass off before the asynchronous block
+	 * reset. */
+	writel(readl(USB_AHB_MODE) & ~AHB2AHB_BYPASS, USB_AHB_MODE);
+	writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
+	writel(readl(GCC_USB_HS_AHB_CBCR) & ~1u, GCC_USB_HS_AHB_CBCR);
+	writel(1, GCC_USB_HS_BCR);
+	delay_ms(1);
+	writel(0, GCC_USB_HS_BCR);
+	delay_us(1);
+	if (!controller_init()) {
+		fail = "controller reset";
+		goto out;
+	}
+	delay_ms(100);
+	phy_reset();
+	for (unsigned i = 0; i < 4; i++)
+		if (ulpi_write((uint8_t)(0x80 + i), board->usb_phy_init[i])) {
+			fail = "phy overrides";
+			goto out;
+		}
+	phy_reset();
+	adb_open = adb_tx_busy = adb_rx_queued = false;
+	adb_reset();
+	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
+	if (!tusb_init(0, &rh)) {
+		fail = "stack";
+		goto out;
+	}
+	/* The stack starts the controller as it initialises; the session
+	 * wiring has to follow its reset, then the device attaches. */
+	tud_disconnect();
+	if (phy_select()) {
+		fail = "phy select";
+		goto out;
+	}
+	dsb();
+	tud_connect();
+	usb_down = false;
+	log_printf("usb: up again in %lu ms\n", time_ms() - t0);
+	return true;
+out:
+	tud_deinit(0);
+	gic_mask(IRQ_USB_HS);
+	usb_down = true;
+	log_printf("usb: bringing up failed at %s after %lu ms\n", fail, time_ms() - t0);
+	return false;
+}
+
+/* The cable state from the PMIC: present keeps USB up (a wall charger
+ * too, until it can be told apart from a host), absent for 2 s puts it
+ * to rest. A failed bring-up is tried again after 5 s. */
+static uint32_t gone_t, retry_t;
+
+void usb_cable(bool present, bool edge)
+{
+	uint32_t now = time_ms();
+	if (!present) {
+		retry_t = 0;
+		if (usb_down) {
+			gone_t = 0;
+			return;
+		}
+		if (!gone_t)
+			gone_t = now | 1;
+		else if (now - gone_t >= 2000) {
+			gone_t = 0;
+			usb_collapse("unplugged");
+		}
+		return;
+	}
+	gone_t = 0;
+	if (edge)
+		retry_t = 0;
+	if (usb_down && (!retry_t || now - retry_t >= 5000))
+		retry_t = usb_restore() ? 0 : now | 1;
+}
+
+static uint32_t left(uint32_t since, uint32_t ms, uint32_t now)
+{
+	uint32_t gone = now - since;
+	return gone >= ms ? 1 : ms - gone;
+}
+
+/* When usb_cable wants to be called again: the end of the debounce or
+ * the retry, and while USB is up a cable check every 2 s, as only a
+ * cable plugged in raises an interrupt. Resting, nothing until then. */
+uint32_t usb_next_ms(void)
+{
+	uint32_t now = time_ms(), next = UINT32_MAX;
+	if (gone_t)
+		next = left(gone_t, 2000, now);
+	else if (!usb_down)
+		next = 2000;
+	if (retry_t && usb_down) {
+		uint32_t r = left(retry_t, 5000, now);
+		if (r < next)
+			next = r;
+	}
+	return next;
 }
 
 static const struct adb_transport transport = { .send = adb_send, .pump = usb_poll };
@@ -327,6 +530,8 @@ void usb_init(const char *serialno)
 
 void usb_poll(void)
 {
+	if (usb_down)
+		return;
 	tud_task();
 	adb_poll();
 	if (tud_cdc_connected())

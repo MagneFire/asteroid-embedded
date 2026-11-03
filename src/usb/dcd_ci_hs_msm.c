@@ -184,9 +184,9 @@ static void bus_reset(uint8_t rhport) {
   dcd_reg->ENDPTSETUPSTAT = dcd_reg->ENDPTSETUPSTAT;
   dcd_reg->ENDPTCOMPLETE  = dcd_reg->ENDPTCOMPLETE;
 
-  while (dcd_reg->ENDPTPRIME) {}
+  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTPRIME; i++) {}
   dcd_reg->ENDPTFLUSH = 0xFFFFFFFF;
-  while (dcd_reg->ENDPTFLUSH) {}
+  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTFLUSH; i++) {}
 
   // read reset bit in portsc
 
@@ -217,7 +217,10 @@ bool dcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
 
   // Reset controller
   dcd_reg->USBCMD |= USBCMD_RESET;
-  while (dcd_reg->USBCMD & USBCMD_RESET) {}
+  for (uint32_t i = 0; i < 1000000 && (dcd_reg->USBCMD & USBCMD_RESET); i++) {}
+  if (dcd_reg->USBCMD & USBCMD_RESET) {
+    return false;
+  }
 
   // Set mode to device, must be set immediately after reset
   uint32_t usbmode = dcd_reg->USBMODE & ~USBMOD_CM_MASK;
@@ -263,10 +266,12 @@ bool dcd_deinit(uint8_t rhport) {
   dcd_reg->USBCMD &= ~USBCMD_RUN_STOP;
 
   // flush all endpoints
-  while (dcd_reg->ENDPTPRIME) {}
+  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTPRIME; i++) {}
   dcd_reg->ENDPTFLUSH = 0xFFFFFFFF;
-  while (dcd_reg->ENDPTFLUSH) {}
+  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTFLUSH; i++) {}
 
+  // A flush that did not finish is not reported: TinyUSB would then stop
+  // its teardown half way, and the next bring-up resets the controller.
   return true;
 }
 
@@ -452,7 +457,7 @@ bool dcd_edpt_iso_activate(uint8_t rhport, const tusb_desc_endpoint_t *desc_ep) 
   // Flush EP
   const uint32_t flush_mask = TU_BIT(epnum + (dir ? 16 : 0));
   dcd_reg->ENDPTFLUSH       = flush_mask;
-  while (dcd_reg->ENDPTFLUSH & flush_mask) {}
+  for (uint32_t i = 0; i < 1000000 && (dcd_reg->ENDPTFLUSH & flush_mask); i++) {}
 
   // disable to change max packet size
   ep_ctrl_clear(endptctrl, dir, ENDPTCTRL_ENABLE);
@@ -492,7 +497,7 @@ static void qhd_start_xfer(uint8_t rhport, uint8_t epnum, uint8_t dir) {
   if (epnum == 0) {
     // follows UM 24.10.8.1.1 Setup packet handling using setup lockout mechanism
     // wait until ENDPTSETUPSTAT before priming data/status in response TODO add time out
-    while (dcd_reg->ENDPTSETUPSTAT & TU_BIT(0)) {}
+    for (uint32_t i = 0; i < 1000000 && (dcd_reg->ENDPTSETUPSTAT & TU_BIT(0)); i++) {}
   }
 
   // start transfer

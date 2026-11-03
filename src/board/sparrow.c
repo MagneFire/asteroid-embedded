@@ -105,6 +105,7 @@ const struct board board_sparrow = {
 	.chg = { .vdd_max_mv = 4350, .vdd_safe_mv = 4380, .vin_min_mv = 4350,
 		 .ibat_max_ma = 300, .ibat_safe_ma = 600, .iterm_ma = 20 },
 	.rsense_uohm = 10000,
+	.usb_phy_init = { 0x44, 0x68, 0x34, 0x13 },
 	.battery = &battery,
 	/* ITE IT7260 on BLSP1 QUP5, interrupt on gpio 17 (MPM pin 8), reset on
 	 * gpio 16. */
