@@ -640,20 +640,34 @@ static int iadc_raw(uint8_t chan)
 /* The battery monitor's counters take their zero from the current ADC's
  * offset trim, which drifts with temperature: measure the offset with
  * the inputs shorted and store it, as the vendor's driver does every
- * five minutes. */
+ * five minutes. One conversion wanders by several codes, and each code
+ * moves the counter by about half a milliampere, so the trim is the mean
+ * of 64 conversions; it is written only when it changes and read back. */
 #define IADC_SEC_ACCESS		(IADC + 0xd0)
 #define IADC_OFFSET_MSB		(IADC + 0xf2)
 #define IADC_OFFSET_LSB		(IADC + 0xf3)
+#define TRIM_SAMPLES		64
 
 void pmic_iadc_trim(void)
 {
-	int off = iadc_raw(IADC_CH_EXT_OFFSET);
-	if (off < 0)
+	int32_t sum = 0;
+	for (int i = 0; i < TRIM_SAMPLES; i++) {
+		int v = iadc_raw(IADC_CH_EXT_OFFSET);
+		if (v < 0)
+			return;
+		sum += v;
+	}
+	int off = (int)((sum + TRIM_SAMPLES / 2) / TRIM_SAMPLES);
+	int stored = pmic_read(IADC_OFFSET_MSB) << 8 | pmic_read(IADC_OFFSET_LSB);
+	if (off == stored)
 		return;
 	pmic_write(IADC_SEC_ACCESS, 0xa5);
 	pmic_write(IADC_OFFSET_MSB, off >> 8);
 	pmic_write(IADC_SEC_ACCESS, 0xa5);
 	pmic_write(IADC_OFFSET_LSB, off & 0xff);
+	stored = pmic_read(IADC_OFFSET_MSB) << 8 | pmic_read(IADC_OFFSET_LSB);
+	if (stored != (off & 0xffff))
+		log_printf("pmic: iadc trim %04x did not stick, reads %04x\n", off & 0xffff, stored);
 }
 
 /* Gain conversion minus offset conversion, or 0. */
