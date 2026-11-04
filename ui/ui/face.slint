@@ -64,6 +64,10 @@ export global Face {
     in-out property <float> launcher-position;
     // When the touch being handed to the UI was reported, in ms.
     in-out property <int> touch-ms;
+    // touch-ms, or in the previewer, which does not set it, the time of the frame.
+    public pure function touch-time() -> int {
+        return self.touch-ms != 0 ? self.touch-ms : animation-tick() / 1ms;
+    }
     // The panel the screen stack has on screen, under any app: 0 the watchface, 1 the
     // notifications, 2 Today, 3 the launcher, 5 the quick settings.
     in-out property <int> screen;

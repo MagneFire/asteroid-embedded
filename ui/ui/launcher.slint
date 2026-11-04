@@ -47,7 +47,7 @@ export global Apps {
 }
 
 // Scrolling along one axis in steps of item, count steps, with a flick that coasts: the average
-// speed of the moves before the last one (timed by Face.touch-ms, full until 50 ms without a
+// speed of the moves before the last one (timed by Face.touch-time(), full until 50 ms without a
 // report and nothing from 100 ms) projected over a deceleration of 0.0015 px/ms^2, then rounded
 // to a step. offset is where the content is, animate it with anim unless dragging: long enough
 // for the ease-out to start at the finger's speed (at least 1 px/ms). tapped fires for a press
@@ -98,18 +98,18 @@ export component Pager inherits TouchArea {
             self.dragging = true;
         } else if !self.dragging {
             self.last = self.pos;
-            self.last-ms = Face.touch-ms;
+            self.last-ms = Face.touch-time();
         }
         if self.dragging {
             self.drag = self.wrap ? self.pos - self.start : Math.clamp(self.pos - self.start, (self.index + 1 - self.count) * self.item, self.index * self.item);
-            let dt = Face.touch-ms - self.last-ms;
+            let dt = Face.touch-time() - self.last-ms;
             if dt > 0 {
                 self.v0 = self.v1;
                 self.v1 = self.v2;
                 self.v2 = (self.pos - self.last) / (0.25 * Theme.unit) / dt;
                 self.samples = Math.min(self.samples + 1, 3);
                 self.last = self.pos;
-                self.last-ms = Face.touch-ms;
+                self.last-ms = Face.touch-time();
             }
         }
     }
@@ -121,7 +121,7 @@ export component Pager inherits TouchArea {
             self.cross-drag = 0;
             self.samples = 0;
             self.last = self.pos;
-            self.last-ms = Face.touch-ms;
+            self.last-ms = Face.touch-time();
         }
         if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
             if self.crossing {
@@ -130,7 +130,7 @@ export component Pager inherits TouchArea {
                 // A lift is reported about 40 ms after the last move, so the speed only fades
                 // from 50 ms without a report, to nothing at 100 ms.
                 let avg = self.samples == 3 ? (self.v0 + self.v1) / 2 : self.samples == 2 ? self.v1 : 0;
-                let held = Face.touch-ms - self.last-ms;
+                let held = Face.touch-time() - self.last-ms;
                 let v = Math.clamp(held > 100 ? 0 : held < 50 ? avg : avg * (100 - held) / 50, -2.5, 2.5);
                 let projected = (self.index * self.item - self.drag) / (0.25 * Theme.unit) - v * Math.abs(v) / 0.003;
                 let free = Math.round(projected / (self.item / (0.25 * Theme.unit)));
@@ -708,7 +708,7 @@ component Wheel {
 // name the selected app; one between the discs does nothing.
 //
 // Let go, the wheel coasts like a PathView: from the average of the turning speeds before the
-// last move (items/s, timed by Face.touch-ms), fading to nothing between 50 and 100 ms without a
+// last move (items/s, timed by Face.touch-time()), fading to nothing between 50 and 100 ms without a
 // report, no coast under 75 px/s along the wheel, at most 2500 px/s, slowing by 10 items/s^2, for
 // at most one turn less an app, ending on an app, at least a quarter app past where it was let go.
 // A press stops it, and only stops it.
@@ -893,19 +893,19 @@ component SpeedDial {
                 root.turning = true;
             } else if !root.turning {
                 root.last-a = d;
-                root.last-ms = Face.touch-ms;
+                root.last-ms = Face.touch-time();
             }
             if root.turning {
                 root.name-held = false;
                 root.turn = root.base + d;
-                let dt = Face.touch-ms - root.last-ms;
+                let dt = Face.touch-time() - root.last-ms;
                 if dt > 0 {
                     root.v0 = root.v1;
                     root.v1 = root.v2;
                     root.v2 = -(d - root.last-a) / root.step * 1000 / dt;
                     root.samples = Math.min(root.samples + 1, 3);
                     root.last-a = d;
-                    root.last-ms = Face.touch-ms;
+                    root.last-ms = Face.touch-time();
                 }
             }
         }
@@ -922,7 +922,7 @@ component SpeedDial {
                 // Turning speeds are measured from the press.
                 root.samples = 0;
                 root.last-a = 0deg;
-                root.last-ms = Face.touch-ms;
+                root.last-ms = Face.touch-time();
                 self.pressed-name = self.on-name;
                 root.name-held = self.on-name;
                 if !self.on-name && !self.stopped && self.disc-at(p) >= 0 {
@@ -933,7 +933,7 @@ component SpeedDial {
                 let from = root.pos;
                 if root.turning && self.mouse-x > -250 * Theme.unit {
                     let avg = root.samples == 3 ? (root.v0 + root.v1) / 2 : root.samples == 2 ? root.v1 : 0;
-                    let held = Face.touch-ms - root.last-ms;
+                    let held = Face.touch-time() - root.last-ms;
                     // A lift is reported about 40 ms after the last move, so the speed only fades
                     // from 50 ms without a report, to nothing at 100 ms.
                     let v0 = held > 100 ? 0 : held < 50 ? avg : avg * (100 - held) / 50;
