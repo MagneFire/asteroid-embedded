@@ -1,5 +1,6 @@
 // The flashlight, laid out as asteroid-flashlight: a white disc filling the screen while the
-// light is on, with a bulb outline in it, that a tap shrinks to a grey disc with a filled bulb.
+// light is on (a square on a square screen), with a bulb outline in it, that a tap shrinks to a
+// grey disc with a filled bulb.
 // The firmware reads Face.flashlight-on for the brightness.
 import { Face } from "face.slint";
 import { Icons } from "icons.slint";
@@ -11,6 +12,11 @@ export component FlashlightScreen {
     animate size {
         duration: 100ms;
         easing: ease-in;
+    }
+    property <length> radius: Face.round-screen || !self.on ? self.size / 2 : 0;
+    animate radius {
+        duration: 100ms;
+        easing: ease-out-quint;
     }
 
     width: 100%;
@@ -25,7 +31,7 @@ export component FlashlightScreen {
         y: 50 * Theme.unit - root.size / 2;
         width: root.size;
         height: root.size;
-        border-radius: root.size / 2;
+        border-radius: root.radius;
         background: root.on ? #ffffff : #44444466;
         animate background {
             duration: 150ms;

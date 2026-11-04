@@ -117,9 +117,11 @@ export global Face {
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
     in-out property <string> notification-icon;
-    // The watch's codename and whether it has a heart rate sensor, from the firmware.
+    // The watch's codename, whether it has a heart rate sensor and whether its screen is round,
+    // from the firmware.
     in property <string> board;
     in property <bool> has-heart-rate: true;
+    in property <bool> round-screen: true;
     in-out property <string> notification-app;
     in-out property <string> notification-summary;
     in-out property <string> notification-body;

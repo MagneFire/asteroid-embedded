@@ -200,7 +200,7 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
 		  uint32_t year, uint32_t rtc);
 /* The watch's codename and whether it has a heart rate sensor. */
-void ui_set_board(const char *name, uint32_t len, bool heart_rate);
+void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round);
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
 int ui_app_open(void);
