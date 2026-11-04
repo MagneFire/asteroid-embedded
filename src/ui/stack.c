@@ -7,7 +7,8 @@
  * APP_FADE_MS when opened; dragged from the top edge, or from the left
  * edge on its first page, it follows the finger, fading, and let go
  * past 15 % of the way from where the drag began to the far edge it
- * closes onto the watchface. From the left edge on a later page only
+ * closes, from the top onto the watchface and from the left onto the
+ * launcher. From the left edge on a later page only
  * that page follows the finger, over the page below (ui_app_peek), and
  * let go past 15 % it goes a page back. Put to sleep, the stack goes
  * back to the watchface but keeps the app for APP_KEEP_MS, so a quick
@@ -107,9 +108,18 @@ void stack_wake(uint32_t now_ms)
 		close_app();
 }
 
-/* The app moves back to rest, or (close) away and onto the watchface;
- * while peeking its top page moves back, or (close) away and a page
- * back. */
+/* The screen an app leaves to: the watchface when closed from the top,
+ * the launcher when sent back from the left. */
+static void app_under(void)
+{
+	screen = app_top ? UI_PANEL_FACE : UI_PANEL_BOTTOM;
+	fx = rest_x(screen);
+	fy = rest_y(screen);
+}
+
+/* The app moves back to rest, or (close) away and onto the screen below
+ * (app_under); while peeking its top page moves back, or (close) away
+ * and a page back. */
 static void slide_app(bool close)
 {
 	from_off = peeking ? peek : off;
@@ -120,10 +130,8 @@ static void slide_app(bool close)
 	if (peeking)
 		return;
 	app_closing = close;
-	if (close) {
-		screen = UI_PANEL_FACE;
-		fx = fy = 0;
-	}
+	if (close)
+		app_under();
 }
 
 void stack_open_app(void)
@@ -268,10 +276,8 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 				if (peeking)
 					ui_app_peek_end(false);
 				peeking = !down && ui_app_depth();
-				if (!peeking) {
-					screen = UI_PANEL_FACE;
-					fx = fy = 0;
-				}
+				if (!peeking)
+					app_under();
 			}
 		}
 		if (gesture != SWIPE) {

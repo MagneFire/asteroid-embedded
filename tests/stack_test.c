@@ -144,11 +144,20 @@ static void test_app(void)
 	touches[UI_PANEL_APP] = 0;
 	drag(200, 200, 300, 200, 4);
 	CHECK(touches[UI_PANEL_APP] == 6);
-	/* A drag from the left edge, far enough, closes it. */
+	/* A drag from the left edge, far enough, closes it onto the launcher. */
 	app_set = 1;
 	drag(10, 200, 300, 200, 4);
 	settle();
 	CHECK(app_set == -1);
+	CHECK(stack_screen() == UI_PANEL_BOTTOM);
+	/* One from the top edge closes it onto the watchface. */
+	stack_open_app();
+	settle();
+	app_set = 1;
+	drag(200, 10, 200, 300, 4);
+	settle();
+	CHECK(app_set == -1);
+	CHECK(stack_screen() == UI_PANEL_FACE);
 	/* A short one snaps back. */
 	stack_open_app();
 	settle();
