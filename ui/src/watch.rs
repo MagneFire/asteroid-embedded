@@ -542,10 +542,12 @@ pub unsafe extern "C" fn ui_launcher_colors(out: *mut UiColors) -> bool {
         if n == 0 || out.is_null() || layout == 4 || layout == 5 {
             return false;
         }
-        let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, (n - 1) as f32);
-        let (i, t) = (pos as usize, pos - (pos as usize) as f32);
+        // The speed dial wraps, from the last app back to the first.
+        let wrap = layout == 6;
+        let pos = screen.global::<Face>().get_launcher_position().clamp(0.0, if wrap { n } else { n - 1 } as f32);
+        let (i, t) = (pos as usize % n, pos - (pos as usize) as f32);
         let a = apps.row_data(i).unwrap();
-        let b = apps.row_data((i + 1).min(n - 1)).unwrap();
+        let b = apps.row_data(if wrap { (i + 1) % n } else { (i + 1).min(n - 1) }).unwrap();
         let mix = |x: slint::Color, y: slint::Color| {
             let c = |p: u8, q: u8| (p as f32 * (1.0 - t) + q as f32 * t) as u8;
             UiRgb { r: c(x.red(), y.red()), g: c(x.green(), y.green()), b: c(x.blue(), y.blue()) }
