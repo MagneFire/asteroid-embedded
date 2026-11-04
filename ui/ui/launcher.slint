@@ -741,17 +741,29 @@ component SpeedDial {
         background: #00000066;
     }
 
-    Text {
+    // The name at 12 % of the screen, made smaller to fit when it is too wide, as Text.Fit does.
+    property <length> name-size: Math.round(48 * root.k) * (0.25 * Theme.unit);
+    property <length> name-width: root.size * 0.66;
+    measure := Text {
+        visible: false;
+        text: Apps.list[root.selected].name;
+        font-size: root.name-size;
+        font-family: "Noto Sans SemiCondensed Bold";
+        letter-spacing: 0.2 * Theme.unit * root.k;
+    }
+
+    label := Text {
         x: root.size * 0.05;
-        y: (root.size - root.size * 0.26) / 2;
-        width: root.size / 2 + root.orbit - root.disc / 2 - root.size * 0.07;
-        height: root.size * 0.26;
+        y: (root.size - self.height) / 2;
+        width: root.name-width;
+        height: root.name-size * 1.4;
         text: Apps.list[root.selected].name;
         color: white;
-        font-size: Math.round(48 * root.k) * (0.25 * Theme.unit);
+        font-size: root.name-size * Math.min(1, root.name-width / Math.max(measure.preferred-width, 1px));
         font-family: "Noto Sans SemiCondensed Bold";
+        letter-spacing: 0.2 * Theme.unit * root.k * Math.min(1, root.name-width / Math.max(measure.preferred-width, 1px));
+        horizontal-alignment: center;
         vertical-alignment: center;
-        overflow: elide;
     }
 
     property <length> mask: root.bar / 2;
