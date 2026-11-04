@@ -22,6 +22,7 @@ void power_charger_plugged(uint32_t now);
 enum power_change power_update(uint32_t *now);
 bool power_awake(void);
 bool power_nightstand(void);
+uint32_t power_next_ms(void);
 void power_set_brightness(void);
 void power_tick(void);
 void power_idle(uint32_t app_next_ms);

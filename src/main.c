@@ -867,6 +867,9 @@ void main(uint32_t machtype, const void *fdt)
 			uint32_t un = usb_next_ms();
 			if (un < app_next)
 				app_next = un;
+			uint32_t ns = power_next_ms();
+			if (ns < app_next)
+				app_next = ns;
 		}
 		power_idle(app_next);
 	}

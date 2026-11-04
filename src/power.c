@@ -71,17 +71,22 @@ bool power_awake(void)
 	return awake;
 }
 
+/* When the cable last left, if it has. */
+static uint32_t lost_t;
+static bool lost;
+
 bool power_nightstand(void)
 {
 	static bool was_usb;
-	static uint32_t lost_t;
 	bool usb = pmic_usb_present();
 	uint32_t now = time_ms();
-	if (was_usb && !usb)
-		lost_t = now | 1;
+	if (was_usb && !usb) {
+		lost_t = now;
+		lost = true;
+	}
 	was_usb = usb;
 	return setting_get(SETTING_NIGHTSTAND) &&
-	       (usb || (lost_t && now - lost_t < (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000));
+	       (usb || (lost && now - lost_t < (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000));
 }
 
 /* In nightstand mode the screen takes the nightstand brightness. */
@@ -145,6 +150,16 @@ static void ambient_draw(void)
 	display_flip();
 }
 
+/* Asleep in always-on off the charger, the end of the nightstand delay
+ * is a deadline: from then the normal setting applies. */
+uint32_t power_next_ms(void)
+{
+	if (awake || !ambient || !lost || setting_get(SETTING_AOD) || pmic_usb_present())
+		return UINT32_MAX;
+	uint32_t delay = (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000, gone = time_ms() - lost_t;
+	return gone >= delay ? 1 : delay - gone;
+}
+
 enum power_change power_update(uint32_t *now_p)
 {
 	uint32_t now = *now_p;
@@ -203,6 +218,18 @@ enum power_change power_update(uint32_t *now_p)
 		change = POWER_WOKE;
 	}
 	sleep_request = wake_request = false;
+	/* Asleep on the charger the nightstand setting picked always-on;
+	 * once off the charger the normal one applies. */
+	if (ambient && !awake && !setting_get(power_nightstand() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD)) {
+		cpu_clock_slow(false);
+		ui_set_ambient(false);
+		display_idle(false);
+		power_set_brightness();
+		display_sleep();
+		ambient = false;
+		cpu_clock_slow(true);
+		log_printf("power: always-on off\n");
+	}
 	if (ambient && !awake && pmic_rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);
 		ambient_draw();
