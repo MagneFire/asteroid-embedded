@@ -225,10 +225,12 @@ int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz)
 
 void rpm_bus_votes(void)
 {
-	rpm_clock_rate(RPM_CLK2, 0, 200000);
-	rpm_clock_rate(RPM_CLK1, 1, 100000);
-	rpm_clock_rate(RPM_CLK1, 0, 50000);
-	rpm_clock_rate(RPM_CLK1, 2, 50000);
+	uint32_t t0 = time_us();
+	int failed = !!rpm_clock_rate(RPM_CLK2, 0, 200000);
+	failed += !!rpm_clock_rate(RPM_CLK1, 1, 100000);
+	failed += !!rpm_clock_rate(RPM_CLK1, 0, 50000);
+	failed += !!rpm_clock_rate(RPM_CLK1, 2, 50000);
+	log_printf("rpm: bus votes in %lu us, %d of 4 not acknowledged\n", time_us() - t0, failed);
 }
 
 /* Requests in the sleep set apply while the CPU cluster is powered down

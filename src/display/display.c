@@ -118,9 +118,15 @@ bool display_init(void)
 	writel(4 | 4 << 16, MDP_PP0 + PP_SYNC_THRESH);
 	writel(0, MDP_PP0 + PP_AUTOREFRESH_CONFIG);
 	writel(1, MDP_PP0 + PP_TEAR_CHECK_EN);
+	/* Each clear takes a few milliseconds; after Linux one has stalled
+	 * into the watchdog, so feed it between them and log the time. */
+	uint32_t t_clear = time_us();
 	memset(fb.buf[0], 0, fb.stride * fb.height * 4);
+	wdt_feed();
+	uint32_t t_half = time_us() - t_clear;
 	memset(fb.buf[1], 0, fb.stride * fb.height * 4);
 	dcache_clean_range(fb.buf[0], fb.stride * fb.height * 8);
+	log_printf("display: framebuffers cleared in %lu + %lu us\n", t_half, time_us() - t_clear - t_half);
 	writel(SRC_FORMAT_XRGB8888, PIPE + PIPE_SRC_FORMAT);
 	writel(UNPACK_XRGB, PIPE + PIPE_SRC_UNPACK);
 	writel(fb.stride * 4, PIPE + PIPE_SRC_YSTRIDE);

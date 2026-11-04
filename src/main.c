@@ -359,6 +359,7 @@ void main(uint32_t machtype, const void *fdt)
 	irq_enable();
 	log_init();
 	log_printf("asteroid-embedded %s up, timer %lu Hz, scm %d\n", build_id, timer_hz(), scm);
+	cpu_clock_log();
 	board_detect(machtype, fdt);
 	spmi_init();
 	pmic_init();

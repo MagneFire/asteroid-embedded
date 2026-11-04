@@ -16,6 +16,7 @@
 #define DIV_2			3u
 #define DIV_1			1u
 #define A7_PLL_MODE		0xf9016000u
+#define A7_PLL_L_VAL		0xf9016004u
 #define A7_PLL_STATUS		0xf901601cu
 #define PLL_OUTCTRL		BIT(0)
 #define PLL_BYPASSNL		BIT(1)
@@ -37,9 +38,22 @@ static void cpu_clock_select(uint32_t cfg)
 		;
 }
 
+/* What the previous owner left, for the log once it is up. */
+static uint32_t boot_cfg, boot_mode, boot_l, boot_status;
+
 void cpu_clock_init(void)
 {
+	boot_cfg = readl(APCS_A7_CFG_RCGR);
+	boot_mode = readl(A7_PLL_MODE);
+	boot_l = readl(A7_PLL_L_VAL);
+	boot_status = readl(A7_PLL_STATUS);
 	cpu_clock_select(SRC_A7_PLL | DIV_1);
+}
+
+void cpu_clock_log(void)
+{
+	log_printf("cpu: clock at boot cfg %08lx, a7 pll mode %08lx l %lu status %08lx; now cfg %08lx status %08lx\n", boot_cfg,
+		   boot_mode, boot_l, boot_status, readl(APCS_A7_CFG_RCGR), readl(A7_PLL_STATUS));
 }
 
 static bool slow_now;
