@@ -101,6 +101,7 @@ export component AlarmApp {
 
     // Moved out to the left as a page slides in, and back in beside a page dragged back or
     // popped, kept meanwhile, as LayerStack keeps the layer below, so it comes back as it was.
+    // Clipped, so the alarm or add page beside it stays out of the page on top.
     Rectangle {
         property <length> scroll: list.index * root.width - list.drag;
         animate scroll {
@@ -110,6 +111,8 @@ export component AlarmApp {
 
         x: root.page == 0 ? 0 : Face.peek - 100 * Theme.unit;
         width: 100 * Theme.unit;
+        height: 100 * Theme.unit;
+        clip: true;
         animate x {
             duration: Face.peeking ? 0ms : 200ms;
             easing: ease-out-quint;
