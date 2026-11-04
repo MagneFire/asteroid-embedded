@@ -46,10 +46,12 @@ export global Apps {
     out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
 }
 
-// Scrolling along one axis in steps of item, count steps, with a flick that coasts: the speed of
-// the last moves projected over a deceleration of 0.0015 px/ms^2, then rounded to a step. offset
-// is where the content is, animate it with anim unless dragging: long enough for the ease-out to
-// start at the finger's speed (at least 1 px/ms). tapped fires for a press that did not move.
+// Scrolling along one axis in steps of item, count steps, with a flick that coasts: the average
+// speed of the moves before the last one (timed by Face.touch-ms, full until 50 ms without a
+// report and nothing from 100 ms) projected over a deceleration of 0.0015 px/ms^2, then rounded
+// to a step. offset is where the content is, animate it with anim unless dragging: long enough
+// for the ease-out to start at the finger's speed (at least 1 px/ms). tapped fires for a press
+// that did not move.
 // With cross set, a drag mostly across the axis is reported in cross-drag instead, and in
 // crossed when let go.
 export component Pager inherits TouchArea {
@@ -66,9 +68,13 @@ export component Pager inherits TouchArea {
     out property <length> cross-drag;
     out property <bool> crossing;
     out property <duration> anim: 150ms;
-    property <float> vel;
+    // The last three speeds, newest last, and how many there are.
+    property <float> v0;
+    property <float> v1;
+    property <float> v2;
+    property <int> samples;
     property <length> last;
-    property <duration> last-t;
+    property <int> last-ms;
     property <length> pos: self.horizontal ? self.mouse-x : self.mouse-y;
     property <length> start: self.horizontal ? self.pressed-x : self.pressed-y;
     property <length> across: self.horizontal ? self.mouse-y - self.pressed-y : self.mouse-x - self.pressed-x;
@@ -88,18 +94,22 @@ export component Pager inherits TouchArea {
         if self.crossing {
             self.cross-drag = self.across;
         } else if !self.dragging && Math.abs(self.pos - self.start) > 2.5 * Theme.unit {
+            // The move that starts the drag is a speed too, from the press or the move before.
             self.dragging = true;
-            self.vel = 0;
+        } else if !self.dragging {
             self.last = self.pos;
-            self.last-t = animation-tick();
+            self.last-ms = Face.touch-ms;
         }
         if self.dragging {
             self.drag = self.wrap ? self.pos - self.start : Math.clamp(self.pos - self.start, (self.index + 1 - self.count) * self.item, self.index * self.item);
-            let dt = (animation-tick() - self.last-t) / 1ms;
+            let dt = Face.touch-ms - self.last-ms;
             if dt > 0 {
-                self.vel = self.vel * 0.4 + (self.pos - self.last) / (0.25 * Theme.unit) / dt * 0.6;
+                self.v0 = self.v1;
+                self.v1 = self.v2;
+                self.v2 = (self.pos - self.last) / (0.25 * Theme.unit) / dt;
+                self.samples = Math.min(self.samples + 1, 3);
                 self.last = self.pos;
-                self.last-t = animation-tick();
+                self.last-ms = Face.touch-ms;
             }
         }
     }
@@ -109,18 +119,25 @@ export component Pager inherits TouchArea {
             self.crossing = false;
             self.drag = 0;
             self.cross-drag = 0;
+            self.samples = 0;
+            self.last = self.pos;
+            self.last-ms = Face.touch-ms;
         }
         if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
             if self.crossing {
                 self.crossed(self.mouse-x > -250 * Theme.unit ? self.cross-drag : 0);
             } else if self.dragging && self.mouse-x > -250 * Theme.unit {
-                let v = animation-tick() - self.last-t > 100ms ? 0 : Math.clamp(self.vel, -2.5, 2.5);
+                // A lift is reported about 40 ms after the last move, so the speed only fades
+                // from 50 ms without a report, to nothing at 100 ms.
+                let avg = self.samples == 3 ? (self.v0 + self.v1) / 2 : self.samples == 2 ? self.v1 : 0;
+                let held = Face.touch-ms - self.last-ms;
+                let v = Math.clamp(held > 100 ? 0 : held < 50 ? avg : avg * (100 - held) / 50, -2.5, 2.5);
                 let projected = (self.index * self.item - self.drag) / (0.25 * Theme.unit) - v * Math.abs(v) / 0.003;
                 let free = Math.round(projected / (self.item / (0.25 * Theme.unit)));
                 let n = self.limit > 0 ? Math.clamp(free, self.index - self.limit, self.index + self.limit) : free;
                 let from = self.index * self.item - self.drag;
                 self.index = self.wrap ? n : Math.clamp(n, 0, self.count - 1);
-                self.anim = Math.clamp(1.7 * Math.abs(self.index * self.item - from) / (0.25 * Theme.unit) / Math.max(Math.abs(v), 1), 150, 600) * 1ms;
+                self.anim = Math.max(1.7 * Math.abs(self.index * self.item - from) / (0.25 * Theme.unit) / Math.max(Math.abs(v), 1), 150) * 1ms;
             } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
                 self.tapped(self.mouse-x, self.mouse-y);
             }
