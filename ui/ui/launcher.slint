@@ -887,6 +887,10 @@ component SpeedDial {
         }
 
         moved => {
+            // The name takes its own presses, as a label over the wheel: they do not turn it.
+            if self.pressed-name {
+                return;
+            }
             let d = Math.mod(self.a - self.a0 + 540deg, 360deg) - 180deg;
             if !root.turning && Math.abs(d) > 4deg {
                 // The move that starts the turn is a sample too, from the press or the move before.
@@ -896,7 +900,6 @@ component SpeedDial {
                 root.last-ms = Face.touch-time();
             }
             if root.turning {
-                root.name-held = false;
                 root.turn = root.base + d;
                 let dt = Face.touch-time() - root.last-ms;
                 if dt > 0 {
@@ -911,6 +914,11 @@ component SpeedDial {
         }
         pointer-event(e) => {
             if e.kind == PointerEventKind.down {
+                root.pressing = true;
+                self.pressed-name = self.on-name;
+                root.name-held = self.on-name;
+            }
+            if e.kind == PointerEventKind.down && !self.pressed-name {
                 // Stops the wheel where it is.
                 let p = root.pos;
                 self.stopped = Math.abs(p - root.index) > 0.001 || root.turn != 0;
@@ -918,18 +926,20 @@ component SpeedDial {
                 root.index = Math.round(p);
                 root.turn = (root.index - p) * root.step;
                 root.base = root.turn;
-                root.pressing = true;
                 // Turning speeds are measured from the press.
                 root.samples = 0;
                 root.last-a = 0deg;
                 root.last-ms = Face.touch-time();
-                self.pressed-name = self.on-name;
-                root.name-held = self.on-name;
-                if !self.on-name && !self.stopped && self.disc-at(p) >= 0 {
+                if !self.stopped && self.disc-at(p) >= 0 {
                     root.touched = self.disc-at(p);
                 }
             }
-            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+            if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) && self.pressed-name {
+                // A tap on the name opens the app selected then, the wheel coasting on.
+                if e.kind == PointerEventKind.up && self.mouse-x >= 0 && self.on-name {
+                    Face.app-opened(Apps.list[root.selected].id);
+                }
+            } else if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
                 let from = root.pos;
                 if root.turning && self.mouse-x > -250 * Theme.unit {
                     let avg = root.samples == 3 ? (root.v0 + root.v1) / 2 : root.samples == 2 ? root.v1 : 0;
@@ -947,15 +957,13 @@ component SpeedDial {
                         root.go(Math.round(from), 300ms);
                     }
                 } else {
-                    if !root.turning && e.kind == PointerEventKind.up && self.mouse-x >= 0 {
-                        if self.pressed-name && self.on-name {
-                            Face.app-opened(Apps.list[root.selected].id);
-                        } else if !self.pressed-name && !self.stopped && root.touched >= 0 && self.disc-at(from) == root.touched {
-                            Face.app-opened(Apps.list[root.touched].id);
-                        }
+                    if !root.turning && e.kind == PointerEventKind.up && self.mouse-x >= 0 && !self.stopped && root.touched >= 0 && self.disc-at(from) == root.touched {
+                        Face.app-opened(Apps.list[root.touched].id);
                     }
                     root.go(Math.round(from), 300ms);
                 }
+            }
+            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
                 root.turning = false;
                 root.pressing = false;
                 root.name-held = false;
