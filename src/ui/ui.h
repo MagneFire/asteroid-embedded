@@ -241,6 +241,8 @@ void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const in
 		    const int32_t *max_c);
 bool ui_modal(void);
 void ui_touch(uint32_t panel, int kind, int x, int y);
+/* When the touch handed to ui_touch next was reported, in ms. */
+void ui_set_touch_ms(uint32_t ms);
 void ui_tick(void);
 bool ui_update(uint32_t panel, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h);
 void ui_render(uint32_t *buf, uint32_t stride_px, int dx, int dy);

@@ -8,6 +8,8 @@ struct touch {
 	enum touch_event event;
 	int x, y;
 	bool down;
+	/* When the controller reported it, set as it is queued. */
+	uint32_t ms;
 };
 
 bool touch_init(void);

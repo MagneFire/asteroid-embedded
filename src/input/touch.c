@@ -87,6 +87,7 @@ static void push(const struct touch *t)
 	if (next == q_tail)
 		return;
 	queue[q_head] = *t;
+	queue[q_head].ms = time_ms();
 	barrier();
 	q_head = next;
 }
@@ -101,7 +102,7 @@ static void palm_done(int err, void *ctx)
 {
 	bool palm = !err && (palm_data & 2);
 	if (palm && !palm_down) {
-		struct touch t = { TOUCH_PALM, last_x, last_y, false };
+		struct touch t = { TOUCH_PALM, last_x, last_y, false, 0 };
 		push(&t);
 	}
 	palm_down = palm;
@@ -115,7 +116,7 @@ static void report_done(int err, void *ctx)
 		rearm();
 		return;
 	}
-	struct touch t = { TOUCH_NONE, 0, 0, false };
+	struct touch t = { TOUCH_NONE, 0, 0, false, 0 };
 	int x, y;
 	bool down;
 	if (f11.number) {
@@ -227,17 +228,17 @@ static void rmi4_inject(int x0, int y0, int x1, int y1, uint32_t ms)
 static void fake_poll(void)
 {
 	uint32_t now = time_ms();
-	struct touch t = { TOUCH_DOWN, fake.x0, fake.y0, true };
+	struct touch t = { TOUCH_DOWN, fake.x0, fake.y0, true, 0 };
 	if (!fake.down) {
 		fake.down = true;
 		fake.t0 = fake.last = now;
 	} else if (now - fake.t0 >= fake.ms) {
-		t = (struct touch){ TOUCH_UP, fake.x1, fake.y1, false };
+		t = (struct touch){ TOUCH_UP, fake.x1, fake.y1, false, 0 };
 		fake.active = false;
 	} else if (now - fake.last >= 16) {
 		int32_t f = (int32_t)((now - fake.t0) * 1024 / fake.ms);
 		t = (struct touch){ TOUCH_MOVE, fake.x0 + (fake.x1 - fake.x0) * f / 1024, fake.y0 + (fake.y1 - fake.y0) * f / 1024,
-				    true };
+				    true, 0 };
 		fake.last = now;
 	} else {
 		return;

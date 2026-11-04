@@ -144,6 +144,7 @@ static void push(const struct touch *t)
 	if (next == q_tail)
 		return;
 	queue[q_head] = *t;
+	queue[q_head].ms = time_ms();
 	barrier();
 	q_head = next;
 }
@@ -176,7 +177,7 @@ static void point_done(int err, void *ctx)
 	}
 	if ((rec[0] & REC_TYPE) == REC_TYPE_WAKE) {
 		/* The idle mode's wake gesture: a tap where the finger last was. */
-		struct touch t = { TOUCH_DOWN, last_x, last_y, true };
+		struct touch t = { TOUCH_DOWN, last_x, last_y, true, 0 };
 		push(&t);
 		t.event = TOUCH_UP;
 		t.down = false;
@@ -194,7 +195,7 @@ static void point_done(int err, void *ctx)
 		if ((rec[0] & BIT(i)) && (rec[2 + 4 * i + 3] & 0xf) >= PRESSURE_TOUCH)
 			f = rec + 2 + 4 * i;
 	bool palm = rec[1] & REC_PALM;
-	struct touch t = { TOUCH_NONE, last_x, last_y, false };
+	struct touch t = { TOUCH_NONE, last_x, last_y, false, 0 };
 	if (palm && !palm_down) {
 		if (was_down) {
 			t.event = TOUCH_UP;
@@ -275,17 +276,17 @@ static void it7260_inject(int x0, int y0, int x1, int y1, uint32_t ms)
 static void fake_poll(void)
 {
 	uint32_t now = time_ms();
-	struct touch t = { TOUCH_DOWN, fake.x0, fake.y0, true };
+	struct touch t = { TOUCH_DOWN, fake.x0, fake.y0, true, 0 };
 	if (!fake.down) {
 		fake.down = true;
 		fake.t0 = fake.last = now;
 	} else if (now - fake.t0 >= fake.ms) {
-		t = (struct touch){ TOUCH_UP, fake.x1, fake.y1, false };
+		t = (struct touch){ TOUCH_UP, fake.x1, fake.y1, false, 0 };
 		fake.active = false;
 	} else if (now - fake.last >= 16) {
 		int32_t f = (int32_t)((now - fake.t0) * 1024 / fake.ms);
 		t = (struct touch){ TOUCH_MOVE, fake.x0 + (fake.x1 - fake.x0) * f / 1024, fake.y0 + (fake.y1 - fake.y0) * f / 1024,
-				    true };
+				    true, 0 };
 		fake.last = now;
 	} else {
 		return;

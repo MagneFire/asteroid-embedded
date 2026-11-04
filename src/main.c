@@ -524,6 +524,8 @@ void main(uint32_t machtype, const void *fdt)
 			if (have_ui)
 				rotation_touch(&t.x, &t.y);
 			if (have_ui)
+				ui_set_touch_ms(t.ms);
+			if (have_ui)
 				stack_touch(t.event == TOUCH_DOWN ? UI_TOUCH_DOWN : t.event == TOUCH_UP ? UI_TOUCH_UP : UI_TOUCH_MOVE, t.x,
 					    t.y, now);
 			if (t.event == TOUCH_DOWN) {

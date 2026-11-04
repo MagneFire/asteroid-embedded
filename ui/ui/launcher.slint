@@ -648,11 +648,12 @@ component ThreeByThree {
 
 // The discs of the speed dial, 45 degrees apart, or spread evenly around the wheel when there are
 // fewer than eight, pos turning it. Only the eight nearest the selected one are shown, the seam
-// at 9 o'clock being behind the bar.
+// at 9 o'clock being behind the bar. The held disc is lightened while pressed.
 component Wheel {
     in property <length> size;
     in property <float> pos;
     in property <int> selected;
+    in property <int> held: -1;
     property <int> n: Apps.list.length;
     property <int> slots: Math.min(self.n, 8);
     property <length> orbit: self.size * 0.355;
@@ -667,7 +668,7 @@ component Wheel {
         width: root.disc;
         height: root.disc;
         border-radius: root.disc / 2;
-        background: root.selected == i ? app.center : #f4f4f4;
+        background: (root.selected == i ? app.center : #f4f4f4).with-alpha(root.held == i ? 0.8 : 1);
 
         Image {
             x: root.disc * 0.15;
@@ -676,17 +677,24 @@ component Wheel {
             height: self.width;
             source: Icons.get(app.icon, self.width, self.height);
             colorize: root.selected == i ? white : black;
-            opacity: 0.9;
+            opacity: root.held == i ? 1 : 0.9;
         }
     }
 }
 
 // 005-speed-dial: the apps on a wheel, turned by dragging around it, the one at 3 o'clock
-// selected: filled with its colour and named on a bar across the left. Its mask hides the left
-// half of the wheel behind the bar and fades it in above and below, to full at 1.6 times the
-// bar's half height. The software renderer only clips to rectangles, so the wheel is drawn in
-// the right half, the left half beyond the fade, and 4 px strips of the fade. A tap opens the
-// selected app, or the disc tapped.
+// selected: filled with its colour and named on a bar across the left. A pressed disc becomes the
+// selected one until the wheel moves on to another app. Its mask hides the left half of the wheel
+// behind the bar and fades it in above and below, to full at 1.6 times the bar's half height. The
+// software renderer only clips to rectangles, so the wheel is drawn in the right half, the left
+// half beyond the fade, and 4 px strips of the fade. A tap on a disc opens its app, one on the
+// name the selected app; one between the discs does nothing.
+//
+// Let go, the wheel coasts like a PathView: from the average of the turning speeds before the
+// last move (items/s, timed by Face.touch-ms), fading to nothing between 50 and 100 ms without a
+// report, no coast under 75 px/s along the wheel, at most 2500 px/s, slowing by 10 items/s^2, for
+// at most one turn less an app, ending on an app, at least a quarter app past where it was let go.
+// A press stops it, and only stops it.
 component SpeedDial {
     in property <length> size: 100 * Theme.unit;
     in property <bool> preview;
@@ -694,33 +702,55 @@ component SpeedDial {
     in property <bool> last;
     property <float> k: self.size / (100 * Theme.unit);
     property <int> n: Apps.list.length;
-    property <angle> step: 360deg / Math.min(self.n, 8);
+    property <int> slots: Math.min(self.n, 8);
+    property <angle> step: 360deg / self.slots;
     property <length> bar: self.size * 0.26;
     property <length> orbit: self.size * 0.355;
     property <length> disc: self.size / 3.5 * 0.8;
+    // Physical pixels along the wheel per app.
+    property <float> item-px: 2 * 3.14159265 * self.orbit / 1phx / self.slots;
     in-out property <int> index;
     property <angle> turn;
+    // The turn the press stopped the wheel at, short of an app.
+    property <angle> base;
     property <bool> turning;
-    property <angle> start-angle;
-    property <float> vel;
-    property <duration> last-t;
+    property <bool> pressing;
+    property <int> touched: -1;
+    property <bool> name-held;
+    // The last three turning speeds, newest last, and how many there are.
+    property <float> v0;
+    property <float> v1;
+    property <float> v2;
+    property <int> samples;
+    property <int> last-ms;
     property <angle> last-a;
-    property <duration> anim: 150ms;
+    property <duration> anim: 300ms;
     property <float> pos: self.index - self.turn / self.step;
     animate pos {
         duration: root.turning ? 0ms : root.anim;
-        easing: ease-out;
+        easing: cubic-bezier(0.333, 0.667, 0.667, 1);
     }
-    property <int> selected: Math.mod(Math.mod(Math.round(self.pos), self.n) + self.n, self.n);
+    property <int> current: Math.mod(Math.mod(Math.round(self.pos), self.n) + self.n, self.n);
+    property <int> selected: self.touched >= 0 ? self.touched : self.current;
 
     width: self.size;
     height: self.size;
 
+    function wrap(i: int) -> int {
+        return Math.mod(Math.mod(i, root.n) + root.n, root.n);
+    }
     function report() {
         if !root.preview {
-            Face.launcher-position = Math.mod(Math.mod(root.pos, root.n) + root.n, root.n);
+            // The pressed app's colours only while the wheel is at rest.
+            Face.launcher-position = root.touched >= 0 && !root.turning && Math.abs(root.pos - root.index) < 0.001 ? root.touched : Math.mod(Math.mod(root.pos, root.n) + root.n, root.n);
             Face.launcher-edges = 4;
         }
+    }
+    // Moves the wheel to a, an app, from where it is now, over t.
+    function go(a: int, t: duration) {
+        root.anim = t;
+        root.index = a;
+        root.turn = 0;
     }
     changed last => {
         self.index = self.last ? self.n - 1 : 0;
@@ -730,6 +760,15 @@ component SpeedDial {
     }
     changed pos => {
         self.report();
+    }
+    changed touched => {
+        self.report();
+    }
+    changed turning => {
+        self.report();
+    }
+    changed current => {
+        self.touched = -1;
     }
 
     Rectangle {
@@ -759,6 +798,7 @@ component SpeedDial {
         height: root.name-size * 1.4;
         text: Apps.list[root.selected].name;
         color: white;
+        opacity: root.name-held ? 0.5 : 1;
         font-size: root.name-size * Math.min(1, root.name-width / Math.max(measure.preferred-width, 1px));
         font-family: "Noto Sans SemiCondensed Bold";
         letter-spacing: 0.2 * Theme.unit * root.k * Math.min(1, root.name-width / Math.max(measure.preferred-width, 1px));
@@ -787,6 +827,7 @@ component SpeedDial {
             size: root.size;
             pos: root.pos;
             selected: root.selected;
+            held: root.pressing && !root.turning ? root.touched : -1;
         }
     }
 
@@ -805,6 +846,7 @@ component SpeedDial {
             size: root.size;
             pos: root.pos;
             selected: root.selected;
+            held: root.pressing && !root.turning ? root.touched : -1;
         }
     }
 
@@ -812,45 +854,94 @@ component SpeedDial {
         enabled: !root.preview;
         property <angle> a: Math.atan2((self.mouse-y - root.size / 2) / (0.25 * Theme.unit), (self.mouse-x - root.size / 2) / (0.25 * Theme.unit));
         property <angle> a0: Math.atan2((self.pressed-y - root.size / 2) / (0.25 * Theme.unit), (self.pressed-x - root.size / 2) / (0.25 * Theme.unit));
+        property <bool> on-name: self.mouse-x >= label.x && self.mouse-x < label.x + label.width && self.mouse-y >= label.y && self.mouse-y < label.y + label.height;
+        property <bool> pressed-name;
+        // A press that stopped the turning wheel, which only stops it.
+        property <bool> stopped;
+        // The app of the disc under the finger with the wheel at p, -1 between discs. Past the
+        // eighth slot the disc shown is the one a turn back.
+        function disc-at(p: float) -> int {
+            let k = Math.round(p + self.a / root.step);
+            let k2 = k - p >= root.slots - 4 ? k - root.slots : k - p < -4 ? k + root.slots : k;
+            let c = (k2 - p) * root.step;
+            let dx = (self.mouse-x - root.size / 2 - root.orbit * Math.cos(c)) / (0.25 * Theme.unit);
+            let dy = (self.mouse-y - root.size / 2 - root.orbit * Math.sin(c)) / (0.25 * Theme.unit);
+            return dx * dx + dy * dy < Math.pow(root.disc / 2 / (0.25 * Theme.unit), 2) ? root.wrap(k2) : -1;
+        }
 
         moved => {
             let d = Math.mod(self.a - self.a0 + 540deg, 360deg) - 180deg;
             if !root.turning && Math.abs(d) > 4deg {
+                // The move that starts the turn is a sample too, from the press or the move before.
                 root.turning = true;
-                root.vel = 0;
+            } else if !root.turning {
                 root.last-a = d;
-                root.last-t = animation-tick();
+                root.last-ms = Face.touch-ms;
             }
             if root.turning {
-                root.turn = d;
-                let dt = (animation-tick() - root.last-t) / 1ms;
+                root.name-held = false;
+                root.turn = root.base + d;
+                let dt = Face.touch-ms - root.last-ms;
                 if dt > 0 {
-                    root.vel = root.vel * 0.4 + (d - root.last-a) / 1deg / dt * 0.6;
+                    root.v0 = root.v1;
+                    root.v1 = root.v2;
+                    root.v2 = -(d - root.last-a) / root.step * 1000 / dt;
+                    root.samples = Math.min(root.samples + 1, 3);
                     root.last-a = d;
-                    root.last-t = animation-tick();
+                    root.last-ms = Face.touch-ms;
                 }
             }
         }
         pointer-event(e) => {
-            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-                if root.turning && self.mouse-x > -250 * Theme.unit {
-                    let v = animation-tick() - root.last-t > 100ms ? 0 : Math.clamp(root.vel, -1, 1);
-                    let coast = v * Math.abs(v) / 0.001 * 1deg;
-                    root.index = Math.round(root.index - (root.turn + coast) / root.step);
-                    root.anim = Math.clamp(Math.abs(v) / 0.0005, 150, 900) * 1ms;
-                } else if !root.turning && e.kind == PointerEventKind.up && self.mouse-x >= 0 {
-                    let dx = self.mouse-x - root.size / 2;
-                    let dy = self.mouse-y - root.size / 2;
-                    let r = Math.sqrt(Math.pow(dx / (0.25 * Theme.unit), 2) + Math.pow(dy / (0.25 * Theme.unit), 2)) * (0.25 * Theme.unit);
-                    if r > root.orbit - root.disc / 2 && r < root.orbit + root.disc / 2 {
-                        let rel = Math.round(self.a / root.step);
-                        Face.app-opened(Apps.list[Math.mod(Math.mod(root.index + rel, root.n) + root.n, root.n)].id);
-                    } else {
-                        Face.app-opened(Apps.list[root.selected].id);
-                    }
+            if e.kind == PointerEventKind.down {
+                // Stops the wheel where it is.
+                let p = root.pos;
+                self.stopped = Math.abs(p - root.index) > 0.001 || root.turn != 0;
+                root.anim = 0ms;
+                root.index = Math.round(p);
+                root.turn = (root.index - p) * root.step;
+                root.base = root.turn;
+                root.pressing = true;
+                // Turning speeds are measured from the press.
+                root.samples = 0;
+                root.last-a = 0deg;
+                root.last-ms = Face.touch-ms;
+                self.pressed-name = self.on-name;
+                root.name-held = self.on-name;
+                if !self.on-name && !self.stopped && self.disc-at(p) >= 0 {
+                    root.touched = self.disc-at(p);
                 }
-                root.turn = 0;
+            }
+            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                let from = root.pos;
+                if root.turning && self.mouse-x > -250 * Theme.unit {
+                    let avg = root.samples == 3 ? (root.v0 + root.v1) / 2 : root.samples == 2 ? root.v1 : 0;
+                    let held = Face.touch-ms - root.last-ms;
+                    // A lift is reported about 40 ms after the last move, so the speed only fades
+                    // from 50 ms without a report, to nothing at 100 ms.
+                    let v0 = held > 100 ? 0 : held < 50 ? avg : avg * (100 - held) / 50;
+                    let v = Math.abs(v0) * root.item-px > 2500 ? (v0 > 0 ? 2500 : -2500) / root.item-px : v0;
+                    if Math.abs(v) * root.item-px > 75 {
+                        // A quarter app more, so a flick moves at least one app its way.
+                        let dist = Math.min(root.n - 1, v * v / 20 + 0.25);
+                        let to = Math.round(from + (v > 0 ? dist : -dist));
+                        root.go(to, Math.max(2000 * Math.abs(to - from) / Math.abs(v), 1) * 1ms);
+                    } else {
+                        root.go(Math.round(from), 300ms);
+                    }
+                } else {
+                    if !root.turning && e.kind == PointerEventKind.up && self.mouse-x >= 0 {
+                        if self.pressed-name && self.on-name {
+                            Face.app-opened(Apps.list[root.selected].id);
+                        } else if !self.pressed-name && !self.stopped && root.touched >= 0 && self.disc-at(from) == root.touched {
+                            Face.app-opened(Apps.list[root.touched].id);
+                        }
+                    }
+                    root.go(Math.round(from), 300ms);
+                }
                 root.turning = false;
+                root.pressing = false;
+                root.name-held = false;
             }
         }
     }

@@ -62,6 +62,8 @@ export global Face {
     in-out property <bool> peeking;
     in-out property <int> launcher;
     in-out property <float> launcher-position;
+    // When the touch being handed to the UI was reported, in ms.
+    in-out property <int> touch-ms;
     // The panel the screen stack has on screen, under any app: 0 the watchface, 1 the
     // notifications, 2 Today, 3 the launcher, 5 the quick settings.
     in-out property <int> screen;

@@ -747,6 +747,13 @@ pub extern "C" fn ui_modal() -> bool {
     }).unwrap_or(false)
 }
 
+/// When the touch handed to ui_touch next was reported, so a velocity is not thrown off by
+/// touches queued while the UI was busy.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_touch_ms(ms: u32) {
+    each(|face| face.set_touch_ms(ms as i32));
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_touch(panel: u32, kind: i32, x: i32, y: i32) {
     with_ui(|ui| {
