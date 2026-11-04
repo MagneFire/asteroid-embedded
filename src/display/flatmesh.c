@@ -124,9 +124,14 @@ static void cpu_vertex(int i, float x, float y, void *ctx)
 		triangle(c->buf, c->px[0], c->py[0], c->px[1], c->py[1], c->px[2], c->py[2], shaded(colors[i / 3]));
 }
 
+/* The mesh's moving edge does not always reach a square panel's
+ * corners, so there the frame is first filled with the outer colour. */
 void flatmesh_render(uint32_t *buf, uint32_t t_ms)
 {
 	struct cpu_ctx c = { .buf = buf };
+	if (!board->panel.round)
+		for (uint32_t y = 0; y < fb.height; y++)
+			span(buf + y * fb.stride, 0, (int)fb.width, shaded(outer));
 	animate(t_ms, cpu_vertex, &c);
 }
 
@@ -148,10 +153,28 @@ static void gpu_vertex(int i, float x, float y, void *ctx)
 	o[7] = 1.0f;
 }
 
+/* On a square panel, two triangles of the outer colour over the whole
+ * frame come first. */
 unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms)
 {
-	animate(t_ms, gpu_vertex, out);
-	return FLATMESH_INDICES;
+	unsigned n = 0;
+	if (!board->panel.round) {
+		static const float quad[6][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, -1 }, { 1, 1 }, { -1, 1 } };
+		uint32_t c = shaded(outer);
+		for (; n < 6; n++) {
+			float *o = out + n * 8;
+			o[0] = quad[n][0];
+			o[1] = quad[n][1];
+			o[2] = 0.0f;
+			o[3] = 1.0f;
+			o[4] = (float)((c >> 16) & 0xff) / 255.0f;
+			o[5] = (float)((c >> 8) & 0xff) / 255.0f;
+			o[6] = (float)(c & 0xff) / 255.0f;
+			o[7] = 1.0f;
+		}
+	}
+	animate(t_ms, gpu_vertex, out + n * 8);
+	return n + FLATMESH_INDICES;
 }
 
 /* A second mesh, an app's own background: its colours, moved by (dx, dy)

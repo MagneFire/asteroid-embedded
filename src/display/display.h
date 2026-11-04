@@ -33,7 +33,9 @@ void fbcon_draw(uint32_t *buf);
 void fbcon_set_overlay(bool on);
 
 void flatmesh_render(uint32_t *buf, uint32_t t_ms);
-#define FLATMESH_GPU_VERTICES 516
+/* The mesh, and a frame-filling quad in front of it on a square panel. */
+#define FLATMESH_GPU_MESH 516
+#define FLATMESH_GPU_VERTICES (FLATMESH_GPU_MESH + 6)
 #define FLATMESH_GPU_ROUND_VERTICES (FLATMESH_GPU_VERTICES * 4)
 unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms);
 void flatmesh_view(float scale, float dx, float dy, float shade);

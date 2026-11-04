@@ -125,7 +125,9 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	float c, s;
 	rotation_turn(time_ms(), &c, &s);
 	gpu_draw_turn(c, s);
-	gpu_draw_turn_vertices(vbo, n, 8);
+	/* The frame-filling quad in front of the mesh stays put. */
+	unsigned fill = n - FLATMESH_GPU_MESH;
+	gpu_draw_turn_vertices(vbo + fill * 8, n - fill, 8);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
 	if (with_layer)
