@@ -360,6 +360,30 @@ static void phy_reset(void)
 /* Unplugged, or a charger that never configures the device: the stack
  * stops, then the PHY goes to low power mode and the clocks off. The
  * clocks stay on if the PHY did not get there. */
+/* The PHY's supplies, off as the vendor's unplugged collapse has them
+ * and on before anything touches the PHY again. */
+static bool phy_rail_off[2];
+static bool phy_rails(bool on)
+{
+	static const struct { uint8_t id; uint32_t uv; } rail[2] = { { 10, 1800000 }, { 20, 3075000 } };
+	bool ok = true;
+	if (!board->usb_rails_off)
+		return true;
+	for (unsigned i = 0; i < 2; i++) {
+		if (phy_rail_off[i] == !on)
+			continue;
+		if (rpm_ldo_on(rail[i].id, rail[i].uv) || (!on && rpm_ldo_off(rail[i].id)))
+			ok = false;
+		else
+			phy_rail_off[i] = !on;
+	}
+	if (!ok)
+		log_printf("usb: phy supplies %s not acknowledged\n", on ? "on" : "off");
+	else if (on)
+		delay_ms(1);
+	return ok;
+}
+
 static void usb_collapse(const char *why)
 {
 	if (cdc_attached) {
@@ -380,6 +404,7 @@ static void usb_collapse(const char *why)
 		dsb();
 		writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
 		writel(readl(GCC_USB_HS_AHB_CBCR) & ~1u, GCC_USB_HS_AHB_CBCR);
+		phy_rails(false);
 	}
 	usb_down = true;
 	usb_clocks_off = phcd;
@@ -392,6 +417,10 @@ static bool usb_restore(void)
 {
 	uint32_t t0 = time_ms();
 	const char *fail = NULL;
+	if (!phy_rails(true)) {
+		fail = "phy supplies";
+		goto out;
+	}
 	if (!clock_on(GCC_USB_HS_AHB_CBCR) || !clock_on(GCC_USB_HS_SYSTEM_CBCR)) {
 		fail = "clocks";
 		goto out;

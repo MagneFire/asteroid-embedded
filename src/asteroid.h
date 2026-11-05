@@ -187,6 +187,8 @@ int rpm_regulator_sleep_enable(uint32_t type, uint32_t id, bool on);
 int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz);
 void rpm_sleep_votes(void);
 void rpm_unused_rails_off(void);
+int rpm_ldo_off(uint32_t id);
+int rpm_ldo_on(uint32_t id, uint32_t uv);
 void rpm_bus_votes(void);
 void dload_clear(void);
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);

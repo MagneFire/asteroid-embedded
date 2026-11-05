@@ -217,6 +217,8 @@ int rpm_regulator_sleep_enable(uint32_t type, uint32_t id, bool on)
 #define RPM_CLK2		0x326b6c63u
 #define RPM_KEY_SWEN		0x6e657773u
 #define RPM_KEY_KHZ		0x007a484bu
+#define RPM_KEY_LSMD		0x646d736cu
+#define RPM_KEY_UV		0x00007675u
 
 int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz)
 {
@@ -240,12 +242,32 @@ void rpm_bus_votes(void)
 #define RPM_CLK0		0x306b6c63u
 #define RPM_KEY_ENABLE		0x62616e45u
 
+int rpm_ldo_off(uint32_t id)
+{
+	int r = rpm_regulator_enable(RPM_LDOA, id, false);
+	return r ? r : rpm_regulator_sleep_enable(RPM_LDOA, id, false);
+}
+
+/* On in both sets, in high power mode. The voltage comes first: the RPM
+ * would otherwise use its own minimum, below the bootloader's. A rail
+ * the bootloader enabled itself looks off to the RPM, so an off vote
+ * only works after this one. */
+int rpm_ldo_on(uint32_t id, uint32_t uv)
+{
+	uint32_t kvp[6] = { RPM_KEY_LSMD, 4, 1, RPM_KEY_UV, 4, uv };
+	int r = request(RPM_SET_ACTIVE, RPM_LDOA, id, kvp, 2);
+	if (!r)
+		r = request(RPM_SET_SLEEP, RPM_LDOA, id, kvp, 2);
+	if (!r)
+		r = rpm_regulator_enable(RPM_LDOA, id, true);
+	return r ? r : rpm_regulator_sleep_enable(RPM_LDOA, id, true);
+}
+
 void rpm_unused_rails_off(void)
 {
-	for (unsigned i = 0; i < sizeof board->unused_ldos && board->unused_ldos[i]; i++) {
-		rpm_regulator_enable(RPM_LDOA, board->unused_ldos[i], false);
-		rpm_regulator_sleep_enable(RPM_LDOA, board->unused_ldos[i], false);
-	}
+	for (unsigned i = 0; i < sizeof board->unused_ldos && board->unused_ldos[i]; i++)
+		if (rpm_ldo_off(board->unused_ldos[i]))
+			log_printf("rpm: l%u off not acknowledged\n", board->unused_ldos[i]);
 }
 
 #define APCS_CLOCK_SLEEP_ENA_VOTE	0xfc401488u
