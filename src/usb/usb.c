@@ -425,6 +425,37 @@ static void usb_collapse(const char *why)
 	log_printf("usb: %s, %s\n", why, rest_gave_up ? "phy did not enter low power mode, clocks left on" : "phy in low power mode");
 }
 
+/* The stack starts the controller as it initialises; the session wiring
+ * has to follow its reset, then the device attaches. Returns what failed,
+ * or NULL. */
+static const char *stack_up(void)
+{
+	adb_open = adb_tx_busy = adb_rx_queued = false;
+	adb_reset();
+	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
+	if (!tusb_init(0, &rh))
+		return "stack";
+	tud_disconnect();
+	if (phy_select())
+		return "phy select";
+	dsb();
+	tud_connect();
+	return NULL;
+}
+
+/* Stops what a failed start left running. The stack may count as
+ * initialised even though its controller driver failed, and only then
+ * would a second start really run. */
+static void usb_start_failed(const char *fail, uint32_t t0)
+{
+	tud_deinit(0);
+	gic_mask(IRQ_USB_HS);
+	usb_down = true;
+	if (!usb_clocks_off)
+		phy_rest();
+	log_printf("usb: bringing up failed at %s after %lu ms, clocks %s\n", fail, time_ms() - t0, usb_clocks_off ? "off" : "on");
+}
+
 /* Brings USB up from scratch. On any failure the stack is stopped
  * again and USB rests as it does unplugged; usb_cable tries again
  * later. */
@@ -475,32 +506,14 @@ static bool usb_restore(void)
 		goto out;
 	}
 #endif
-	adb_open = adb_tx_busy = adb_rx_queued = false;
-	adb_reset();
-	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
-	if (!tusb_init(0, &rh)) {
-		fail = "stack";
+	fail = stack_up();
+	if (fail)
 		goto out;
-	}
-	/* The stack starts the controller as it initialises; the session
-	 * wiring has to follow its reset, then the device attaches. */
-	tud_disconnect();
-	if (phy_select()) {
-		fail = "phy select";
-		goto out;
-	}
-	dsb();
-	tud_connect();
 	usb_down = false;
 	log_printf("usb: up again in %lu ms\n", time_ms() - t0);
 	return true;
 out:
-	tud_deinit(0);
-	gic_mask(IRQ_USB_HS);
-	usb_down = true;
-	if (!usb_clocks_off)
-		phy_rest();
-	log_printf("usb: bringing up failed at %s after %lu ms, clocks %s\n", fail, time_ms() - t0, usb_clocks_off ? "off" : "on");
+	usb_start_failed(fail, t0);
 	return false;
 }
 
@@ -569,21 +582,18 @@ void usb_init(const char *serialno)
 		n++;
 	}
 	serial[n] = 0;
-	controller_init();
+	uint32_t t0 = time_ms();
+	const char *fail = controller_init() ? NULL : "controller reset";
 	gic_enable(IRQ_USB_HS, usb_irq);
 	gic_mask(IRQ_USB_HS);
 	static char banner[96];
 	snprintf(banner, sizeof banner, "ro.product.name=%s;ro.product.model=asteroid-embedded;ro.product.device=%s", board->name,
 		 board->name);
 	adb_init(&transport, banner);
-	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
-	if (!tusb_init(0, &rh)) {
-		log_printf("usb: stack init failed\n");
-		return;
-	}
-	tud_disconnect();
-	phy_select();
-	tud_connect();
+	if (!fail)
+		fail = stack_up();
+	if (fail)
+		usb_start_failed(fail, t0);
 }
 
 void usb_poll(void)
