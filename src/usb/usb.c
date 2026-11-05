@@ -57,6 +57,16 @@ static int phy_select(void)
 	return r;
 }
 
+static bool bits_wait(uint32_t addr, uint32_t mask, uint32_t want)
+{
+	uint32_t t0 = time_ms();
+	wdt_feed();
+	while ((readl(addr) & mask) != want)
+		if (time_ms() - t0 > 500)
+			return false;
+	return true;
+}
+
 static bool controller_init(void)
 {
 	writel(readl(GCC_USB_HS_AHB_CBCR) | 1, GCC_USB_HS_AHB_CBCR);
@@ -64,9 +74,7 @@ static bool controller_init(void)
 	delay_ms(1);
 	writel(0x00080002, USB_USBCMD);
 	delay_ms(2);
-	for (int i = 0; i < 100000 && (readl(USB_USBCMD) & 2); i++)
-		delay_us(1);
-	bool ok = !(readl(USB_USBCMD) & 2);
+	bool ok = bits_wait(USB_USBCMD, 2, 0);
 	if (phy_select())
 		ok = false;
 	writel(0, USB_SBUSCFG);
@@ -331,16 +339,6 @@ static bool clock_on(uint32_t cbcr)
 	writel(readl(cbcr) | 1, cbcr);
 	for (int i = 0; i < 1000; i++) {
 		if (!(readl(cbcr) & BIT(31)))
-			return true;
-		delay_us(1);
-	}
-	return false;
-}
-
-static bool bits_wait(uint32_t addr, uint32_t mask, uint32_t want)
-{
-	for (int i = 0; i < 500000; i++) {
-		if ((readl(addr) & mask) == want)
 			return true;
 		delay_us(1);
 	}

@@ -33,6 +33,20 @@
 
 #include "ci_hs_msm.h"
 
+// A controller wait lasts microseconds. It is bounded by time, not by a loop
+// count, as a register read takes far longer on the sleep clock.
+#define CI_WAIT_US 100000
+
+static bool ci_wait_clear(volatile uint32_t *reg, uint32_t mask) {
+  const uint32_t t0 = time_us();
+  while (*reg & mask) {
+    if (time_us() - t0 > CI_WAIT_US) {
+      return false;
+    }
+  }
+  return true;
+}
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
 //--------------------------------------------------------------------+
@@ -184,9 +198,9 @@ static void bus_reset(uint8_t rhport) {
   dcd_reg->ENDPTSETUPSTAT = dcd_reg->ENDPTSETUPSTAT;
   dcd_reg->ENDPTCOMPLETE  = dcd_reg->ENDPTCOMPLETE;
 
-  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTPRIME; i++) {}
+  ci_wait_clear(&dcd_reg->ENDPTPRIME, 0xFFFFFFFF);
   dcd_reg->ENDPTFLUSH = 0xFFFFFFFF;
-  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTFLUSH; i++) {}
+  ci_wait_clear(&dcd_reg->ENDPTFLUSH, 0xFFFFFFFF);
 
   // read reset bit in portsc
 
@@ -217,8 +231,7 @@ bool dcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
 
   // Reset controller
   dcd_reg->USBCMD |= USBCMD_RESET;
-  for (uint32_t i = 0; i < 1000000 && (dcd_reg->USBCMD & USBCMD_RESET); i++) {}
-  if (dcd_reg->USBCMD & USBCMD_RESET) {
+  if (!ci_wait_clear(&dcd_reg->USBCMD, USBCMD_RESET)) {
     return false;
   }
 
@@ -266,9 +279,9 @@ bool dcd_deinit(uint8_t rhport) {
   dcd_reg->USBCMD &= ~USBCMD_RUN_STOP;
 
   // flush all endpoints
-  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTPRIME; i++) {}
+  ci_wait_clear(&dcd_reg->ENDPTPRIME, 0xFFFFFFFF);
   dcd_reg->ENDPTFLUSH = 0xFFFFFFFF;
-  for (uint32_t i = 0; i < 1000000 && dcd_reg->ENDPTFLUSH; i++) {}
+  ci_wait_clear(&dcd_reg->ENDPTFLUSH, 0xFFFFFFFF);
 
   // A flush that did not finish is not reported: TinyUSB would then stop
   // its teardown half way, and the next bring-up resets the controller.
@@ -457,7 +470,7 @@ bool dcd_edpt_iso_activate(uint8_t rhport, const tusb_desc_endpoint_t *desc_ep) 
   // Flush EP
   const uint32_t flush_mask = TU_BIT(epnum + (dir ? 16 : 0));
   dcd_reg->ENDPTFLUSH       = flush_mask;
-  for (uint32_t i = 0; i < 1000000 && (dcd_reg->ENDPTFLUSH & flush_mask); i++) {}
+  ci_wait_clear(&dcd_reg->ENDPTFLUSH, flush_mask);
 
   // disable to change max packet size
   ep_ctrl_clear(endptctrl, dir, ENDPTCTRL_ENABLE);
@@ -496,8 +509,8 @@ static void qhd_start_xfer(uint8_t rhport, uint8_t epnum, uint8_t dir) {
 
   if (epnum == 0) {
     // follows UM 24.10.8.1.1 Setup packet handling using setup lockout mechanism
-    // wait until ENDPTSETUPSTAT before priming data/status in response TODO add time out
-    for (uint32_t i = 0; i < 1000000 && (dcd_reg->ENDPTSETUPSTAT & TU_BIT(0)); i++) {}
+    // wait until ENDPTSETUPSTAT before priming data/status in response
+    ci_wait_clear(&dcd_reg->ENDPTSETUPSTAT, TU_BIT(0));
   }
 
   // start transfer
