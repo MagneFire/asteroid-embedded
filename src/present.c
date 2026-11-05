@@ -155,7 +155,7 @@ void present_clock(uint32_t now)
 			weather_day = rtc / 86400;
 			show_weather();
 		}
-		ui_set_battery(bms_percent(), pmic_charging());
+		ui_set_battery(batt_percent(), batt_charging());
 		ui_set_connected(bt_host_connected(), bt_store_bonded());
 		static char addr_text[18];
 		uint8_t addr[6];

@@ -96,8 +96,7 @@ static struct sched_task start_task, charger_task, notify_task, cable_task, sett
 
 static bool charger_run(uint32_t now)
 {
-	pmic_charger_poll();
-	bms_poll();
+	batt_poll();
 	sched_after(&charger_task, now, 500);
 	return false;
 }
@@ -112,7 +111,7 @@ static bool notify_run(uint32_t now)
 /* Only a cable plugged in raises an interrupt. */
 static bool cable_run(uint32_t now)
 {
-	usb_cable(pmic_usb_present(), false);
+	usb_cable(batt_cable(), false);
 	sched_after(&cable_task, now, 1000);
 	return false;
 }
@@ -246,7 +245,7 @@ void app_touch(uint32_t now)
 
 void app_cable(uint32_t now)
 {
-	if (pmic_usb_irq() && pmic_usb_present()) {
+	if (batt_cable_irq() && batt_cable()) {
 		log_printf("usb: cable plugged in\n");
 		usb_cable(true, true);
 		power_charger_plugged(now);

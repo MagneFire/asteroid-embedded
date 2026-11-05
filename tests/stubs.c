@@ -27,8 +27,8 @@ uint32_t display_frames(void) { return 7; }
 void display_set_brightness(uint8_t level) { stub_brightness = level; }
 void display_sleep(void) { stub_asleep = true; }
 void display_wake(void) { stub_asleep = false; }
-uint32_t pmic_battery_mv(void) { return 3900; }
-const char *pmic_charger_status(void) { return "discharging"; }
+uint32_t batt_mv(void) { return 3900; }
+const char *batt_status(void) { return "discharging"; }
 uint32_t pmic_rtc_read(void) { return stub_rtc; }
 uint8_t pmic_read(uint32_t addr) { return 0; }
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }

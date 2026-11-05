@@ -106,6 +106,7 @@ const struct board board_sturgeon = {
 	.usb_rails_off = true,
 	.unused_ldos = { 18, 21 },
 	.battery = &battery,
+	.battery_driver = &battery_pmic,
 	/* Synaptics RMI4 on BLSP1 QUP5. */
 	.touch = &touch_rmi4,
 	.touch_pins = { .i2c = { .qup = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x20 }, .irq = 17, .reset = 16, .mpm = 8 },

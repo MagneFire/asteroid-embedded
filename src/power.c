@@ -76,7 +76,7 @@ static uint32_t nightstand_delay_ms(void)
 
 bool power_nightstand(void)
 {
-	bool attached = nightstand_step(&stand, pmic_usb_present(), time_ms(), nightstand_delay_ms());
+	bool attached = nightstand_step(&stand, batt_cable(), time_ms(), nightstand_delay_ms());
 	return setting_get(SETTING_NIGHTSTAND) && attached;
 }
 
@@ -127,7 +127,7 @@ static void ambient_draw(void)
 	civil_from_epoch(rtc, &c);
 	ambient_minute = rtc / 60;
 	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
-	ui_set_battery(bms_percent(), pmic_charging());
+	ui_set_battery(batt_percent(), batt_charging());
 	bool ns = power_nightstand();
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
 	ui_tick();
@@ -170,7 +170,7 @@ static void ambient_enter(void)
  * if the normal setting differs from what is on screen. */
 uint32_t power_next_ms(void)
 {
-	if (policy.awake || ambient == (have_ui && setting_get(SETTING_AOD)) || pmic_usb_present())
+	if (policy.awake || ambient == (have_ui && setting_get(SETTING_AOD)) || batt_cable())
 		return UINT32_MAX;
 	return nightstand_next_ms(&stand, time_ms(), nightstand_delay_ms());
 }

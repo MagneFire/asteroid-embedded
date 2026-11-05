@@ -887,3 +887,31 @@ uint32_t bms_percent(void)
 	}
 	return (uint32_t)soc;
 }
+
+/* The PM8226's own charger and battery monitor, set up and polled in
+ * that order. */
+static void pmic_battery_init(void)
+{
+	pmic_charger_configure();
+	bms_init();
+}
+
+static void pmic_battery_poll(void)
+{
+	pmic_charger_poll();
+	bms_poll();
+}
+
+const struct battery_driver battery_pmic = {
+	.init = pmic_battery_init,
+	.poll = pmic_battery_poll,
+	.percent = bms_percent,
+	.charging = pmic_charging,
+	.cable = pmic_usb_present,
+	.cable_irq_init = pmic_usb_irq_init,
+	.cable_irq = pmic_usb_irq,
+	.mv = pmic_battery_mv,
+	.ua = pmic_battery_ua,
+	.avg_ua = pmic_battery_avg_ua,
+	.status = pmic_charger_status,
+};

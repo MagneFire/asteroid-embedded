@@ -48,7 +48,7 @@ static unsigned shot_value_len;
 
 static uint8_t battery_percent(void)
 {
-	uint32_t p = bms_percent();
+	uint32_t p = batt_percent();
 	return (uint8_t)(p > 100 ? 100 : p);
 }
 

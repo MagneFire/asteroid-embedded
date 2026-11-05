@@ -69,6 +69,26 @@ struct motor_driver {
 	void (*set)(bool on);
 };
 
+/* What feeds the battery and how full it is: the charger's setup and
+ * upkeep, the state of charge in percent, whether it is charging,
+ * whether a cable is in (a plugged-in interrupt comes with cable_irq),
+ * the cell's voltage and current (positive while discharging, the
+ * average since the previous call) and a line for the log. */
+struct battery_driver {
+	void (*init)(void);
+	void (*poll)(void);
+	uint32_t (*percent)(void);
+	bool (*charging)(void);
+	bool (*cable)(void);
+	void (*cable_irq_init)(void);
+	bool (*cable_irq)(void);
+	uint32_t (*mv)(void);
+	int32_t (*ua)(void);
+	int32_t (*avg_ua)(void);
+	const char *(*status)(void);
+};
+
+extern const struct battery_driver battery_pmic;
 extern const struct touch_driver touch_rmi4, touch_it7260;
 extern const struct hub_driver hub_stm32, hub_em7184;
 extern const struct motor_driver motor_drv2605, motor_pm8226;
@@ -111,6 +131,7 @@ struct board {
 	/* LDOs the bootloader leaves on that nothing here uses, 0 ends. */
 	uint8_t unused_ldos[4];
 	const struct board_battery *battery;
+	const struct battery_driver *battery_driver;
 
 	const struct touch_driver *touch;
 	struct {

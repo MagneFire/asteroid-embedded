@@ -26,7 +26,7 @@ void stats_poll(uint32_t now, bool awake)
 		uint32_t pc, pcc, pcb;
 		spm_stats(&pc, &pcc, &pcb);
 		log_printf("power: asleep, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", power_wakeups(), pc, pcc,
-			   pcb, pmic_battery_avg_ua() / 1000);
+			   pcb, batt_avg_ua() / 1000);
 	}
 	if (awake && now - last >= 1000) {
 		last = now;
@@ -34,14 +34,14 @@ void stats_poll(uint32_t now, bool awake)
 		usb_stats(&rx, &tx);
 		touch_stats(&att, &terr);
 		log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - start_ms) / 1000,
-			   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
+			   display_frames() - frames0, pmic_rtc_read(), batt_mv(), batt_status(), rx, tx, att, terr);
 		frames0 = display_frames();
 		uint32_t slept = power_slept_ms(now);
 		uint32_t pc, pcc, pcb;
 		spm_stats(&pc, &pcc, &pcb);
 		log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, battery %ld mA, %ld mA average\n",
 			   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, power_wakeups(), pc, pcc, pcb,
-			   pmic_battery_ua() / 1000, pmic_battery_avg_ua() / 1000);
+			   batt_ua() / 1000, batt_avg_ua() / 1000);
 		frame_log();
 #if defined(TEST_HANG)
 		if (now - start_ms >= 2000) {

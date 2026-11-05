@@ -78,8 +78,7 @@ void main(uint32_t machtype, const void *fdt)
 	} else
 		log_printf("no fault record from the previous boot\n");
 
-	pmic_charger_configure();
-	bms_init();
+	batt_init();
 	spm_init();
 	bool have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
@@ -96,7 +95,7 @@ void main(uint32_t machtype, const void *fdt)
 		log_set_sink(sink_fbcon);
 	tlmm_irq_init();
 	pmic_power_key_irq_init();
-	pmic_usb_irq_init();
+	batt_cable_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
 	bool have_hub = hub_init();
@@ -107,7 +106,7 @@ void main(uint32_t machtype, const void *fdt)
 	usb_init(serialno);
 	if (have_display)
 		display_set_idle_hook(usb_poll);
-	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
+	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), batt_mv(), batt_status());
 
 	uint32_t t0 = time_ms();
 	frame_init(have_ui, have_gpu, t0);

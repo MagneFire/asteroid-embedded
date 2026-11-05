@@ -1,12 +1,38 @@
-/* The touch and sensor hub calls, passed to the watch's driver; a watch
- * without the part answers as if the chip were absent, so the main loop
- * skips it. */
+/* The battery, touch and sensor hub calls, passed to the watch's driver;
+ * a watch without the part answers as if the chip were absent, so the
+ * main loop skips it. Without a battery driver nothing touches the
+ * charger, and the percentage is the gauge's own "not known yet". */
 #include "asteroid.h"
 #include "input/touch.h"
 #include "sensors/hub.h"
 
+#define BATT(fn) (board->battery_driver && board->battery_driver->fn)
 #define TOUCH(fn) (board->touch && board->touch->fn)
 #define HUB(fn) (board->hub && board->hub->fn)
+
+void batt_init(void)
+{
+	if (BATT(init))
+		board->battery_driver->init();
+}
+void batt_poll(void)
+{
+	if (BATT(poll))
+		board->battery_driver->poll();
+}
+uint32_t batt_percent(void) { return BATT(percent) ? board->battery_driver->percent() : 50; }
+bool batt_charging(void) { return BATT(charging) && board->battery_driver->charging(); }
+bool batt_cable(void) { return BATT(cable) && board->battery_driver->cable(); }
+void batt_cable_irq_init(void)
+{
+	if (BATT(cable_irq_init))
+		board->battery_driver->cable_irq_init();
+}
+bool batt_cable_irq(void) { return BATT(cable_irq) && board->battery_driver->cable_irq(); }
+uint32_t batt_mv(void) { return BATT(mv) ? board->battery_driver->mv() : 0; }
+int32_t batt_ua(void) { return BATT(ua) ? board->battery_driver->ua() : 0; }
+int32_t batt_avg_ua(void) { return BATT(avg_ua) ? board->battery_driver->avg_ua() : 0; }
+const char *batt_status(void) { return BATT(status) ? board->battery_driver->status() : "no battery driver"; }
 
 bool touch_init(void) { return TOUCH(init) && board->touch->init(); }
 bool touch_poll(struct touch *t) { return TOUCH(poll) && board->touch->poll(t); }

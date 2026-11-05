@@ -141,8 +141,8 @@ static void cmd_status(const char *args)
 	say("board %s (by %s)\n", board->name, board_detected_by);
 	say("timer ticks %lu\n", timer_ticks());
 	say("display frames %lu\n", display_frames());
-	say("battery %lu mV\n", pmic_battery_mv());
-	say("charger %s\n", pmic_charger_status());
+	say("battery %lu mV\n", batt_mv());
+	say("charger %s\n", batt_status());
 	say("rtc %lu\n", pmic_rtc_read());
 }
 
