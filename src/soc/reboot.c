@@ -21,9 +21,8 @@ void dload_clear(void)
 
 bool reboot_to_bootloader;
 
-void reboot(void)
+static void __attribute__((noreturn)) reset_now(void)
 {
-	settings_flush();
 	irq_disable();
 	dload_clear();
 	if (reboot_to_bootloader)
@@ -35,4 +34,19 @@ void reboot(void)
 	wdt_arm(50, 100, NULL);
 	for (;;)
 		wfi();
+}
+
+void reboot(void)
+{
+	settings_flush();
+	reset_now();
+}
+
+/* Hardware the firmware depends on is gone: leave a record for the next
+ * boot and reset at once, as anything more could hang on the same bus. */
+void reboot_fatal(const char *what)
+{
+	uint32_t lr = (uint32_t)(uintptr_t)__builtin_return_address(0);
+	fault_record(what, lr, lr, (uint32_t)(uintptr_t)__builtin_frame_address(0), NULL);
+	reset_now();
 }

@@ -223,6 +223,34 @@ static void clock_set(uint32_t cbcr, bool on)
 	}
 }
 
+/* The MDSS power domain on or collapsed, false if it did not get there. */
+static bool gdsc_set(bool on)
+{
+	uint32_t v = readl(MDP_GDSCR);
+	writel(on ? v & ~GDSC_SW_COLLAPSE : v | GDSC_SW_COLLAPSE, MDP_GDSCR);
+	for (int i = 0; i < 1000; i++) {
+		if (!!(readl(MDP_GDSCR) & GDSC_PWR_ON) == on)
+			return true;
+		delay_us(1);
+	}
+	return false;
+}
+
+/* The DSI PHY's clamps, which hold the lanes while the domain is off. */
+static void dsi_clamp(bool on)
+{
+	clock_set(MMSS_MISC_AHB_CBCR, true);
+	if (on) {
+		writel(readl(MMSS_DSI_CLAMP) | DSI_CLAMPS, MMSS_DSI_CLAMP);
+		writel(readl(MMSS_DSI_CLAMP) | DSI_CLAMPS | DSI_CLAMP_EN, MMSS_DSI_CLAMP);
+		writel(1, MMSS_DSI_PHY_RESET);
+	} else {
+		writel(0, MMSS_DSI_PHY_RESET);
+		writel(readl(MMSS_DSI_CLAMP) & ~(DSI_CLAMPS | DSI_CLAMP_EN), MMSS_DSI_CLAMP);
+	}
+	clock_set(MMSS_MISC_AHB_CBCR, false);
+}
+
 static bool pll_locked(void)
 {
 	writel(0x0d, DSI_PLL_LKDET_CFG2);
@@ -314,13 +342,8 @@ bool display_rest(void)
 	}
 	for (unsigned i = 0; i < ARRAY_SIZE(kept_regs); i++)
 		kept[i] = readl(kept_regs[i]);
-	if (!panel_asleep) {
-		clock_set(MMSS_MISC_AHB_CBCR, true);
-		writel(readl(MMSS_DSI_CLAMP) | DSI_CLAMPS, MMSS_DSI_CLAMP);
-		writel(readl(MMSS_DSI_CLAMP) | DSI_CLAMPS | DSI_CLAMP_EN, MMSS_DSI_CLAMP);
-		writel(1, MMSS_DSI_PHY_RESET);
-		clock_set(MMSS_MISC_AHB_CBCR, false);
-	}
+	if (!panel_asleep)
+		dsi_clamp(true);
 	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
 		clock_set(dsi_clocks[i], false);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
@@ -328,9 +351,8 @@ bool display_rest(void)
 	writel(0, DSI_PLL_GLB_CFG);
 	dsb();
 	clock_set(MDSS_AHB_CBCR, false);
-	writel(readl(MDP_GDSCR) | GDSC_SW_COLLAPSE, MDP_GDSCR);
-	for (int i = 0; i < 1000 && (readl(MDP_GDSCR) & GDSC_PWR_ON); i++)
-		delay_us(1);
+	if (!gdsc_set(false))
+		log_printf("display: power domain stays on, %08lx\n", readl(MDP_GDSCR));
 	resting = true;
 	return true;
 }
@@ -339,21 +361,17 @@ void display_active(void)
 {
 	if (!resting)
 		return;
-	writel(readl(MDP_GDSCR) & ~GDSC_SW_COLLAPSE, MDP_GDSCR);
-	for (int i = 0; !(readl(MDP_GDSCR) & GDSC_PWR_ON); i++) {
-		if (i == 1000) {
-			log_printf("display: power domain stays off, %08lx\n", readl(MDP_GDSCR));
-			break;
-		}
-		delay_us(1);
-	}
+	if (!gdsc_set(true))
+		reboot_fatal("display: power domain stays off");
 	delay_us(1);
 	clock_set(MDSS_AHB_CBCR, true);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
 		clock_set(mdp_clocks[i], true);
 	int r = scm_restore_sec_cfg(1);
-	if (r)
+	if (r) {
 		log_printf("display: secure config not restored (%d)\n", r);
+		reboot_fatal("display: no secure config");
+	}
 	for (unsigned i = 0; i < ARRAY_SIZE(kept_regs); i++)
 		writel(kept[i], kept_regs[i]);
 	if (!panel_asleep) {
@@ -361,10 +379,7 @@ void display_active(void)
 		writel(ULPS_LANES, DSI_LANE_CTRL);
 		delay_us(100);
 		clock_set(MDSS_ESC0_CBCR, false);
-		clock_set(MMSS_MISC_AHB_CBCR, true);
-		writel(0, MMSS_DSI_PHY_RESET);
-		writel(readl(MMSS_DSI_CLAMP) & ~(DSI_CLAMPS | DSI_CLAMP_EN), MMSS_DSI_CLAMP);
-		clock_set(MMSS_MISC_AHB_CBCR, false);
+		dsi_clamp(false);
 	}
 	pll_power_up();
 	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
