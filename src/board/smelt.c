@@ -37,6 +37,10 @@ const struct board board_smelt = {
 	/* MAX17050 on BLSP1 QUP3, pad detect on gpio 54 (MPM pin 25). */
 	.battery_driver = &battery_max17050,
 	.gauge = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x36 }, .dock = 54, .dock_mpm = 25, .charge_n = 94 },
+	/* Atmel mXT on BLSP1 QUP5, interrupt on gpio 17 (MPM pin 8), reset
+	 * on gpio 16. */
+	.touch = &touch_mxt,
+	.touch_pins = { .i2c = { .qup = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x4a }, .irq = 17, .reset = 16, .mpm = 8 },
 	/* LM3535 on BLSP1 QUP3 next to the gauge, enable on gpio 35. */
 	.backlight = &backlight_lm3535,
 	.backlight_pins = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x38 }, .enable = 35 },

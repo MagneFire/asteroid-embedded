@@ -97,7 +97,7 @@ struct battery_driver {
 };
 
 extern const struct battery_driver battery_pmic, battery_max17050;
-extern const struct touch_driver touch_rmi4, touch_it7260;
+extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt;
 extern const struct hub_driver hub_stm32, hub_em7184;
 extern const struct motor_driver motor_drv2605, motor_pm8226;
 extern const struct backlight_driver backlight_lm3535;
