@@ -3,7 +3,8 @@
 
 static struct sched_task *tasks[SCHED_TASKS];
 static unsigned count;
-static uint32_t pending;
+static uint32_t pending, last_pass;
+static bool running;
 
 /* Deadlines compare by distance, so they survive the clock's wrap. */
 #define MAX_AHEAD_MS 0x7fffffffu
@@ -19,7 +20,7 @@ bool sched_add(struct sched_task *t)
 		return false;
 	t->id = (uint8_t)count;
 	t->armed = false;
-	t->max_us = t->overruns = 0;
+	t->max_us = t->max_late_ms = t->overruns = 0;
 	tasks[count++] = t;
 	return true;
 }
@@ -47,6 +48,9 @@ void sched_cancel(struct sched_task *t)
 
 unsigned sched_run(uint32_t now)
 {
+	if (running)
+		return 0;
+	running = true;
 	uint32_t ready = __atomic_exchange_n(&pending, 0, __ATOMIC_SEQ_CST);
 	unsigned ran = 0;
 	for (unsigned i = 0; i < count; i++) {
@@ -55,8 +59,11 @@ unsigned sched_run(uint32_t now)
 		if (!at && !(ready & 1u << i))
 			continue;
 		/* Before it runs, so it can ask for the next deadline. */
-		if (at)
+		if (at) {
 			t->armed = false;
+			if (now - t->at > t->max_late_ms)
+				t->max_late_ms = now - t->at;
+		}
 		uint32_t t0 = time_us();
 		bool more = t->run(now);
 		uint32_t us = time_us() - t0;
@@ -68,6 +75,8 @@ unsigned sched_run(uint32_t now)
 			sched_post(t);
 		ran++;
 	}
+	last_pass = now;
+	running = false;
 	return ran;
 }
 
@@ -104,8 +113,15 @@ const struct sched_task *sched_late(uint32_t now, uint32_t limit_ms)
 	return NULL;
 }
 
+bool sched_stalled(uint32_t now, uint32_t limit_ms)
+{
+	return sched_pending() && now - last_pass > limit_ms;
+}
+
 void sched_clear(void)
 {
 	count = 0;
+	last_pass = 0;
+	running = false;
 	__atomic_store_n(&pending, 0, __ATOMIC_SEQ_CST);
 }

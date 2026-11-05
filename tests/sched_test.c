@@ -10,6 +10,7 @@ static int failures;
 static uint32_t fake_us;
 uint32_t time_us(void) { return fake_us; }
 
+static struct sched_task a;
 static int runs[4], order[8], ordered;
 static bool drain;
 static uint32_t cost_us;
@@ -35,9 +36,16 @@ static bool run2(uint32_t now)
 		sched_post(post_other);
 	return false;
 }
+static bool nested;
+static unsigned nested_ran;
+
 static bool run_busy(uint32_t now)
 {
 	count_run(3);
+	if (nested) {
+		sched_post(&a);
+		nested_ran = sched_run(now);
+	}
 	return drain;
 }
 
@@ -194,8 +202,38 @@ static void late(void)
 	CHECK(!sched_late(1000, 50));
 }
 
+static void reentry(void)
+{
+	/* A wait inside a task cannot start a pass. */
+	setup();
+	nested = true;
+	sched_post(&busy);
+	CHECK(sched_run(0) == 1 && nested_ran == 0);
+	nested = false;
+	CHECK(runs[0] == 0 && sched_pending());
+	sched_run(1);
+	CHECK(runs[0] == 1);
+}
+
+static void stalled(void)
+{
+	setup();
+	sched_run(100);
+	CHECK(!sched_stalled(1000, 50));
+	sched_post(&a);
+	CHECK(!sched_stalled(150, 50) && sched_stalled(151, 50));
+	sched_run(151);
+	CHECK(!sched_stalled(1000, 50));
+	/* How late a task ran is kept after it has. */
+	sched_at(&b, 200);
+	sched_run(230);
+	CHECK(b.max_late_ms == 30);
+}
+
 int main(void)
 {
+	reentry();
+	stalled();
 	events();
 	post_during_run();
 	deadlines();
