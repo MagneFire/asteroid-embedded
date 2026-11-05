@@ -1,0 +1,122 @@
+/* The sleep and wake decisions and nightstand timing, with fake time. */
+#include <stdio.h>
+#include "asteroid.h"
+#include "power_policy.h"
+
+static int failures;
+#define CHECK(x) do { if (!(x)) { printf("%s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
+
+static void nightstand(void)
+{
+	struct nightstand n = { 0 };
+	CHECK(!nightstand_step(&n, false, 0, 5000));
+	CHECK(nightstand_step(&n, true, 100, 5000));
+	CHECK(nightstand_next_ms(&n, 100, 5000) == UINT32_MAX);
+	/* Off the charger it counts for the delay. */
+	CHECK(nightstand_step(&n, false, 1000, 5000));
+	CHECK(nightstand_next_ms(&n, 2000, 5000) == 4000);
+	CHECK(nightstand_step(&n, false, 5999, 5000));
+	CHECK(!nightstand_step(&n, false, 6000, 5000));
+	CHECK(nightstand_next_ms(&n, 6000, 5000) == UINT32_MAX);
+	/* It stays expired when the clock wraps. */
+	CHECK(!nightstand_step(&n, false, 1000 + 100, 5000));
+	/* A zero delay ends it at once. */
+	struct nightstand z = { 0 };
+	nightstand_step(&z, true, 0, 0);
+	CHECK(!nightstand_step(&z, false, 1, 0));
+	/* Across the wrap of the clock. */
+	struct nightstand w = { 0 };
+	nightstand_step(&w, true, UINT32_MAX - 10, 100);
+	CHECK(nightstand_step(&w, false, UINT32_MAX - 5, 100));
+	CHECK(nightstand_step(&w, false, 50, 100));
+	CHECK(!nightstand_step(&w, false, 95, 100));
+}
+
+static void timeout(void)
+{
+	struct power_policy p = { .awake = true };
+	CHECK(power_policy_step(&p, true, SLEEP_AFTER_MS - 1) == POWER_STEP_NONE);
+	CHECK(power_policy_step(&p, true, SLEEP_AFTER_MS) == POWER_STEP_SLEEP);
+	CHECK(power_policy_step(&p, false, SLEEP_AFTER_MS) == POWER_STEP_NONE);
+	/* Held awake it never times out, a request still works. */
+	p.keep_awake = true;
+	CHECK(power_policy_step(&p, true, 5 * SLEEP_AFTER_MS) == POWER_STEP_NONE);
+	CHECK(power_policy_step(&p, true, 7 * SLEEP_AFTER_MS) == POWER_STEP_NONE);
+	p.sleep_request = true;
+	CHECK(power_policy_step(&p, true, 7 * SLEEP_AFTER_MS + 1) == POWER_STEP_SLEEP);
+}
+
+static void requests(void)
+{
+	/* Awake, both at once: sleep wins. Asleep, both at once: wake wins. */
+	struct power_policy p = { .awake = true, .sleep_request = true, .wake_request = true };
+	CHECK(power_policy_step(&p, true, 0) == POWER_STEP_SLEEP);
+	p.awake = false;
+	CHECK(power_policy_step(&p, true, 0) == POWER_STEP_WAKE);
+	p.wake_request = false;
+	CHECK(power_policy_step(&p, true, 0) == POWER_STEP_NONE);
+}
+
+static void charger(void)
+{
+	/* Asleep: a short wake. */
+	struct power_policy p = { 0 };
+	power_policy_charger(&p, 1000);
+	CHECK(power_policy_step(&p, true, 1000) == POWER_STEP_WAKE);
+	p.awake = true;
+	power_policy_woke(&p, 1000);
+	CHECK(!p.charger_wake);
+	p.wake_request = false;
+	CHECK(power_policy_step(&p, true, 1000 + CHARGER_WAKE_MS - 1) == POWER_STEP_NONE);
+	CHECK(power_policy_step(&p, true, 1000 + CHARGER_WAKE_MS) == POWER_STEP_SLEEP);
+	/* Asleep with another wake on its way: the full time. */
+	struct power_policy q = { .wake_request = true };
+	power_policy_charger(&q, 1000);
+	CHECK(power_policy_step(&q, true, 1000) == POWER_STEP_WAKE);
+	q.awake = true;
+	power_policy_woke(&q, 1000);
+	q.wake_request = false;
+	CHECK(power_policy_step(&q, true, 1000 + SLEEP_AFTER_MS - 1) == POWER_STEP_NONE);
+	/* Awake about to time out: at least the short wake. */
+	struct power_policy r = { .awake = true };
+	power_policy_charger(&r, SLEEP_AFTER_MS - 1);
+	CHECK(power_policy_step(&r, true, SLEEP_AFTER_MS + CHARGER_WAKE_MS - 2) == POWER_STEP_NONE);
+	CHECK(power_policy_step(&r, true, SLEEP_AFTER_MS + CHARGER_WAKE_MS - 1) == POWER_STEP_SLEEP);
+}
+
+static void aod(void)
+{
+	for (int m = 0; m < 8; m++) {
+		bool ns = m & 1, ns_aod = m & 2, normal = m & 4;
+		CHECK(power_policy_aod(ns, ns_aod, normal) == (ns ? ns_aod : normal));
+	}
+}
+
+static void touches(void)
+{
+	bool held = false;
+	/* A tap on the sleeping watch wakes it, none of it reaches the UI. */
+	CHECK(power_policy_touch(&held, false, true, true, false) == TOUCH_WAKE && held);
+	CHECK(power_policy_touch(&held, true, true, false, false) == TOUCH_DROP && held);
+	CHECK(power_policy_touch(&held, true, true, false, true) == TOUCH_DROP && !held);
+	CHECK(power_policy_touch(&held, true, true, true, false) == TOUCH_USE);
+	/* Lifted before the wake finished. */
+	CHECK(power_policy_touch(&held, false, true, true, false) == TOUCH_WAKE);
+	CHECK(power_policy_touch(&held, false, true, false, true) == TOUCH_DROP && !held);
+	/* With tap to wake off nothing happens. */
+	CHECK(power_policy_touch(&held, false, false, true, false) == TOUCH_DROP && !held);
+}
+
+int main(void)
+{
+	aod();
+	touches();
+	nightstand();
+	timeout();
+	requests();
+	charger();
+	if (failures)
+		return 1;
+	puts("power_test: ok");
+	return 0;
+}

@@ -9,9 +9,7 @@
 #define POWER_H
 #include <stdint.h>
 #include <stdbool.h>
-
-#define SLEEP_AFTER_MS 10000
-#define CHARGER_WAKE_MS 3000
+#include "power_policy.h"
 
 enum power_change { POWER_NONE, POWER_SLEPT, POWER_WOKE };
 

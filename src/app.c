@@ -150,20 +150,12 @@ void app_touch(uint32_t now)
 				power_request(true);
 			continue;
 		}
-		if (!power_awake()) {
-			if (t.event == TOUCH_DOWN && setting_get(SETTING_TAP)) {
-				power_request(false);
-				wake_touch = true;
-			} else if (t.event == TOUCH_UP) {
-				wake_touch = false;
-			}
+		enum touch_use use = power_policy_touch(&wake_touch, power_awake(), setting_get(SETTING_TAP), t.event == TOUCH_DOWN,
+							t.event == TOUCH_UP);
+		if (use == TOUCH_WAKE)
+			power_request(false);
+		if (use != TOUCH_USE)
 			continue;
-		}
-		/* The touch that woke the watch is not a touch on the UI. */
-		if (wake_touch) {
-			wake_touch = t.event != TOUCH_UP;
-			continue;
-		}
 		power_activity(now);
 		if (have_ui)
 			rotation_touch(&t.x, &t.y);

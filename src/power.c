@@ -25,9 +25,10 @@
 #define FIN_PX 6
 
 static bool have_display, have_ui, have_hub;
-static bool awake = true, ambient, sleep_request, wake_request, charger_wake;
-static uint32_t ambient_minute, last_activity, asleep_t, asleep_ms, wakeups;
-static bool keep_awake;
+static struct power_policy policy = { .awake = true };
+static struct nightstand stand;
+static bool ambient;
+static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
 void power_init(bool display, bool ui, bool hub)
@@ -35,64 +36,52 @@ void power_init(bool display, bool ui, bool hub)
 	have_display = display;
 	have_ui = ui;
 	have_hub = hub;
-	last_activity = time_ms();
+	policy.last_activity = time_ms();
 }
 
 void power_request(bool sleep)
 {
 	if (sleep)
-		sleep_request = true;
+		policy.sleep_request = true;
 	else
-		wake_request = true;
+		policy.wake_request = true;
 }
 
 void power_activity(uint32_t now)
 {
-	last_activity = now;
+	policy.last_activity = now;
 }
 
 void power_keep_awake(bool on)
 {
-	keep_awake = on;
+	policy.keep_awake = on;
 }
 
-/* A cable plugged in shows the screen for CHARGER_WAKE_MS, as mce
- * does. */
+/* As mce does. */
 void power_charger_plugged(uint32_t now)
 {
-	if (!awake)
-		charger_wake = true;
-	else if (now - last_activity > SLEEP_AFTER_MS - CHARGER_WAKE_MS)
-		last_activity = now - (SLEEP_AFTER_MS - CHARGER_WAKE_MS);
+	power_policy_charger(&policy, now);
 }
 
 bool power_awake(void)
 {
-	return awake;
+	return policy.awake;
 }
 
-/* When the cable last left, if it has. */
-static uint32_t lost_t;
-static bool lost;
+static uint32_t nightstand_delay_ms(void)
+{
+	return (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000;
+}
 
 bool power_nightstand(void)
 {
-	static bool was_usb;
-	bool usb = pmic_usb_present();
-	uint32_t now = time_ms();
-	if (was_usb && !usb) {
-		lost_t = now;
-		lost = true;
-	}
-	was_usb = usb;
-	if (lost && now - lost_t >= (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000)
-		lost = false;
-	return setting_get(SETTING_NIGHTSTAND) && (usb || lost);
+	bool attached = nightstand_step(&stand, pmic_usb_present(), time_ms(), nightstand_delay_ms());
+	return setting_get(SETTING_NIGHTSTAND) && attached;
 }
 
 static bool aod_wanted(void)
 {
-	return setting_get(power_nightstand() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
+	return power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD));
 }
 
 /* In nightstand mode the screen takes the nightstand brightness. */
@@ -172,28 +161,22 @@ static void ambient_draw(void)
  * sleep. */
 uint32_t power_next_ms(void)
 {
-	if (awake || !ambient || !lost || setting_get(SETTING_AOD) || pmic_usb_present())
+	if (policy.awake || !ambient || setting_get(SETTING_AOD) || pmic_usb_present())
 		return UINT32_MAX;
-	return ms_left(lost_t, (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000, time_ms());
+	return nightstand_next_ms(&stand, time_ms(), nightstand_delay_ms());
 }
 
 enum power_change power_update(uint32_t *now_p)
 {
 	uint32_t now = *now_p;
 	enum power_change change = POWER_NONE;
-	if (!awake) {
+	if (!policy.awake) {
 		wakeups++;
 		/* Keeps the time the cable left, whatever else is asleep. */
 		power_nightstand();
 	}
-	/* The short charger wake only when nothing else wakes the watch. */
-	if (charger_wake && !awake && !wake_request)
-		wake_request = true;
-	else
-		charger_wake = false;
-	if (keep_awake && awake && !sleep_request)
-		last_activity = now;
-	if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
+	enum power_step step = power_policy_step(&policy, have_display, now);
+	if (step == POWER_STEP_SLEEP) {
 		clockapps_sleep();
 		settings_flush();
 		ambient = have_ui && aod_wanted();
@@ -211,11 +194,11 @@ enum power_change power_update(uint32_t *now_p)
 		}
 		timer_set_period(1000);
 		cpu_clock_slow(true);
-		awake = false;
+		policy.awake = false;
 		asleep_t = now;
 		log_printf("sleep\n");
 		change = POWER_SLEPT;
-	} else if (have_display && !awake && wake_request) {
+	} else if (step == POWER_STEP_WAKE) {
 		cpu_clock_slow(false);
 		timer_set_period(1);
 		if (ambient) {
@@ -223,28 +206,26 @@ enum power_change power_update(uint32_t *now_p)
 		} else {
 			display_wake();
 		}
-		awake = true;
+		policy.awake = true;
 		asleep_ms += now - asleep_t;
-		last_activity = now = time_ms();
-		if (charger_wake)
-			last_activity -= SLEEP_AFTER_MS - CHARGER_WAKE_MS;
-		charger_wake = false;
+		now = time_ms();
+		power_policy_woke(&policy, now);
 		if (have_ui)
 			stack_wake(now);
 		log_printf("wake\n");
 		change = POWER_WOKE;
 	}
-	sleep_request = wake_request = false;
+	policy.sleep_request = policy.wake_request = false;
 	/* Asleep on the charger the nightstand setting picked always-on;
 	 * once off the charger the normal one applies. */
-	if (ambient && !awake && !aod_wanted()) {
+	if (ambient && !policy.awake && !aod_wanted()) {
 		cpu_clock_slow(false);
 		ambient_leave();
 		display_sleep();
 		cpu_clock_slow(true);
 		log_printf("power: always-on off\n");
 	}
-	if (ambient && !awake && pmic_rtc_read() / 60 != ambient_minute) {
+	if (ambient && !policy.awake && pmic_rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);
 		ambient_draw();
 		cpu_clock_slow(true);
@@ -264,15 +245,15 @@ void power_idle(uint32_t app_next_ms)
 	 * message: go round again instead, at full speed, as a pass on the
 	 * sleep clock takes over 100 ms. */
 	if (usb_busy()) {
-		if (!awake && cpu_clock_is_slow())
+		if (!policy.awake && cpu_clock_is_slow())
 			cpu_clock_slow(false);
 		return;
 	}
-	if ((have_display && awake) || haptics_busy() || screenshot_busy() || !timer_ticks())
+	if ((have_display && policy.awake) || haptics_busy() || screenshot_busy() || !timer_ticks())
 		return;
-	bool quiet = !have_display || awake || display_rest();
-	bool cluster = quiet && !awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
-	if (!awake)
+	bool quiet = !have_display || policy.awake || display_rest();
+	bool cluster = quiet && !policy.awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
+	if (!policy.awake)
 		cpu_clock_slow(true);
 	if (cluster) {
 		bt_sleep(true);
@@ -280,7 +261,7 @@ void power_idle(uint32_t app_next_ms)
 		cpu_clock_park();
 	}
 	uint32_t next = 1000;
-	if (!awake && !usb_connected()) {
+	if (!policy.awake && !usb_connected()) {
 		uint32_t bt = bt_idle_ms(), lpm = bt_lpm_next_ms();
 		next = app_next_ms;
 		if (bt < next)
@@ -298,7 +279,7 @@ void power_idle(uint32_t app_next_ms)
 	 * comes late would end in a bite with no record. As the vendor
 	 * kernel does for suspend, it is off across a long sleep, and a
 	 * wake later than planned is logged instead. */
-	bool long_sleep = !awake && next > 1000;
+	bool long_sleep = !policy.awake && next > 1000;
 	uint32_t t0 = 0;
 	if (long_sleep) {
 		timer_set_period(next);
@@ -333,9 +314,9 @@ uint32_t power_wakeups(void)
 /* Time asleep since the last call. */
 uint32_t power_slept_ms(uint32_t now)
 {
-	uint32_t slept = asleep_ms + (awake ? 0 : now - asleep_t);
+	uint32_t slept = asleep_ms + (policy.awake ? 0 : now - asleep_t);
 	asleep_ms = 0;
-	if (!awake)
+	if (!policy.awake)
 		asleep_t = now;
 	return slept;
 }
