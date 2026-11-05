@@ -483,6 +483,8 @@ static uint32_t gone_t, retry_t;
 void usb_cable(bool present, bool edge)
 {
 	uint32_t now = time_ms();
+	if (!usb_down && dcd_stuck())
+		usb_collapse("controller stuck");
 	if (!present) {
 		retry_t = 0;
 		if (usb_down) {

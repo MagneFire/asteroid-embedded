@@ -32,19 +32,41 @@
 #include "ci_hs_type.h"
 
 #include "ci_hs_msm.h"
+#include "config.h"
 
 // A controller wait lasts microseconds. It is bounded by time, not by a loop
 // count, as a register read takes far longer on the sleep clock.
 #define CI_WAIT_US 100000
 
+// After a wait times out the controller may still own its descriptors, so
+// they stay as they are and nothing is primed until dcd_init has reset it:
+// usb_cable sees dcd_stuck from the main loop and brings USB up from scratch.
+static bool ci_stuck;
+
+bool dcd_stuck(void) { return ci_stuck; }
+
 static bool ci_wait_clear(volatile uint32_t *reg, uint32_t mask) {
+#if defined(TEST_USB_STUCK)
+  static bool injected;
+  if (!injected && time_ms() > 30000) {
+    injected = true;
+    ci_stuck = true;
+    return false;
+  }
+#endif
   const uint32_t t0 = time_us();
   while (*reg & mask) {
     if (time_us() - t0 > CI_WAIT_US) {
+      ci_stuck = true;
       return false;
     }
   }
   return true;
+}
+
+static void ci_quiesce(ci_hs_regs_t *dcd_reg) {
+  dcd_reg->USBINTR = 0;
+  dcd_reg->USBCMD &= ~USBCMD_RUN_STOP;
 }
 
 //--------------------------------------------------------------------+
@@ -178,7 +200,7 @@ TU_ATTR_ALWAYS_INLINE static inline uint8_t ci_ep_count(const ci_hs_regs_t *dcd_
 //--------------------------------------------------------------------+
 
 /// follows LPC43xx User Manual 23.10.3
-static void bus_reset(uint8_t rhport) {
+static bool bus_reset(uint8_t rhport) {
   ci_hs_regs_t *dcd_reg = CI_HS_REG(rhport);
 
   // The reset value for all endpoint types is the control endpoint. If one endpoint
@@ -201,6 +223,10 @@ static void bus_reset(uint8_t rhport) {
   ci_wait_clear(&dcd_reg->ENDPTPRIME, 0xFFFFFFFF);
   dcd_reg->ENDPTFLUSH = 0xFFFFFFFF;
   ci_wait_clear(&dcd_reg->ENDPTFLUSH, 0xFFFFFFFF);
+  if (ci_stuck) {
+    ci_quiesce(dcd_reg);
+    return false;
+  }
 
   // read reset bit in portsc
 
@@ -215,6 +241,7 @@ static void bus_reset(uint8_t rhport) {
   _dcd_data.qhd[0][0].int_on_setup = 1; // OUT only
 
   dcd_dcache_clean_invalidate(&_dcd_data, sizeof(dcd_data_t));
+  return true;
 }
 
 bool dcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
@@ -228,6 +255,8 @@ bool dcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
   #if TU_CHECK_MCU(OPT_MCU_HPM)
   usb_phy_init((USB_Type *)dcd_reg, false);
   #endif
+
+  ci_stuck = false;
 
   // Reset controller
   dcd_reg->USBCMD |= USBCMD_RESET;
@@ -510,7 +539,10 @@ static void qhd_start_xfer(uint8_t rhport, uint8_t epnum, uint8_t dir) {
   if (epnum == 0) {
     // follows UM 24.10.8.1.1 Setup packet handling using setup lockout mechanism
     // wait until ENDPTSETUPSTAT before priming data/status in response
-    ci_wait_clear(&dcd_reg->ENDPTSETUPSTAT, TU_BIT(0));
+    if (!ci_wait_clear(&dcd_reg->ENDPTSETUPSTAT, TU_BIT(0))) {
+      ci_quiesce(dcd_reg);
+      return;
+    }
   }
 
   // start transfer
@@ -519,6 +551,9 @@ static void qhd_start_xfer(uint8_t rhport, uint8_t epnum, uint8_t dir) {
 
 bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t *buffer, uint16_t total_bytes, bool is_isr) {
   (void)is_isr;
+  if (ci_stuck) {
+    return false;
+  }
   const uint8_t epnum = tu_edpt_number(ep_addr);
   const uint8_t dir   = tu_edpt_dir(ep_addr);
 
@@ -540,6 +575,9 @@ bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t *buffer, uint16_t to
 // It's incompatible with dcache enabled transfer, since neither address nor size is aligned to cache line
 bool dcd_edpt_xfer_fifo(uint8_t rhport, uint8_t ep_addr, tu_fifo_t *ff, uint16_t total_bytes, bool is_isr) {
   (void)is_isr;
+  if (ci_stuck) {
+    return false;
+  }
   const uint8_t epnum = tu_edpt_number(ep_addr);
   const uint8_t dir   = tu_edpt_dir(ep_addr);
 
@@ -645,7 +683,9 @@ void dcd_int_handler(uint8_t rhport) {
 
       if (dcd_reg->PORTSC1 & PORTSC1_CURRENT_CONNECT_STATUS) {
         const uint32_t speed = (dcd_reg->PORTSC1 & PORTSC1_PORT_SPEED) >> PORTSC1_PORT_SPEED_POS;
-        bus_reset(rhport);
+        if (!bus_reset(rhport)) {
+          return;
+        }
         dcd_event_bus_reset(rhport, (tusb_speed_t)speed, true);
       } else {
         dcd_event_bus_signal(rhport, DCD_EVENT_UNPLUGGED, true);

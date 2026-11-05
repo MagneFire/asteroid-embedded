@@ -217,6 +217,7 @@ void fbcon_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void usb_init(const char *serialno);
 void usb_cable(bool present, bool edge);
 uint32_t usb_next_ms(void);
+bool dcd_stuck(void);
 void usb_poll(void);
 bool usb_connected(void);
 bool usb_busy(void);
