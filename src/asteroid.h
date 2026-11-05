@@ -218,6 +218,7 @@ void usb_init(const char *serialno);
 void usb_cable(bool present, bool edge);
 uint32_t usb_next_ms(void);
 bool dcd_stuck(void);
+void usb_pass(void);
 void usb_poll(void);
 bool usb_connected(void);
 bool usb_busy(void);

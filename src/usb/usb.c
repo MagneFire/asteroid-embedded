@@ -269,16 +269,25 @@ static size_t cdc_room(void *ctx)
 	return tud_cdc_write_available();
 }
 
+/* A host that stops reading loses the output after 1 s in all, rather
+ * than holding up the main loop: once that is used up, output is
+ * dropped at once until usb_pass finds room again. */
+static bool cdc_blocked;
+static uint32_t cdc_blocked_t;
+
 static void cdc_out(const char *s, size_t n, void *ctx)
 {
-	uint32_t t0 = time_ms();
 	while (n) {
 		uint32_t k = tud_cdc_write(s, (uint32_t)n);
 		if (!k) {
-			/* A host that stops reading loses the output after 1 s
-			 * rather than holding up the main loop. */
-			if (cdc_in_cb || time_ms() - t0 > 1000)
+			if (cdc_in_cb)
 				return;
+			if (!cdc_blocked) {
+				cdc_blocked = true;
+				cdc_blocked_t = time_ms();
+			} else if (time_ms() - cdc_blocked_t > 1000) {
+				return;
+			}
 			tud_cdc_write_flush();
 			tud_task();
 			if (!tud_cdc_connected())
@@ -594,6 +603,14 @@ void usb_init(const char *serialno)
 		fail = stack_up();
 	if (fail)
 		usb_start_failed(fail, t0);
+}
+
+/* Once per main loop pass, not from usb_poll: waits inside a pass pump
+ * that as well. */
+void usb_pass(void)
+{
+	if (cdc_blocked && !usb_down && tud_cdc_write_available())
+		cdc_blocked = false;
 }
 
 void usb_poll(void)
