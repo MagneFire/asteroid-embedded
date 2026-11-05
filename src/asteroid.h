@@ -134,6 +134,13 @@ uint32_t timer_ticks(void);
 void timer_set_period(uint32_t ms);
 void timer_next(uint32_t ms);
 void delay_us(uint32_t us);
+/* What is left of `ms` from `since`, at least 1: a deadline due now
+ * still needs a pass. */
+static inline uint32_t ms_left(uint32_t since, uint32_t ms, uint32_t now)
+{
+	uint32_t gone = now - since;
+	return gone >= ms ? 1 : ms - gone;
+}
 void delay_ms(uint32_t ms);
 #define WDT_MAX_MS (0x0fffffffu / SLEEP_CLK_HZ * 1000u)	/* about 2.3 hours */
 void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void));

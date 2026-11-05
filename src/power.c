@@ -174,8 +174,7 @@ uint32_t power_next_ms(void)
 {
 	if (awake || !ambient || !lost || setting_get(SETTING_AOD) || pmic_usb_present())
 		return UINT32_MAX;
-	uint32_t delay = (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000, gone = time_ms() - lost_t;
-	return gone >= delay ? 1 : delay - gone;
+	return ms_left(lost_t, (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000, time_ms());
 }
 
 enum power_change power_update(uint32_t *now_p)

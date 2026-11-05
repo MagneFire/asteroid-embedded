@@ -118,8 +118,9 @@ bool display_init(void)
 	writel(4 | 4 << 16, MDP_PP0 + PP_SYNC_THRESH);
 	writel(0, MDP_PP0 + PP_AUTOREFRESH_CONFIG);
 	writel(1, MDP_PP0 + PP_TEAR_CHECK_EN);
-	/* Each clear takes a few milliseconds; after Linux one has stalled
-	 * into the watchdog, so feed it between them and log the time. */
+	/* Each clear takes a few milliseconds, but after Linux one has
+	 * stalled into the watchdog: log the time, and feed it in between so
+	 * the second one starts with the full period. */
 	uint32_t t_clear = time_us();
 	memset(fb.buf[0], 0, fb.stride * fb.height * 4);
 	wdt_feed();

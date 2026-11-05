@@ -532,6 +532,8 @@ out:
 /* The cable state from the PMIC: present keeps USB up (a wall charger
  * too, until it can be told apart from a host), absent for 2 s puts it
  * to rest. A failed bring-up is tried again after 5 s. */
+#define GONE_MS		2000
+#define RETRY_MS	5000
 static uint32_t gone_t, retry_t;
 
 void usb_cable(bool present, bool edge)
@@ -547,7 +549,7 @@ void usb_cable(bool present, bool edge)
 		}
 		if (!gone_t)
 			gone_t = now | 1;
-		else if (now - gone_t >= 2000) {
+		else if (now - gone_t >= GONE_MS) {
 			gone_t = 0;
 			usb_collapse("unplugged");
 		}
@@ -556,14 +558,8 @@ void usb_cable(bool present, bool edge)
 	gone_t = 0;
 	if (edge)
 		retry_t = 0;
-	if (usb_down && (!retry_t || now - retry_t >= 5000))
+	if (usb_down && (!retry_t || now - retry_t >= RETRY_MS))
 		retry_t = usb_restore() ? 0 : now | 1;
-}
-
-static uint32_t left(uint32_t since, uint32_t ms, uint32_t now)
-{
-	uint32_t gone = now - since;
-	return gone >= ms ? 1 : ms - gone;
 }
 
 /* When usb_cable wants to be called again: the end of the debounce or
@@ -573,11 +569,11 @@ uint32_t usb_next_ms(void)
 {
 	uint32_t now = time_ms(), next = UINT32_MAX;
 	if (gone_t)
-		next = left(gone_t, 2000, now);
+		next = ms_left(gone_t, GONE_MS, now);
 	else if (!usb_down)
-		next = 2000;
+		next = GONE_MS;
 	if (retry_t && usb_down) {
-		uint32_t r = left(retry_t, 5000, now);
+		uint32_t r = ms_left(retry_t, RETRY_MS, now);
 		if (r < next)
 			next = r;
 	}
