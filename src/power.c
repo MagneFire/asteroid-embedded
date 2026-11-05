@@ -20,6 +20,7 @@
 #include "screenshot/screenshot.h"
 #include "clockapps.h"
 #include "power.h"
+#include "sched.h"
 
 #define AOD_BRIGHTNESS 18
 #define FIN_PX 6
@@ -264,7 +265,7 @@ void power_idle(uint32_t app_next_ms)
 			cpu_clock_slow(false);
 		return;
 	}
-	if ((have_display && policy.awake) || haptics_busy() || screenshot_busy() || !timer_ticks())
+	if ((have_display && policy.awake) || haptics_busy() || screenshot_busy() || !timer_ticks() || sched_pending())
 		return;
 	bool quiet = !have_display || policy.awake || display_rest();
 	bool cluster = quiet && !policy.awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());

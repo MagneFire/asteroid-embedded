@@ -25,6 +25,9 @@ struct sched_task {
 	const char *name;
 	bool (*run)(uint32_t now);
 	uint32_t budget_us;	/* 0: no limit */
+	/* A deadline that never wakes the watch: it runs on the first pass
+	 * after it, so periodic work costs no wakeups asleep. */
+	bool lazy;
 	/* The scheduler's own. */
 	uint32_t at, max_us, max_late_ms, overruns;
 	uint8_t id;
@@ -42,10 +45,11 @@ void sched_cancel(struct sched_task *t);
  * needs itself, not everything. */
 unsigned sched_run(uint32_t now);
 /* The time until a task is due: 0 if one is already, UINT32_MAX if none
- * has a deadline. */
+ * has a deadline. Lazy tasks do not count. */
 uint32_t sched_next_ms(uint32_t now);
 bool sched_pending(void);
-/* A task more than `limit_ms` past its deadline, or NULL. */
+/* A task other than a lazy one more than `limit_ms` past its deadline, or
+ * NULL. */
 const struct sched_task *sched_late(uint32_t now, uint32_t limit_ms);
 /* Events have been waiting for a pass for more than `limit_ms`. */
 bool sched_stalled(uint32_t now, uint32_t limit_ms);

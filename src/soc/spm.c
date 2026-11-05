@@ -4,6 +4,7 @@
  * can turn off the crystal and lower the rails. The sequences are the
  * vendor's. */
 #include "asteroid.h"
+#include "sched.h"
 
 #define SAW_CPU0		0xf9089000u
 #define SAW_L2			0xf9012000u
@@ -140,14 +141,19 @@ static void mpm_arm(uint64_t wake)
  * it is only done for longer sleeps. */
 void spm_idle(bool cluster)
 {
-	if (!can_collapse) {
-		wfi();
-		return;
-	}
+	/* With interrupts masked, an event posted before this point is seen
+	 * here and one posted after it ends the wait: wfi returns for a
+	 * masked interrupt, and it is taken on unmasking. */
 	uint32_t tval, ppis;
 	__asm__ volatile("cpsid i" ::: "memory");
+	if (!can_collapse) {
+		if (!sched_pending())
+			wfi();
+		__asm__ volatile("cpsie i" ::: "memory");
+		return;
+	}
 	__asm__ volatile("mrc p15, 0, %0, c14, c2, 0" : "=r"(tval));	/* CNTP_TVAL */
-	if ((int32_t)tval <= 0) {
+	if ((int32_t)tval <= 0 || sched_pending()) {
 		__asm__ volatile("cpsie i" ::: "memory");
 		return;
 	}

@@ -202,6 +202,19 @@ static void late(void)
 	CHECK(!sched_late(1000, 50));
 }
 
+static void lazy(void)
+{
+	/* It neither shortens a sleep nor counts as late, but runs when a
+	 * pass comes by. */
+	setup();
+	a.lazy = true;
+	sched_after(&a, 0, 10);
+	CHECK(sched_next_ms(0) == UINT32_MAX);
+	CHECK(sched_next_ms(100) == UINT32_MAX && !sched_late(1000, 50));
+	CHECK(sched_run(1000) == 1 && runs[0] == 1);
+	a.lazy = false;
+}
+
 static void reentry(void)
 {
 	/* A wait inside a task cannot start a pass. */
@@ -232,6 +245,7 @@ static void stalled(void)
 
 int main(void)
 {
+	lazy();
 	reentry();
 	stalled();
 	events();

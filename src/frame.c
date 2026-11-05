@@ -12,6 +12,7 @@
 #include "ui/rotation.h"
 #include "power.h"
 #include "frame.h"
+#include "sched.h"
 
 #define MESH_STEP_MS 90
 
@@ -217,7 +218,11 @@ void frame_draw(uint32_t now)
 			stack_indicators();
 		woke = false;
 	} else {
-		wfi();
+		/* Masked, so an event posted just before cannot wait a tick. */
+		uint32_t flags = irq_save();
+		if (!sched_pending())
+			wfi();
+		irq_restore(flags);
 	}
 }
 

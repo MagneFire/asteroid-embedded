@@ -87,7 +87,7 @@ uint32_t sched_next_ms(uint32_t now)
 	uint32_t next = UINT32_MAX;
 	for (unsigned i = 0; i < count; i++) {
 		const struct sched_task *t = tasks[i];
-		if (!t->armed)
+		if (!t->armed || t->lazy)
 			continue;
 		if (due(t, now))
 			return 0;
@@ -107,7 +107,7 @@ const struct sched_task *sched_late(uint32_t now, uint32_t limit_ms)
 {
 	for (unsigned i = 0; i < count; i++) {
 		const struct sched_task *t = tasks[i];
-		if (due(t, now) && now - t->at > limit_ms)
+		if (!t->lazy && due(t, now) && now - t->at > limit_ms)
 			return t;
 	}
 	return NULL;
