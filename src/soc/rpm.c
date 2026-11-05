@@ -239,8 +239,21 @@ void rpm_bus_votes(void)
 #define RPM_CLK0		0x306b6c63u
 #define RPM_KEY_ENABLE		0x62616e45u
 
+#define APCS_CLOCK_SLEEP_ENA_VOTE	0xfc401488u
+
 void rpm_sleep_votes(void)
 {
+	/* The bus clocks in sleep as Linux leaves them: BIMC, SNOC and
+	 * PNOC at 100 kHz, CNOC without a vote. */
+	static const struct { uint32_t type, id, khz; } bus[] = {
+		{ RPM_CLK2, 0, 100 }, { RPM_CLK1, 1, 100 }, { RPM_CLK1, 0, 100 }, { RPM_CLK1, 2, 0 },
+	};
 	uint32_t kvp[3] = { RPM_KEY_ENABLE, 4, 0 };
 	request(RPM_SET_SLEEP, RPM_CLK0, 0, kvp, 1);
+	for (unsigned i = 0; i < 4; i++) {
+		uint32_t khz[3] = { RPM_KEY_KHZ, 4, bus[i].khz };
+		if (request(RPM_SET_SLEEP, bus[i].type, bus[i].id, khz, 1))
+			log_printf("rpm: sleep vote for bus %u not acknowledged\n", i);
+	}
+	writel(0, APCS_CLOCK_SLEEP_ENA_VOTE);
 }
