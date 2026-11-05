@@ -22,6 +22,9 @@ struct emmc_part {
 int emmc_init(bool fast);
 const struct emmc_info *emmc_card(void);
 int emmc_read(uint32_t lba, uint32_t n, void *buf);
+int emmc_sleep(bool on);
+void emmc_idle(void);
+uint32_t emmc_next_ms(void);
 int emmc_write(uint32_t lba, uint32_t n, const void *buf);
 
 int emmc_part_scan(void);

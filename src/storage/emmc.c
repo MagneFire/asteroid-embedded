@@ -12,6 +12,7 @@
 #include "asteroid.h"
 #include "emmc.h"
 
+#define EMMC_IDLE_MS	3000
 #define GCC_BASE		0xfc400000u
 #define GCC_GPLL0_STATUS	(GCC_BASE + 0x001c)
 #define GCC_GPLL_ENA_VOTE	(GCC_BASE + 0x1480)
@@ -538,10 +539,14 @@ static int card_speed_up(void)
 	return 0;
 }
 
+static bool card_asleep;
+static uint32_t last_io_ms;
+
 int emmc_init(bool fast)
 {
 	static uint32_t generation;
 	memset(&card, 0, sizeof card);
+	card_asleep = false;
 	card.generation = ++generation;
 	nparts = 0;
 	emmc_guard_clear();
@@ -586,10 +591,79 @@ const struct emmc_info *emmc_card(void)
 	return &card;
 }
 
+/* The card asleep as the vendor's suspend leaves it: cache flushed,
+ * deselected, CMD5 sleep, SD clock stopped, SDCC1 clocks off. Waking only
+ * turns the branch clocks on again: the rate set_clock chose stays
+ * programmed. Any transfer wakes it; a failed wake stops transfers. */
+static bool branch_on(uint32_t cbcr)
+{
+	writel(readl(cbcr) | BIT(0), cbcr);
+	return wait_clear(cbcr, BIT(31), 1000);
+}
+
+int emmc_sleep(bool on)
+{
+	if (!card.ready || on == card_asleep)
+		return card.ready ? 0 : -1;
+	int r;
+	if (on) {
+		if ((r = wait_tran(1000)))
+			goto fail;
+		if ((card.ext_csd[33] & 1) && (r = ext_csd_switch(SWITCH_WRITE_BYTE, 32, 1)))
+			goto fail;
+		if ((r = cmd(7, 0, R_NONE, NULL)))
+			goto fail;
+		if ((r = cmd(5, RCA << 16 | BIT(15), R1B, NULL))) {
+			if (cmd(7, RCA << 16, R1B, NULL))
+				card.ready = false;
+			goto fail;
+		}
+		hc_ww((uint16_t)(hc_rw(HC_CLK) & ~CLK_SD_EN), HC_CLK);
+		writel(readl(GCC_SDCC1_APPS_CBCR) & ~BIT(0), GCC_SDCC1_APPS_CBCR);
+		writel(readl(GCC_SDCC1_AHB_CBCR) & ~BIT(0), GCC_SDCC1_AHB_CBCR);
+		card_asleep = true;
+	} else {
+		if (!branch_on(GCC_SDCC1_AHB_CBCR) || !branch_on(GCC_SDCC1_APPS_CBCR)) {
+			r = -10;
+			card.ready = false;
+			goto fail;
+		}
+		hc_ww((uint16_t)(hc_rw(HC_CLK) | CLK_SD_EN), HC_CLK);
+		card_asleep = false;
+		if ((r = cmd(5, RCA << 16, R1B, NULL)) || (r = cmd(7, RCA << 16, R1B, NULL)) || (r = wait_tran(1000))) {
+			card.ready = false;
+			goto fail;
+		}
+	}
+	log_printf("emmc: %s\n", on ? "asleep" : "awake");
+	return 0;
+fail:
+	log_printf("emmc: %s failed (%d)%s\n", on ? "sleep" : "wake", r, card.ready ? "" : ", card disabled");
+	return r;
+}
+
+/* While the watch sleeps, once nothing has used the card for a while. */
+void emmc_idle(void)
+{
+	if (card.ready && !card_asleep && time_ms() - last_io_ms >= EMMC_IDLE_MS && emmc_sleep(true))
+		last_io_ms = time_ms();
+}
+
+uint32_t emmc_next_ms(void)
+{
+	if (!card.ready || card_asleep)
+		return UINT32_MAX;
+	uint32_t gone = time_ms() - last_io_ms;
+	return gone >= EMMC_IDLE_MS ? 1 : EMMC_IDLE_MS - gone;
+}
+
 static int xfer(uint32_t lba, uint32_t n, void *buf, bool read)
 {
 	if (!card.ready)
 		return -1;
+	if (card_asleep && emmc_sleep(false))
+		return -1;
+	last_io_ms = time_ms();
 	if (!n || lba >= card.sectors || n > card.sectors - lba)
 		return -2;
 	uint8_t *p = buf;
@@ -620,7 +694,9 @@ static int xfer(uint32_t lba, uint32_t n, void *buf, bool read)
 
 int emmc_read(uint32_t lba, uint32_t n, void *buf)
 {
-	return xfer(lba, n, buf, true);
+	int r = xfer(lba, n, buf, true);
+	last_io_ms = time_ms();
+	return r;
 }
 
 static bool guarded(uint32_t lba, uint32_t n)
@@ -637,7 +713,9 @@ int emmc_write(uint32_t lba, uint32_t n, const void *buf)
 		log_printf("emmc: write of %lu blocks at %lu refused\n", n, lba);
 		return -10;
 	}
-	return xfer(lba, n, (void *)(uintptr_t)buf, false);
+	int r = xfer(lba, n, (void *)(uintptr_t)buf, false);
+	last_io_ms = time_ms();
+	return r;
 }
 
 void emmc_guard_clear(void)
