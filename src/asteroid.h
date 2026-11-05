@@ -200,6 +200,7 @@ const char *batt_status(void);
 #define RPM_SMPA 0x61706d73u
 #define RPM_VSA 0x00617376u
 bool rpm_init(void);
+uint32_t smem_hw_platform(void);
 int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp);
 int rpm_regulator_enable(uint32_t type, uint32_t id, bool on);
 int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv);

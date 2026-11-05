@@ -5,11 +5,11 @@
  * If the tree is missing, the size of the bootloader's splash, which is
  * the panel's, tells them apart.
  *
- * smelt's panel size goes first: its bootloader's way of choosing a tree
- * is not known, and one that falls back to another watch's tree must not
- * get smelt the other watch's charger setup. With neither a tree nor a
- * splash the first table is a guess, and board_assumed keeps its charger
- * setup from running. */
+ * smelt's SMEM platform, the one its trees ask for, and its panel size go
+ * first: its bootloader's way of choosing a tree is not known, and one
+ * that falls back to another watch's tree must not get smelt the other
+ * watch's charger setup. With neither a tree nor a splash the first table
+ * is a guess, and board_assumed keeps its charger setup from running. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -44,7 +44,11 @@ void board_detect(uint32_t machtype, const void *fdt)
 	uint32_t w, h;
 	display_splash_size(&w, &h);
 	const char *model = fdt_valid(fdt) ? fdt_prop(fdt, "/", "model", NULL) : NULL;
-	if (by_panel(w, h) == &board_smelt) {
+	uint32_t platform = smem_hw_platform();
+	if (platform == board_smelt.smem_platform) {
+		board = &board_smelt;
+		board_detected_by = "SMEM";
+	} else if (by_panel(w, h) == &board_smelt) {
 		board = &board_smelt;
 		board_detected_by = "panel size";
 	} else if (fdt_valid(fdt) && (board = by_compatible(fdt)))
@@ -56,6 +60,6 @@ void board_detect(uint32_t machtype, const void *fdt)
 		board_detected_by = "nothing, assumed";
 		board_assumed = true;
 	}
-	log_printf("board: %s by %s (tree %08lx %s, machtype %lu, panel %lux%lu)\n", board->name, board_detected_by,
-		   (uint32_t)(uintptr_t)fdt, model ? model : "none", machtype, w, h);
+	log_printf("board: %s by %s (tree %08lx %s, machtype %lu, panel %lux%lu, platform %lu)\n", board->name, board_detected_by,
+		   (uint32_t)(uintptr_t)fdt, model ? model : "none", machtype, w, h, platform);
 }

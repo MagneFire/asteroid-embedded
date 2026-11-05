@@ -10,6 +10,7 @@ static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
 const struct board board_smelt = {
 	.name = "smelt",
 	.compatible = "moto,smelt",
+	.smem_platform = 0x41,
 	.heart_rate = false,
 	/* NT35350 or NT35355 command-mode panel, a round 360 px with the
 	 * bottom cut off: 330 lines on the large watch, 325 on the small

@@ -11,7 +11,8 @@ const struct motor_driver motor_drv2605, motor_pm8226;
 const struct backlight_driver backlight_lm3535;
 const struct battery_driver battery_pmic, battery_max17050;
 
-static uint32_t splash_w, splash_h;
+static uint32_t splash_w, splash_h, platform = 8;
+uint32_t smem_hw_platform(void) { return platform; }
 void display_splash_size(uint32_t *w, uint32_t *h)
 {
 	*w = splash_w;
@@ -61,6 +62,13 @@ int main(int argc, char **argv)
 	CHECK(detect(360, 325, NULL) == &board_smelt);
 	/* smelt's panel beats another watch's tree. */
 	CHECK(detect(360, 330, sturgeon) == &board_smelt);
+	/* So does its SMEM platform, whatever else comes. */
+	platform = 0x41;
+	CHECK(detect(0, 0, sturgeon) == &board_smelt && !board_assumed);
+	CHECK(detect(0, 0, NULL) == &board_smelt && !board_assumed);
+	platform = 0;
+	CHECK(detect(400, 400, sturgeon) == &board_sturgeon);
+	platform = 8;
 	/* A guess stays a guess. */
 	CHECK(detect(0, 0, NULL) == &board_sturgeon && board_assumed);
 	CHECK(detect(123, 456, NULL) == &board_sturgeon && board_assumed);

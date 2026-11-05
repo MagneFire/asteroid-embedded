@@ -104,6 +104,8 @@ extern const struct backlight_driver backlight_lm3535;
 
 struct board {
 	const char *name, *compatible;
+	/* SMEM's hardware platform, where it is enough to name the watch. */
+	uint32_t smem_platform;
 	bool heart_rate;
 
 	struct {

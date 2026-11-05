@@ -48,6 +48,18 @@ static void *smem_item(unsigned id, uint32_t *size)
 	return (void *)(uintptr_t)(base + e->offset);
 }
 
+/* The hardware platform in the chip's description: the third word after
+ * the 32-byte build id. 0 if there is none. */
+#define SMEM_SOCINFO		137
+#define SOCINFO_HW_PLATFORM	13
+
+uint32_t smem_hw_platform(void)
+{
+	uint32_t size = 0;
+	volatile uint32_t *info = smem_item(SMEM_SOCINFO, &size);
+	return info && size > SOCINFO_HW_PLATFORM * 4 ? info[SOCINFO_HW_PLATFORM] : 0;
+}
+
 static void notify(void)
 {
 	dsb();
