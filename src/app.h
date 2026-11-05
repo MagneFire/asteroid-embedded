@@ -9,6 +9,7 @@ struct app_caps {
 };
 
 void app_init(const struct app_caps *caps);
+void app_open(int app);
 void app_start_poll(uint32_t now);
 void app_sensors(uint32_t now);
 void app_flashlight(uint32_t now);
