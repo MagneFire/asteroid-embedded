@@ -1,7 +1,9 @@
 /* Calls into the secure world (TrustZone) in the legacy register
  * convention: r0 carries service, command and argument count, r1 points
  * at a context word, r2/r3 are the arguments, r0 returns the result. */
+#include <stddef.h>
 #include "asteroid.h"
+#include "config.h"
 
 #define SCM_CLASS_REGISTER	(0x2 << 8)
 #define SCM_MASK_IRQS		BIT(5)
@@ -38,6 +40,8 @@ int scm_wdog_debug_disable(void)
 #define SCM_SVC_MP		0x0c
 #define SCM_RESTORE_SEC_CFG	0x02
 #define SCM_INTERRUPTED		1
+#define SCM_WAIT_MS		100
+#define SCM_RESP_HDR		12
 
 static struct {
 	uint32_t len, buf_offset, resp_hdr_offset, id;
@@ -54,16 +58,38 @@ int scm_restore_sec_cfg(uint32_t device)
 	scm_cmd = (typeof(scm_cmd)){ .len = sizeof scm_cmd, .buf_offset = 16, .resp_hdr_offset = 24,
 				     .id = SCM_SVC_MP << 10 | SCM_RESTORE_SEC_CFG, .req = { device, 0 } };
 	dcache_clean_invalidate_range(&scm_cmd, sizeof scm_cmd);
-	uint32_t context = 0;
+#if defined(TEST_SCM_FAIL)
+	static bool injected;
+	if (!injected && time_ms() > 60000) {
+		injected = true;
+		return -1;
+	}
+#endif
+	uint32_t context = 0, t0 = time_ms();
 	register uint32_t r0 __asm__("r0");
 	do {
 		register uint32_t r1 __asm__("r1") = (uint32_t)(uintptr_t)&context;
 		register uint32_t r2 __asm__("r2") = (uint32_t)(uintptr_t)&scm_cmd;
 		r0 = SCM_INTERRUPTED;
 		__asm__ volatile("smc #0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "memory");
+		if (r0 == SCM_INTERRUPTED && time_ms() - t0 > SCM_WAIT_MS)
+			return -2;
 	} while (r0 == SCM_INTERRUPTED);
-	dcache_invalidate_range(&scm_cmd, sizeof scm_cmd);
-	if (r0 || !scm_cmd.is_complete || scm_cmd.resp)
-		return r0 ? (int)r0 : -1;
-	return 0;
+	if (r0)
+		return (int)r0;
+	const volatile uint32_t *complete = &scm_cmd.is_complete;
+	for (;;) {
+		dcache_invalidate_range(&scm_cmd, sizeof scm_cmd);
+		if (*complete)
+			break;
+		if (time_ms() - t0 > SCM_WAIT_MS)
+			return -3;
+	}
+	/* The response follows its header unless the secure world says
+	 * otherwise. */
+	uint32_t at = offsetof(typeof(scm_cmd), resp_len) +
+		      (scm_cmd.resp_buf_offset ? scm_cmd.resp_buf_offset : SCM_RESP_HDR);
+	if (at % 4 || at + 4 > sizeof scm_cmd)
+		return -4;
+	return *(const uint32_t *)((const char *)&scm_cmd + at) ? -1 : 0;
 }
