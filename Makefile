@@ -20,7 +20,7 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/present.c src/sensors/steps.c src/sensors/hub.c src/sensors/hub_em7184.c \
         src/input/touch.c src/input/touch_it7260.c src/input/haptics.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
-        src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
+        src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/max17050.c src/soc/gauge_max17050.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
         src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c \
@@ -159,6 +159,10 @@ $(BUILD)/test/sched_test: tests/sched_test.c src/sched.c $(wildcard tests/*.h sr
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sched.c -o $@
 
+$(BUILD)/test/gauge_test: tests/gauge_test.c src/soc/max17050.c $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< src/soc/max17050.c -o $@
+
 $(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/lib/fdt.c -o $@
@@ -171,7 +175,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -181,6 +185,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/actions_test
 	$(BUILD)/test/power_test
 	$(BUILD)/test/sched_test
+	$(BUILD)/test/gauge_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb
 	python3 tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test

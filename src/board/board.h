@@ -79,7 +79,7 @@ struct backlight_driver {
 /* What feeds the battery and how full it is: the charger's setup and
  * upkeep, the state of charge in percent, whether it is charging,
  * whether a cable is in (a plugged-in interrupt comes with cable_irq),
- * the cell's voltage and current (positive while discharging, the
+ * whether that means USB if it does not always, the cell's voltage and current (positive while discharging, the
  * average since the previous call) and a line for the log. */
 struct battery_driver {
 	void (*init)(void);
@@ -87,6 +87,7 @@ struct battery_driver {
 	uint32_t (*percent)(void);
 	bool (*charging)(void);
 	bool (*cable)(void);
+	bool (*usb)(void);
 	void (*cable_irq_init)(void);
 	bool (*cable_irq)(void);
 	uint32_t (*mv)(void);
@@ -95,7 +96,7 @@ struct battery_driver {
 	const char *(*status)(void);
 };
 
-extern const struct battery_driver battery_pmic;
+extern const struct battery_driver battery_pmic, battery_max17050;
 extern const struct touch_driver touch_rmi4, touch_it7260;
 extern const struct hub_driver hub_stm32, hub_em7184;
 extern const struct motor_driver motor_drv2605, motor_pm8226;
@@ -140,6 +141,12 @@ struct board {
 	uint8_t unused_ldos[4];
 	const struct board_battery *battery;
 	const struct battery_driver *battery_driver;
+	/* A MAX17050 gauge, the wireless pad line (low on the pad) and the
+	 * receiver's charge output. */
+	struct {
+		struct board_i2c i2c;
+		uint8_t dock, dock_mpm, charge_n;
+	} gauge;
 
 	const struct touch_driver *touch;
 	struct {

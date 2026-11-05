@@ -33,6 +33,10 @@ const struct board board_smelt = {
 	},
 	.pmic_mpm = 62,
 	.usb_phy_init = { 0x44, 0x68, 0x24, 0x13 },
+	.rsense_uohm = 10000,
+	/* MAX17050 on BLSP1 QUP3, pad detect on gpio 54 (MPM pin 25). */
+	.battery_driver = &battery_max17050,
+	.gauge = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x36 }, .dock = 54, .dock_mpm = 25, .charge_n = 94 },
 	/* The PM8226 vibrator. */
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2300 },

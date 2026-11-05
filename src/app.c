@@ -111,7 +111,7 @@ static bool notify_run(uint32_t now)
 /* Only a cable plugged in raises an interrupt. */
 static bool cable_run(uint32_t now)
 {
-	usb_cable(batt_cable(), false);
+	usb_cable(batt_usb(), false);
 	sched_after(&cable_task, now, 1000);
 	return false;
 }
@@ -247,7 +247,7 @@ void app_cable(uint32_t now)
 {
 	if (batt_cable_irq() && batt_cable()) {
 		log_printf("usb: cable plugged in\n");
-		usb_cable(true, true);
+		usb_cable(batt_usb(), true);
 		power_charger_plugged(now);
 	}
 }

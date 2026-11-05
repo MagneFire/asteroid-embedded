@@ -189,6 +189,7 @@ void batt_poll(void);
 uint32_t batt_percent(void);
 bool batt_charging(void);
 bool batt_cable(void);
+bool batt_usb(void);
 void batt_cable_irq_init(void);
 bool batt_cable_irq(void);
 uint32_t batt_mv(void);

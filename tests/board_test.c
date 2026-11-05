@@ -8,7 +8,7 @@
 const struct touch_driver touch_rmi4, touch_it7260;
 const struct hub_driver hub_stm32, hub_em7184;
 const struct motor_driver motor_drv2605, motor_pm8226;
-const struct battery_driver battery_pmic;
+const struct battery_driver battery_pmic, battery_max17050;
 
 static uint32_t splash_w, splash_h;
 void display_splash_size(uint32_t *w, uint32_t *h)
@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 	CHECK(detect(123, 456, NULL) == &board_sturgeon && board_assumed);
 
 	/* The PMIC charger stays off on smelt. */
-	CHECK(board_smelt.battery_driver != &battery_pmic);
+	CHECK(board_smelt.battery_driver == &battery_max17050);
 	CHECK(!board_smelt.battery);
 	CHECK(!board_smelt.chg.vdd_max_mv && !board_smelt.chg.ibat_max_ma);
 	CHECK(board_sturgeon.battery_driver == &battery_pmic);

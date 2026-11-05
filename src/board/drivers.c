@@ -26,6 +26,7 @@ void batt_poll(void)
 uint32_t batt_percent(void) { return BATT(percent) ? board->battery_driver->percent() : 50; }
 bool batt_charging(void) { return BATT(charging) && board->battery_driver->charging(); }
 bool batt_cable(void) { return BATT(cable) && board->battery_driver->cable(); }
+bool batt_usb(void) { return BATT(usb) ? board->battery_driver->usb() : batt_cable(); }
 void batt_cable_irq_init(void)
 {
 	if (BATT_SETUP(cable_irq_init))
