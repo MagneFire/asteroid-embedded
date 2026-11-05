@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Wrap a flat binary, an optional ramdisk and a device-tree table into an
-Android boot image (header version 0) the way the Qualcomm bootloader
-expects it."""
+"""Wrap a flat binary, an optional ramdisk and an optional device-tree table
+into an Android boot image (header version 0) the way the Qualcomm bootloader
+expects it. Without a table the bootloader looks for trees after the kernel
+(see appenddtb.py)."""
 import argparse, hashlib, struct
 
 PAGE = 2048
@@ -13,7 +14,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--kernel", required=True)
     p.add_argument("--ramdisk")
-    p.add_argument("--dt", required=True)
+    p.add_argument("--dt")
     p.add_argument("--output", "-o", required=True)
     p.add_argument("--kernel-addr", type=lambda s: int(s, 0), default=0x00008000)
     p.add_argument("--ramdisk-addr", type=lambda s: int(s, 0), default=0x02000000)
@@ -21,7 +22,7 @@ def main():
     p.add_argument("--cmdline", default="")
     a = p.parse_args()
     kernel = open(a.kernel, "rb").read()
-    dt = open(a.dt, "rb").read()
+    dt = open(a.dt, "rb").read() if a.dt else b""
     ramdisk = open(a.ramdisk, "rb").read() if a.ramdisk else b""
     sha = hashlib.sha1()
     for blob in (kernel, ramdisk, b"", dt):

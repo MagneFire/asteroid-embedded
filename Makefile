@@ -21,7 +21,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
         src/input/touch.c src/input/touch_it7260.c src/input/haptics.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
         src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
-        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c \
+        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c \
         src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
@@ -55,7 +55,7 @@ UI_LIB  := ui/target/armv7a-none-eabihf/release/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
-all: $(BUILD)/asteroid.img
+all: $(BUILD)/asteroid.img $(BUILD)/asteroid-smelt.img
 
 $(BUILD)/gitrev.h: FORCE
 	@mkdir -p $(BUILD)
@@ -104,13 +104,23 @@ $(BUILD)/%.dtb: dts/%.dts
 	$(DTC) -q -I dts -O dtb -o $@ $<
 
 # One tree per watch: each bootloader picks the one whose board-id it has.
-DTBS := $(patsubst dts/%.dts,$(BUILD)/%.dtb,$(wildcard dts/*.dts))
+# A new tree goes last, so the entries before it stay as they are.
+DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb
 
 $(BUILD)/qcdt.img: $(DTBS) tools/qcdt.py
 	python3 tools/qcdt.py -o $@ $(DTBS)
 
 $(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt.img tools/mkbootimg.py
 	python3 tools/mkbootimg.py --kernel $(BUILD)/asteroid.bin --dt $(BUILD)/qcdt.img -o $@
+
+# smelt's own images have no table and the tree behind the kernel, and its
+# bootloader's handling of a table is not known yet: this one is the same
+# firmware in that form.
+$(BUILD)/asteroid-smelt.bin: $(BUILD)/asteroid.bin $(BUILD)/smelt.dtb tools/appenddtb.py
+	python3 tools/appenddtb.py -o $@ $< $(BUILD)/smelt.dtb
+
+$(BUILD)/asteroid-smelt.img: $(BUILD)/asteroid-smelt.bin tools/mkbootimg.py
+	python3 tools/mkbootimg.py --kernel $< -o $@
 
 run: $(BUILD)/asteroid.img
 	python3 tools/run.py $(RUNFLAGS)
@@ -149,6 +159,10 @@ $(BUILD)/test/sched_test: tests/sched_test.c src/sched.c $(wildcard tests/*.h sr
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sched.c -o $@
 
+$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/lib/fdt.c -o $@
+
 $(BUILD)/test/small.ext4: tests/data/small.ext4.gz
 	@mkdir -p $(dir $@)
 	gunzip -c $< > $@
@@ -157,7 +171,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/small.ext4
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -167,6 +181,8 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/actions_test
 	$(BUILD)/test/power_test
 	$(BUILD)/test/sched_test
+	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb
+	python3 tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test
 	$(BUILD)/test/adb_test
 	$(BUILD)/test/parser_test $(BUILD)/test/small.ext4

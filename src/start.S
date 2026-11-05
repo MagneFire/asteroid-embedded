@@ -16,6 +16,10 @@ _start:
         nop
         ldr     pc, =irq_entry
         ldr     pc, =fiq_entry
+        /* Words 9 to 11 of a zImage header, for tools/appenddtb.py: a
+         * bootloader that takes its device tree from behind the kernel
+         * finds it through the last one. */
+        .space  16
 
         .text
 reset:

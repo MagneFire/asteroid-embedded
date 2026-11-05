@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Build a QCDT table (the "dt" blob of a Qualcomm boot image) from compiled
 device trees: a header, one entry per (msm-id, board-id) pair read from the
-tree's qcom,msm-id and qcom,board-id properties, then the trees themselves."""
+tree's qcom,msm-id and qcom,board-id properties, then the trees themselves.
+A tree without a board-id has three cells per msm-id, <platform variant rev>,
+and one entry for each with subtype 0. Entries and trees keep the order the
+trees are given in, so adding a tree at the end moves nothing before it."""
 import argparse, struct
 
 PAGE = 2048
@@ -35,6 +38,15 @@ def fdt_props(blob, wanted):
 def words(b):
     return list(struct.unpack(">%dI" % (len(b) // 4), b))
 
+def tree_entries(props, idx):
+    msm = words(props["qcom,msm-id"])
+    if "qcom,board-id" not in props:
+        assert len(msm) % 3 == 0, "msm-id without a board-id takes three cells"
+        return [(msm[i], msm[i + 1], 0, msm[i + 2], idx) for i in range(0, len(msm), 3)]
+    board = words(props["qcom,board-id"])
+    return [(msm[i], board[j], board[j + 1], msm[i + 1], idx)
+            for i in range(0, len(msm), 2) for j in range(0, len(board), 2)]
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("-o", "--output", required=True)
@@ -45,13 +57,8 @@ def main():
     for path in a.dtb:
         blob = open(path, "rb").read()
         props = fdt_props(blob, {"qcom,msm-id", "qcom,board-id"})
-        msm = words(props["qcom,msm-id"])
-        board = words(props["qcom,board-id"])
-        idx = len(blobs)
+        entries += tree_entries(props, len(blobs))
         blobs.append(blob)
-        for i in range(0, len(msm), 2):
-            for j in range(0, len(board), 2):
-                entries.append((msm[i], board[j], board[j + 1], msm[i + 1], idx))
     header = struct.pack("<4sII", b"QCDT", 2, len(entries))
     table_size = len(header) + len(entries) * 24 + 4
     offset = (table_size + PAGE - 1) & ~(PAGE - 1)

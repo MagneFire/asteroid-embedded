@@ -106,6 +106,7 @@ struct board {
 
 	struct {
 		uint16_t width, height;
+		uint16_t height_alt;	/* a second size of the same panel, or 0 */
 		uint16_t lines;		/* with the porches */
 		uint8_t hz, te_gpio;
 		bool flip_ud, round;
@@ -181,10 +182,12 @@ struct board {
 			       (ibat_safe) / 50 <= 0x3f && (ibat_max) <= (ibat_safe),                             \
 		       "charger current off the 50 mA steps")
 
-extern const struct board board_sturgeon, board_sparrow;
+extern const struct board board_sturgeon, board_sparrow, board_smelt;
 /* The watch this is, set by board_detect before anything uses it. */
 extern const struct board *board;
 extern const char *board_detected_by;
+/* Nothing named the watch and board is only a guess. */
+extern bool board_assumed;
 /* Picks the watch from what the bootloader passed in r1 and r2. */
 void board_detect(uint32_t machtype, const void *fdt);
 #endif

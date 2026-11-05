@@ -1,0 +1,39 @@
+/* Moto 360 2015 (smelt). The PM8226 charger and battery monitor are not
+ * used on this watch: the vendor disables them, a wireless receiver
+ * charges the cell and a separate gauge measures it, so nothing here may
+ * point at battery_pmic or give the charger limits. */
+#include "asteroid.h"
+
+/* The Bluetooth patch, GPU microcode and the rest are all under vendor. */
+static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
+
+const struct board board_smelt = {
+	.name = "smelt",
+	.compatible = "moto,smelt",
+	.heart_rate = false,
+	/* NT35350 or NT35355 command-mode panel, a round 360 px with the
+	 * bottom cut off: 330 lines on the large watch, 325 on the small
+	 * one, 401 with the porches at 60 Hz, TE on gpio 24. The idle
+	 * commands differ between the three panels and nothing here tells
+	 * them apart yet, so the always-on face runs in normal mode. */
+	.panel = {
+		.width = 360, .height = 330, .height_alt = 325,
+		.lines = 401, .hz = 60, .te_gpio = 24, .flip_ud = false, .round = true,
+	},
+	.firmware_dirs = firmware_dirs,
+	/* BCM43430A1 on BLSP1 UART6 (gpio 20-23, function 2), REG_ON on gpio
+	 * 26, host wake on gpio 27 (MPM pin 10), device wake on gpio 30.
+	 * Both wake lines are active low. Sleep mode as sturgeon's, which
+	 * has the same polarity. */
+	.bt = {
+		.uart = 6, .gpio = 20, .func = 2, .dev_wake = 30, .host_wake = 27, .reg_on = 26, .mpm = 10,
+		.dev_wake_active = false, .host_wake_active = false,
+		.patch = "BCM43430A1_001.002.009.0031.0000_TEST.hcd",
+		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
+	},
+	.pmic_mpm = 62,
+	.usb_phy_init = { 0x44, 0x68, 0x24, 0x13 },
+	/* The PM8226 vibrator. */
+	.motor = &motor_pm8226,
+	.motor_pins = { .vib_mv = 2300 },
+};

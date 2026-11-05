@@ -7,17 +7,20 @@
 #include "sensors/hub.h"
 
 #define BATT(fn) (board->battery_driver && board->battery_driver->fn)
+/* The calls that write to the charger, which a guessed watch might not
+ * have wired the way its table says. */
+#define BATT_SETUP(fn) (!board_assumed && BATT(fn))
 #define TOUCH(fn) (board->touch && board->touch->fn)
 #define HUB(fn) (board->hub && board->hub->fn)
 
 void batt_init(void)
 {
-	if (BATT(init))
+	if (BATT_SETUP(init))
 		board->battery_driver->init();
 }
 void batt_poll(void)
 {
-	if (BATT(poll))
+	if (BATT_SETUP(poll))
 		board->battery_driver->poll();
 }
 uint32_t batt_percent(void) { return BATT(percent) ? board->battery_driver->percent() : 50; }
@@ -25,7 +28,7 @@ bool batt_charging(void) { return BATT(charging) && board->battery_driver->charg
 bool batt_cable(void) { return BATT(cable) && board->battery_driver->cable(); }
 void batt_cable_irq_init(void)
 {
-	if (BATT(cable_irq_init))
+	if (BATT_SETUP(cable_irq_init))
 		board->battery_driver->cable_irq_init();
 }
 bool batt_cable_irq(void) { return BATT(cable_irq) && board->battery_driver->cable_irq(); }

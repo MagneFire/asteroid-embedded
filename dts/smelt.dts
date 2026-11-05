@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "Moto 360 2015";
+	compatible = "moto,smelt", "qcom,apq8026";
+	/* Every board revision the vendor's trees name, as <chip platform
+	 * revision>; there is no board-id. All of them get this one tree. */
+	qcom,msm-id = <199 0x41 0x0000>, <199 0x41 0x0100>, <199 0x41 0x0204>,
+		      <199 0x41 0x0300>, <199 0x41 0x0304>, <199 0x41 0x0307>,
+		      <199 0x41 0x0308>, <199 0x41 0x0404>, <199 0x41 0x0407>,
+		      <199 0x41 0x040a>, <199 0x41 0x0507>, <199 0x41 0x0704>,
+		      <199 0x41 0x0707>, <199 0x41 0x070a>, <199 0x41 0x0800>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};

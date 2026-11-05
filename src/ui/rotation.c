@@ -31,6 +31,8 @@ static float shown(uint32_t now)
 
 void rotation_set(int degrees, uint32_t now)
 {
+	if (!size)
+		return;
 	if (held >= 0)
 		degrees = held;
 	degrees = ((degrees % 360) + 360) % 360;

@@ -15,7 +15,7 @@ static bool opened;
 static uint8_t pool[POOL_SIZE] __attribute__((aligned(64)));
 static uint32_t used;
 static unsigned nfiles;
-static struct { char name[40]; uint32_t off, size; } files[MAX_FILES];
+static struct { char name[48]; uint32_t off, size; } files[MAX_FILES];
 
 static int open_system(void)
 {
