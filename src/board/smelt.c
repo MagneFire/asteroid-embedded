@@ -41,6 +41,10 @@ const struct board board_smelt = {
 	 * on gpio 16. */
 	.touch = &touch_mxt,
 	.touch_pins = { .i2c = { .qup = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x4a }, .irq = 17, .reset = 16, .mpm = 8 },
+	/* M4 hub on BLSP1 QUP2, wake line on gpio 5 (MPM pin 5), reset on
+	 * gpio 62, boot0 on gpio 109. */
+	.hub = &hub_m4,
+	.hub_pins = { .i2c = { .qup = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x43 }, .irq = 5, .reset = 62, .boot0 = 109, .mpm = 5 },
 	/* LM3535 on BLSP1 QUP3 next to the gauge, enable on gpio 35. */
 	.backlight = &backlight_lm3535,
 	.backlight_pins = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x38 }, .enable = 35 },
