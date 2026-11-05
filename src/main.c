@@ -156,26 +156,8 @@ void main(uint32_t machtype, const void *fdt)
 			reboot();
 		}
 #endif
-		uint32_t app_next = 1000;
-		if (!awake) {
+		if (!awake)
 			emmc_idle();
-			uint32_t card_next = emmc_next_ms();
-			app_next = stats_next_ms();
-			uint32_t app = clockapps_next_ms(time_ms());
-			if (app < app_next)
-				app_next = app;
-			uint32_t tp = have_touch ? touch_next_ms() : UINT32_MAX;
-			if (tp < app_next)
-				app_next = tp;
-			uint32_t un = usb_next_ms();
-			if (un < app_next)
-				app_next = un;
-			if (card_next < app_next)
-				app_next = card_next;
-			uint32_t ns = power_next_ms();
-			if (ns < app_next)
-				app_next = ns;
-		}
-		power_idle(app_next);
+		power_idle(awake ? 1000 : app_next_ms());
 	}
 }
