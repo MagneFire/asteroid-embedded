@@ -155,13 +155,21 @@ static void ambient_draw(void)
 	display_flip();
 }
 
-/* Asleep in always-on off the charger, the end of the nightstand delay
- * is a deadline: always-on then ends if the normal setting has it off.
- * The other way round, a screen that is off stays off until the next
- * sleep. */
+/* The panel is on, the face goes up at its own brightness. */
+static void ambient_enter(void)
+{
+	ui_set_ambient(true);
+	ambient_draw();
+	display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
+	display_idle(true);
+	ambient = true;
+}
+
+/* Asleep off the charger, the end of the nightstand delay is a deadline
+ * if the normal setting differs from what is on screen. */
 uint32_t power_next_ms(void)
 {
-	if (policy.awake || !ambient || setting_get(SETTING_AOD) || pmic_usb_present())
+	if (policy.awake || ambient == (have_ui && setting_get(SETTING_AOD)) || pmic_usb_present())
 		return UINT32_MAX;
 	return nightstand_next_ms(&stand, time_ms(), nightstand_delay_ms());
 }
@@ -186,12 +194,8 @@ enum power_change power_update(uint32_t *now_p)
 			stack_sleep(now);
 			ui_hide_notification();
 		}
-		if (ambient) {
-			ui_set_ambient(true);
-			ambient_draw();
-			display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
-			display_idle(true);
-		}
+		if (ambient)
+			ambient_enter();
 		timer_set_period(1000);
 		cpu_clock_slow(true);
 		policy.awake = false;
@@ -216,14 +220,25 @@ enum power_change power_update(uint32_t *now_p)
 		change = POWER_WOKE;
 	}
 	policy.sleep_request = policy.wake_request = false;
-	/* Asleep on the charger the nightstand setting picked always-on;
-	 * once off the charger the normal one applies. */
-	if (ambient && !policy.awake && !aod_wanted()) {
-		cpu_clock_slow(false);
-		ambient_leave();
-		display_sleep();
-		cpu_clock_slow(true);
-		log_printf("power: always-on off\n");
+	/* Asleep on the charger the nightstand setting picked; once off the
+	 * charger the normal one applies, either way. The picture stays off
+	 * until the face is drawn, or the last screen would flash up. */
+	if (!policy.awake) {
+		enum aod_change aod = power_policy_aod_change(ambient, have_ui && aod_wanted());
+		if (aod != AOD_KEEP)
+			cpu_clock_slow(false);
+		if (aod == AOD_LEAVE) {
+			ambient_leave();
+			display_sleep();
+			log_printf("power: always-on off\n");
+		} else if (aod == AOD_ENTER) {
+			display_wake_hidden();
+			ambient_enter();
+			display_show();
+			log_printf("power: always-on on\n");
+		}
+		if (aod != AOD_KEEP)
+			cpu_clock_slow(true);
 	}
 	if (ambient && !policy.awake && pmic_rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);

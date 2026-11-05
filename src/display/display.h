@@ -22,6 +22,8 @@ uint32_t display_timeouts(void);
 void display_set_brightness(uint8_t level);
 void display_sleep(void);
 void display_wake(void);
+void display_wake_hidden(void);
+void display_show(void);
 void display_idle(bool on);
 bool display_rest(void);
 void display_active(void);

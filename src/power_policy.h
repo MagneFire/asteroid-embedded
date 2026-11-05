@@ -32,6 +32,12 @@ enum power_step power_policy_step(struct power_policy *p, bool have_display, uin
 /* Which setting picks the always-on face. */
 bool power_policy_aod(bool nightstand, bool nightstand_aod, bool aod);
 
+enum aod_change { AOD_KEEP, AOD_ENTER, AOD_LEAVE };
+
+/* Asleep, what the always-on face has to do once the wanted state is
+ * known. */
+enum aod_change power_policy_aod_change(bool ambient, bool wanted);
+
 enum touch_use { TOUCH_USE, TOUCH_DROP, TOUCH_WAKE };
 
 /* What a touch does: asleep it may wake the watch, and that finger is

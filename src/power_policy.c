@@ -47,6 +47,13 @@ bool power_policy_aod(bool nightstand, bool nightstand_aod, bool aod)
 	return nightstand ? nightstand_aod : aod;
 }
 
+enum aod_change power_policy_aod_change(bool ambient, bool wanted)
+{
+	if (ambient == wanted)
+		return AOD_KEEP;
+	return wanted ? AOD_ENTER : AOD_LEAVE;
+}
+
 enum touch_use power_policy_touch(bool *wake_touch, bool awake, bool tap_wakes, bool down, bool up)
 {
 	if (!awake) {

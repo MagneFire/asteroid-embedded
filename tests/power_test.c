@@ -92,6 +92,25 @@ static void aod(void)
 	}
 }
 
+/* Asleep on the charger, then off it, for each pair of settings: what
+ * the screen does on the way, with a 5 s nightstand delay. */
+static void unplug(void)
+{
+	for (int m = 0; m < 4; m++) {
+		bool ns_aod = m & 1, normal = m & 2, ambient = ns_aod;
+		struct nightstand n = { 0 };
+		nightstand_step(&n, true, 0, 5000);
+		CHECK(power_policy_aod_change(ambient, power_policy_aod(true, ns_aod, normal)) == AOD_KEEP);
+		bool attached = nightstand_step(&n, false, 1000, 5000);
+		CHECK(power_policy_aod_change(ambient, power_policy_aod(attached, ns_aod, normal)) == AOD_KEEP);
+		CHECK(nightstand_next_ms(&n, 1000, 5000) == 5000);
+		attached = nightstand_step(&n, false, 6000, 5000);
+		CHECK(!attached);
+		enum aod_change c = power_policy_aod_change(ambient, power_policy_aod(attached, ns_aod, normal));
+		CHECK(c == (ns_aod == normal ? AOD_KEEP : normal ? AOD_ENTER : AOD_LEAVE));
+	}
+}
+
 static void touches(void)
 {
 	bool held = false;
@@ -110,6 +129,7 @@ static void touches(void)
 int main(void)
 {
 	aod();
+	unplug();
 	touches();
 	nightstand();
 	timeout();

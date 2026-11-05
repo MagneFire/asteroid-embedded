@@ -427,13 +427,27 @@ void display_sleep(void)
 	panel_asleep = true;
 }
 
-void display_wake(void)
+/* Out of sleep with the picture still off, so a new frame can be drawn
+ * before display_show puts it on screen. */
+void display_wake_hidden(void)
 {
 	display_active();
 	panel_asleep = false;
 	dsi_dcs_write(0x11, NULL, 0);
 	delay_ms(120);
+}
+
+void display_show(void)
+{
+	display_active();
+	pp_wait();
 	dsi_dcs_write(0x29, NULL, 0);
+}
+
+void display_wake(void)
+{
+	display_wake_hidden();
+	display_show();
 }
 
 /* Idle mode keeps the panel showing its memory with fewer colours and
