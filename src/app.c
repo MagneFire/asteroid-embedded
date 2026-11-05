@@ -23,6 +23,7 @@
 #include "power.h"
 #include "frame.h"
 #include "present.h"
+#include "sched.h"
 #include "stats.h"
 #include "actions.h"
 #include "app.h"
@@ -37,15 +38,17 @@ static struct app_caps caps;
 #define have_hub caps.hub
 
 static bool steps_awake, was_lit, was_diamonds, key_was, wake_touch;
-static uint32_t shown_bpm, alarm_t, bt_start_t, key_down_t, down_t;
+static uint32_t shown_bpm, key_down_t, down_t;
 static int down_x, down_y;
 static struct orient orient;
+
+static void tasks_init(uint32_t now);
 
 void app_init(const struct app_caps *c)
 {
 	caps = *c;
-	bt_start_t = time_ms() + BT_START_MS;
 	orient_reset(&orient);
+	tasks_init(time_ms());
 }
 
 void app_open(int app)
@@ -69,23 +72,83 @@ void settings_changed(void)
 }
 
 /* Some time after boot, so the first frames are not held up. */
-void app_start_poll(uint32_t now)
+static bool start_run(uint32_t now)
 {
-	if (bt_start_t && now - bt_start_t < 0x80000000u) {
-		bt_start_t = 0;
-		weather_load();
-		if (have_hub)
-			steps_init();
-		if (setting_get(SETTING_BLUETOOTH))
-			action_bluetooth_start();
-		if (have_display)
-			power_set_brightness();
-		if (have_ui) {
-			present_settings();
-			ui_set_build(build_id);
-			clockapps_show_alarms();
-		}
+	weather_load();
+	if (have_hub)
+		steps_init();
+	if (setting_get(SETTING_BLUETOOTH))
+		action_bluetooth_start();
+	if (have_display)
+		power_set_brightness();
+	if (have_ui) {
+		present_settings();
+		ui_set_build(build_id);
+		clockapps_show_alarms();
 	}
+	return false;
+}
+
+/* Work that only has to happen now and then, lazily so it adds no
+ * wakeups: asleep it runs when something else wakes the watch. The
+ * charger keeps its own 1 s, so it is asked more often than that. */
+static struct sched_task start_task, charger_task, notify_task, cable_task, settings_task, weather_task;
+
+static bool charger_run(uint32_t now)
+{
+	pmic_charger_poll();
+	bms_poll();
+	sched_after(&charger_task, now, 500);
+	return false;
+}
+
+static bool notify_run(uint32_t now)
+{
+	notify_tick(pmic_rtc_read());
+	sched_after(&notify_task, now, 1000);
+	return false;
+}
+
+/* Only a cable plugged in raises an interrupt. */
+static bool cable_run(uint32_t now)
+{
+	usb_cable(pmic_usb_present(), false);
+	sched_after(&cable_task, now, 1000);
+	return false;
+}
+
+static bool settings_run(uint32_t now)
+{
+	settings_poll(now);
+	sched_after(&settings_task, now, 1000);
+	return false;
+}
+
+static bool weather_run(uint32_t now)
+{
+	present_weather();
+	sched_after(&weather_task, now, 1000);
+	return false;
+}
+
+static void tasks_init(uint32_t now)
+{
+	static const struct { struct sched_task *t; const char *name; bool (*run)(uint32_t); } list[] = {
+		{ &charger_task, "charger", charger_run }, { &notify_task, "notify", notify_run },
+		{ &cable_task, "cable", cable_run }, { &settings_task, "settings", settings_run },
+		{ &weather_task, "weather", weather_run },
+	};
+	for (unsigned i = 0; i < ARRAY_SIZE(list); i++) {
+		list[i].t->name = list[i].name;
+		list[i].t->run = list[i].run;
+		list[i].t->lazy = true;
+		sched_add(list[i].t);
+		sched_at(list[i].t, now);
+	}
+	start_task.name = "start";
+	start_task.run = start_run;
+	sched_add(&start_task);
+	sched_after(&start_task, now, BT_START_MS);
 }
 
 void app_sensors(uint32_t now)
@@ -181,18 +244,12 @@ void app_touch(uint32_t now)
 	}
 }
 
-/* Only a cable plugged in raises an interrupt, so its state is also
- * checked once a second. */
 void app_cable(uint32_t now)
 {
-	static uint32_t usb_check_t;
 	if (pmic_usb_irq() && pmic_usb_present()) {
 		log_printf("usb: cable plugged in\n");
 		usb_cable(true, true);
 		power_charger_plugged(now);
-	} else if (now - usb_check_t >= 1000) {
-		usb_check_t = now;
-		usb_cable(pmic_usb_present(), false);
 	}
 }
 
@@ -214,10 +271,6 @@ void app_key(uint32_t now)
 
 void app_tick(uint32_t now)
 {
-	if (now - alarm_t >= 1000) {
-		alarm_t = now;
-		notify_tick(pmic_rtc_read());
-	}
 	if (clockapps_tick(now) && !power_awake())
 		power_request(false);
 	if (clockapps_ringing())
@@ -335,6 +388,7 @@ uint32_t app_next_ms(void)
 		usb_next_ms(),
 		emmc_next_ms(),
 		power_next_ms(),
+		sched_next_ms(time_ms()),
 	}, min = UINT32_MAX;
 	for (unsigned i = 0; i < ARRAY_SIZE(next); i++)
 		if (next[i] < min)

@@ -20,6 +20,7 @@
 #include "frame.h"
 #include "stats.h"
 #include "app.h"
+#include "sched.h"
 #include "present.h"
 #include "config.h"
 #include "storage/emmc.h"
@@ -126,9 +127,7 @@ void main(uint32_t machtype, const void *fdt)
 		bt_poll();
 		screenshot_poll();
 		weather_poll();
-		app_start_poll(now);
-		pmic_charger_poll();
-		bms_poll();
+		sched_run(now);
 		app_sensors(now);
 		app_flashlight(now);
 		if (have_haptics)
@@ -141,8 +140,6 @@ void main(uint32_t machtype, const void *fdt)
 		app_tick(now);
 		app_ui_events(now);
 		app_after_events(now);
-		present_weather();
-		settings_poll(now);
 		app_console_settings();
 		app_power_changed(power_update(&now));
 		if (have_display && power_awake())
