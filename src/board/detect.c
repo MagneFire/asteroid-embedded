@@ -8,12 +8,16 @@
  * smelt's SMEM platform, the one its trees ask for, and its panel size go
  * first: its bootloader's way of choosing a tree is not known, and one
  * that falls back to another watch's tree must not get smelt the other
- * watch's charger setup. With neither a tree nor a splash the first table
- * is a guess, and board_assumed keeps its charger setup from running. */
+ * watch's charger setup. Without a splash, a tree is not proof either, and
+ * smelt's fuel gauge is asked: this only happens with the display off, so
+ * the other watches' boots stay as they are. With neither a tree nor a
+ * splash the first table is a guess, and board_assumed keeps its charger
+ * setup from running. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
 #include "lib/fdt.h"
+#include "soc/max17050.h"
 
 static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt };
 
@@ -39,6 +43,15 @@ static const struct board *by_panel(uint32_t w, uint32_t h)
 	return NULL;
 }
 
+static bool smelt_gauge_answers(void)
+{
+	const struct board *s = &board_smelt;
+	uint8_t reg = MAX17050_DEVNAME, id[2];
+	if (i2c_qup_init(s->gauge.i2c.qup, s->gauge.i2c.sda, s->gauge.i2c.scl, s->gauge.i2c.func, 200000))
+		return false;
+	return !i2c_qup_xfer(s->gauge.i2c.qup, s->gauge.i2c.addr, &reg, 1, id, 2) && (id[0] | id[1] << 8) == MAX17050_DEVNAME_ID;
+}
+
 void board_detect(uint32_t machtype, const void *fdt)
 {
 	uint32_t w, h;
@@ -51,6 +64,9 @@ void board_detect(uint32_t machtype, const void *fdt)
 	} else if (by_panel(w, h) == &board_smelt) {
 		board = &board_smelt;
 		board_detected_by = "panel size";
+	} else if (!w && smelt_gauge_answers()) {
+		board = &board_smelt;
+		board_detected_by = "fuel gauge";
 	} else if (fdt_valid(fdt) && (board = by_compatible(fdt)))
 		board_detected_by = "device tree";
 	else if ((board = by_panel(w, h)))

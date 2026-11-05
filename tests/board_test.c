@@ -13,6 +13,20 @@ const struct battery_driver battery_pmic, battery_max17050;
 
 static uint32_t splash_w, splash_h, platform = 8;
 uint32_t smem_hw_platform(void) { return platform; }
+
+/* smelt's fuel gauge, for the boots with no splash. */
+static bool gauge_present;
+static unsigned gauge_reads;
+int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
+int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+{
+	gauge_reads++;
+	if (!gauge_present)
+		return -1;
+	r[0] = 0xac;
+	r[1] = 0;
+	return 0;
+}
 void display_splash_size(uint32_t *w, uint32_t *h)
 {
 	*w = splash_w;
@@ -69,6 +83,14 @@ int main(int argc, char **argv)
 	platform = 0;
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon);
 	platform = 8;
+	/* With no splash the gauge outranks another watch's tree, and the
+	 * bus stays untouched when there is a splash. */
+	gauge_present = true;
+	CHECK(detect(0, 0, sturgeon) == &board_smelt && !board_assumed);
+	gauge_reads = 0;
+	CHECK(detect(400, 400, sturgeon) == &board_sturgeon && gauge_reads == 0);
+	gauge_present = false;
+	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
 	/* A guess stays a guess. */
 	CHECK(detect(0, 0, NULL) == &board_sturgeon && board_assumed);
 	CHECK(detect(123, 456, NULL) == &board_sturgeon && board_assumed);
