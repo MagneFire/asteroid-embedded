@@ -98,6 +98,21 @@ def fetch_ramoops(tail):
         sys.exit("unexpected log region size %d" % len(blob))
     show(blob, tail)
 
+def lk2nd():
+    # A reboot to the bootloader can land in the stock one, which hangs on
+    # fastboot boot: go on from there to lk2nd.
+    r = subprocess.run(["fastboot", "getvar", "version-bootloader"], capture_output=True, text=True, timeout=10)
+    if "STURGEON" in r.stdout + r.stderr:
+        fastboot("continue", quiet=True)
+        t0 = time.time()
+        while time.time() - t0 < 30:
+            time.sleep(0.5)
+            if devices():
+                r = subprocess.run(["fastboot", "getvar", "version-bootloader"], capture_output=True, text=True, timeout=10)
+                if "STURGEON" not in r.stdout + r.stderr:
+                    return
+        sys.exit("timeout waiting for lk2nd")
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-boot", action="store_true", help="only fetch the log region from fastboot")
@@ -113,6 +128,7 @@ def main():
         wait_for(True, 20, "come back to fastboot")
     else:
         wait_for(True, 10, "appear in fastboot")
+    lk2nd()
     t0 = time.time()
     fastboot("boot", IMG, quiet=True)
     print("booted in %.1f s" % (time.time() - t0))
