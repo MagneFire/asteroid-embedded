@@ -16,13 +16,18 @@
 #define ULPI_RUN		BIT(30)
 #define ULPI_WRITE		BIT(29)
 #define ULPI_MISC_A_SET		0x97
+#define ULPI_MISC_A_CLR		0x98
+#define ULPI_PHY_OVERRIDE	0x80
 #define ULPI_MISC_A_VBUSVLDEXTSEL BIT(1)
 #define ULPI_MISC_A_VBUSVLDEXT	BIT(0)
 #define GEN2_SESS_VLD_CTRL_EN	BIT(7)
 #define USBCMD_SESS_VLD_CTRL	BIT(25)
+#define USBCMD_ASYNC_INTR	BIT(29)
+#define USBCMD_STP		BIT(30)
 #define PORTSC_PTS_ULPI		BIT(31)
 #define PORTSC_CCS		BIT(0)
 #define PORTSC_SUSP		BIT(7)
+#define PORTSC_PHCD		BIT(23)
 
 #define EP_ADB_OUT	0x01
 #define EP_ADB_IN	0x81
@@ -31,7 +36,6 @@
 #define EP_ACM_IN	0x84
 enum { ITF_ACM_COMM = 0, ITF_ACM_DATA, ITF_ADB, ITF_COUNT };
 static bool cdc_attached;
-#define PORTSC_PHCD		BIT(23)
 /* usb_down: the stack is stopped. usb_clocks_off: both controller clocks are
  * off, so no USB register may be touched. rest_gave_up: unplugged, the PHY
  * still refused low power mode, so the clocks stay on until the next cable. */
@@ -209,12 +213,14 @@ static bool adb_send(const void *buf, uint32_t len)
 	return adb_tx_busy;
 }
 
-static void adb_drv_init(void) {}
-static void adb_drv_reset(uint8_t rhport)
+static void adb_state_clear(void)
 {
 	adb_open = adb_tx_busy = adb_rx_queued = false;
 	adb_reset();
 }
+
+static void adb_drv_init(void) {}
+static void adb_drv_reset(uint8_t rhport) { adb_state_clear(); }
 static uint16_t adb_drv_open(uint8_t rhport, tusb_desc_interface_t const *itf, uint16_t max_len)
 {
 	if (itf->bInterfaceClass != 0xff || itf->bInterfaceSubClass != 0x42 || itf->bInterfaceProtocol != 0x01)
@@ -344,7 +350,6 @@ bool usb_connected(void)
  * it up from scratch, as the vendor's reset does: block reset, controller
  * reset, PHY power-on reset around the board's PHY overrides, then the
  * stack. */
-#define USBCMD_STP		BIT(30)
 #define PHY_POR			BIT(0)
 
 static bool clock_on(uint32_t cbcr)
@@ -402,7 +407,7 @@ static void usb_clocks_gate(void)
  * PHY did not get there. The stack has to be stopped already. */
 static bool phy_rest(void)
 {
-	bool phcd = !ulpi_write(0x98, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
+	bool phcd = !ulpi_write(ULPI_MISC_A_CLR, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
 	if (phcd) {
 		writel(readl(USB_PORTSC) | PORTSC_PHCD, USB_PORTSC);
 		phcd = bits_wait(USB_PORTSC, PORTSC_PHCD, PORTSC_PHCD);
@@ -426,8 +431,7 @@ static void usb_collapse(const char *why)
 		cdc_attached = false;
 	}
 	tud_deinit(0);
-	adb_open = adb_tx_busy = adb_rx_queued = false;
-	adb_reset();
+	adb_state_clear();
 	gic_mask(IRQ_USB_HS);
 	usb_down = true;
 	rest_gave_up = !phy_rest();
@@ -439,8 +443,7 @@ static void usb_collapse(const char *why)
  * or NULL. */
 static const char *stack_up(void)
 {
-	adb_open = adb_tx_busy = adb_rx_queued = false;
-	adb_reset();
+	adb_state_clear();
 	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
 	if (!tusb_init(0, &rh))
 		return "stack";
@@ -484,7 +487,7 @@ static bool usb_restore(void)
 		goto out;
 	}
 	usb_clocks_off = false;
-	writel(readl(USB_USBCMD) & ~(USBCMD_STP | BIT(29)), USB_USBCMD);
+	writel(readl(USB_USBCMD) & ~(USBCMD_STP | USBCMD_ASYNC_INTR), USB_USBCMD);
 	writel(readl(USB_PORTSC) & ~PORTSC_PHCD, USB_PORTSC);
 	bits_wait(USB_PORTSC, PORTSC_PHCD, 0);
 	/* The vendor turns AHB2AHB bypass off before the asynchronous block
@@ -502,7 +505,7 @@ static bool usb_restore(void)
 	delay_ms(100);
 	phy_reset();
 	for (unsigned i = 0; i < 4; i++)
-		if (ulpi_write((uint8_t)(0x80 + i), board->usb_phy_init[i])) {
+		if (ulpi_write((uint8_t)(ULPI_PHY_OVERRIDE + i), board->usb_phy_init[i])) {
 			fail = "phy overrides";
 			goto out;
 		}
