@@ -30,10 +30,10 @@
 #include "calc.h"
 #include "game.h"
 #include "power.h"
+#include "frame.h"
+#include "stats.h"
 #include "config.h"
 
-#define MESH_STEP_MS 90
-#define ASLEEP_STATS_MS 60000
 #define BT_START_MS 2000
 
 #ifndef REBOOT_AFTER_MS
@@ -41,6 +41,7 @@
 #endif
 
 extern void wdt_bark_handler(void);
+static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
 static void sink_fbcon(const char *s, size_t n)
 {
@@ -53,33 +54,6 @@ static void sink_fbcon(const char *s, size_t n)
 		s += k;
 		n -= k;
 	}
-}
-
-static int dot_x = -1, dot_y = -1;
-static bool have_gpu;
-static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
-static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
-
-static uint32_t mesh_t, app_center = 0x888888, app_outer;
-
-/* An open app's own mesh in its colours, under it as it moves and fades. */
-static void app_background(int x, int y, float alpha)
-{
-	static float *vbo;
-	if (!vbo)
-		vbo = gpu_alloc(FLATMESH_GPU_ROUND_VERTICES * 32, 64);
-	unsigned n = flatmesh_vertices_gpu_look(vbo, mesh_t, app_center, app_outer, (float)x / fb.width,
-						(float)y / fb.height, alpha);
-	gpu_draw_turn_vertices(vbo, n, 8);
-	gpu_draw_program(&shader_c_vs, &shader_c_fs);
-	gpu_draw_blend(alpha < 1.0f);
-	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
-	gpu_draw_blend(false);
-}
-
-static uint32_t rgb(struct ui_rgb c)
-{
-	return (uint32_t)c.r << 16 | (uint32_t)c.g << 8 | c.b;
 }
 
 static void show_calc(void)
@@ -95,12 +69,7 @@ static void show_game(void)
 static void open_app(int app)
 {
 	struct ui_colors c;
-	app_center = 0x888888;
-	app_outer = 0;
-	if (ui_app_colors(app, &c)) {
-		app_center = rgb(c.center);
-		app_outer = rgb(c.outer);
-	}
+	frame_app_colors(ui_app_colors(app, &c) ? &c : NULL);
 	/* The calculator starts over each time, as the app does. */
 	if (app == UI_APP_CALCULATOR) {
 		calc_reset();
@@ -108,52 +77,6 @@ static void open_app(int app)
 	}
 	ui_set_app(app);
 	stack_open_app();
-}
-
-static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
-{
-	static float *vbo;
-	if (!vbo)
-		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
-	uint32_t t0 = time_us();
-	mesh_t = t_ms;
-	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
-	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4, false };
-	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
-	uint32_t t1 = time_us();
-	gpu_draw_begin(&t);
-	float c, s;
-	rotation_turn(time_ms(), &c, &s);
-	gpu_draw_turn(c, s);
-	/* The frame-filling quad in front of the mesh stays put. */
-	unsigned fill = n - FLATMESH_GPU_MESH;
-	gpu_draw_turn_vertices(vbo + fill * 8, n - fill, 8);
-	gpu_draw_program(&shader_c_vs, &shader_c_fs);
-	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
-	if (with_layer)
-		stack_compose(app_background);
-	if (!gpu_draw_end()) {
-		if (gpu_fail++ == 0)
-			log_printf("gpu: draw did not complete\n");
-		have_gpu = false;
-	}
-	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
-	gpu_us += time_us() - t1;
-	gpu_vert_us += t1 - t0;
-	gpu_frames++;
-}
-
-
-static void draw_dot(uint32_t *buf)
-{
-	if (dot_x < 0)
-		return;
-	for (int dy = -6; dy <= 6; dy++)
-		for (int dx = -6; dx <= 6; dx++) {
-			int x = dot_x + dx, y = dot_y + dy;
-			if (x >= 0 && y >= 0 && x < (int)fb.width && y < (int)fb.height && dx * dx + dy * dy <= 36)
-				buf[y * fb.stride + x] = 0x00ffffff;
-		}
 }
 
 static bool console_settings;
@@ -175,28 +98,6 @@ static void bluetooth_start(void)
 	int r = bt_host_start();
 	if (r)
 		log_printf("bt: host failed (%d)\n", r);
-}
-
-/* The mesh fades from its grey to the colours of the launcher page on
- * screen as the launcher comes in, t from 0 to 1. */
-static void mesh_colors(float t)
-{
-	static uint32_t shown_center = 0x888888, shown_outer;
-	uint32_t lc = 0x888888, lo = 0, c = 0, o = 0;
-	struct ui_colors lcs;
-	if (t > 0.0f && ui_launcher_colors(&lcs)) {
-		lc = rgb(lcs.center);
-		lo = rgb(lcs.outer);
-	}
-	for (int s = 0; s < 24; s += 8) {
-		c |= (uint32_t)((float)(lc >> s & 0xff) * t + (float)(0x88) * (1 - t)) << s;
-		o |= (uint32_t)((float)(lo >> s & 0xff) * t) << s;
-	}
-	if (c != shown_center || o != shown_outer) {
-		shown_center = c;
-		shown_outer = o;
-		flatmesh_colors(c, o);
-	}
 }
 
 static void show_settings(void)
@@ -383,7 +284,7 @@ void main(uint32_t machtype, const void *fdt)
 	pmic_charger_configure();
 	bms_init();
 	spm_init();
-	have_gpu = gpu_init() && gpu_selftest();
+	bool have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
 					       fb.width, fb.height);
 	if (have_ui) {
@@ -412,11 +313,11 @@ void main(uint32_t machtype, const void *fdt)
 		display_set_idle_hook(usb_poll);
 	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status());
 
-	uint32_t t0 = time_ms(), last = 0, last_clock = 0, frames0 = display_frames();
-	uint32_t ui_frames = 0, ui_us = 0, ui_repaints = 0, ui_repaint_us = 0;
-	bool gpu_off = false;
-	bool key_was = false, woke = false, wake_touch = false;
-	uint32_t alarm_t = 0, shown_step = UINT32_MAX;
+	uint32_t t0 = time_ms(), last_clock = 0;
+	frame_init(have_ui, have_gpu, t0);
+	stats_init(t0);
+	bool key_was = false, wake_touch = false;
+	uint32_t alarm_t = 0;
 	clockapps_init(have_ui, have_haptics);
 	game_init();
 	int32_t passkey = -1;
@@ -544,8 +445,7 @@ void main(uint32_t machtype, const void *fdt)
 					g = (dx * dx > dy * dy) ? (dx > 0 ? "swipe right" : "swipe left") : (dy > 0 ? "swipe down" : "swipe up");
 				log_printf("gesture: %s (%d,%d -> %d,%d in %lu ms)\n", g, down_x, down_y, t.x, t.y, now - down_t);
 			}
-			dot_x = t.down ? t.x : -1;
-			dot_y = t.y;
+			frame_touch_dot(t.down ? t.x : -1, t.y);
 		}
 		pmic_power_key_irq();
 		static uint32_t usb_check_t;
@@ -695,95 +595,20 @@ void main(uint32_t machtype, const void *fdt)
 			game_save();
 			if (have_touch)
 				touch_sleep(true);
-			if (have_gpu) {
-				gpu_suspend();
-				gpu_off = true;
-			}
+			frame_sleep();
 			break;
 		case POWER_WOKE:
 			if (have_touch)
 				touch_sleep(false);
-			if (gpu_off) {
-				uint32_t g0 = time_us();
-				have_gpu = gpu_init();
-				gpu_off = false;
-				log_printf("gpu: resumed in %lu us\n", time_us() - g0);
-			}
+			frame_wake();
 			last_clock = 0;
-			woke = true;
 			was_lit = false;
 			break;
 		case POWER_NONE:
 			break;
 		}
-		/* Awake, a frame is drawn when the UI repainted, the stack moves
-		 * or animates, or the FlatMesh takes its next step: every 90 ms,
-		 * as qml-asteroid's FlatMesh timer. In between the CPU waits for
-		 * an interrupt, at the latest the next 1 ms tick. */
-		if (have_display && power_awake()) {
-			uint32_t *buf = display_backbuffer(), step = (now - t0) / MESH_STEP_MS;
-			bool frame = !have_ui || woke || step != shown_step;
-			if (have_ui) {
-				uint32_t u0 = time_us(), x, y, w, h;
-				bool repainted = false;
-				int sx, sy;
-				stack_update(now);
-				if (stack_moving())
-					power_activity(now);
-				ui_tick();
-				uint32_t damage[UI_PANELS][4];
-				bool damaged[UI_PANELS] = { false };
-				for (unsigned p = 0; p < UI_PANELS; p++)
-					if ((p != UI_PANEL_OVERLAY || !stack_overlay_frozen()) &&
-					    ui_update(p, &damage[p][0], &damage[p][1], &damage[p][2], &damage[p][3]))
-						damaged[p] = repainted = true;
-				if (repainted)
-					paint_finish();
-				for (unsigned p = 0; p < UI_PANELS; p++) {
-					if (!damaged[p])
-						continue;
-					uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
-					x = damage[p][0], y = damage[p][1], w = damage[p][2], h = damage[p][3];
-					stack_damage(p, x, y, w, h);
-					if (have_gpu)
-						for (uint32_t r = y; r < y + h; r++)
-							dcache_clean_range(layer + r * fb.stride + x, w * 4);
-				}
-				frame |= repainted || stack_animating(now) || rotation_animating(now);
-				if (repainted) {
-					ui_repaints++;
-					ui_repaint_us += time_us() - u0;
-				}
-				ui_us += time_us() - u0;
-				ui_frames++;
-				stack_offset(&sx, &sy);
-				flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
-				mesh_colors(stack_launcher());
-			}
-			if (frame) {
-				shown_step = step;
-				if (have_gpu) {
-					gpu_flatmesh(buf, step * MESH_STEP_MS, have_ui);
-				} else {
-					flatmesh_render(buf, step * MESH_STEP_MS);
-					if (have_ui) {
-						ui_render(buf, fb.stride, 0, 0);
-						rotation_buffer(buf, fb.stride);
-					}
-				}
-				if (!have_ui) {
-					draw_dot(buf);
-					fbcon_draw(buf);
-				}
-				display_flip();
-				/* The indicators pop out once the first frame is on the panel. */
-				if (woke && have_ui)
-					stack_indicators();
-				woke = false;
-			} else {
-				wfi();
-			}
-		}
+		if (have_display && power_awake())
+			frame_draw(now);
 		if (have_ui && power_awake() && (!last_clock || now - last_clock >= 1000)) {
 			last_clock = now;
 			struct civil c;
@@ -808,48 +633,7 @@ void main(uint32_t machtype, const void *fdt)
 			ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 		}
 		bool awake = power_awake();
-		if (!awake && now - last >= ASLEEP_STATS_MS) {
-			last = now;
-			uint32_t pc, pcc, pcb;
-			spm_stats(&pc, &pcc, &pcb);
-			log_printf("power: asleep, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", power_wakeups(), pc, pcc,
-				   pcb, pmic_battery_avg_ua() / 1000);
-		}
-		if (awake && now - last >= 1000) {
-			last = now;
-			uint32_t rx, tx, att, terr;
-			usb_stats(&rx, &tx);
-			touch_stats(&att, &terr);
-			log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - t0) / 1000,
-				   display_frames() - frames0, pmic_rtc_read(), pmic_battery_mv(), pmic_charger_status(), rx, tx, att, terr);
-			frames0 = display_frames();
-			uint32_t slept = power_slept_ms(now);
-			uint32_t pc, pcc, pcb;
-			spm_stats(&pc, &pcc, &pcb);
-			log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, battery %ld mA, %ld mA average\n",
-				   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, power_wakeups(), pc, pcc, pcb,
-				   pmic_battery_ua() / 1000, pmic_battery_avg_ua() / 1000);
-			if (gpu_frames)
-				log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,
-					   gpu_us / gpu_frames, gpu_vert_us / gpu_frames);
-			gpu_frames = gpu_us = gpu_vert_us = 0;
-			if (ui_frames)
-				log_printf("ui: %lu of %lu frames repainted, update %lu us avg, %lu us per repaint\n", ui_repaints,
-					   ui_frames, ui_us / ui_frames, ui_repaints ? ui_repaint_us / ui_repaints : 0);
-			ui_frames = ui_us = ui_repaints = ui_repaint_us = 0;
-#if defined(TEST_HANG)
-			if (now - t0 >= 2000) {
-				log_printf("test: hanging the main loop\n");
-				for (;;)
-					;
-			}
-#elif defined(TEST_ABORT)
-			if (now - t0 >= 2000) {
-				log_printf("test: data abort\n");
-				*(volatile uint32_t *)0xe0000000u = 1;
-			}
-#endif
-		}
+		stats_poll(now, awake);
 #if REBOOT_AFTER_MS > 0
 		if (now - t0 >= REBOOT_AFTER_MS) {
 			log_printf("rebooting, %lu ticks\n", timer_ticks());
@@ -860,8 +644,7 @@ void main(uint32_t machtype, const void *fdt)
 		if (!awake) {
 			emmc_idle();
 			uint32_t card_next = emmc_next_ms();
-			uint32_t stats = ASLEEP_STATS_MS - (time_ms() - last);
-			app_next = stats > ASLEEP_STATS_MS ? 1 : stats;
+			app_next = stats_next_ms();
 			uint32_t app = clockapps_next_ms(time_ms());
 			if (app < app_next)
 				app_next = app;
