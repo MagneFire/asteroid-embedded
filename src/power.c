@@ -120,6 +120,16 @@ static int burn_in_shift(uint32_t *seed, int range)
 	return range ? (int)(*seed % (uint32_t)(2 * range + 1)) - range : 0;
 }
 
+/* Back to the normal panel state and brightness, for waking or for the
+ * panel turning off. */
+static void ambient_leave(void)
+{
+	ui_set_ambient(false);
+	display_idle(false);
+	power_set_brightness();
+	ambient = false;
+}
+
 static void ambient_draw(void)
 {
 	struct civil c;
@@ -157,7 +167,9 @@ static void ambient_draw(void)
 }
 
 /* Asleep in always-on off the charger, the end of the nightstand delay
- * is a deadline: from then the normal setting applies. */
+ * is a deadline: always-on then ends if the normal setting has it off.
+ * The other way round, a screen that is off stays off until the next
+ * sleep. */
 uint32_t power_next_ms(void)
 {
 	if (awake || !ambient || !lost || setting_get(SETTING_AOD) || pmic_usb_present())
@@ -208,10 +220,7 @@ enum power_change power_update(uint32_t *now_p)
 		cpu_clock_slow(false);
 		timer_set_period(1);
 		if (ambient) {
-			ui_set_ambient(false);
-			display_idle(false);
-			power_set_brightness();
-			ambient = false;
+			ambient_leave();
 		} else {
 			display_wake();
 		}
@@ -231,11 +240,8 @@ enum power_change power_update(uint32_t *now_p)
 	 * once off the charger the normal one applies. */
 	if (ambient && !awake && !aod_wanted()) {
 		cpu_clock_slow(false);
-		ui_set_ambient(false);
-		display_idle(false);
-		power_set_brightness();
+		ambient_leave();
 		display_sleep();
-		ambient = false;
 		cpu_clock_slow(true);
 		log_printf("power: always-on off\n");
 	}
