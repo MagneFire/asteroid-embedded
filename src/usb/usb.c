@@ -412,6 +412,14 @@ static bool phy_rest(void)
 		writel(readl(USB_PORTSC) | PORTSC_PHCD, USB_PORTSC);
 		phcd = bits_wait(USB_PORTSC, PORTSC_PHCD, PORTSC_PHCD);
 	}
+#if defined(TEST_USB_NO_LPM)
+	/* The first attempt only, so the second one on unplugging works. */
+	static bool refused;
+	if (!refused) {
+		refused = true;
+		return false;
+	}
+#endif
 	if (phcd) {
 		writel(readl(USB_USBCMD) | USBCMD_STP, USB_USBCMD);
 		dsb();
@@ -480,7 +488,17 @@ static bool usb_restore(void)
 		fail = "phy supplies";
 		goto out;
 	}
-	if (!clock_on(GCC_USB_HS_AHB_CBCR) || !clock_on(GCC_USB_HS_SYSTEM_CBCR)) {
+	bool clocks = clock_on(GCC_USB_HS_AHB_CBCR) && clock_on(GCC_USB_HS_SYSTEM_CBCR);
+#if defined(TEST_USB_CLOCK)
+	/* One clock on and the other not, the first time. */
+	static bool partial;
+	if (!partial) {
+		partial = true;
+		clocks = false;
+		writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
+	}
+#endif
+	if (!clocks) {
 		usb_clocks_gate();
 		usb_clocks_off = true;
 		fail = "clocks";

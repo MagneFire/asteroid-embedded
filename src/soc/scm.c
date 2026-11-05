@@ -80,7 +80,17 @@ int scm_restore_sec_cfg(uint32_t device)
 	const volatile uint32_t *complete = &scm_cmd.is_complete;
 	for (;;) {
 		dcache_invalidate_range(&scm_cmd, sizeof scm_cmd);
-		if (*complete)
+		bool done = *complete;
+#if defined(TEST_SCM_SLOW)
+		/* Once, after a minute: complete only after 20 ms. */
+		static bool slowed;
+		if (!slowed && t0 > 60000)
+			done = time_ms() - t0 >= 20 && (slowed = true);
+#elif defined(TEST_SCM_HANG)
+		if (t0 > 60000)
+			done = false;
+#endif
+		if (done)
 			break;
 		if (time_ms() - t0 > SCM_WAIT_MS)
 			return -3;
