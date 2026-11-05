@@ -100,6 +100,7 @@ extern const struct battery_driver battery_pmic, battery_max17050;
 extern const struct touch_driver touch_rmi4, touch_it7260;
 extern const struct hub_driver hub_stm32, hub_em7184;
 extern const struct motor_driver motor_drv2605, motor_pm8226;
+extern const struct backlight_driver backlight_lm3535;
 
 struct board {
 	const char *name, *compatible;
@@ -165,6 +166,10 @@ struct board {
 	} hub_pins;
 
 	const struct backlight_driver *backlight;
+	struct {
+		struct board_i2c i2c;
+		uint8_t enable;
+	} backlight_pins;
 
 	const struct motor_driver *motor;
 	struct {

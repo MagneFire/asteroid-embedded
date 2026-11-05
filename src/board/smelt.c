@@ -37,6 +37,9 @@ const struct board board_smelt = {
 	/* MAX17050 on BLSP1 QUP3, pad detect on gpio 54 (MPM pin 25). */
 	.battery_driver = &battery_max17050,
 	.gauge = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x36 }, .dock = 54, .dock_mpm = 25, .charge_n = 94 },
+	/* LM3535 on BLSP1 QUP3 next to the gauge, enable on gpio 35. */
+	.backlight = &backlight_lm3535,
+	.backlight_pins = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x38 }, .enable = 35 },
 	/* The PM8226 vibrator. */
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2300 },
