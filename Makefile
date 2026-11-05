@@ -55,7 +55,7 @@ UI_LIB  := ui/target/armv7a-none-eabihf/release/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
-all: $(BUILD)/asteroid.img $(BUILD)/asteroid-smelt.img
+all: $(BUILD)/asteroid.img
 
 $(BUILD)/gitrev.h: FORCE
 	@mkdir -p $(BUILD)
@@ -110,17 +110,15 @@ DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb
 $(BUILD)/qcdt.img: $(DTBS) tools/qcdt.py
 	python3 tools/qcdt.py -o $@ $(DTBS)
 
-$(BUILD)/asteroid.img: $(BUILD)/asteroid.bin $(BUILD)/qcdt.img tools/mkbootimg.py
-	python3 tools/mkbootimg.py --kernel $(BUILD)/asteroid.bin --dt $(BUILD)/qcdt.img -o $@
-
-# smelt's own images have no table and the tree behind the kernel, and its
-# bootloader's handling of a table is not known yet: this one is the same
-# firmware in that form.
-$(BUILD)/asteroid-smelt.bin: $(BUILD)/asteroid.bin $(BUILD)/smelt.dtb tools/appenddtb.py
+# One image for every watch. Bootloaders that read the table use it, and
+# ignore what follows the firmware. smelt's own images have no table and
+# the tree behind the kernel, so that is there too, in case its bootloader
+# only looks there.
+$(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/smelt.dtb tools/appenddtb.py
 	python3 tools/appenddtb.py -o $@ $< $(BUILD)/smelt.dtb
 
-$(BUILD)/asteroid-smelt.img: $(BUILD)/asteroid-smelt.bin tools/mkbootimg.py
-	python3 tools/mkbootimg.py --kernel $< -o $@
+$(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/qcdt.img tools/mkbootimg.py
+	python3 tools/mkbootimg.py --kernel $< --dt $(BUILD)/qcdt.img -o $@
 
 run: $(BUILD)/asteroid.img
 	python3 tools/run.py $(RUNFLAGS)
