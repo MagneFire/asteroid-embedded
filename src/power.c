@@ -85,8 +85,14 @@ bool power_nightstand(void)
 		lost = true;
 	}
 	was_usb = usb;
-	return setting_get(SETTING_NIGHTSTAND) &&
-	       (usb || (lost && now - lost_t < (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000));
+	if (lost && now - lost_t >= (uint32_t)setting_get(SETTING_NIGHTSTAND_DELAY) * 1000)
+		lost = false;
+	return setting_get(SETTING_NIGHTSTAND) && (usb || lost);
+}
+
+static bool aod_wanted(void)
+{
+	return setting_get(power_nightstand() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
 }
 
 /* In nightstand mode the screen takes the nightstand brightness. */
@@ -164,8 +170,11 @@ enum power_change power_update(uint32_t *now_p)
 {
 	uint32_t now = *now_p;
 	enum power_change change = POWER_NONE;
-	if (!awake)
+	if (!awake) {
 		wakeups++;
+		/* Keeps the time the cable left, whatever else is asleep. */
+		power_nightstand();
+	}
 	/* The short charger wake only when nothing else wakes the watch. */
 	if (charger_wake && !awake && !wake_request)
 		wake_request = true;
@@ -176,7 +185,7 @@ enum power_change power_update(uint32_t *now_p)
 	if (have_display && awake && (sleep_request || now - last_activity >= SLEEP_AFTER_MS)) {
 		clockapps_sleep();
 		settings_flush();
-		ambient = have_ui && setting_get(power_nightstand() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD);
+		ambient = have_ui && aod_wanted();
 		if (!ambient)
 			display_sleep();
 		if (have_ui) {
@@ -220,7 +229,7 @@ enum power_change power_update(uint32_t *now_p)
 	sleep_request = wake_request = false;
 	/* Asleep on the charger the nightstand setting picked always-on;
 	 * once off the charger the normal one applies. */
-	if (ambient && !awake && !setting_get(power_nightstand() ? SETTING_NIGHTSTAND_AOD : SETTING_AOD)) {
+	if (ambient && !awake && !aod_wanted()) {
 		cpu_clock_slow(false);
 		ui_set_ambient(false);
 		display_idle(false);
