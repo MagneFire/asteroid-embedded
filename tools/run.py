@@ -2,7 +2,8 @@
 """Boot build/asteroid.img over fastboot (after an adb reboot if the previous
 image is running) and show its log over adb. If the image dies and the watch
 returns to fastboot, fetch the persistent log region instead and print the
-console tail, the fault record and the symbolized addresses in it."""
+console tail, the fault record and the symbolized addresses in it. A bootloader
+without that command gets a second boot, whose log has the previous record."""
 import argparse, os, re, struct, subprocess, sys, time
 
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
@@ -89,14 +90,22 @@ def adb_online():
     return any(l.endswith("\tdevice") for l in r.stdout.splitlines()[1:])
 
 def fetch_ramoops(tail):
+    """False if this bootloader has no such command: the stock one on sparrow."""
     if os.path.exists(RAW):
         os.unlink(RAW)
-    fastboot("oem", "ramoops", "raw", quiet=True)
+    if fastboot("oem", "ramoops", "raw", check=False, quiet=True).returncode:
+        return False
     fastboot("get_staged", RAW, quiet=True)
     blob = open(RAW, "rb").read()
     if len(blob) != REGION_SIZE:
         sys.exit("unexpected log region size %d" % len(blob))
     show(blob, tail)
+    return True
+
+def boot():
+    t0 = time.time()
+    fastboot("boot", IMG, quiet=True)
+    print("booted in %.1f s" % (time.time() - t0))
 
 def lk2nd():
     # A reboot to the bootloader can land in the stock one, which hangs on
@@ -121,7 +130,8 @@ def main():
     p.add_argument("--tail", type=int, default=40)
     a = p.parse_args()
     if a.no_boot:
-        fetch_ramoops(a.tail)
+        if not fetch_ramoops(a.tail):
+            sys.exit("no oem ramoops here: boot again and read the previous boot's record")
         return
     if adb_online():
         subprocess.run(["adb", "reboot", "bootloader"], capture_output=True, timeout=20)
@@ -129,13 +139,12 @@ def main():
     else:
         wait_for(True, 10, "appear in fastboot")
     lk2nd()
-    t0 = time.time()
-    fastboot("boot", IMG, quiet=True)
-    print("booted in %.1f s" % (time.time() - t0))
+    boot()
     if a.no_wait:
         return
     wait_for(False, 20, "leave fastboot")
     t0 = time.time()
+    retried = False
     while time.time() - t0 < a.timeout:
         if adb_online():
             print("adb online after %.1f s" % (time.time() - t0))
@@ -147,8 +156,14 @@ def main():
             return
         if devices():
             print("back in fastboot after %.1f s without adb: the image died" % (time.time() - t0))
-            fetch_ramoops(a.tail)
-            return
+            if fetch_ramoops(a.tail) or retried:
+                return
+            print("no oem ramoops: booting again for the previous boot's record")
+            retried = True
+            boot()
+            wait_for(False, 20, "leave fastboot")
+            t0 = time.time()
+            continue
         time.sleep(0.3)
     sys.exit("running for %.0f s but no adb device: USB did not come up" % a.timeout)
 
