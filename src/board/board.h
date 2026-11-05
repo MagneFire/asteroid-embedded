@@ -69,6 +69,13 @@ struct motor_driver {
 	void (*set)(bool on);
 };
 
+/* A panel lit by a separate chip; level 0 turns it off. Without one the
+ * panel takes its brightness over DSI. */
+struct backlight_driver {
+	bool (*init)(void);
+	void (*set)(uint8_t level);
+};
+
 /* What feeds the battery and how full it is: the charger's setup and
  * upkeep, the state of charge in percent, whether it is charging,
  * whether a cable is in (a plugged-in interrupt comes with cable_irq),
@@ -148,6 +155,8 @@ struct board {
 		uint8_t uart, gpio, func, wake_mcu, mcu_wake, reset, boot0, boot1, ap_status, mcu_status;
 		uint8_t mpm;
 	} hub_pins;
+
+	const struct backlight_driver *backlight;
 
 	const struct motor_driver *motor;
 	struct {

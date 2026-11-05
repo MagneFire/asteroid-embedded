@@ -135,6 +135,8 @@ bool display_init(void)
 	       PIPE + PIPE_SRC_OP_MODE);
 	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
+	if (board->backlight && !board->backlight->init())
+		log_printf("display: no backlight\n");
 	return true;
 }
 
@@ -171,6 +173,7 @@ uint32_t *display_backbuffer(void) { return fb.buf[fb.back]; }
 static const uint32_t mdp_clocks[] = { MDSS_AXI_CBCR, MDSS_MDP_CBCR, MDSS_MDP_LUT_CBCR, MDSS_VSYNC_CBCR };
 static const uint32_t dsi_clocks[] = { MDSS_ESC0_CBCR, MDSS_BYTE0_CBCR, MDSS_PCLK0_CBCR };
 static bool resting, panel_asleep;
+static uint8_t backlight_level = 255;
 
 /* The registers the MDSS power domain loses when it collapses, in the
  * order they are written back: VBIF, MDP top (interface select, the
@@ -411,8 +414,16 @@ void display_wait_idle(void) { pp_wait(); }
 uint32_t display_frames(void) { return frames; }
 uint32_t display_waits(void) { return waits; }
 
+/* A separate backlight has to go dark with the panel and come back with
+ * it, so the level is kept for display_show. */
 void display_set_brightness(uint8_t level)
 {
+	if (board->backlight) {
+		backlight_level = level;
+		if (!panel_asleep)
+			board->backlight->set(level);
+		return;
+	}
 	display_active();
 	pp_wait();
 	dsi_dcs_write(0x51, &level, 1);
@@ -420,6 +431,8 @@ void display_set_brightness(uint8_t level)
 
 void display_sleep(void)
 {
+	if (board->backlight)
+		board->backlight->set(0);
 	display_active();
 	pp_wait();
 	dsi_dcs_write(0x28, NULL, 0);
@@ -442,6 +455,8 @@ void display_show(void)
 	display_active();
 	pp_wait();
 	dsi_dcs_write(0x29, NULL, 0);
+	if (board->backlight)
+		board->backlight->set(backlight_level);
 }
 
 void display_wake(void)
