@@ -11,6 +11,7 @@
 #include "device/usbd_pvt.h"
 #include "usb/adb.h"
 #include "console/console.h"
+#include "config.h"
 
 #define ULPI_RUN		BIT(30)
 #define ULPI_WRITE		BIT(29)
@@ -31,7 +32,10 @@
 enum { ITF_ACM_COMM = 0, ITF_ACM_DATA, ITF_ADB, ITF_COUNT };
 static bool cdc_attached;
 #define PORTSC_PHCD		BIT(23)
-static bool usb_down, usb_clocks_off;
+/* usb_down: the stack is stopped. usb_clocks_off: both controller clocks are
+ * off, so no USB register may be touched. rest_gave_up: unplugged, the PHY
+ * still refused low power mode, so the clocks stay on until the next cable. */
+static bool usb_down, usb_clocks_off, rest_gave_up;
 
 static int ulpi_write(uint8_t reg, uint8_t val)
 {
@@ -355,9 +359,6 @@ static void phy_reset(void)
 
 #define AHB2AHB_BYPASS		BIT(31)
 
-/* Unplugged, or a charger that never configures the device: the stack
- * stops, then the PHY goes to low power mode and the clocks off. The
- * clocks stay on if the PHY did not get there. */
 /* The PHY's supplies, off as the vendor's unplugged collapse has them
  * and on before anything touches the PHY again. */
 static bool phy_rail_off[2];
@@ -382,6 +383,33 @@ static bool phy_rails(bool on)
 	return ok;
 }
 
+static void usb_clocks_gate(void)
+{
+	writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
+	writel(readl(GCC_USB_HS_AHB_CBCR) & ~1u, GCC_USB_HS_AHB_CBCR);
+}
+
+/* The PHY to low power mode, then the clocks off; they stay on if the
+ * PHY did not get there. The stack has to be stopped already. */
+static bool phy_rest(void)
+{
+	bool phcd = !ulpi_write(0x98, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
+	if (phcd) {
+		writel(readl(USB_PORTSC) | PORTSC_PHCD, USB_PORTSC);
+		phcd = bits_wait(USB_PORTSC, PORTSC_PHCD, PORTSC_PHCD);
+	}
+	if (phcd) {
+		writel(readl(USB_USBCMD) | USBCMD_STP, USB_USBCMD);
+		dsb();
+		usb_clocks_gate();
+		phy_rails(false);
+	}
+	usb_clocks_off = phcd;
+	return phcd;
+}
+
+/* Unplugged, or a controller that got stuck: the stack stops, then the
+ * PHY goes to low power mode and the clocks off. */
 static void usb_collapse(const char *why)
 {
 	if (cdc_attached) {
@@ -392,34 +420,26 @@ static void usb_collapse(const char *why)
 	adb_open = adb_tx_busy = adb_rx_queued = false;
 	adb_reset();
 	gic_mask(IRQ_USB_HS);
-	bool phcd = !ulpi_write(0x98, ULPI_MISC_A_VBUSVLDEXTSEL | ULPI_MISC_A_VBUSVLDEXT);
-	if (phcd) {
-		writel(readl(USB_PORTSC) | PORTSC_PHCD, USB_PORTSC);
-		phcd = bits_wait(USB_PORTSC, PORTSC_PHCD, PORTSC_PHCD);
-	}
-	if (phcd) {
-		writel(readl(USB_USBCMD) | USBCMD_STP, USB_USBCMD);
-		dsb();
-		writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
-		writel(readl(GCC_USB_HS_AHB_CBCR) & ~1u, GCC_USB_HS_AHB_CBCR);
-		phy_rails(false);
-	}
 	usb_down = true;
-	usb_clocks_off = phcd;
-	log_printf("usb: %s, %s\n", why, phcd ? "phy in low power mode" : "phy did not enter low power mode, clocks left on");
+	rest_gave_up = !phy_rest();
+	log_printf("usb: %s, %s\n", why, rest_gave_up ? "phy did not enter low power mode, clocks left on" : "phy in low power mode");
 }
 
 /* Brings USB up from scratch. On any failure the stack is stopped
- * again and USB stays down; usb_cable tries again later. */
+ * again and USB rests as it does unplugged; usb_cable tries again
+ * later. */
 static bool usb_restore(void)
 {
 	uint32_t t0 = time_ms();
 	const char *fail = NULL;
+	rest_gave_up = false;
 	if (!phy_rails(true)) {
 		fail = "phy supplies";
 		goto out;
 	}
 	if (!clock_on(GCC_USB_HS_AHB_CBCR) || !clock_on(GCC_USB_HS_SYSTEM_CBCR)) {
+		usb_clocks_gate();
+		usb_clocks_off = true;
 		fail = "clocks";
 		goto out;
 	}
@@ -430,8 +450,7 @@ static bool usb_restore(void)
 	/* The vendor turns AHB2AHB bypass off before the asynchronous block
 	 * reset. */
 	writel(readl(USB_AHB_MODE) & ~AHB2AHB_BYPASS, USB_AHB_MODE);
-	writel(readl(GCC_USB_HS_SYSTEM_CBCR) & ~1u, GCC_USB_HS_SYSTEM_CBCR);
-	writel(readl(GCC_USB_HS_AHB_CBCR) & ~1u, GCC_USB_HS_AHB_CBCR);
+	usb_clocks_gate();
 	writel(1, GCC_USB_HS_BCR);
 	delay_ms(1);
 	writel(0, GCC_USB_HS_BCR);
@@ -448,6 +467,14 @@ static bool usb_restore(void)
 			goto out;
 		}
 	phy_reset();
+#if defined(TEST_USB_FAIL)
+	static bool injected;
+	if (!injected) {
+		injected = true;
+		fail = "test";
+		goto out;
+	}
+#endif
 	adb_open = adb_tx_busy = adb_rx_queued = false;
 	adb_reset();
 	tusb_rhport_init_t rh = { .role = TUSB_ROLE_DEVICE, .speed = TUSB_SPEED_HIGH };
@@ -471,7 +498,9 @@ out:
 	tud_deinit(0);
 	gic_mask(IRQ_USB_HS);
 	usb_down = true;
-	log_printf("usb: bringing up failed at %s after %lu ms\n", fail, time_ms() - t0);
+	if (!usb_clocks_off)
+		phy_rest();
+	log_printf("usb: bringing up failed at %s after %lu ms, clocks %s\n", fail, time_ms() - t0, usb_clocks_off ? "off" : "on");
 	return false;
 }
 
@@ -487,7 +516,7 @@ void usb_cable(bool present, bool edge)
 		usb_collapse("controller stuck");
 	if (!present) {
 		retry_t = 0;
-		if (usb_down) {
+		if (usb_down && (usb_clocks_off || rest_gave_up)) {
 			gone_t = 0;
 			return;
 		}
