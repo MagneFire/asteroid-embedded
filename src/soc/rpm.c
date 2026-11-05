@@ -8,6 +8,7 @@
  * request: type "ldoa"/"vsa", the regulator number, key "swen" = 1. */
 #include <string.h>
 #include "asteroid.h"
+#include "board/board.h"
 
 #define SMEM_ALLOC_TABLE	(SMEM_BASE + 0xd0)
 #define SMEM_CHANNEL_ALLOC_TBL	13
@@ -238,6 +239,14 @@ void rpm_bus_votes(void)
  * force. Dropping the vote for the crystal lets the RPM turn it off. */
 #define RPM_CLK0		0x306b6c63u
 #define RPM_KEY_ENABLE		0x62616e45u
+
+void rpm_unused_rails_off(void)
+{
+	for (unsigned i = 0; i < sizeof board->unused_ldos && board->unused_ldos[i]; i++) {
+		rpm_regulator_enable(RPM_LDOA, board->unused_ldos[i], false);
+		rpm_regulator_sleep_enable(RPM_LDOA, board->unused_ldos[i], false);
+	}
+}
 
 #define APCS_CLOCK_SLEEP_ENA_VOTE	0xfc401488u
 

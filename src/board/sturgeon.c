@@ -103,6 +103,7 @@ const struct board board_sturgeon = {
 		 .ibat_max_ma = 300, .ibat_safe_ma = 600, .iterm_ma = 20 },
 	.rsense_uohm = 9700,
 	.usb_phy_init = { 0x44, 0x68, 0x3c, 0xf3 },
+	.unused_ldos = { 18, 21 },
 	.battery = &battery,
 	/* Synaptics RMI4 on BLSP1 QUP5. */
 	.touch = &touch_rmi4,

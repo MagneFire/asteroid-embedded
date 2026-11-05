@@ -366,6 +366,7 @@ void main(uint32_t machtype, const void *fdt)
 	if (rpm_init()) {
 		rpm_bus_votes();
 		rpm_sleep_votes();
+		rpm_unused_rails_off();
 	}
 	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), pmic_pon_reason());
 	bool have_display = display_init();

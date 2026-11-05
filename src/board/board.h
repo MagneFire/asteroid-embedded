@@ -106,6 +106,8 @@ struct board {
 	uint32_t rsense_uohm;
 	/* USB PHY override registers 0x80-0x83, written after a PHY reset. */
 	uint8_t usb_phy_init[4];
+	/* LDOs the bootloader leaves on that nothing here uses, 0 ends. */
+	uint8_t unused_ldos[4];
 	const struct board_battery *battery;
 
 	const struct touch_driver *touch;
