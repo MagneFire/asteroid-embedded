@@ -71,10 +71,21 @@ struct motor_driver {
 };
 
 /* A panel lit by a separate chip; level 0 turns it off. Without one the
- * panel takes its brightness over DSI. */
+ * panel takes its brightness over DSI. set_code writes the chip's own
+ * brightness code, for a board with backlight_aod_code. */
 struct backlight_driver {
 	bool (*init)(void);
 	void (*set)(uint8_t level);
+	void (*set_code)(uint8_t code);
+};
+
+/* A light sensor read in two steps, so the integration can run while
+ * something else does: start, then finish, which gives the lux or -1
+ * without a reading. */
+struct light_driver {
+	bool (*init)(void);
+	void (*start)(void);
+	int32_t (*finish)(void);
 };
 
 /* What feeds the battery and how full it is: the charger's setup and
@@ -103,6 +114,7 @@ extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4;
 extern const struct motor_driver motor_drv2605, motor_pm8226;
 extern const struct backlight_driver backlight_lm3535;
+extern const struct light_driver light_tsl2584;
 
 struct board {
 	const char *name, *compatible;
@@ -179,6 +191,20 @@ struct board {
 		struct board_i2c i2c;
 		uint8_t enable;
 	} backlight_pins;
+	/* The backlight code for the always-on face, 0 for the usual
+	 * percentage. */
+	uint8_t backlight_aod_code;
+
+	const struct light_driver *light;
+	struct {
+		struct board_i2c i2c;
+		/* The LDO that feeds it and its voltage. */
+		uint8_t ldo;
+		uint32_t ldo_uv;
+		/* TSL2584 lux coefficients for the panel's height and for
+		 * height_alt: lux1's channels 0 and 1, then lux2's. */
+		uint16_t coeff[2][4];
+	} light_pins;
 
 	const struct motor_driver *motor;
 	struct {

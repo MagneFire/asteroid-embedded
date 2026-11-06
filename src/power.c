@@ -4,8 +4,8 @@
  *
  * The always-on face: shown while asleep unless turned off, drawn on
  * the CPU so the GPU can stay off, with the panel in idle mode at 18 %
- * brightness, AsteroidOS's low power mode level on this watch. Each
- * minute it moves by a random amount against burn-in, as the launcher's
+ * brightness, AsteroidOS's low power mode level on this watch, or at
+ * the board's own backlight code, which follows the light sensor. Each minute it moves by a random amount against burn-in, as the launcher's
  * burnInProtectionManager moves the grid: up to the watchface's margin,
  * times 1, 1/2 or 1/4 for the high, medium and low levels, and the left
  * indicator by up to two and four fin widths. */
@@ -17,6 +17,7 @@
 #include "ui/rotation.h"
 #include "bt/bt.h"
 #include "sensors/hub.h"
+#include "sensors/tsl2584.h"
 #include "screenshot/screenshot.h"
 #include "clockapps.h"
 #include "power.h"
@@ -120,8 +121,23 @@ static void ambient_leave(void)
 	ambient = false;
 }
 
+/* The code for the light the sensor saw, the board's own without a
+ * reading. */
+static void ambient_backlight(void)
+{
+	static uint8_t shown;
+	int32_t lux = light_finish();
+	uint8_t code = lux < 0 ? board->backlight_aod_code : tsl2584_backlight_code((uint32_t)lux);
+	if (code != shown)
+		log_printf("light: %ld lux, code %u\n", lux, code);
+	shown = code;
+	display_set_backlight_code(code);
+}
+
 static void ambient_draw(void)
 {
+	if (board->backlight_aod_code)
+		light_start();
 	struct civil c;
 	uint32_t rtc = pmic_rtc_read(), x, y, w, h, *buf = display_backbuffer();
 	civil_from_epoch(rtc, &c);
@@ -154,6 +170,8 @@ static void ambient_draw(void)
 	stack_indicators_cpu(buf, fb.stride, ix, iy);
 	rotation_buffer(buf, fb.stride);
 	display_flip();
+	if (board->backlight_aod_code)
+		ambient_backlight();
 }
 
 /* The panel is on, the face goes up at its own brightness. */
@@ -161,7 +179,8 @@ static void ambient_enter(void)
 {
 	ui_set_ambient(true);
 	ambient_draw();
-	display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
+	if (!board->backlight_aod_code)
+		display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
 	display_idle(true);
 	ambient = true;
 }

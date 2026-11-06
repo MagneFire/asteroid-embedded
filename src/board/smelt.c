@@ -50,6 +50,14 @@ const struct board board_smelt = {
 	/* LM3535 on BLSP1 QUP3 next to the gauge, enable on gpio 35. */
 	.backlight = &backlight_lm3535,
 	.backlight_pins = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x38 }, .enable = 35 },
+	/* The vendor's ambient maximum, below the curve's first steps, and
+	 * what the always-on face uses without a light reading. */
+	.backlight_aod_code = 36,
+	/* TSL2584 on BLSP1 QUP3 too, fed by L18. The coefficients are the
+	 * vendor's for the large and the small watch. */
+	.light = &light_tsl2584,
+	.light_pins = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x29 }, .ldo = 18, .ldo_uv = 2950000,
+			.coeff = { { 1627, 2485, 1536, 2259 }, { 1932, 3054, 1726, 2539 } } },
 	/* The PM8226 vibrator. */
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2300 },

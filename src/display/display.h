@@ -22,6 +22,7 @@ uint32_t display_frames(void);
 uint32_t display_waits(void);
 uint32_t display_timeouts(void);
 void display_set_brightness(uint8_t level);
+void display_set_backlight_code(uint8_t code);
 void display_sleep(void);
 void display_wake(void);
 void display_wake_hidden(void);

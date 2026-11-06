@@ -10,6 +10,7 @@ const struct hub_driver hub_stm32, hub_em7184, hub_m4;
 const struct motor_driver motor_drv2605, motor_pm8226;
 const struct backlight_driver backlight_lm3535;
 const struct battery_driver battery_pmic, battery_max17050;
+const struct light_driver light_tsl2584;
 
 static uint32_t splash_w, splash_h, platform = 8;
 uint32_t smem_hw_platform(void) { return platform; }
@@ -101,6 +102,16 @@ int main(int argc, char **argv)
 	CHECK(!board_smelt.chg.vdd_max_mv && !board_smelt.chg.ibat_max_ma);
 	CHECK(board_sturgeon.battery_driver == &battery_pmic);
 	CHECK(board_sparrow.battery_driver == &battery_pmic);
+
+	/* Only smelt's always-on face has its own backlight code. */
+	CHECK(board_smelt.backlight_aod_code == 36);
+	CHECK(!board_sturgeon.backlight_aod_code && !board_sparrow.backlight_aod_code);
+
+	/* Only smelt has a light sensor, and nothing turns its rail off. */
+	CHECK(board_smelt.light == &light_tsl2584 && board_smelt.light_pins.i2c.addr == 0x29);
+	CHECK(!board_sturgeon.light && !board_sparrow.light);
+	for (unsigned i = 0; i < sizeof board_smelt.unused_ldos; i++)
+		CHECK(board_smelt.unused_ldos[i] != board_smelt.light_pins.ldo);
 
 	puts(failures ? "board_test: FAILED" : "board_test: ok");
 	return failures != 0;

@@ -79,6 +79,7 @@ void main(uint32_t machtype, const void *fdt)
 		log_printf("no fault record from the previous boot\n");
 
 	batt_init();
+	light_init();
 	spm_init();
 	bool have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,

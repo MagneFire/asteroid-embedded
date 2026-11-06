@@ -67,9 +67,8 @@ static bool lm3535_init(void)
 	return true;
 }
 
-static void lm3535_set(uint8_t level)
+static void lm3535_set_code(uint8_t code)
 {
-	uint8_t code = lm3535_code(level);
 	if (code && !lit)
 		banks_on();
 	wr(REG_BRIGHT_A, code);
@@ -80,4 +79,9 @@ static void lm3535_set(uint8_t level)
 	}
 }
 
-const struct backlight_driver backlight_lm3535 = { .init = lm3535_init, .set = lm3535_set };
+static void lm3535_set(uint8_t level)
+{
+	lm3535_set_code(lm3535_code(level));
+}
+
+const struct backlight_driver backlight_lm3535 = { .init = lm3535_init, .set = lm3535_set, .set_code = lm3535_set_code };

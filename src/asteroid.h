@@ -197,6 +197,11 @@ uint32_t batt_mv(void);
 int32_t batt_ua(void);
 int32_t batt_avg_ua(void);
 const char *batt_status(void);
+/* The watch's light sensor (board->light): light_finish gives the lux
+ * since light_start, or -1 without a reading. */
+void light_init(void);
+void light_start(void);
+int32_t light_finish(void);
 #define RPM_LDOA 0x616f646cu
 #define RPM_SMPA 0x61706d73u
 #define RPM_VSA 0x00617376u
