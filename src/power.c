@@ -145,7 +145,7 @@ static void ambient_draw(void)
 	 * it, the classic one 14 px (24 px). */
 	static const uint8_t level[] = { 0, 4, 2, 1 };
 	uint32_t seed = rtc | 1;
-	int b = setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
+	int b = board->panel.lcd ? 0 : setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
 	int range = (setting_get(SETTING_WATCHFACE) ? (ns ? 24 : 14) : (ns ? 20 : 54)) * m / 4;
 	int dx = burn_in_shift(&seed, range), dy = burn_in_shift(&seed, range);
 	int ix = m ? burn_in_shift(&seed, FIN_PX) + FIN_PX : 0, iy = m ? burn_in_shift(&seed, 2 * FIN_PX) : 0;

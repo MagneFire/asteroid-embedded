@@ -37,7 +37,7 @@
 #define APP_SNAP_MS	200
 #define APP_KEEP_MS	5000
 #define IND_NEAR	4.8f
-#define EDGE_PX		40
+static int edge_px = 40;
 #define BAND		16
 #define BANDS		32
 
@@ -63,6 +63,11 @@ static int rest_x(unsigned s) { return s == UI_PANEL_LEFT ? W : s == UI_PANEL_RI
 static int rest_y(unsigned s) { return s == UI_PANEL_BOTTOM ? -H : s == UI_PANEL_TOP ? H : 0; }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int absi(int v) { return v < 0 ? -v : v; }
+
+void stack_set_edge(int px)
+{
+	edge_px = px;
+}
 
 void stack_init(uint32_t width, uint32_t height, const uint32_t *layer_base, uint32_t panel_px)
 {
@@ -232,7 +237,7 @@ static bool launcher_scroll(int dx, int dy)
 	}
 	if (absi(dx) > absi(dy))
 		return false;
-	return !(dy > 0 && ((launcher == 1 && down_y < EDGE_PX) || ui_launcher_edges() & 16));
+	return !(dy > 0 && ((launcher == 1 && down_y < edge_px) || ui_launcher_edges() & 16));
 }
 
 static void release(void)
@@ -260,8 +265,8 @@ static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 	static bool from_left, from_top;
 	switch (kind) {
 	case UI_TOUCH_DOWN:
-		from_left = x < EDGE_PX;
-		from_top = y < EDGE_PX;
+		from_left = x < edge_px;
+		from_top = y < edge_px;
 		ui_touch(UI_PANEL_APP, kind, x, y);
 		break;
 	case UI_TOUCH_MOVE:

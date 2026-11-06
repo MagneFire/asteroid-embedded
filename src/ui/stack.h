@@ -29,6 +29,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* How far from an edge a drag counts as starting from it. */
+void stack_set_edge(int px);
 void stack_init(uint32_t width, uint32_t height, const uint32_t *layers, uint32_t layer_px);
 void stack_touch(int kind, int x, int y, uint32_t now_ms);
 void stack_update(uint32_t now_ms);

@@ -115,6 +115,10 @@ struct board {
 		uint16_t lines;		/* with the porches */
 		uint8_t hz, te_gpio;
 		bool flip_ud, round;
+		/* An LCD needs no burn-in protection. */
+		bool lcd;
+		/* How far from an edge a drag starts from it, 0 for the default. */
+		uint8_t edge_px;
 		const struct dcs_step *idle_on, *idle_off;
 		uint8_t idle_on_n, idle_off_n;
 	} panel;

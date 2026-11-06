@@ -20,6 +20,7 @@ const struct board board_smelt = {
 	.panel = {
 		.width = 360, .height = 330, .height_alt = 325,
 		.lines = 401, .hz = 60, .te_gpio = 24, .flip_ud = false, .round = true,
+		.lcd = true, .edge_px = 72,
 	},
 	.firmware_dirs = firmware_dirs,
 	/* BCM43430A1 on BLSP1 UART6 (gpio 20-23, function 2), REG_ON on gpio

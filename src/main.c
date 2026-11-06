@@ -86,6 +86,8 @@ void main(uint32_t machtype, const void *fdt)
 	if (have_ui) {
 		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round);
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
+		if (board->panel.edge_px)
+			stack_set_edge(board->panel.edge_px);
 		/* Only a square picture can turn; off otherwise. */
 		rotation_init(fb.width == fb.height ? (int)fb.width : 0);
 		for (unsigned p = 0; p < UI_PANELS; p++)
