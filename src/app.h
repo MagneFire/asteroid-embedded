@@ -14,7 +14,7 @@ void app_sensors(uint32_t now);
 void app_flashlight(uint32_t now);
 void app_touch(uint32_t now);
 void app_cable(uint32_t now);
-void app_key(uint32_t now);
+void app_key(uint32_t now, bool irq);
 void app_tick(uint32_t now);
 void app_ui_events(uint32_t now);
 void app_after_events(uint32_t now);

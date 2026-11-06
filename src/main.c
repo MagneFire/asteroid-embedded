@@ -135,9 +135,9 @@ void main(uint32_t machtype, const void *fdt)
 		if (have_haptics)
 			haptics_poll();
 		app_touch(now);
-		pmic_power_key_irq();
+		bool key_irq = pmic_power_key_irq();
 		app_cable(now);
-		app_key(now);
+		app_key(now, key_irq);
 		present_events(now);
 		app_tick(now);
 		app_ui_events(now);

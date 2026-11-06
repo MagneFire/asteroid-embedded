@@ -252,19 +252,30 @@ void app_cable(uint32_t now)
 	}
 }
 
-void app_key(uint32_t now)
+/* A pass on the sleep clock can take longer than a short press, so a
+ * press may only show as its interrupt. The interrupt of a release that
+ * was already seen comes just after it. */
+#define KEY_RELEASE_IRQ_MS	200
+
+void app_key(uint32_t now, bool irq)
 {
+	static uint32_t key_up_t;
 	bool key = pmic_power_key();
 	if (key != key_was) {
 		key_was = key;
 		if (key) {
 			key_down_t = now;
-		} else if (now - key_down_t >= 3000) {
-			log_printf("rebooting on power key\n");
-			reboot();
 		} else {
+			key_up_t = now;
+			if (now - key_down_t >= 3000) {
+				log_printf("rebooting on power key\n");
+				reboot();
+			}
 			power_request(power_awake());
 		}
+	} else if (irq && !key && now - key_up_t >= KEY_RELEASE_IRQ_MS) {
+		key_up_t = now;
+		power_request(power_awake());
 	}
 }
 
