@@ -1,9 +1,8 @@
 /* smelt's battery: a MAX17050 gauge on I2C and a wireless receiver that
- * charges the cell by itself. Nothing here writes to the gauge or drives
- * the receiver's control lines: the cell model in the gauge is the
- * vendor's, its driver only loads it after the gauge lost power, and the
- * receiver charges with the lines as the bootloader leaves them. The
- * PMIC's charger is not touched; of its registers only the USB path's
+ * charges the cell, which charge_policy tells to stop through its
+ * termination line. Nothing here writes to the gauge: the cell model in
+ * it is the vendor's, its driver only loads it after the gauge lost
+ * power. The PMIC's charger is not touched; of its registers only the USB path's
  * status is read, which is how the vendor sees USB too.
  *
  * On the charger: the dock line is low while on the pad, and as for the
@@ -11,12 +10,15 @@
  * cable too, but the pad does not bring up USB. */
 #include "asteroid.h"
 #include "soc/max17050.h"
+#include "soc/charge_policy.h"
 
 #define QUP		(board->gauge.i2c.qup)
 #define ADDR		(board->gauge.i2c.addr)
 #define GPIO_DOCK	(board->gauge.dock)
 #define MPM_PIN_DOCK	(board->gauge.dock_mpm)
 #define GPIO_CHARGE_N	(board->gauge.charge_n)
+#define GPIO_CHARGE_TERM	(board->gauge.charge_term)
+#define GPIO_CHARGE_RATE	(board->gauge.charge_rate)
 #define BUS_HZ		200000
 #define POLL_MS		30000
 
@@ -25,6 +27,7 @@ static volatile bool dock_irq;
 static uint32_t soc = 50, poll_t;
 static uint16_t last_status;
 static unsigned errors;
+static struct charge_policy policy;
 
 static int rd(uint8_t reg, uint16_t *v)
 {
@@ -54,6 +57,46 @@ static void refresh(void)
 		last_status = v;
 }
 
+/* The lines stay as the bootloader left them until the first decision:
+ * a stop, however short, can turn the pad off until the watch is lifted. */
+static void charge_lines(bool stop, bool reduced)
+{
+	static bool driven;
+	tlmm_set(GPIO_CHARGE_TERM, stop);
+	tlmm_set(GPIO_CHARGE_RATE, reduced);
+	if (!driven) {
+		driven = true;
+		tlmm_config(GPIO_CHARGE_TERM, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		tlmm_config(GPIO_CHARGE_RATE, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	}
+}
+
+/* Anything unknown about the cell or the gauge stops charging. */
+static void charge_check(void)
+{
+	uint16_t t = 0, c = 0, level = 0, status = 0, v = 0;
+	bool valid = ready && !rd(MAX17050_TEMP, &t) && !rd(MAX17050_REPSOC, &level) && !rd(MAX17050_STATUS, &status) &&
+		     !rd(MAX17050_VCELL, &v) && !max17050_no_battery(status) && !max17050_lost_model(status);
+	int temp = max17050_decidegrees(t);
+	bool current_valid = ready && !rd(MAX17050_AVGCURRENT, &c);
+	struct charge_input in = {
+		.now_ms = time_ms(), .valid = valid && charge_temp_plausible(temp), .current_valid = current_valid,
+		.temp = temp, .percent = max17050_percent(level), .mv = max17050_mv(v),
+		.charge_ma = current_valid ? -max17050_ua(c, board->rsense_uohm) / 1000 : 0,
+	};
+	bool was = policy.stopped, rate = policy.reduced, stop = charge_policy_step(&policy, &in);
+	charge_lines(stop, policy.reduced);
+	if (stop != was || policy.reduced != rate)
+		log_printf("gauge: charging %s%s at %d.%d C, %lu mV, %lu%%%s\n", stop ? "stopped" : "allowed",
+			   policy.reduced ? ", reduced" : "", temp / 10, (temp < 0 ? -temp : temp) % 10, in.mv, in.percent,
+			   in.valid ? "" : ", gauge not trusted");
+	if (in.valid && temp >= CHARGE_POWER_OFF_TEMP) {
+		log_printf("gauge: %d.%d C, powering off\n", temp / 10, temp % 10);
+		pmic_shutdown_mode();
+		reboot();
+	}
+}
+
 static void gauge_init(void)
 {
 	tlmm_config(GPIO_DOCK, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
@@ -63,6 +106,7 @@ static void gauge_init(void)
 		r = rd(MAX17050_DEVNAME, &id);
 	if (r || id != MAX17050_DEVNAME_ID) {
 		log_printf("gauge: not found (%d, id %04x)\n", r, id);
+		charge_lines(true, true);
 		return;
 	}
 	ready = true;
@@ -70,6 +114,7 @@ static void gauge_init(void)
 	log_printf("gauge: max17050, %lu%%, status %04x%s, dock %u\n", soc, last_status,
 		   max17050_lost_model(last_status) ? ", lost its cell model" : "", docked());
 	poll_t = time_ms();
+	charge_check();
 }
 
 /* The MPM sees levels, so its wake-up on the dock line is armed only
@@ -86,6 +131,7 @@ static void gauge_poll(void)
 		return;
 	poll_t = now;
 	refresh();
+	charge_check();
 }
 
 static uint32_t gauge_percent(void) { return soc; }
@@ -93,6 +139,15 @@ static bool gauge_charging(void) { return docked(); }
 static bool gauge_cable(void) { return docked() || pmic_usb_present(); }
 
 static bool gauge_usb(void) { return pmic_usb_present(); }
+
+/* On the pad the charge limits need a look on time, asleep too. */
+static uint32_t gauge_next_ms(void)
+{
+	if (!docked())
+		return UINT32_MAX;
+	uint32_t gone = time_ms() - poll_t;
+	return gone >= POLL_MS ? 1 : POLL_MS - gone;
+}
 
 static void dock_edge(unsigned n)
 {
@@ -145,6 +200,7 @@ static const char *gauge_status(void)
 const struct battery_driver battery_max17050 = {
 	.init = gauge_init,
 	.poll = gauge_poll,
+	.next_ms = gauge_next_ms,
 	.percent = gauge_percent,
 	.charging = gauge_charging,
 	.cable = gauge_cable,

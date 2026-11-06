@@ -23,6 +23,7 @@ void batt_poll(void)
 	if (BATT_SETUP(poll))
 		board->battery_driver->poll();
 }
+uint32_t batt_next_ms(void) { return BATT(next_ms) ? board->battery_driver->next_ms() : UINT32_MAX; }
 uint32_t batt_percent(void) { return BATT(percent) ? board->battery_driver->percent() : 50; }
 bool batt_charging(void) { return BATT(charging) && board->battery_driver->charging(); }
 bool batt_cable(void) { return BATT(cable) && board->battery_driver->cable(); }

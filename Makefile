@@ -20,7 +20,7 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/present.c src/sensors/steps.c src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_m4.c src/sensors/m4_proto.c \
         src/input/touch.c src/input/touch_it7260.c src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
         src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
-        src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/max17050.c src/soc/gauge_max17050.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
+        src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
         src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c \
@@ -157,9 +157,9 @@ $(BUILD)/test/sched_test: tests/sched_test.c src/sched.c $(wildcard tests/*.h sr
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sched.c -o $@
 
-$(BUILD)/test/gauge_test: tests/gauge_test.c src/soc/max17050.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/gauge_test: tests/gauge_test.c src/soc/max17050.c src/soc/charge_policy.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/soc/max17050.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/soc/max17050.c src/soc/charge_policy.c -o $@
 
 $(BUILD)/test/backlight_test: tests/backlight_test.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)

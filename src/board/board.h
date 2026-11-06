@@ -84,6 +84,7 @@ struct backlight_driver {
 struct battery_driver {
 	void (*init)(void);
 	void (*poll)(void);
+	uint32_t (*next_ms)(void);
 	uint32_t (*percent)(void);
 	bool (*charging)(void);
 	bool (*cable)(void);
@@ -144,11 +145,12 @@ struct board {
 	uint8_t unused_ldos[4];
 	const struct board_battery *battery;
 	const struct battery_driver *battery_driver;
-	/* A MAX17050 gauge, the wireless pad line (low on the pad) and the
-	 * receiver's charge output. */
+	/* A MAX17050 gauge, the wireless pad line (low on the pad), the
+	 * receiver's charge output and its termination (high stops charging)
+	 * and reduced rate inputs. */
 	struct {
 		struct board_i2c i2c;
-		uint8_t dock, dock_mpm, charge_n;
+		uint8_t dock, dock_mpm, charge_n, charge_term, charge_rate;
 	} gauge;
 
 	const struct touch_driver *touch;

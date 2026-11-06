@@ -186,6 +186,7 @@ uint32_t bms_percent(void);
 /* The watch's battery driver (board->battery_driver). */
 void batt_init(void);
 void batt_poll(void);
+uint32_t batt_next_ms(void);
 uint32_t batt_percent(void);
 bool batt_charging(void);
 bool batt_cable(void);

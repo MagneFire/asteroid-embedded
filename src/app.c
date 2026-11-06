@@ -386,6 +386,7 @@ uint32_t app_next_ms(void)
 		have_touch ? touch_next_ms() : UINT32_MAX,
 		usb_next_ms(),
 		emmc_next_ms(),
+		batt_next_ms(),
 		power_next_ms(),
 		sched_next_ms(time_ms()),
 	}, min = UINT32_MAX;
