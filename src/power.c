@@ -330,9 +330,9 @@ void power_idle(uint32_t app_next_ms)
 	/* The watchdog counts on the sleep clock through a cluster power
 	 * collapse, where its bark cannot wake the core, so a wake that
 	 * comes late would end in a bite with no record. As the vendor
-	 * kernel does for suspend, it is off across a long sleep, and a
-	 * wake later than planned is logged instead. */
-	bool long_sleep = !policy.awake && next > 1000;
+	 * kernel does for suspend, it is off across a long or cluster sleep,
+	 * and a wake later than planned is logged instead. */
+	bool long_sleep = !policy.awake && (next > 1000 || cluster);
 	uint32_t t0 = 0;
 	if (long_sleep) {
 		timer_set_period(next);
