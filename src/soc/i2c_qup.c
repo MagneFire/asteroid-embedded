@@ -6,13 +6,17 @@
  * then REC+count). Transfers fit the FIFO, so one interrupt ends each:
  * the output service flag once a write has drained, the input done flag
  * once a read has arrived (one byte per IN_DATA entry), or an error.
- * The completion callback runs in interrupt context. */
+ * The completion callback runs in interrupt context. A block that stops
+ * taking transfers is reset through its GCC block reset, from the main
+ * loop only. */
 #include "asteroid.h"
 
 #define GCC_BASE			0xfc400000u
 #define GCC_BLSP1_AHB_VOTE		(GCC_BASE + 0x1484)
 #define GCC_QUP_I2C_CMD_RCGR(n)		(GCC_BASE + 0x0660 + ((n) - 1) * 0x80)
 #define GCC_QUP_I2C_CBCR(n)		(GCC_BASE + 0x0648 + ((n) - 1) * 0x80)
+#define GCC_QUP_BCR(n)			(GCC_BASE + 0x0640 + ((n) - 1) * 0x80)
+#define IRQ_QUP(n)			(32 + 95 + (n) - 1)
 
 #define QUP_CONFIG		0x000
 #define QUP_STATE		0x004
@@ -50,15 +54,27 @@
 #define I2C_BUS_ACTIVE		BIT(8)
 #define I2C_ERROR_MASK		0x38000fc
 #define I2C_NACK		BIT(3)
+#define I2C_SDA			BIT(26)
+#define I2C_SCL			BIT(27)
 
 #define TAG_START		(1u << 8)
 #define TAG_DATA		(2u << 8)
 #define TAG_STOP		(3u << 8)
 #define TAG_REC			(4u << 8)
 
+#define TIMEOUT_MS		20
+#define RECOVER_MS		1000
+#define LOG_MS			1000
+#define BUS_CLEAR_CLOCKS	9
+#define BUS_CLEAR_HALF_US	5
+
 struct bus {
 	uint32_t base, clk_ctl;
 	unsigned fifo_entries;
+	unsigned sda, scl, func;
+	uint32_t logged_t, recover_t;
+	volatile bool recover;		/* wanted by a failure in interrupt context */
+	uint32_t recover_status;
 	struct {
 		volatile bool busy;
 		uint8_t *r;
@@ -122,14 +138,29 @@ static void finish(struct bus *b, int err)
 		done(err, ctx);
 }
 
+static void note(struct bus *b, const char *what, uint32_t state, uint32_t status, uint32_t err, uint32_t op)
+{
+	b->pending.what = what;
+	b->pending.state = state;
+	b->pending.status = status;
+	b->pending.err = err;
+	b->pending.op = op;
+}
+
 static void qup_irq(struct bus *b)
 {
+	uint32_t state = readl(b->base + QUP_STATE), st = readl(b->base + QUP_I2C_STATUS),
+		 err = readl(b->base + QUP_ERROR_FLAGS), op = readl(b->base + QUP_OPERATIONAL);
+	bool bad = (st & I2C_ERROR_MASK) || (err & ERROR_FLAGS);
 	if (!b->xfer.busy) {
+		if (bad)
+			note(b, "error while idle", state, st, err, op);
 		writel(STATE_RESET, b->base + QUP_STATE);
 		return;
 	}
-	uint32_t st = readl(b->base + QUP_I2C_STATUS), err = readl(b->base + QUP_ERROR_FLAGS), op = readl(b->base + QUP_OPERATIONAL);
-	if ((st & I2C_ERROR_MASK) || (err & ERROR_FLAGS)) {
+	if (bad) {
+		if (!(st & I2C_NACK))
+			note(b, "error", state, st, err, op);
 		reset(b);
 		finish(b, st & I2C_NACK ? -2 : -1);
 		return;
@@ -169,12 +200,8 @@ static struct bus *bus(unsigned qup)
 	return qup >= 1 && qup <= 6 && buses[qup - 1].base ? &buses[qup - 1] : NULL;
 }
 
-int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz)
+static void clocks_on(unsigned qup)
 {
-	if (qup < 1 || qup > 6)
-		return -3;
-	struct bus *b = &buses[qup - 1];
-	b->base = 0xf9923000u + (qup - 1) * 0x1000;
 	writel(readl(GCC_BLSP1_AHB_VOTE) | BIT(17), GCC_BLSP1_AHB_VOTE);
 	writel(0, GCC_QUP_I2C_CMD_RCGR(qup) + 4);
 	writel(readl(GCC_QUP_I2C_CMD_RCGR(qup)) | 1, GCC_QUP_I2C_CMD_RCGR(qup));
@@ -183,17 +210,101 @@ int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32
 	writel(readl(GCC_QUP_I2C_CBCR(qup)) | 1, GCC_QUP_I2C_CBCR(qup));
 	for (int i = 0; i < 1000 && (readl(GCC_QUP_I2C_CBCR(qup)) & BIT(31)); i++)
 		delay_us(1);
-	tlmm_config(sda, func, TLMM_INPUT, TLMM_PULL_NONE, 2);
-	tlmm_config(scl, func, TLMM_INPUT, TLMM_PULL_NONE, 2);
+}
+
+static void pins_to_qup(const struct bus *b)
+{
+	tlmm_config(b->sda, b->func, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	tlmm_config(b->scl, b->func, TLMM_INPUT, TLMM_PULL_NONE, 2);
+}
+
+int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz)
+{
+	if (qup < 1 || qup > 6)
+		return -3;
+	struct bus *b = &buses[qup - 1];
+	b->base = 0xf9923000u + (qup - 1) * 0x1000;
+	b->sda = sda;
+	b->scl = scl;
+	b->func = func;
+	clocks_on(qup);
+	pins_to_qup(b);
 	b->clk_ctl = 3u << 8 | ((19200000 / bus_hz) / 2 - 3);
 	uint32_t io = readl(b->base + QUP_IO_MODE);
 	unsigned out_blk = (io & 3) ? (io & 3) * 16 : 16;
 	b->fifo_entries = out_blk / 2 * (2u << ((io >> 2) & 7));
 	int r = reset(b);
-	gic_enable(32 + 95 + qup - 1, irqs[qup - 1]);
+	gic_enable(IRQ_QUP(qup), irqs[qup - 1]);
 	log_printf("i2c: qup%u io_mode %08lx fifo %u entries, state %08lx, reset %d\n", qup, io, b->fifo_entries,
 		   readl(b->base + QUP_STATE), r);
 	return r;
+}
+
+static unsigned qup_of(const struct bus *b)
+{
+	return (unsigned)(b - buses) + 1;
+}
+
+static void report(struct bus *b, const char *what, const char *where, uint32_t state, uint32_t status, uint32_t err,
+		   uint32_t op)
+{
+	uint32_t now = time_ms();
+	unsigned q = qup_of(b);
+	if (now - b->logged_t < LOG_MS)
+		return;
+	b->logged_t = now;
+	log_printf("i2c: qup%u %s%s: state %08lx i2c %08lx err %08lx op %08lx, cbcr %08lx rcgr %08lx ahb %08lx\n", q, what, where,
+		   state, status, err, op, readl(GCC_QUP_I2C_CBCR(q)), readl(GCC_QUP_I2C_CMD_RCGR(q)),
+		   readl(GCC_BLSP1_AHB_VOTE));
+}
+
+/* Nine clocks free a slave stuck in a byte, then a stop. The lines are
+ * only ever pulled low, the bus's own pull-ups raise them. */
+static void bus_clear(const struct bus *b)
+{
+	tlmm_set(b->sda, 0);
+	tlmm_set(b->scl, 0);
+	tlmm_config(b->sda, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	tlmm_config(b->scl, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	for (unsigned i = 0; i < BUS_CLEAR_CLOCKS; i++) {
+		tlmm_config(b->scl, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		delay_us(BUS_CLEAR_HALF_US);
+		tlmm_config(b->scl, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+		delay_us(BUS_CLEAR_HALF_US);
+	}
+	tlmm_config(b->scl, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	delay_us(BUS_CLEAR_HALF_US);
+	tlmm_config(b->sda, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	delay_us(BUS_CLEAR_HALF_US);
+	tlmm_config(b->scl, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	delay_us(BUS_CLEAR_HALF_US);
+	tlmm_config(b->sda, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	delay_us(BUS_CLEAR_HALF_US);
+}
+
+static bool recover_due(const struct bus *b)
+{
+	return !b->recover_t || time_ms() - b->recover_t >= RECOVER_MS;
+}
+
+/* Not in interrupt context, and with the bus held busy so nothing starts
+ * on it. status is from before any reset. */
+static void recover(struct bus *b, uint32_t status)
+{
+	unsigned q = qup_of(b);
+	b->recover_t = time_ms();
+	b->recover = false;
+	if ((status & I2C_BUS_ACTIVE) || (status & (I2C_SDA | I2C_SCL)) != (I2C_SDA | I2C_SCL))
+		bus_clear(b);
+	writel(1, GCC_QUP_BCR(q));
+	delay_ms(1);
+	writel(0, GCC_QUP_BCR(q));
+	delay_us(1);
+	clocks_on(q);
+	pins_to_qup(b);
+	bool ok = !reset(b) && !poll_state(b, 0, WAIT_MAST_GEN) && !set_state(b, STATE_RUN);
+	reset(b);
+	log_printf("i2c: qup%u %s\n", q, ok ? "recovered" : "not recovered");
 }
 
 static int fail(struct bus *b, const char *what)
@@ -201,16 +312,19 @@ static int fail(struct bus *b, const char *what)
 	uint32_t state = readl(b->base + QUP_STATE), status = readl(b->base + QUP_I2C_STATUS),
 		 err = readl(b->base + QUP_ERROR_FLAGS), op = readl(b->base + QUP_OPERATIONAL);
 	if (in_irq()) {
-		b->pending.what = what;
-		b->pending.state = state;
-		b->pending.status = status;
-		b->pending.err = err;
-		b->pending.op = op;
+		note(b, what, state, status, err, op);
+		b->recover_status = status;
+		b->recover = true;
+		reset(b);
 	} else {
-		log_printf("i2c: %s: state %08lx i2c %08lx err %08lx op %08lx\n", what, state, status, err, op);
+		report(b, what, "", state, status, err, op);
+		if (recover_due(b))
+			recover(b, status);
+		else
+			reset(b);
 	}
-	reset(b);
 	b->xfer.busy = false;
+	gic_unmask(IRQ_QUP(qup_of(b)));
 	return -1;
 }
 
@@ -222,8 +336,6 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 		return -3;
 	uint16_t e[40];
 	unsigned n = 0;
-	if (b->xfer.busy)
-		return -4;
 	if (wn > ARRAY_SIZE(e) - 4 || rn > 256 || b->fifo_entries < 4 || wn > b->fifo_entries - 4 ||
 	    rn > b->fifo_entries)
 		return -3;
@@ -236,12 +348,21 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 		e[n++] = TAG_START | (uint16_t)(addr << 1 | 1);
 		e[n++] = (uint16_t)(TAG_REC | (rn & 0xff));
 	}
-	b->xfer.busy = true;
+	/* Masked until the FIFO is in: setup raises flags qup_irq would act on. */
+	uint32_t flags = irq_save();
+	if (b->xfer.busy) {
+		irq_restore(flags);
+		return -4;
+	}
 	b->xfer.r = r;
 	b->xfer.rn = rn;
 	b->xfer.done = done;
 	b->xfer.ctx = ctx;
 	b->xfer.started = time_ms();
+	gic_mask(IRQ_QUP(qup));
+	dsb();
+	b->xfer.busy = true;
+	irq_restore(flags);
 	if (reset(b) || poll_state(b, 0, WAIT_MAST_GEN))
 		return fail(b, "not ready");
 	writel(IO_PACK_UNPACK, b->base + QUP_IO_MODE);
@@ -258,6 +379,7 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 		writel(e[i] | (i + 1 < n ? (uint32_t)e[i + 1] << 16 : 0), b->base + QUP_OUT_FIFO);
 	if (set_state(b, STATE_RUN))
 		return fail(b, "start");
+	gic_unmask(IRQ_QUP(qup));
 	return 0;
 }
 
@@ -278,16 +400,31 @@ void i2c_qup_poll(unsigned qup)
 		uint32_t state = b->pending.state, status = b->pending.status, err = b->pending.err, op = b->pending.op;
 		b->pending.what = NULL;
 		irq_restore(flags);
-		log_printf("i2c: %s (in irq): state %08lx i2c %08lx err %08lx op %08lx\n", what, state, status, err, op);
+		report(b, what, " (in irq)", state, status, err, op);
 	}
-	if (b->xfer.busy && time_ms() - b->xfer.started > 20) {
-		irq_disable();
-		if (b->xfer.busy) {
+	if (b->recover && recover_due(b) && !in_irq()) {
+		uint32_t flags = irq_save();
+		bool idle = !b->xfer.busy;
+		if (idle) {
+			gic_mask(IRQ_QUP(qup));
+			b->xfer.busy = true;
+		}
+		irq_restore(flags);
+		if (idle) {
+			recover(b, b->recover_status);
+			b->xfer.busy = false;
+			gic_unmask(IRQ_QUP(qup));
+		}
+	}
+	if (b->xfer.busy && time_ms() - b->xfer.started > TIMEOUT_MS) {
+		uint32_t flags = irq_save();
+		/* Again: an interrupt may have ended it and started another. */
+		if (b->xfer.busy && time_ms() - b->xfer.started > TIMEOUT_MS) {
 			fail(b, "timeout");
 			if (b->xfer.done)
 				b->xfer.done(-5, b->xfer.ctx);
 		}
-		irq_enable();
+		irq_restore(flags);
 	}
 }
 
@@ -299,10 +436,7 @@ int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint
 	int ret = i2c_qup_start(qup, addr, w, wn, r, rn, sync_done, (void *)&result);
 	if (ret)
 		return ret;
-	while (result == 1) {
+	while (result == 1)
 		i2c_qup_poll(qup);
-		if (result == 1)
-			wfi();
-	}
 	return result;
 }

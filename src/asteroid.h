@@ -39,6 +39,11 @@ bool cpu_clock_is_slow(void);
 void cpu_clock_park(void);
 void cpu_clock_unpark(void);
 void power_request(bool sleep);
+/* A wake request, with the cause logged if it wakes the watch. The first
+ * request of a pass gives the cause. */
+void power_wake(const char *cause);
+/* Takes back a power_wake if this was its cause. */
+void power_wake_cancel(const char *cause);
 enum setting {
 	SETTING_BRIGHTNESS,
 	SETTING_BLUETOOTH,
