@@ -30,6 +30,8 @@
 
 #define BT_START_MS 2000
 
+static const char wake_by_touch[] = "touch";
+
 static struct app_caps caps;
 #define have_display caps.display
 #define have_ui caps.ui
@@ -159,7 +161,7 @@ void app_sensors(uint32_t now)
 		if (want_tilt != tilt_on && hub_tilt_on(want_tilt))
 			tilt_on = want_tilt;
 		if (hub_tilted() && !power_awake() && setting_get(SETTING_TILT))
-			power_request(false);
+			power_wake("tilt");
 		if (steps_awake && !power_awake())
 			steps_save();
 		steps_awake = power_awake();
@@ -211,17 +213,27 @@ void app_flashlight(uint32_t now)
 void app_touch(uint32_t now)
 {
 	struct touch t;
+	bool palm = false;
 	while (have_touch && touch_poll(&t)) {
 		if (t.event == TOUCH_PALM) {
 			log_printf("touch: palm\n");
-			if (power_awake())
+			if (power_awake()) {
 				power_request(true);
+			} else {
+				palm = true;
+				wake_touch = false;
+				power_wake_cancel(wake_by_touch);
+			}
 			continue;
 		}
 		enum touch_use use = power_policy_touch(&wake_touch, power_awake(), setting_get(SETTING_TAP), t.event == TOUCH_DOWN,
 							t.event == TOUCH_UP);
-		if (use == TOUCH_WAKE)
-			power_request(false);
+		if (use == TOUCH_WAKE) {
+			if (palm)
+				wake_touch = false;
+			else
+				power_wake(wake_by_touch);
+		}
 		if (use != TOUCH_USE)
 			continue;
 		power_activity(now);
@@ -261,6 +273,14 @@ void app_cable(uint32_t now)
  * was already seen comes just after it. */
 #define KEY_RELEASE_IRQ_MS	200
 
+static void key_pressed(void)
+{
+	if (power_awake())
+		power_request(true);
+	else
+		power_wake("key");
+}
+
 void app_key(uint32_t now, bool irq)
 {
 	static uint32_t key_up_t;
@@ -275,11 +295,11 @@ void app_key(uint32_t now, bool irq)
 				log_printf("rebooting on power key\n");
 				reboot();
 			}
-			power_request(power_awake());
+			key_pressed();
 		}
 	} else if (irq && !key && now - key_up_t >= KEY_RELEASE_IRQ_MS) {
 		key_up_t = now;
-		power_request(power_awake());
+		key_pressed();
 	}
 }
 

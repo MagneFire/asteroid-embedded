@@ -32,6 +32,7 @@ static struct nightstand stand;
 static bool ambient;
 static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
+static const char *wake_cause;
 
 void power_init(bool display, bool ui, bool hub)
 {
@@ -47,6 +48,21 @@ void power_request(bool sleep)
 		policy.sleep_request = true;
 	else
 		policy.wake_request = true;
+}
+
+void power_wake(const char *cause)
+{
+	if (!policy.wake_request)
+		wake_cause = cause;
+	policy.wake_request = true;
+}
+
+void power_wake_cancel(const char *cause)
+{
+	if (policy.wake_request && wake_cause == cause) {
+		policy.wake_request = false;
+		wake_cause = NULL;
+	}
 }
 
 void power_activity(uint32_t now)
@@ -233,13 +249,15 @@ enum power_change power_update(uint32_t *now_p)
 		policy.awake = true;
 		asleep_ms += now - asleep_t;
 		now = time_ms();
+		const char *cause = policy.charger_wake ? "charger" : wake_cause ? wake_cause : "other";
 		power_policy_woke(&policy, now);
 		if (have_ui)
 			stack_wake(now);
-		log_printf("wake\n");
+		log_printf("wake: %s\n", cause);
 		change = POWER_WOKE;
 	}
 	policy.sleep_request = policy.wake_request = false;
+	wake_cause = NULL;
 	/* Asleep on the charger the nightstand setting picked; once off the
 	 * charger the normal one applies, either way. The picture stays off
 	 * until the face is drawn, or the last screen would flash up. */
