@@ -83,6 +83,11 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 	return HUB(heart_rate) ? board->hub->heart_rate(status, readings) : HUB_NONE;
 }
 bool hub_tilted(void) { return HUB(tilted) && board->hub->tilted(); }
+bool hub_tilt_on(bool on)
+{
+	return !HUB(tilt_on) || board->hub->tilt_on(on);
+}
+
 void hub_accel_on(bool on)
 {
 	if (HUB(accel_on))

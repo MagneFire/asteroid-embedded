@@ -36,6 +36,6 @@ void m4_bl_address(uint32_t addr, uint8_t out[5]);
 bool m4_barker_ok(const uint8_t *b);
 uint32_t m4_u32(const uint8_t *b);
 /* A wrist turn or a look at the watch, from the wake status and the
- * first gesture. */
-bool m4_is_tilt(uint32_t wake_status, uint8_t gesture);
+ * first gesture and its value: looking away is a gesture too. */
+bool m4_is_tilt(uint32_t wake_status, uint8_t gesture, int8_t value);
 #endif

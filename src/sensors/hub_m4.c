@@ -165,13 +165,28 @@ static void m4_poll(void)
 	if (!wake_pending)
 		return;
 	wake_pending = false;
-	uint8_t s[4], g = 0;
+	uint8_t s[4], g[3] = { 0 };
 	if (!reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_STATUS, s, 4)) {
 		uint32_t status = m4_u32(s);
-		if ((status & M4_WAKE_GESTURE) && !reg_read(M4_BANK_GESTURE, M4_GESTURE_FIRST, &g, 1) && m4_is_tilt(status, g))
-			tilt = true;
+		if (status & M4_WAKE_GESTURE) {
+			/* One register at a time, as the vendor reads them. */
+			int r = 0;
+			for (unsigned i = 0; i < 3; i++)
+				r |= reg_read(M4_BANK_GESTURE, (uint8_t)(M4_GESTURE_FIRST + i), &g[i], 1);
+			if (!r && m4_is_tilt(status, g[0], (int8_t)g[2]))
+				tilt = true;
+		}
 	}
 	tlmm_irq_enable(GPIO_WAKE, true);
+}
+
+static bool m4_tilt_on(bool on)
+{
+	uint8_t enable[4];
+	if (state != HUB_READY || reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4))
+		return false;
+	enable[0] = (uint8_t)(on ? enable[0] | M4_WAKE_GESTURE : enable[0] & ~M4_WAKE_GESTURE);
+	return !reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4);
 }
 
 static uint32_t m4_steps(void)
@@ -218,6 +233,7 @@ const struct hub_driver hub_m4 = {
 	.set_time = set_time,
 	.steps = m4_steps,
 	.tilted = m4_tilted,
+	.tilt_on = m4_tilt_on,
 	.can_sleep = m4_can_sleep,
 	.sleep = m4_sleep,
 	.status = m4_status,

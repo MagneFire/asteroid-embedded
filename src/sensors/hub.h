@@ -12,6 +12,9 @@ uint32_t hub_steps(void);
 void hub_heart_rate_on(bool on);
 uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);
 bool hub_tilted(void);
+/* Tilt detection, off with the screen on as the vendor has it; false
+ * if the hub did not take it, to be tried again. */
+bool hub_tilt_on(bool on);
 void hub_accel_on(bool on);
 bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);

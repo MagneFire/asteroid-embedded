@@ -3,6 +3,7 @@
 
 #define GESTURE_VIEW		1
 #define GESTURE_WRIST_ROTATE	2
+#define GESTURE_VIEW_ON		0
 
 /* What the vendor's flashing leaves at the end of the firmware area: the
  * M4 must not be started without it. */
@@ -27,7 +28,9 @@ uint32_t m4_u32(const uint8_t *b)
 	return b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
 }
 
-bool m4_is_tilt(uint32_t wake_status, uint8_t gesture)
+bool m4_is_tilt(uint32_t wake_status, uint8_t gesture, int8_t value)
 {
-	return (wake_status & M4_WAKE_GESTURE) && (gesture == GESTURE_VIEW || gesture == GESTURE_WRIST_ROTATE);
+	if (!(wake_status & M4_WAKE_GESTURE))
+		return false;
+	return gesture == GESTURE_WRIST_ROTATE || (gesture == GESTURE_VIEW && value == GESTURE_VIEW_ON);
 }

@@ -22,11 +22,12 @@ int main(void)
 	uint8_t n[4] = { 0x78, 0x56, 0x34, 0x12 };
 	CHECK(m4_u32(n) == 0x12345678);
 
-	CHECK(m4_is_tilt(M4_WAKE_GESTURE, 1));
-	CHECK(m4_is_tilt(M4_WAKE_GESTURE, 2));
+	CHECK(m4_is_tilt(M4_WAKE_GESTURE, 1, 0));
+	CHECK(!m4_is_tilt(M4_WAKE_GESTURE, 1, 1));
+	CHECK(m4_is_tilt(M4_WAKE_GESTURE, 2, 3));
 	/* A tap is not a tilt, nor a gesture left from before. */
-	CHECK(!m4_is_tilt(M4_WAKE_GESTURE, 3));
-	CHECK(!m4_is_tilt(0, 1));
+	CHECK(!m4_is_tilt(M4_WAKE_GESTURE, 3, 0));
+	CHECK(!m4_is_tilt(0, 1, 0));
 
 	puts(failures ? "m4_test: FAILED" : "m4_test: ok");
 	return failures != 0;
