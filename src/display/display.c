@@ -65,6 +65,26 @@ void display_splash_size(uint32_t *w, uint32_t *h)
 	*h = img >> 16;
 }
 
+/* A bootloader that shuts its display down, as smelt's does, leaves the
+ * pipe's buffer but nothing behind it: the DSI interface unselected and
+ * no pipe on the mixer. Set these up as the vendor's kernel does, with
+ * the pipe on the mixer's first stage over the whole frame. */
+static void pipeline_setup(void)
+{
+	uint32_t size = fb.panel_height << 16 | fb.width;
+	writel(MDP_INTF_SEL_DSI, MDP_INTF_SEL);
+	writel(size, PIPE + PIPE_SRC_SIZE);
+	writel(size, PIPE + PIPE_SRC_IMG_SIZE);
+	writel(size, PIPE + PIPE_OUT_SIZE);
+	writel(size, MDP_LM0 + LM_OUT_SIZE);
+	for (unsigned stage = 0; stage < 2; stage++) {
+		writel(LM_BLEND_OP_FG_CONST, MDP_LM0 + LM_BLEND(stage));
+		writel(0xff, MDP_LM0 + LM_BLEND(stage) + LM_BLEND_FG_ALPHA);
+	}
+	writel(CTL_LAYER_RGB0_STAGE1, MDP_CTL0 + CTL_LAYER0);
+	writel(CTL_FLUSH_RGB0 | CTL_FLUSH_LM0 | CTL_FLUSH_CTL, MDP_CTL0 + CTL_FLUSH);
+}
+
 bool display_init(void)
 {
 	if (!(readl(MDP_GDSCR) & BIT(31))) {
@@ -135,6 +155,10 @@ bool display_init(void)
 	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | (board->panel.flip_ud ? PIPE_FLIP_UD : 0),
 	       PIPE + PIPE_SRC_OP_MODE);
 	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
+	uint32_t layer = readl(MDP_CTL0 + CTL_LAYER0);
+	log_printf("display: ctl top %08lx layer %08lx intf %08lx\n", top, layer, readl(MDP_INTF_SEL));
+	if (!layer)
+		pipeline_setup();
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
 	if (board->backlight && !board->backlight->init())
 		log_printf("display: no backlight\n");

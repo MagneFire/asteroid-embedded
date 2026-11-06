@@ -49,6 +49,7 @@
 #define MDP_INTR_PP0_DONE	BIT(8)
 #define MDP_INTR_PP0_RD_PTR	BIT(12)
 #define MDP_CTL0		(MDSS_BASE + 0x0600)
+#define CTL_LAYER0		0x00
 #define CTL_TOP			0x14
 #define CTL_FLUSH		0x18
 #define CTL_START		0x1c
@@ -68,6 +69,16 @@
 #define PIPE_FLIP_LR		BIT(13)
 #define PIPE_FLIP_UD		BIT(14)
 #define CTL_FLUSH_RGB0		BIT(3)
+#define CTL_FLUSH_LM0		BIT(6)
+#define CTL_FLUSH_CTL		BIT(17)
+#define CTL_LAYER_RGB0_STAGE1	(1 << 9)
+#define MDP_INTF_SEL		(MDSS_BASE + 0x0104)
+#define MDP_INTF_SEL_DSI	(1 << 8)
+#define MDP_LM0			(MDSS_BASE + 0x3200)
+#define LM_OUT_SIZE		0x04
+#define LM_BLEND(stage)		(0x20 + (stage) * 0x30)
+#define LM_BLEND_OP_FG_CONST	0x100
+#define LM_BLEND_FG_ALPHA	0x04
 #define MDP_PP0			(MDSS_BASE + 0x21b00)
 #define PP_TEAR_CHECK_EN	0x00
 #define PP_SYNC_CONFIG_VSYNC	0x04
