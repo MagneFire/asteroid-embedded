@@ -66,7 +66,7 @@ static void message_done(int err, void *ctx)
 		struct touch t = { m.down ? (was_down ? TOUCH_MOVE : TOUCH_DOWN) : TOUCH_UP, last_x, last_y, m.down, time_ms() };
 		if (m.down) {
 			t.x = last_x = (int)((uint32_t)m.x * fb.width / (max_x + 1));
-			t.y = last_y = (int)((uint32_t)m.y * fb.height / (max_y + 1));
+			t.y = last_y = (int)((uint32_t)m.y * fb.panel_height / (max_y + 1));
 		}
 		if (m.down || was_down)
 			push(&t);

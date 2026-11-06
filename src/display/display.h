@@ -5,7 +5,9 @@
 
 struct fb {
 	uint32_t *buf[2];
-	uint32_t width, height, stride;
+	/* height is the round picture, panel_height what the panel shows of
+	 * it: less with a flat tire, the rest cut off at the bottom. */
+	uint32_t width, height, stride, panel_height;
 	unsigned back;
 };
 extern struct fb fb;

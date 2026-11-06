@@ -81,7 +81,8 @@ bool display_init(void)
 	uint32_t top = readl(MDP_CTL0 + CTL_TOP);
 	uint32_t ar = readl(MDP_PP0 + PP_AUTOREFRESH_CONFIG);
 	fb.width = img & 0xffff;
-	fb.height = img >> 16;
+	fb.panel_height = img >> 16;
+	fb.height = board->panel.round && fb.panel_height < fb.width ? fb.width : fb.panel_height;
 	fb.stride = (fb.width + 31) & ~31u;
 	fb.buf[0] = (uint32_t *)(uintptr_t)FB_BASE;
 	fb.buf[1] = (uint32_t *)(uintptr_t)(FB_BASE + fb.stride * fb.height * 4);
@@ -112,9 +113,9 @@ bool display_init(void)
 	uint32_t vclks_line = 19200000 / (board->panel.lines * board->panel.hz);
 	writel(PP_VSYNC_COUNTER_EN | PP_VSYNC_IN_EN | vclks_line, MDP_PP0 + PP_SYNC_CONFIG_VSYNC);
 	writel(board->panel.lines, MDP_PP0 + PP_SYNC_CONFIG_HEIGHT);
-	writel(fb.height, MDP_PP0 + PP_VSYNC_INIT_VAL);
-	writel(fb.height + 1, MDP_PP0 + PP_RD_PTR_IRQ);
-	writel(fb.height, MDP_PP0 + PP_START_POS);
+	writel(fb.panel_height, MDP_PP0 + PP_VSYNC_INIT_VAL);
+	writel(fb.panel_height + 1, MDP_PP0 + PP_RD_PTR_IRQ);
+	writel(fb.panel_height, MDP_PP0 + PP_START_POS);
 	writel(4 | 4 << 16, MDP_PP0 + PP_SYNC_THRESH);
 	writel(0, MDP_PP0 + PP_AUTOREFRESH_CONFIG);
 	writel(1, MDP_PP0 + PP_TEAR_CHECK_EN);
