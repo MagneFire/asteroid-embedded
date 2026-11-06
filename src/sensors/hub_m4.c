@@ -5,7 +5,9 @@
  * mark at the end of the firmware is checked and the bootloader told to
  * jump to it. The firmware takes 2.5 s to come up, so init returns and
  * the poll finishes the job: the pedometer, and the wake line for a
- * gesture, which reading the status clears. */
+ * gesture, which reading the status clears. A hub that keeps failing on
+ * the bus goes through the same start again; its step count starts over,
+ * so what it had counted is carried across. */
 #include "asteroid.h"
 #include "sensors/hub.h"
 #include "sensors/m4_proto.h"
@@ -22,12 +24,17 @@
 #define BL_READY_MS	600
 #define BL_ATTEMPTS	60
 #define STEPS_MS	10000
+#define FAIL_LIMIT	5
+#define RESTART_MS	30000
+/* A failed read or write is tried again after this long. */
+#define RETRY_MS	1000
 
 static enum { HUB_OFF, HUB_BOOTING, HUB_READY } state;
-static uint32_t go_t, steps_t, steps;
+static uint32_t go_t, steps_t, steps, steps_base, restart_t, wake_retry_t;
 static uint16_t version;
 static volatile bool wake_pending;
-static bool tilt;
+static bool tilt, tilt_wanted = true, wake_retry, accel_running;
+static unsigned fails;
 
 static void wait_ms(unsigned ms)
 {
@@ -73,10 +80,16 @@ static bool bl_read(uint32_t addr, uint8_t *data, unsigned n)
 	       !i2c_qup_xfer(QUP, ADDR, NULL, 0, data, n);
 }
 
+static int counted(int r)
+{
+	fails = r ? fails + 1 : 0;
+	return r;
+}
+
 static int reg_read(uint8_t bank, uint8_t offset, uint8_t *data, unsigned n)
 {
 	uint8_t a[2] = { bank, offset };
-	return i2c_qup_xfer(QUP, ADDR, a, 2, data, n);
+	return counted(i2c_qup_xfer(QUP, ADDR, a, 2, data, n));
 }
 
 static int reg_write(uint8_t bank, uint8_t offset, const uint8_t *data, unsigned n)
@@ -84,7 +97,7 @@ static int reg_write(uint8_t bank, uint8_t offset, const uint8_t *data, unsigned
 	uint8_t b[6] = { bank, offset };
 	for (unsigned i = 0; i < n && i < 4; i++)
 		b[2 + i] = data[i];
-	return i2c_qup_xfer(QUP, ADDR, b, 2 + n, NULL, 0);
+	return counted(i2c_qup_xfer(QUP, ADDR, b, 2 + n, NULL, 0));
 }
 
 static void wake_line(unsigned pin)
@@ -141,6 +154,7 @@ static void started(void)
 	if (reg_read(M4_BANK_GENERAL, M4_GENERAL_VERSION, v, 2)) {
 		log_printf("hub: m4 firmware not answering\n");
 		state = HUB_OFF;
+		fails = FAIL_LIMIT;
 		return;
 	}
 	version = (uint16_t)(v[0] | v[1] << 8);
@@ -149,7 +163,7 @@ static void started(void)
 	reg_write(M4_BANK_PEDOMETER, M4_PEDOMETER_ENABLE, &on, 1);
 	reg_write(M4_BANK_METS, M4_METS_ENABLE, &on, 1);
 	if (!reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
-		enable[0] |= M4_WAKE_GESTURE;
+		enable[0] = (uint8_t)(tilt_wanted ? enable[0] | M4_WAKE_GESTURE : enable[0] & ~M4_WAKE_GESTURE);
 		reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4);
 	}
 	tlmm_irq_config(GPIO_WAKE, TLMM_IRQ_LEVEL_HIGH, wake_line);
@@ -157,52 +171,89 @@ static void started(void)
 	log_printf("hub: m4 firmware %04x up\n", version);
 }
 
+static void restart(uint32_t now)
+{
+	log_printf("hub: m4 failing on the bus, restarting it\n");
+	restart_t = now;
+	tlmm_irq_enable(GPIO_WAKE, false);
+	wake_pending = wake_retry = false;
+	accel_running = false;
+	steps_base = steps;
+	state = HUB_OFF;
+	m4_init();
+}
+
 static void m4_poll(void)
 {
 	i2c_qup_poll(QUP);
-	if (state == HUB_BOOTING && time_ms() - go_t >= BOOT_MS)
+	uint32_t now = time_ms();
+	if (state == HUB_BOOTING && now - go_t >= BOOT_MS)
 		started();
+	if (state != HUB_BOOTING && fails >= FAIL_LIMIT && now - restart_t >= RESTART_MS)
+		restart(now);
+	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
+		wake_retry = false;
+		tlmm_irq_enable(GPIO_WAKE, true);
+	}
 	if (!wake_pending)
 		return;
 	wake_pending = false;
 	uint8_t s[4], g[3] = { 0 };
-	if (!reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_STATUS, s, 4)) {
-		uint32_t status = m4_u32(s);
-		if (status & M4_WAKE_GESTURE) {
-			/* One register at a time, as the vendor reads them. */
-			int r = 0;
-			for (unsigned i = 0; i < 3; i++)
-				r |= reg_read(M4_BANK_GESTURE, (uint8_t)(M4_GESTURE_FIRST + i), &g[i], 1);
-			if (!r && m4_is_tilt(status, g[0], (int8_t)g[2]))
-				tilt = true;
-		}
+	if (reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_STATUS, s, 4)) {
+		wake_retry = true;
+		wake_retry_t = now;
+		return;
+	}
+	uint32_t status = m4_u32(s);
+	if (status & M4_WAKE_GESTURE) {
+		/* One register at a time, as the vendor reads them. */
+		int r = 0;
+		for (unsigned i = 0; i < 3; i++)
+			r |= reg_read(M4_BANK_GESTURE, (uint8_t)(M4_GESTURE_FIRST + i), &g[i], 1);
+		if (!r && m4_is_tilt(status, g[0], (int8_t)g[2]))
+			tilt = true;
 	}
 	tlmm_irq_enable(GPIO_WAKE, true);
 }
 
 static bool m4_tilt_on(bool on)
 {
+	static uint32_t tried_t;
+	uint32_t now = time_ms();
 	uint8_t enable[4];
-	if (state != HUB_READY || reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4))
+	tilt_wanted = on;
+	if (state != HUB_READY || now - tried_t < RETRY_MS)
 		return false;
+	if (reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
+		tried_t = now;
+		return false;
+	}
 	enable[0] = (uint8_t)(on ? enable[0] | M4_WAKE_GESTURE : enable[0] & ~M4_WAKE_GESTURE);
-	return !reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4);
+	if (reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
+		tried_t = now;
+		return false;
+	}
+	return true;
 }
 
 /* The rate is the time between samples in ms, -1 off. */
 #define ACCEL_MS	200
 
-static bool accel_running;
 static uint32_t accel_t;
 
 static void m4_accel_on(bool on)
 {
 	int16_t rate = on ? ACCEL_MS : -1;
 	uint8_t b[2] = { (uint8_t)rate, (uint8_t)((uint16_t)rate >> 8) };
-	if (on == accel_running || state != HUB_READY)
+	static uint32_t tried_t;
+	uint32_t now = time_ms();
+	if (on == accel_running || state != HUB_READY || now - tried_t < RETRY_MS)
 		return;
-	if (!reg_write(M4_BANK_ACCEL, M4_ACCEL_RATE, b, 2))
-		accel_running = on;
+	if (reg_write(M4_BANK_ACCEL, M4_ACCEL_RATE, b, 2)) {
+		tried_t = now;
+		return;
+	}
+	accel_running = on;
 	log_printf("hub: accelerometer %s\n", on ? "on" : "off");
 }
 
@@ -232,7 +283,7 @@ static uint32_t m4_steps(void)
 	if (now - steps_t >= STEPS_MS) {
 		steps_t = now;
 		if (!reg_read(M4_BANK_PEDOMETER, M4_PEDOMETER_STEPS, b, 4))
-			steps = m4_u32(b);
+			steps = steps_base + m4_u32(b);
 	}
 	return steps;
 }
@@ -244,10 +295,11 @@ static bool m4_tilted(void)
 	return t;
 }
 
-/* Not until the firmware is up, or the wait for it would stretch out. */
+/* Not until the firmware is up, or the wait for it would stretch out,
+ * nor with the wake line or the bus still to be dealt with. */
 static bool m4_can_sleep(void)
 {
-	return state != HUB_BOOTING;
+	return state != HUB_BOOTING && !wake_pending && !wake_retry && !i2c_qup_busy(QUP);
 }
 
 static void m4_sleep(bool asleep)
