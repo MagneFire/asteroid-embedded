@@ -7,8 +7,10 @@
  *
  * On the charger: the dock line is low while on the pad, and as for the
  * vendor, that counts as charging. USB through the pogo pins counts as a
- * cable too, but the pad does not bring up USB. */
+ * cable too, but the pad does not bring up USB. The line glitches, so it
+ * only counts once it has held its level for DOCK_DEBOUNCE_MS. */
 #include "asteroid.h"
+#include "present.h"
 #include "soc/max17050.h"
 #include "soc/charge_policy.h"
 
@@ -21,10 +23,11 @@
 #define GPIO_CHARGE_RATE	(board->gauge.charge_rate)
 #define BUS_HZ		200000
 #define POLL_MS		30000
+#define DOCK_DEBOUNCE_MS	2000
 
-static bool ready, wake_armed;
+static bool ready, wake_armed, dock_state, dock_settling, dock_plugged;
 static volatile bool dock_irq;
-static uint32_t soc = 50, poll_t;
+static uint32_t soc = 50, poll_t, dock_t;
 static uint16_t last_status;
 static unsigned errors;
 static struct charge_policy policy;
@@ -41,9 +44,14 @@ static int rd(uint8_t reg, uint16_t *v)
 	return 0;
 }
 
-static bool docked(void)
+static bool dock_line(void)
 {
 	return !tlmm_get(GPIO_DOCK);
+}
+
+static bool docked(void)
+{
+	return dock_state;
 }
 
 static void refresh(void)
@@ -102,6 +110,7 @@ static void gauge_init(void)
 	tlmm_config(GPIO_DOCK, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
 	uint16_t id = 0;
 	int r = i2c_qup_init(QUP, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
+	dock_state = dock_line();
 	if (!r)
 		r = rd(MAX17050_DEVNAME, &id);
 	if (r || id != MAX17050_DEVNAME_ID) {
@@ -117,16 +126,42 @@ static void gauge_init(void)
 	charge_check();
 }
 
+/* A falling edge seen since the last look starts the wait again, as the
+ * line may have come back between looks. */
+static void dock_update(uint32_t now)
+{
+	bool edge = dock_irq, line = dock_line();
+	dock_irq = false;
+	if (line == dock_state) {
+		dock_settling = false;
+		return;
+	}
+	if (!dock_settling || edge) {
+		dock_settling = true;
+		dock_t = now;
+		return;
+	}
+	if (now - dock_t < DOCK_DEBOUNCE_MS)
+		return;
+	dock_settling = false;
+	dock_state = line;
+	dock_plugged = line;
+	log_printf("gauge: dock %u, usb %u\n", line, pmic_usb_present());
+	present_clock_soon();
+}
+
 /* The MPM sees levels, so its wake-up on the dock line is armed only
- * while off the dock, or the watch would never stay asleep on it. */
+ * while the line is high, or the watch would never stay asleep with it
+ * low, on the dock or waiting out the debounce. */
 static void gauge_poll(void)
 {
-	bool arm = !docked();
+	bool arm = !dock_line();
+	uint32_t now = time_ms();
 	if (arm != wake_armed) {
 		wake_armed = arm;
 		spm_wake_pin(MPM_PIN_DOCK, arm, false);
 	}
-	uint32_t now = time_ms();
+	dock_update(now);
 	if (now - poll_t < POLL_MS)
 		return;
 	poll_t = now;
@@ -140,13 +175,21 @@ static bool gauge_cable(void) { return docked() || pmic_usb_present(); }
 
 static bool gauge_usb(void) { return pmic_usb_present(); }
 
-/* On the pad the charge limits need a look on time, asleep too. */
+/* On the pad the charge limits need a look on time, asleep too, and so
+ * does a dock line that changed. */
 static uint32_t gauge_next_ms(void)
 {
-	if (!docked())
-		return UINT32_MAX;
-	uint32_t gone = time_ms() - poll_t;
-	return gone >= POLL_MS ? 1 : POLL_MS - gone;
+	uint32_t now = time_ms(), next = UINT32_MAX;
+	if (dock_irq)
+		return 1;
+	if (dock_settling)
+		next = ms_left(dock_t, DOCK_DEBOUNCE_MS, now);
+	if (docked()) {
+		uint32_t poll = ms_left(poll_t, POLL_MS, now);
+		if (poll < next)
+			next = poll;
+	}
+	return next;
 }
 
 static void dock_edge(unsigned n)
@@ -161,10 +204,11 @@ static void gauge_cable_irq_init(void)
 	tlmm_irq_enable(GPIO_DOCK, true);
 }
 
+/* Only once the line has settled low. */
 static bool gauge_cable_irq(void)
 {
-	bool fired = dock_irq;
-	dock_irq = false;
+	bool fired = dock_plugged;
+	dock_plugged = false;
 	return fired;
 }
 
