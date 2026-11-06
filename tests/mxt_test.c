@@ -22,6 +22,12 @@ int main(void)
 	CHECK(m.t9_addr == 0x120 && m.t9_size == 35);
 	CHECK(m.t9_first_id == 2 && m.t9_ids == 10);
 
+	/* Touch suppression reports a palm, on its own id only. */
+	CHECK(m.t42_id == 12);
+	CHECK(mxt_palm(&m, (const uint8_t[]){ 12, 1 }));
+	CHECK(!mxt_palm(&m, (const uint8_t[]){ 12, 0 }));
+	CHECK(!mxt_palm(&m, (const uint8_t[]){ 2, 1 }));
+
 	/* Without a touch object, or too many. */
 	uint8_t no_t9[] = { 5, 0, 1, 8, 0, 0 };
 	CHECK(!mxt_parse(no_t9, 1, &m));

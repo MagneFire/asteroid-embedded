@@ -39,12 +39,19 @@ bool mxt_parse(uint8_t *table, unsigned n, struct mxt_map *m)
 			m->t9_size = (uint8_t)(o[3] + 1);
 			m->t9_first_id = (uint8_t)id;
 			m->t9_ids = (uint8_t)ids;
+		} else if (o[0] == MXT_T42_SUPPRESS && ids) {
+			m->t42_id = (uint8_t)id;
 		}
 		id += ids;
 		if (id > 255)
 			return false;
 	}
 	return m->msg_size >= 7 && m->t9_ids;
+}
+
+bool mxt_palm(const struct mxt_map *m, const uint8_t *msg)
+{
+	return m->t42_id && msg[0] == m->t42_id && msg[1] & 1;
 }
 
 bool mxt_wide(uint8_t range_hi)

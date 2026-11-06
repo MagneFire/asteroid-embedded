@@ -9,6 +9,7 @@
 #define MXT_MAX_OBJECTS		40
 #define MXT_T5_MESSAGE		5
 #define MXT_T9_TOUCH		9
+#define MXT_T42_SUPPRESS	42
 
 struct mxt_map {
 	uint16_t msg_addr;	/* T5, where messages are read */
@@ -17,6 +18,7 @@ struct mxt_map {
 	uint8_t t9_size;
 	uint8_t t9_first_id;	/* report id of the first finger */
 	uint8_t t9_ids;
+	uint8_t t42_id;		/* 0 without touch suppression */
 };
 
 struct mxt_touch {
@@ -33,4 +35,6 @@ bool mxt_wide(uint8_t range_hi);
 /* Decodes a message, false if it is not a touch. x and y are in the
  * chip's range, 12 or 10 bits as wide_x and wide_y say. */
 bool mxt_decode(const struct mxt_map *m, const uint8_t *msg, bool wide_x, bool wide_y, struct mxt_touch *t);
+/* Whether a message says touch suppression, a palm, has just started. */
+bool mxt_palm(const struct mxt_map *m, const uint8_t *msg);
 #endif
