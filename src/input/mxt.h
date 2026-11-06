@@ -9,7 +9,10 @@
 #define MXT_MAX_OBJECTS		40
 #define MXT_T5_MESSAGE		5
 #define MXT_T9_TOUCH		9
+#define MXT_T7_POWER		7
 #define MXT_T42_SUPPRESS	42
+#define MXT_T46_CTE		46
+#define MXT_T62_NOISE		62
 
 struct mxt_map {
 	uint16_t msg_addr;	/* T5, where messages are read */
@@ -19,6 +22,7 @@ struct mxt_map {
 	uint8_t t9_first_id;	/* report id of the first finger */
 	uint8_t t9_ids;
 	uint8_t t42_id;		/* 0 without touch suppression */
+	uint16_t t7_addr, t42_addr, t46_addr, t62_addr;
 };
 
 struct mxt_touch {
@@ -37,4 +41,9 @@ bool mxt_wide(uint8_t range_hi);
 bool mxt_decode(const struct mxt_map *m, const uint8_t *msg, bool wide_x, bool wide_y, struct mxt_touch *t);
 /* Whether a message says touch suppression, a palm, has just started. */
 bool mxt_palm(const struct mxt_map *m, const uint8_t *msg);
+/* The vendor's settings for asleep and awake: entry i of
+ * MXT_POWER_WRITES, as the register and its value; false if that object
+ * is not on this chip. */
+#define MXT_POWER_WRITES	12
+bool mxt_power_write(const struct mxt_map *m, unsigned i, bool asleep, uint16_t *addr, uint8_t *val);
 #endif

@@ -28,6 +28,17 @@ int main(void)
 	CHECK(!mxt_palm(&m, (const uint8_t[]){ 12, 0 }));
 	CHECK(!mxt_palm(&m, (const uint8_t[]){ 2, 1 }));
 
+	/* The low power settings, with a missing object left out. */
+	uint16_t addr = 0;
+	uint8_t val = 0;
+	CHECK(!mxt_power_write(&m, 0, true, &addr, &val));
+	CHECK(mxt_power_write(&m, 4, true, &addr, &val));
+	CHECK(addr == 0x127 && val == 75);
+	CHECK(mxt_power_write(&m, 4, false, &addr, &val));
+	CHECK(addr == 0x127 && val == 85);
+	CHECK(mxt_power_write(&m, 8, true, &addr, &val));
+	CHECK(addr == 0x160 && val == 65);
+
 	/* Without a touch object, or too many. */
 	uint8_t no_t9[] = { 5, 0, 1, 8, 0, 0 };
 	CHECK(!mxt_parse(no_t9, 1, &m));
@@ -52,6 +63,18 @@ int main(void)
 	CHECK(mxt_decode(&m, up, true, true, &t) && !t.down);
 	uint8_t suppressed[] = { 2, 0x02, 0, 0, 0, 0, 0, 0 };
 	CHECK(mxt_decode(&m, suppressed, true, true, &t) && !t.down);
+
+	/* Down needs DETECT; a move on its own says nothing is there. */
+	uint8_t moved[] = { 2, 0x90, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, moved, true, true, &t) && t.down);
+	uint8_t undetected[] = { 2, 0x10, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, undetected, true, true, &t) && !t.down);
+	uint8_t no_status[] = { 2, 0x00, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, no_status, true, true, &t) && !t.down);
+	uint8_t detected_up[] = { 2, 0xa0, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, detected_up, true, true, &t) && !t.down);
+	uint8_t detected_suppressed[] = { 2, 0x82, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, detected_suppressed, true, true, &t) && !t.down);
 
 	/* Other objects' messages are not touches. */
 	uint8_t other[] = { 1, 0, 0, 0, 0, 0, 0, 0 };

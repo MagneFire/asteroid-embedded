@@ -3,6 +3,7 @@
  * messages are, and the line going low says one is waiting. Each one is
  * read in interrupt context, the first finger's touches queued, and the
  * line unmasked again, so a line still low starts the next read at once.
+ * After a failed read the line stays masked until mxt_poll retries it.
  * The controller's range comes from its T9 object and is scaled to the
  * panel. */
 #include <string.h>
@@ -24,6 +25,8 @@
 #define T9_RANGE	18
 #define MSG_MAX		16
 #define BOOT_WAIT_MS	500
+#define RETRY_MIN_MS	50
+#define RETRY_MAX_MS	2000
 
 #define QUEUE_LEN	16
 static struct touch queue[QUEUE_LEN];
@@ -34,6 +37,8 @@ static unsigned max_x = 1023, max_y = 1023;
 static bool wide_x, wide_y, was_down;
 static int last_x, last_y;
 static uint32_t attentions, errors;
+static volatile bool configuring, retry;
+static uint32_t retry_t, retry_ms;
 
 static int rd(uint16_t addr, uint8_t *buf, unsigned n)
 {
@@ -53,16 +58,29 @@ static void push(const struct touch *t)
 
 static void rearm(void)
 {
+	if (configuring)
+		return;
 	tlmm_irq_ack(GPIO_IRQ);
 	tlmm_irq_enable(GPIO_IRQ, true);
+}
+
+static void read_failed(void)
+{
+	errors++;
+	retry_ms = !retry_ms ? RETRY_MIN_MS : retry_ms * 2 > RETRY_MAX_MS ? RETRY_MAX_MS : retry_ms * 2;
+	retry_t = time_ms();
+	retry = true;
 }
 
 static void message_done(int err, void *ctx)
 {
 	struct mxt_touch m;
-	if (err)
-		errors++;
-	else if (msg[0] != 0xff && mxt_palm(&map, msg)) {
+	if (err) {
+		read_failed();
+		return;
+	}
+	retry_ms = 0;
+	if (msg[0] != 0xff && mxt_palm(&map, msg)) {
 		struct touch t = { TOUCH_PALM, last_x, last_y, false, time_ms() };
 		was_down = false;
 		push(&t);
@@ -83,10 +101,8 @@ static void attention(unsigned pin)
 {
 	tlmm_irq_enable(GPIO_IRQ, false);
 	attentions++;
-	if (i2c_qup_start(QUP, ADDR, msg_ptr, 2, msg, map.msg_size, message_done, NULL)) {
-		errors++;
-		rearm();
-	}
+	if (i2c_qup_start(QUP, ADDR, msg_ptr, 2, msg, map.msg_size, message_done, NULL))
+		read_failed();
 }
 
 /* Power, then a reset pulse; the line going low says it is up. */
@@ -151,9 +167,42 @@ static bool mxt_init(void)
 	return true;
 }
 
+/* The vendor's low power settings while the screen sleeps. A message in
+ * flight finishes first. */
+static void mxt_sleep(bool on)
+{
+	if (!map.t9_addr)
+		return;
+	configuring = true;
+	tlmm_irq_enable(GPIO_IRQ, false);
+	for (uint32_t t0 = time_ms(); i2c_qup_busy(QUP) && time_ms() - t0 < 50;)
+		i2c_qup_poll(QUP);
+	for (unsigned i = 0; i < MXT_POWER_WRITES; i++) {
+		uint16_t addr;
+		uint8_t val;
+		if (mxt_power_write(&map, i, on, &addr, &val)) {
+			uint8_t w[3] = { (uint8_t)addr, (uint8_t)(addr >> 8), val };
+			if (i2c_qup_xfer(QUP, ADDR, w, 3, NULL, 0))
+				errors++;
+		}
+	}
+	configuring = false;
+	if (!retry)
+		rearm();
+}
+
+static uint32_t mxt_next_ms(void)
+{
+	return retry ? ms_left(retry_t, retry_ms, time_ms()) : UINT32_MAX;
+}
+
 static bool mxt_poll(struct touch *t)
 {
 	i2c_qup_poll(QUP);
+	if (retry && time_ms() - retry_t >= retry_ms) {
+		retry = false;
+		rearm();
+	}
 	if (q_tail == q_head)
 		return false;
 	barrier();
@@ -169,4 +218,5 @@ static void mxt_stats(uint32_t *att, uint32_t *err)
 	*err = errors;
 }
 
-const struct touch_driver touch_mxt = { .init = mxt_init, .poll = mxt_poll, .stats = mxt_stats };
+const struct touch_driver touch_mxt = { .init = mxt_init, .sleep = mxt_sleep, .poll = mxt_poll, .stats = mxt_stats,
+					.next_ms = mxt_next_ms };
