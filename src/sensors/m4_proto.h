@@ -17,6 +17,7 @@
 #define M4_BARKER_ADDR		(M4_FLASH_BASE + 512 * 1024 - 8)
 #define M4_BARKER_SIZE		8
 
+#define M4_BANK_ACCEL		0
 #define M4_BANK_GENERAL		1
 #define M4_BANK_PEDOMETER	3
 #define M4_BANK_METS		9
@@ -29,6 +30,8 @@
 #define M4_PEDOMETER_STEPS	0x04
 #define M4_METS_ENABLE		0x00
 #define M4_GESTURE_FIRST	0x01
+#define M4_ACCEL_RATE		0x02
+#define M4_ACCEL_X		0x08
 
 #define M4_WAKE_GESTURE		(1u << 2)
 

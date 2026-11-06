@@ -189,6 +189,40 @@ static bool m4_tilt_on(bool on)
 	return !reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4);
 }
 
+/* The rate is the time between samples in ms, -1 off. */
+#define ACCEL_MS	200
+
+static bool accel_running;
+static uint32_t accel_t;
+
+static void m4_accel_on(bool on)
+{
+	int16_t rate = on ? ACCEL_MS : -1;
+	uint8_t b[2] = { (uint8_t)rate, (uint8_t)((uint16_t)rate >> 8) };
+	if (on == accel_running || state != HUB_READY)
+		return;
+	if (!reg_write(M4_BANK_ACCEL, M4_ACCEL_RATE, b, 2))
+		accel_running = on;
+	log_printf("hub: accelerometer %s\n", on ? "on" : "off");
+}
+
+static bool m4_accel(int16_t v[3])
+{
+	uint32_t now = time_ms();
+	if (!accel_running || now - accel_t < ACCEL_MS)
+		return false;
+	accel_t = now;
+	for (unsigned i = 0; i < 3; i++) {
+		uint8_t b[4];
+		if (reg_read(M4_BANK_ACCEL, (uint8_t)(M4_ACCEL_X + 4 * i), b, 4))
+			return false;
+		/* 65536 to 1 g, down to the 2048 the other hubs give. */
+		int32_t a = (int32_t)m4_u32(b) / 32;
+		v[i] = (int16_t)(a > 32767 ? 32767 : a < -32768 ? -32768 : a);
+	}
+	return true;
+}
+
 static uint32_t m4_steps(void)
 {
 	if (state != HUB_READY)
@@ -234,6 +268,8 @@ const struct hub_driver hub_m4 = {
 	.steps = m4_steps,
 	.tilted = m4_tilted,
 	.tilt_on = m4_tilt_on,
+	.accel_on = m4_accel_on,
+	.accel = m4_accel,
 	.can_sleep = m4_can_sleep,
 	.sleep = m4_sleep,
 	.status = m4_status,
