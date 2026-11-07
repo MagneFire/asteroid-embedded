@@ -240,6 +240,10 @@ void log_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log_puts(const char *s);
 void log_record(const char *text);
 const char *log_previous_record(void);
+bool log_ring_lost(void);
+/* Boot and charger history in the kv store (events.c). */
+void events_poll(uint32_t now);
+void events_append(char *buf, unsigned cap, const char *line);
 void log_set_sink(void (*fn)(const char *s, size_t n));
 void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
 uint32_t log_end(void);

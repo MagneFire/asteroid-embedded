@@ -20,7 +20,7 @@ struct zone {
 #define RECORD_CAP	(RAMOOPS_RECORD_SIZE - sizeof(struct zone))
 
 static char previous[RECORD_CAP + 1];
-static bool have_previous;
+static bool have_previous, ring_lost;
 static void (*sink)(const char *s, size_t n);
 /* Bytes put in the console ring since boot, counting those it held then:
  * the positions log_read works with, which keep their meaning while the
@@ -44,6 +44,7 @@ void log_init(void)
 		z->sig = SIG;
 		z->start = 0;
 		z->size = 0;
+		ring_lost = true;
 	}
 	written = z->size;
 	volatile struct zone *r = RECORD;
@@ -57,6 +58,10 @@ void log_init(void)
 	r->start = 0;
 	r->size = 0;
 }
+
+/* Whether the console ring did not survive to this boot: a cold power-on,
+ * or another OS ran in between. */
+bool log_ring_lost(void) { return ring_lost; }
 
 void log_set_sink(void (*fn)(const char *s, size_t n)) { sink = fn; }
 

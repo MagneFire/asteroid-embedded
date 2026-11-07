@@ -77,6 +77,8 @@ void main(uint32_t machtype, const void *fdt)
 		log_puts("\n");
 	} else
 		log_printf("no fault record from the previous boot\n");
+	if (log_ring_lost())
+		log_printf("no log from the previous boot: cold power-on, or another OS ran\n");
 
 	batt_init();
 	light_init();
@@ -138,6 +140,7 @@ void main(uint32_t machtype, const void *fdt)
 		app_touch(now);
 		bool key_irq = pmic_power_key_irq();
 		app_cable(now);
+		events_poll(now);
 		app_key(now, key_irq);
 		present_events(now);
 		app_tick(now);

@@ -20,7 +20,21 @@
 #define SMPS2_MODE		0x011745
 #define SMPS_MODE_AUTO		0x40
 
-static char reason[128];
+static char reason[256];
+
+/* PON_REASON1 bits, then the bits shared by the warm reset and power-off
+ * reason registers (first byte, second byte), as qpnp-power-on names them. */
+static const char *const pon_names[8] = { "hard-reset", "smpl", "rtc", "dc", "usb", "pon1", "cbl", "kpd" };
+static const char *const off_names1[8] = { "soft", "ps-hold", "pmic-wd", "gp1", "gp2", "kpd+resin", "resin", "kpd" };
+static const char *const off_names2[8] = { 0, 0, 0, "charger", "tft", "uvlo", "otst3", "stage3" };
+
+static void names(char *s, size_t cap, uint8_t bits, const char *const *table)
+{
+	size_t n = strlen(s);
+	for (unsigned i = 0; i < 8; i++)
+		if ((bits & 1u << i) && table[i] && n < cap)
+			n += (size_t)snprintf(s + n, cap - n, " %s", table[i]);
+}
 
 void pmic_init(void)
 {
@@ -28,8 +42,14 @@ void pmic_init(void)
 	uint8_t pon = pmic_read(PON_REASON1);
 	uint8_t warm1 = pmic_read(PON_WARM_RESET_REASON1), warm2 = pmic_read(PON_WARM_RESET_REASON2);
 	uint8_t poff1 = pmic_read(PON_POFF_REASON1), poff2 = pmic_read(PON_POFF_REASON2);
-	snprintf(reason, sizeof reason, "pmic type %02x.%02x pon %02x warm %02x%02x poff %02x%02x",
-		 type, sub, pon, warm1, warm2, poff1, poff2);
+	snprintf(reason, sizeof reason, "pmic type %02x.%02x pon %02x", type, sub, pon);
+	names(reason, sizeof reason, pon, pon_names);
+	snprintf(reason + strlen(reason), sizeof reason - strlen(reason), " warm %02x%02x", warm1, warm2);
+	names(reason, sizeof reason, warm1, off_names1);
+	names(reason, sizeof reason, warm2, off_names2);
+	snprintf(reason + strlen(reason), sizeof reason - strlen(reason), " poff %02x%02x", poff1, poff2);
+	names(reason, sizeof reason, poff1, off_names1);
+	names(reason, sizeof reason, poff2, off_names2);
 
 	pmic_write(PON_PS_HOLD_RESET_CTL2, 0);
 	delay_us(300);
