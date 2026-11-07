@@ -10,13 +10,23 @@ BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
 IMG = os.path.join(BUILD, "asteroid.img")
 ELF = os.path.join(BUILD, "asteroid.elf")
 RAW = os.path.join(BUILD, "ramoops.bin")
+# --serial / --adb-serial: a watch in fastboot and the firmware's adb can
+# have different serials (smelt: M987BW25ZV and asteroid-smelt).
+SERIAL = None
+ADB_SERIAL = None
+
+def fb_cmd(*args):
+    return ["fastboot", *(["-s", SERIAL] if SERIAL else []), *args]
+
+def adb_cmd(*args):
+    return ["adb", *(["-s", ADB_SERIAL] if ADB_SERIAL else []), *args]
 SIG = 0x43474244
 RECORD_SIZE = 0x2000
 CONSOLE_SIZE = 0x40000
 REGION_SIZE = 0x80000
 
 def fastboot(*args, check=True, quiet=False):
-    r = subprocess.run(["fastboot", *args], capture_output=True, text=True)
+    r = subprocess.run(fb_cmd(*args), capture_output=True, text=True)
     if check and r.returncode:
         sys.exit("fastboot %s failed:\n%s%s" % (" ".join(args), r.stdout, r.stderr))
     if not quiet and (r.stdout.strip() or r.stderr.strip()):
@@ -25,7 +35,8 @@ def fastboot(*args, check=True, quiet=False):
 
 def devices():
     r = subprocess.run(["fastboot", "devices"], capture_output=True, text=True)
-    return [l.split()[0] for l in r.stdout.splitlines() if l.strip()]
+    found = [l.split()[0] for l in r.stdout.splitlines() if l.strip()]
+    return [d for d in found if d == SERIAL] if SERIAL else found
 
 def wait_for(present, timeout, what):
     t0 = time.time()
@@ -87,7 +98,17 @@ def show(blob, tail):
 
 def adb_online():
     r = subprocess.run(["adb", "devices"], capture_output=True, text=True)
-    return any(l.endswith("\tdevice") for l in r.stdout.splitlines()[1:])
+    return any(l.endswith("\tdevice") and (not ADB_SERIAL or l.split()[0] == ADB_SERIAL)
+               for l in r.stdout.splitlines()[1:])
+
+def show_log(tail):
+    """Print the firmware's log tail over adb and symbolize the previous
+    boot's fault record in it, if any."""
+    r = subprocess.run(adb_cmd("shell", "log %d" % tail), capture_output=True, text=True, timeout=60)
+    print(r.stdout.rstrip())
+    prev = re.findall(r"previous boot ended with:\n(.*?)\n\n", r.stdout, re.S)
+    if prev:
+        symbolize(prev[-1])
 
 def fetch_ramoops(tail):
     """False if this bootloader has no such command: the stock one on sparrow."""
@@ -110,14 +131,14 @@ def boot():
 def lk2nd():
     # A reboot to the bootloader can land in the stock one, which hangs on
     # fastboot boot: go on from there to lk2nd.
-    r = subprocess.run(["fastboot", "getvar", "version-bootloader"], capture_output=True, text=True, timeout=10)
+    r = subprocess.run(fb_cmd("getvar", "version-bootloader"), capture_output=True, text=True, timeout=10)
     if "STURGEON" in r.stdout + r.stderr:
         fastboot("continue", quiet=True)
         t0 = time.time()
         while time.time() - t0 < 30:
             time.sleep(0.5)
             if devices():
-                r = subprocess.run(["fastboot", "getvar", "version-bootloader"], capture_output=True, text=True, timeout=10)
+                r = subprocess.run(fb_cmd("getvar", "version-bootloader"), capture_output=True, text=True, timeout=10)
                 if "STURGEON" not in r.stdout + r.stderr:
                     return
         sys.exit("timeout waiting for lk2nd")
@@ -126,15 +147,29 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--no-boot", action="store_true", help="only fetch the log region from fastboot")
     p.add_argument("--no-wait", action="store_true", help="boot and return")
+    p.add_argument("--attach", action="store_true",
+                   help="no fastboot: show the running firmware's log over adb and symbolize its record")
+    p.add_argument("--serial", "-s", help="fastboot serial (and adb serial unless --adb-serial)")
+    p.add_argument("--adb-serial", help="the firmware's adb serial (asteroid-<board>)")
     p.add_argument("--timeout", type=float, default=20)
-    p.add_argument("--tail", type=int, default=40)
+    p.add_argument("--tail", type=int, help="log lines to show (40, or 300 with --attach)")
     a = p.parse_args()
+    global SERIAL, ADB_SERIAL
+    SERIAL = a.serial
+    ADB_SERIAL = a.adb_serial or a.serial
+    if a.tail is None:
+        a.tail = 300 if a.attach else 40
+    if a.attach:
+        if not adb_online():
+            sys.exit("no adb device%s" % (" " + ADB_SERIAL if ADB_SERIAL else ""))
+        show_log(a.tail)
+        return
     if a.no_boot:
         if not fetch_ramoops(a.tail):
             sys.exit("no oem ramoops here: boot again and read the previous boot's record")
         return
     if adb_online():
-        subprocess.run(["adb", "reboot", "bootloader"], capture_output=True, timeout=20)
+        subprocess.run(adb_cmd("reboot", "bootloader"), capture_output=True, timeout=20)
         wait_for(True, 20, "come back to fastboot")
     else:
         wait_for(True, 10, "appear in fastboot")
@@ -148,11 +183,7 @@ def main():
     while time.time() - t0 < a.timeout:
         if adb_online():
             print("adb online after %.1f s" % (time.time() - t0))
-            r = subprocess.run(["adb", "shell", "log %d" % a.tail], capture_output=True, text=True, timeout=20)
-            print(r.stdout.rstrip())
-            prev = re.findall(r"previous boot ended with:\n(.*?)\n\n", r.stdout, re.S)
-            if prev:
-                symbolize(prev[-1])
+            show_log(a.tail)
             return
         if devices():
             print("back in fastboot after %.1f s without adb: the image died" % (time.time() - t0))

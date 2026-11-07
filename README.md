@@ -35,8 +35,13 @@ The watch must sit in fastboot. Sturgeon has lk2nd (built with
 `LK2ND_FORCE_FASTBOOT=1` and `SCRATCH_SIZE=0x0F000000`) flashed to `boot`,
 which also serves the log region after a crash; sparrow's stock bootloader
 boots the image as it is, and `adb reboot bootloader` brings it back.
+Smelt has the image flashed to `boot` (AsteroidOS backup in the notes repo),
+so after a crash it reboots into the firmware by itself and `--attach` shows
+the record; `--serial` and `--adb-serial` pick the watch when several are
+attached (the fastboot and the firmware's adb serial differ).
 
     make run            # adb reboot bootloader, fastboot boot, show the log
+    tools/run.py --attach --adb-serial asteroid-smelt   # log and record of a running watch
     make test           # host tests for the adb and console code
 
 The running firmware is an adb device: `adb shell` gives the command
