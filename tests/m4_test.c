@@ -29,6 +29,25 @@ int main(void)
 	CHECK(!m4_is_tilt(M4_WAKE_GESTURE, 3, 0));
 	CHECK(!m4_is_tilt(0, 1, 0));
 
+	/* Still and motion are always followed, the gesture only when wanted. */
+	CHECK(m4_wake_mask(true) == 7);
+	CHECK(m4_wake_mask(false) == 3);
+
+	uint8_t le[4];
+	m4_put_u16(M4_STILL_TIMEOUT_S, le);
+	CHECK(le[0] == 0x58 && le[1] == 0x02);
+	m4_put_u32(0x12345678, le);
+	CHECK(m4_u32(le) == 0x12345678 && le[0] == 0x78);
+
+	/* The pedometer block starts at activity; the count sits two bytes in. */
+	uint8_t block[M4_PEDOMETER_BLOCK_SIZE] = { 1, 0, 0x78, 0x56, 0x34, 0x12 };
+	CHECK(m4_block_steps(block) == 0x12345678);
+
+	uint8_t magic[4] = { 0xef, 0xbe, 0xad, 0xde }, healthy[4] = { 0xff, 0xff, 0xff, 0xff }, zeros[4] = { 0 };
+	CHECK(m4_panicked(magic));
+	CHECK(!m4_panicked(healthy));
+	CHECK(!m4_panicked(zeros));
+
 	puts(failures ? "m4_test: FAILED" : "m4_test: ok");
 	return failures != 0;
 }
