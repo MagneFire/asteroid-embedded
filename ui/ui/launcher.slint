@@ -54,6 +54,9 @@ export global Apps {
 // that did not move.
 // With cross set, a drag mostly across the axis is reported in cross-drag instead, and in
 // crossed when let go.
+// Without wrap, a drag past either end follows the finger less and less, up to give, and a
+// flick that reaches an end with speed left goes past it by up to 0.6 give and comes back: drag
+// holds that bit past the end while the move there plays out.
 export component Pager inherits TouchArea {
     in property <bool> horizontal: true;
     in property <length> item: 100 * Theme.unit;
@@ -78,7 +81,23 @@ export component Pager inherits TouchArea {
     property <length> pos: self.horizontal ? self.mouse-x : self.mouse-y;
     property <length> start: self.horizontal ? self.pressed-x : self.pressed-y;
     property <length> across: self.horizontal ? self.mouse-y - self.pressed-y : self.mouse-x - self.pressed-x;
+    property <length> give: Math.min(self.item * 0.3, 15 * Theme.unit);
     callback tapped(length, length);
+
+    // Past an end by e, followed less and less, up to give.
+    function resist(e: length) -> length {
+        return self.give * (e / (e + 2 * self.give));
+    }
+
+    back := Timer {
+        running: false;
+        interval: 150ms;
+        triggered => {
+            self.running = false;
+            root.anim = 300ms;
+            root.drag = 0;
+        }
+    }
     callback crossed(length);
 
     // Goes to item i at once.
@@ -101,7 +120,10 @@ export component Pager inherits TouchArea {
             self.last-ms = Face.touch-time();
         }
         if self.dragging {
-            self.drag = self.wrap ? self.pos - self.start : Math.clamp(self.pos - self.start, (self.index + 1 - self.count) * self.item, self.index * self.item);
+            let d = self.pos - self.start;
+            let lo = (self.index + 1 - self.count) * self.item;
+            let hi = self.index * self.item;
+            self.drag = self.wrap ? d : d > hi ? hi + self.resist(d - hi) : d < lo ? lo - self.resist(lo - d) : d;
             let dt = Face.touch-time() - self.last-ms;
             if dt > 0 {
                 self.v0 = self.v1;
@@ -115,6 +137,7 @@ export component Pager inherits TouchArea {
     }
     pointer-event(e) => {
         if e.kind == PointerEventKind.down {
+            back.running = false;
             self.dragging = false;
             self.crossing = false;
             self.drag = 0;
@@ -137,11 +160,22 @@ export component Pager inherits TouchArea {
                 let n = self.limit > 0 ? Math.clamp(free, self.index - self.limit, self.index + self.limit) : free;
                 let from = self.index * self.item - self.drag;
                 self.index = self.wrap ? n : Math.clamp(n, 0, self.count - 1);
-                self.anim = Math.max(1.7 * Math.abs(self.index * self.item - from) / (0.25 * Theme.unit) / Math.max(Math.abs(v), 1), 150) * 1ms;
+                // The speed left at the end, under the same deceleration.
+                let to-end = Math.abs(self.index * self.item - from) / (0.25 * Theme.unit);
+                let left = v * v - 0.003 * to-end;
+                let over = !self.wrap && n != self.index && left > 0 ? 0.6 * self.give * Math.min(1, Math.sqrt(left) / 1.5) : 0px;
+                self.anim = Math.max(1.7 * (to-end + over / (0.25 * Theme.unit)) / Math.max(Math.abs(v), 1), 150) * 1ms;
+                if over > 0 {
+                    self.drag = n > self.index ? -over : over;
+                    back.interval = self.anim;
+                    back.running = true;
+                }
             } else if e.kind == PointerEventKind.up && self.mouse-x >= 0 {
                 self.tapped(self.mouse-x, self.mouse-y);
             }
-            self.drag = 0;
+            if !back.running {
+                self.drag = 0;
+            }
             self.dragging = false;
             self.crossing = false;
             self.cross-drag = 0;
