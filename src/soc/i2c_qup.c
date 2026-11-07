@@ -8,7 +8,12 @@
  * once a read has arrived (one byte per IN_DATA entry), or an error.
  * The completion callback runs in interrupt context. A block that stops
  * taking transfers is reset through its GCC block reset, from the main
- * loop only. */
+ * loop only. A bus may be given a longer timeout for a slave that holds
+ * the clock while it prepares an answer: it applies while the bus is
+ * active with this master on it, as the vendor kernel waits a second
+ * in that case, and never to a transfer that got nowhere. A transfer
+ * that still times out is followed by a bus clear with its stop, so
+ * the slave sees the transaction end. */
 #include "asteroid.h"
 
 #define GCC_BASE			0xfc400000u
@@ -52,6 +57,7 @@
 #define I2C_STATUS_RESET	0xfffffc
 #define I2C_WR_BUFFER_FULL	BIT(0)
 #define I2C_BUS_ACTIVE		BIT(8)
+#define I2C_BUS_MASTER		BIT(9)
 #define I2C_ERROR_MASK		0x38000fc
 #define I2C_NACK		BIT(3)
 #define I2C_SDA			BIT(26)
@@ -72,6 +78,7 @@ struct bus {
 	uint32_t base, clk_ctl;
 	unsigned fifo_entries;
 	unsigned sda, scl, func;
+	uint32_t stretch_ms;		/* allowed while the slave holds the clock, 0 for none */
 	uint32_t logged_t, recover_t;
 	volatile bool recover;		/* wanted by a failure in interrupt context */
 	uint32_t recover_status;
@@ -307,7 +314,7 @@ static void recover(struct bus *b, uint32_t status)
 	log_printf("i2c: qup%u %s\n", q, ok ? "recovered" : "not recovered");
 }
 
-static int fail(struct bus *b, const char *what)
+static int fail(struct bus *b, const char *what, bool clear)
 {
 	uint32_t state = readl(b->base + QUP_STATE), status = readl(b->base + QUP_I2C_STATUS),
 		 err = readl(b->base + QUP_ERROR_FLAGS), op = readl(b->base + QUP_OPERATIONAL);
@@ -318,7 +325,7 @@ static int fail(struct bus *b, const char *what)
 		reset(b);
 	} else {
 		report(b, what, "", state, status, err, op);
-		if (recover_due(b))
+		if (clear || recover_due(b))
 			recover(b, status);
 		else
 			reset(b);
@@ -364,21 +371,21 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 	b->xfer.busy = true;
 	irq_restore(flags);
 	if (reset(b) || poll_state(b, 0, WAIT_MAST_GEN))
-		return fail(b, "not ready");
+		return fail(b, "not ready", false);
 	writel(IO_PACK_UNPACK, b->base + QUP_IO_MODE);
 	writel(rn ? OP_OUT_SVC : 0, b->base + QUP_OPERATIONAL_MASK);
 	if (rn)
 		writel(rn, b->base + QUP_MX_READ_CNT);
 	if (set_state(b, STATE_RUN))
-		return fail(b, "run");
+		return fail(b, "run", false);
 	writel(b->clk_ctl, b->base + QUP_I2C_CLK_CTL);
 	dsb();
 	if (set_state(b, STATE_PAUSE))
-		return fail(b, "pause");
+		return fail(b, "pause", false);
 	for (unsigned i = 0; i < n; i += 2)
 		writel(e[i] | (i + 1 < n ? (uint32_t)e[i + 1] << 16 : 0), b->base + QUP_OUT_FIFO);
 	if (set_state(b, STATE_RUN))
-		return fail(b, "start");
+		return fail(b, "start", false);
 	gic_unmask(IRQ_QUP(qup));
 	return 0;
 }
@@ -387,6 +394,25 @@ bool i2c_qup_busy(unsigned qup)
 {
 	struct bus *b = bus(qup);
 	return b && b->xfer.busy;
+}
+
+void i2c_qup_set_timeout(unsigned qup, uint32_t stretch_ms)
+{
+	struct bus *b = bus(qup);
+	if (b)
+		b->stretch_ms = stretch_ms;
+}
+
+/* Past the usual time: still within the stretch allowance while the
+ * slave holds the clock of a transfer this master has on the bus. */
+static bool timed_out(const struct bus *b, uint32_t waited)
+{
+	if (waited <= TIMEOUT_MS)
+		return false;
+	if (!b->stretch_ms || waited > b->stretch_ms)
+		return true;
+	uint32_t status = readl(b->base + QUP_I2C_STATUS);
+	return (status & (I2C_BUS_ACTIVE | I2C_BUS_MASTER)) != (I2C_BUS_ACTIVE | I2C_BUS_MASTER);
 }
 
 void i2c_qup_poll(unsigned qup)
@@ -416,11 +442,11 @@ void i2c_qup_poll(unsigned qup)
 			gic_unmask(IRQ_QUP(qup));
 		}
 	}
-	if (b->xfer.busy && time_ms() - b->xfer.started > TIMEOUT_MS) {
+	if (b->xfer.busy && timed_out(b, time_ms() - b->xfer.started)) {
 		uint32_t flags = irq_save();
 		/* Again: an interrupt may have ended it and started another. */
-		if (b->xfer.busy && time_ms() - b->xfer.started > TIMEOUT_MS) {
-			fail(b, "timeout");
+		if (b->xfer.busy && timed_out(b, time_ms() - b->xfer.started)) {
+			fail(b, "timeout", true);
 			if (b->xfer.done)
 				b->xfer.done(-5, b->xfer.ctx);
 		}
