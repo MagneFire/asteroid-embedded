@@ -29,8 +29,8 @@
  * ui_set_face selects the watchface and whether nightstand mode is on
  * and in effect, ui_set_launcher the launcher layout.
  * ui_launcher_edges says which edges of the launcher lead somewhere
- * (left, right, top, bottom as bits 0-3) and, in bit 4, whether it is at
- * its start; ui_notes_edges does the same for the notifications, bit 4
+ * (left, right, top, bottom as bits 0-3), in bit 4 whether it is at its
+ * start and in bit 5 whether the press is on the speed dial's name; ui_notes_edges does the same for the notifications, bit 4
  * meaning the newest is on screen; ui_launcher_colors gives its mesh
  * colours, or false to keep the mesh grey. ui_set_screen says which
  * panel the stack has on screen, under any app. ui_set_ringing shows a

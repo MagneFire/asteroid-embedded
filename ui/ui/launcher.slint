@@ -760,7 +760,8 @@ component SpeedDial {
         if !root.preview {
             // The pressed app's colours only while the wheel is at rest.
             Face.launcher-position = root.touched >= 0 && !root.turning && Math.abs(root.pos - root.index) < 0.001 ? root.touched : Math.mod(Math.mod(root.pos, root.n) + root.n, root.n);
-            Face.launcher-edges = 4;
+            // A drag from the name moves the screen, not the wheel.
+            Face.launcher-edges = 4 + (root.name-held ? 32 : 0);
         }
     }
     // Moves the wheel to a, an app, from where it is now, over t.
@@ -782,6 +783,9 @@ component SpeedDial {
         self.report();
     }
     changed turning => {
+        self.report();
+    }
+    changed name-held => {
         self.report();
     }
     changed current => {
@@ -887,7 +891,8 @@ component SpeedDial {
         }
 
         moved => {
-            // The name takes its own presses, as a label over the wheel: they do not turn it.
+            // The name takes its own presses, as a label over the wheel: they do not turn it. A
+            // drag from it moves the screen instead.
             if self.pressed-name {
                 return;
             }

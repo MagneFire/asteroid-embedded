@@ -226,12 +226,14 @@ void stack_set_launcher(unsigned layout)
  * take sideways drags. The vertical ones take vertical drags, except a
  * drag down from their start, or for the vertical pages from the top
  * edge, which goes back to the watchface. The speed dial takes drags
- * that start on its wheel. */
+ * that start on its wheel, but not on its name. */
 static bool launcher_scroll(int dx, int dy)
 {
 	if (launcher == 0 || launcher == 2)
 		return absi(dx) > absi(dy);
 	if (launcher == 6) {
+		if (ui_launcher_edges() & 32)
+			return false;
 		int x = down_x - W / 2, y = down_y - H / 2, r2 = x * x + y * y, lo = W * 24 / 100, hi = W * 47 / 100;
 		return r2 > lo * lo && r2 < hi * hi;
 	}

@@ -32,7 +32,8 @@ void ui_set_screen(unsigned panel) { screen_set = panel; }
 void ui_set_app(int app) { app_set = app; }
 /* Both lists at their start: a swipe back is a swipe, not a scroll. */
 unsigned ui_notes_edges(void) { return 16 | 0xf; }
-unsigned ui_launcher_edges(void) { return 16 | 0xf; }
+static unsigned launcher_edges = 16 | 0xf;
+unsigned ui_launcher_edges(void) { return launcher_edges; }
 void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
 			  const struct gpu_rect *parts, unsigned n)
 {
@@ -117,6 +118,20 @@ static void test_swipes(void)
 	drag(200, 100, 200, 300, 4);
 	settle();
 	CHECK(stack_screen() == UI_PANEL_FACE && stack_dim() == 0.0f);
+	/* The speed dial keeps a drag on its wheel, one on its name goes back. */
+	stack_set_launcher(6);
+	drag(200, 350, 200, 150, 4);
+	settle();
+	CHECK(stack_screen() == UI_PANEL_BOTTOM);
+	drag(80, 150, 80, 350, 4);
+	settle();
+	CHECK(stack_screen() == UI_PANEL_BOTTOM);
+	launcher_edges = 4 | 32;
+	drag(80, 150, 80, 350, 4);
+	settle();
+	launcher_edges = 16 | 0xf;
+	CHECK(stack_screen() == UI_PANEL_FACE);
+	stack_set_launcher(0);
 	/* A short slow drag stays. */
 	drag(200, 200, 215, 200, 8);
 	settle();
