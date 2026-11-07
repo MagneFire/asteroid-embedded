@@ -75,7 +75,6 @@ void fbcon_init(void)
 	memset(grid, 0, sizeof grid);
 	cx = cy = 0;
 	ready = true;
-	present();
 }
 
 void fbcon_set_overlay(bool on) { overlay = on; }
