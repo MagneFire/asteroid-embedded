@@ -31,7 +31,15 @@ static bool pm8226_init(void)
 
 static void pm8226_set(bool on)
 {
-	pmic_write(VIB_EN_CTL, on ? EN_MOTOR : 0);
+	static bool told;
+	uint8_t v = on ? EN_MOTOR : 0;
+	int r = spmi_write(VIB_EN_CTL, &v, 1);
+	uint8_t en = pmic_read(VIB_EN_CTL);
+	if ((r || (en & EN_MOTOR) != v) && !told) {
+		told = true;
+		log_printf("haptics: motor %s not taken, write %d, en %02x vtg %02x\n", on ? "on" : "off", r, en,
+			   pmic_read(VIB_VTG_CTL));
+	}
 }
 
 const struct motor_driver motor_pm8226 = { .init = pm8226_init, .set = pm8226_set };
