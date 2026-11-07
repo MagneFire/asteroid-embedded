@@ -31,6 +31,7 @@ uint32_t batt_mv(void) { return 3900; }
 const char *batt_status(void) { return "discharging"; }
 uint32_t pmic_rtc_read(void) { return stub_rtc; }
 uint8_t pmic_read(uint32_t addr) { return 0; }
+void pmic_write(uint32_t addr, uint8_t val) {}
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)

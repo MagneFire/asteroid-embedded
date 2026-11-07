@@ -326,9 +326,24 @@ static void cmd_mem(const char *args)
 
 static void cmd_pmic(const char *args)
 {
-	uint32_t addr, count = 1;
-	if (!parse_num(&args, 16, &addr) || (*skip_spaces(args) && !parse_num(&args, 0, &count))) {
-		say("usage: pmic <hex addr> [bytes]\n");
+	uint32_t addr, count = 1, val;
+	if (!parse_num(&args, 16, &addr)) {
+		say("usage: pmic <hex addr> [bytes | = <hex byte>]\n");
+		return;
+	}
+	args = skip_spaces(args);
+	if (*args == '=') {
+		args++;
+		if (!parse_num(&args, 16, &val) || val > 255) {
+			say("usage: pmic <hex addr> = <hex byte>\n");
+			return;
+		}
+		pmic_write(addr, (uint8_t)val);
+		say("%05lx: %02x\n", addr, pmic_read(addr));
+		return;
+	}
+	if (*args && !parse_num(&args, 0, &count)) {
+		say("usage: pmic <hex addr> [bytes | = <hex byte>]\n");
 		return;
 	}
 	if (count > 256)
@@ -986,7 +1001,7 @@ static const struct command commands[] = {
 	{ "set", "[name [value]]", cmd_set },
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
-	{ "pmic", "<hex addr> [bytes]", cmd_pmic },
+	{ "pmic", "<hex addr> [bytes | = <hex byte>]", cmd_pmic },
 	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
