@@ -114,9 +114,8 @@ static void attention(unsigned pin)
 /* Power, then a reset pulse; the line going low says it is up. */
 static bool power_on(void)
 {
-	rpm_regulator_voltage(RPM_LDOA, 28, 2800000);
-	rpm_regulator_enable(RPM_LDOA, 28, true);
-	rpm_regulator_sleep_enable(RPM_LDOA, 28, true);
+	if (rpm_ldo_on(28, 2800000))
+		log_printf("touch: l28 on not acknowledged\n");
 	tlmm_set(GPIO_RESET, 0);
 	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 6);
 	delay_ms(2);
