@@ -12,7 +12,11 @@
  * A crashed hub raises the wake line with nothing in the status and
  * answers the panic probe with a magic word; it is then started again,
  * as is a hub that keeps failing on the bus. Its step count starts over
- * each time, so what it had counted is carried across. */
+ * each time, so what it had counted is carried across. The hub crashes
+ * on its own about a second after it finds the watch still (a minute
+ * without motion) unless the accelerometer is enabled, which also keeps
+ * it from going still at all, so the accelerometer stays enabled and is
+ * only read when wanted. */
 #include "asteroid.h"
 #include "sensors/hub.h"
 #include "sensors/m4_proto.h"
@@ -49,7 +53,7 @@ static enum { HUB_OFF, HUB_BOOTING, HUB_READY } state;
 static uint32_t go_t, steps_t, steps, steps_base, restart_t, wake_retry_t;
 static uint16_t version;
 static volatile bool wake_pending;
-static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_running;
+static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_wanted, accel_set;
 static unsigned fails;
 static uint32_t wakes, last_wake, crashes, restarts;
 
@@ -238,10 +242,13 @@ static void started(void)
 	reg_write(M4_BANK_METS, M4_METS_ENABLE, &on, 1);
 	tilt_set = false;
 	write_tilt(time_ms());
+	accel_set = false;
 	tlmm_irq_config(GPIO_WAKE, TLMM_IRQ_LEVEL_HIGH, wake_line);
 	tlmm_irq_enable(GPIO_WAKE, true);
 	log_printf("hub: m4 firmware %04x up\n", version);
 }
+
+static void write_accel(uint32_t now);
 
 static void restart(uint32_t now, const char *why)
 {
@@ -250,7 +257,6 @@ static void restart(uint32_t now, const char *why)
 	restart_t = now;
 	tlmm_irq_enable(GPIO_WAKE, false);
 	wake_pending = wake_retry = false;
-	accel_running = false;
 	steps_base = steps;
 	state = HUB_OFF;
 	m4_init();
@@ -277,6 +283,7 @@ static void m4_poll(void)
 		restart(now, "failing on the bus");
 	if (state == HUB_READY && !tilt_set)
 		write_tilt(now);
+	write_accel(now);
 	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
 		wake_retry = false;
 		tlmm_irq_enable(GPIO_WAKE, true);
@@ -319,32 +326,38 @@ static bool m4_tilt_on(bool on)
 	return write_tilt(time_ms());
 }
 
-/* The rate is the time between samples in ms, -1 off. */
+/* The rate is the time between samples in ms, -1 off; the hub runs it at
+ * 20 ms whatever is asked. It is never switched off, see the top. */
 #define ACCEL_MS	200
 
 static uint32_t accel_t;
 
-static void m4_accel_on(bool on)
+/* Enables the accelerometer on the hub, at most once a second after a
+ * failure. */
+static void write_accel(uint32_t now)
 {
-	int16_t rate = on ? ACCEL_MS : -1;
-	uint8_t b[2];
 	static uint32_t tried_t;
-	uint32_t now = time_ms();
-	m4_put_u16((uint16_t)rate, b);
-	if (on == accel_running || state != HUB_READY || now - tried_t < RETRY_MS)
+	uint8_t b[2];
+	if (state != HUB_READY || accel_set || now - tried_t < RETRY_MS)
 		return;
+	m4_put_u16(ACCEL_MS, b);
 	if (reg_write(M4_BANK_ACCEL, M4_ACCEL_RATE, b, 2)) {
 		tried_t = now;
 		return;
 	}
-	accel_running = on;
-	log_printf("hub: accelerometer %s\n", on ? "on" : "off");
+	accel_set = true;
+	log_printf("hub: accelerometer on\n");
+}
+
+static void m4_accel_on(bool on)
+{
+	accel_wanted = on;
 }
 
 static bool m4_accel(int16_t v[3])
 {
 	uint32_t now = time_ms();
-	if (!accel_running || now - accel_t < ACCEL_MS)
+	if (!accel_wanted || !accel_set || now - accel_t < ACCEL_MS)
 		return false;
 	accel_t = now;
 	for (unsigned i = 0; i < 3; i++) {
