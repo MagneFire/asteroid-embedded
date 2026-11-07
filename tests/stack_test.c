@@ -43,7 +43,8 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 	face_x = x;
 	face_y = y;
 }
-static void background(int x, int y, float alpha) {}
+static int app_x = -1;
+static void background(int x, int y, float alpha) { app_x = x; }
 
 static void touch(int kind, int x, int y)
 {
@@ -136,7 +137,17 @@ static void test_swipes(void)
 
 static void test_app(void)
 {
+	/* An app opened after the pass read its time still slides in. */
+	uint32_t pass = stub_ms;
+	stub_ms += 2;
 	stack_open_app();
+	stack_update(pass);
+	stack_compose(background);
+	CHECK(app_x == W);
+	stub_ms += 50;
+	stack_update(stub_ms);
+	stack_compose(background);
+	CHECK(app_x > 0 && app_x < W);
 	CHECK(stack_moving());
 	settle();
 	CHECK(!stack_moving());

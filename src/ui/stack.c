@@ -409,7 +409,9 @@ void stack_update(uint32_t now_ms)
 		stack_indicators();
 	}
 	if (opening) {
-		uint32_t t = now_ms - app_t0;
+		/* The app can open after now_ms was read. */
+		int32_t d = (int32_t)(now_ms - app_t0);
+		uint32_t t = d > 0 ? (uint32_t)d : 0;
 		off = t >= APP_FADE_MS ? 0 : W - (int)(W * t / APP_FADE_MS);
 		opening = t < APP_FADE_MS;
 	}
