@@ -155,14 +155,20 @@ static void tasks_init(uint32_t now)
 	sched_after(&start_task, now, BT_START_MS);
 }
 
+/* The hub's tilt wake is on only while the screen sleeps. */
+static void app_tilt(void)
+{
+	static bool tilt_on = true;
+	bool want_tilt = !power_awake();
+	if (want_tilt != tilt_on && hub_tilt_on(want_tilt))
+		tilt_on = want_tilt;
+}
+
 void app_sensors(uint32_t now)
 {
 	if (have_hub) {
 		hub_poll();
-		static bool tilt_on = true;
-		bool want_tilt = !power_awake();
-		if (want_tilt != tilt_on && hub_tilt_on(want_tilt))
-			tilt_on = want_tilt;
+		app_tilt();
 		if (hub_tilted() && !power_awake() && setting_get(SETTING_TILT))
 			power_wake("tilt");
 		if (steps_awake && !power_awake())
@@ -396,6 +402,10 @@ void app_power_changed(enum power_change change)
 {
 	switch (change) {
 	case POWER_SLEPT:
+		/* Before this pass idles: the watch can go straight into a
+		 * long cluster sleep, with no pass to turn it on until then. */
+		if (have_hub)
+			app_tilt();
 		game_save();
 		if (have_touch)
 			touch_sleep(true);
