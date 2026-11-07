@@ -33,7 +33,7 @@ static enum { HUB_OFF, HUB_BOOTING, HUB_READY } state;
 static uint32_t go_t, steps_t, steps, steps_base, restart_t, wake_retry_t;
 static uint16_t version;
 static volatile bool wake_pending;
-static bool tilt, tilt_wanted = true, wake_retry, accel_running;
+static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_running;
 static unsigned fails;
 
 static void wait_ms(unsigned ms)
@@ -162,9 +162,11 @@ static void started(void)
 	set_time();
 	reg_write(M4_BANK_PEDOMETER, M4_PEDOMETER_ENABLE, &on, 1);
 	reg_write(M4_BANK_METS, M4_METS_ENABLE, &on, 1);
+	tilt_set = !tilt_wanted;
 	if (!reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
 		enable[0] = (uint8_t)(tilt_wanted ? enable[0] | M4_WAKE_GESTURE : enable[0] & ~M4_WAKE_GESTURE);
-		reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4);
+		if (!reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4))
+			tilt_set = tilt_wanted;
 	}
 	tlmm_irq_config(GPIO_WAKE, TLMM_IRQ_LEVEL_HIGH, wake_line);
 	tlmm_irq_enable(GPIO_WAKE, true);
@@ -183,6 +185,29 @@ static void restart(uint32_t now)
 	m4_init();
 }
 
+/* Sets the gesture wake bit to tilt_wanted, at most once a second after
+ * a failure; true once it is set. */
+static bool write_tilt(uint32_t now)
+{
+	static uint32_t tried_t;
+	uint8_t enable[4];
+	if (state != HUB_READY || now - tried_t < RETRY_MS)
+		return false;
+	if (tilt_set == tilt_wanted)
+		return true;
+	if (reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
+		tried_t = now;
+		return false;
+	}
+	enable[0] = (uint8_t)(tilt_wanted ? enable[0] | M4_WAKE_GESTURE : enable[0] & ~M4_WAKE_GESTURE);
+	if (reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
+		tried_t = now;
+		return false;
+	}
+	tilt_set = tilt_wanted;
+	return true;
+}
+
 static void m4_poll(void)
 {
 	i2c_qup_poll(QUP);
@@ -191,6 +216,8 @@ static void m4_poll(void)
 		started();
 	if (state != HUB_BOOTING && fails >= FAIL_LIMIT && now - restart_t >= RESTART_MS)
 		restart(now);
+	if (state == HUB_READY && tilt_set != tilt_wanted)
+		write_tilt(now);
 	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
 		wake_retry = false;
 		tlmm_irq_enable(GPIO_WAKE, true);
@@ -218,22 +245,8 @@ static void m4_poll(void)
 
 static bool m4_tilt_on(bool on)
 {
-	static uint32_t tried_t;
-	uint32_t now = time_ms();
-	uint8_t enable[4];
 	tilt_wanted = on;
-	if (state != HUB_READY || now - tried_t < RETRY_MS)
-		return false;
-	if (reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
-		tried_t = now;
-		return false;
-	}
-	enable[0] = (uint8_t)(on ? enable[0] | M4_WAKE_GESTURE : enable[0] & ~M4_WAKE_GESTURE);
-	if (reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
-		tried_t = now;
-		return false;
-	}
-	return true;
+	return write_tilt(time_ms());
 }
 
 /* The rate is the time between samples in ms, -1 off. */
@@ -296,10 +309,12 @@ static bool m4_tilted(void)
 }
 
 /* Not until the firmware is up, or the wait for it would stretch out,
- * nor with the wake line or the bus still to be dealt with. */
+ * nor with the wake line, the bus or the tilt wake still to be dealt
+ * with. */
 static bool m4_can_sleep(void)
 {
-	return state != HUB_BOOTING && !wake_pending && !wake_retry && !i2c_qup_busy(QUP);
+	return state != HUB_BOOTING && !wake_pending && !wake_retry && !i2c_qup_busy(QUP) &&
+	       !(state == HUB_READY && tilt_set != tilt_wanted);
 }
 
 static void m4_sleep(bool asleep)
