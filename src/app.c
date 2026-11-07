@@ -51,6 +51,9 @@ void app_init(const struct app_caps *c)
 	caps = *c;
 	orient_reset(&orient);
 	tasks_init(time_ms());
+	/* The first frame already shows the chosen face. */
+	if (have_ui)
+		present_settings();
 }
 
 void app_open(int app)

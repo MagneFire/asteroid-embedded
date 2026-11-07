@@ -145,9 +145,9 @@ void main(uint32_t machtype, const void *fdt)
 		app_after_events(now);
 		app_console_settings();
 		app_power_changed(power_update(&now));
+		present_clock(now);
 		if (have_display && power_awake())
 			frame_draw(now);
-		present_clock(now);
 		bool awake = power_awake();
 		stats_poll(now, awake);
 #if REBOOT_AFTER_MS > 0
