@@ -198,18 +198,21 @@ static void dock_edge(unsigned n)
 	dock_irq = true;
 }
 
+/* The dock line, and the PMIC's USB path for the pogo pins, which the
+ * dock line does not see. */
 static void gauge_cable_irq_init(void)
 {
 	tlmm_irq_config(GPIO_DOCK, TLMM_IRQ_EDGE_FALLING, dock_edge);
 	tlmm_irq_enable(GPIO_DOCK, true);
+	pmic_usb_irq_init();
 }
 
-/* Only once the line has settled low. */
+/* The dock only once the line has settled low; USB on its own edge. */
 static bool gauge_cable_irq(void)
 {
 	bool fired = dock_plugged;
 	dock_plugged = false;
-	return fired;
+	return pmic_usb_irq() || fired;
 }
 
 static uint32_t gauge_mv(void)
