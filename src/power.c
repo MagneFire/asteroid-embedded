@@ -15,6 +15,7 @@
 #include "ui/ui.h"
 #include "ui/stack.h"
 #include "ui/rotation.h"
+#include "gpu/paint.h"
 #include "bt/bt.h"
 #include "sensors/hub.h"
 #include "sensors/tsl2584.h"
@@ -168,6 +169,9 @@ static void ambient_draw(void)
 		unsigned p = panels[i];
 		if (ui_update(p, &x, &y, &w, &h)) {
 			uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
+			/* The GPU may have painted it: wait for that before the
+			 * layer is scanned and copied, as frame_draw does. */
+			paint_finish();
 			stack_damage(p, x, y, w, h);
 			for (uint32_t r = y; r < y + h; r++)
 				dcache_clean_range(layer + r * fb.stride + x, w * 4);
