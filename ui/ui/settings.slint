@@ -11,7 +11,7 @@ import { Face, Watchface } from "face.slint";
 import { Codes } from "codes.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
-import { PageHeader, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton, Remorse } from "controls.slint";
+import { PageHeader, Scroller, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton, Remorse } from "controls.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
 
@@ -84,7 +84,7 @@ export component SettingsApp {
             easing: ease-out-quint;
         }
 
-        Flickable {
+        Scroller {
             x: 0;
             width: 100 * Theme.unit;
             height: 100 * Theme.unit;
@@ -117,7 +117,7 @@ export component SettingsApp {
     }
 
     if root.page == 1: Page {
-        Flickable {
+        Scroller {
             width: 100 * Theme.unit;
             height: 100 * Theme.unit;
             content-height: display.preferred-height;
@@ -194,7 +194,7 @@ export component SettingsApp {
     }
 
     if root.page == 2: Page {
-        Flickable {
+        Scroller {
             width: 100 * Theme.unit;
             height: 100 * Theme.unit;
             content-height: nightstand.preferred-height;
@@ -333,12 +333,12 @@ export component SettingsApp {
     }
 
     if root.page == 4: Page {
-        Flickable {
+        Scroller {
             width: 100 * Theme.unit;
             height: 100 * Theme.unit;
             content-height: Math.ceil(Apps.layouts.length / 2) * 40 * Theme.unit;
             init => {
-                self.content-y = -Math.clamp(Math.floor(Face.launcher / 2) * 40 * Theme.unit + 20 * Theme.unit - 50 * Theme.unit, 0, self.content-height - 100 * Theme.unit);
+                self.scroll = Math.clamp(Math.floor(Face.launcher / 2) * 40 * Theme.unit + 20 * Theme.unit - 50 * Theme.unit, 0, self.content-height - 100 * Theme.unit);
             }
 
             for name[i] in Apps.layouts: Rectangle {
@@ -585,7 +585,7 @@ export component SettingsApp {
     }
 
     if root.page == 7: Page {
-        Flickable {
+        Scroller {
             width: 100 * Theme.unit;
             height: 100 * Theme.unit;
             content-height: about.preferred-height;

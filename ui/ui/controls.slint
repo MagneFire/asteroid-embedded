@@ -59,6 +59,124 @@ export component IconButton {
     }
 }
 
+// A vertical list taller than the screen, as a Flickable: drag it, or flick it to coast as Pager
+// does (the same speeds and deceleration) to any position. A drag past either end follows the
+// finger less and less, up to give, and a flick that reaches an end with speed left goes past it
+// by up to 0.6 give and comes back. The children are the content, content-height tall, and
+// scroll is how far down it is.
+export component Scroller inherits SwipeGestureHandler {
+    in property <length> content-height;
+    in-out property <length> scroll;
+    property <length> max: Math.max(0, self.content-height - self.height);
+    property <length> give: 15 * Theme.unit;
+    property <duration> anim: 0ms;
+    // Where the content was when the drag took it, and where it comes back to after going past an end.
+    property <length> grab;
+    property <length> rest;
+    property <bool> tracking;
+    property <float> v0;
+    property <float> v1;
+    property <float> v2;
+    property <int> samples;
+    property <length> last;
+    property <int> last-ms;
+    animate scroll {
+        duration: root.swiping ? 0ms : root.anim;
+        easing: ease-out;
+    }
+
+    handle-swipe-up: true;
+    handle-swipe-down: true;
+
+    function resist(e: length) -> length {
+        return self.give * (e / (e + 2 * self.give));
+    }
+    function release(moving: bool) {
+        let avg = self.samples == 3 ? (self.v0 + self.v1) / 2 : self.samples == 2 ? self.v1 : 0;
+        let held = Face.touch-time() - self.last-ms;
+        let v = !moving ? 0 : Math.clamp(held > 100 ? 0 : held < 50 ? avg : avg * (100 - held) / 50, -2.5, 2.5);
+        let from = self.scroll;
+        let free = from - v * Math.abs(v) / 0.003 * (0.25 * Theme.unit);
+        let to = Math.clamp(free, 0, self.max);
+        let to-end = Math.abs(to - from) / (0.25 * Theme.unit);
+        let left = v * v - 0.003 * to-end;
+        let over = free != to && left > 0 ? 0.6 * self.give * Math.min(1, Math.sqrt(left) / 1.5) : 0px;
+        self.anim = Math.max(1.7 * (to-end + over / (0.25 * Theme.unit)) / Math.max(Math.abs(v), 1), from < 0 || from > self.max ? 250 : 150) * 1ms;
+        self.rest = to;
+        self.scroll = to + (free > to ? over : -over);
+        if over > 0 {
+            back.interval = self.anim;
+            back.running = true;
+        }
+        self.tracking = false;
+    }
+
+    back := Timer {
+        running: false;
+        interval: 150ms;
+        triggered => {
+            self.running = false;
+            root.anim = 300ms;
+            root.scroll = root.rest;
+        }
+    }
+
+    changed pressed-position => {
+        self.tracking = false;
+    }
+    changed max => {
+        if !self.swiping && !back.running {
+            self.anim = 0ms;
+            self.scroll = Math.clamp(self.scroll, 0, self.max);
+        }
+    }
+
+    moved => {
+        let y = self.current-position.y;
+        if !self.tracking {
+            // The first move of a press takes the content where it is, coasting or not.
+            self.tracking = true;
+            back.running = false;
+            self.grab = self.scroll;
+            self.samples = 0;
+            self.last = y;
+            self.last-ms = Face.touch-time();
+        }
+        if !self.swiping {
+            return;
+        }
+        let raw = self.grab - (y - self.pressed-position.y);
+        self.scroll = raw < 0 ? -self.resist(-raw) : raw > self.max ? self.max + self.resist(raw - self.max) : raw;
+        let dt = Face.touch-time() - self.last-ms;
+        if dt > 0 {
+            self.v0 = self.v1;
+            self.v1 = self.v2;
+            self.v2 = (y - self.last) / (0.25 * Theme.unit) / dt;
+            self.samples = Math.min(self.samples + 1, 3);
+            self.last = y;
+            self.last-ms = Face.touch-time();
+        }
+    }
+    swiped => {
+        self.release(true);
+    }
+    cancelled => {
+        self.release(false);
+    }
+
+    Rectangle {
+        clip: true;
+
+        Rectangle {
+            y: -root.scroll;
+            width: root.width;
+            height: root.content-height;
+
+            @children
+        }
+    }
+}
+
 // CircularSpinner (wrap) or Spinner with its SpinnerDelegate: count two-digit values or labels,
 // one every 48 px, the one in the middle 39 px and opaque, the others 22 px at 60 %, and the top
 // and bottom fifth fading out. twelve shows 0 as 12, first is added to the numbers shown, and
