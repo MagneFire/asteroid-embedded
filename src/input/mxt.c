@@ -8,6 +8,7 @@
 #include "mxt.h"
 
 #define T9_DETECT	0x80
+#define T9_PRESS	0x40
 #define T9_RELEASE	0x20
 #define T9_SUPPRESS	0x02
 #define T9_WIDE_MIN	0x04
@@ -107,6 +108,8 @@ bool mxt_decode(const struct mxt_map *m, const uint8_t *msg, bool wide_x, bool w
 		return false;
 	t->finger = (uint8_t)(msg[0] - m->t9_first_id);
 	t->down = (msg[1] & T9_DETECT) && !(msg[1] & (T9_RELEASE | T9_SUPPRESS));
+	/* A tap shorter than a scan comes as one press and release. */
+	t->tap = (msg[1] & (T9_PRESS | T9_RELEASE | T9_SUPPRESS)) == (T9_PRESS | T9_RELEASE);
 	t->x = (uint16_t)(msg[2] << 4 | msg[4] >> 4);
 	t->y = (uint16_t)(msg[3] << 4 | (msg[4] & 0x0f));
 	if (!wide_x)

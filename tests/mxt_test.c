@@ -71,6 +71,13 @@ int main(void)
 	CHECK(mxt_decode(&m, undetected, true, true, &t) && !t.down);
 	uint8_t no_status[] = { 2, 0x00, 0, 0, 0, 0, 0, 0 };
 	CHECK(mxt_decode(&m, no_status, true, true, &t) && !t.down);
+	/* A tap within one scan: press and release together. */
+	uint8_t tap[] = { 2, 0x60, 0x12, 0x34, 0x56, 0, 0, 0 };
+	CHECK(mxt_decode(&m, tap, true, true, &t) && !t.down && t.tap && t.x == 0x125);
+	CHECK(mxt_decode(&m, up, true, true, &t) && !t.tap);
+	uint8_t tap_suppressed[] = { 2, 0x62, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, tap_suppressed, true, true, &t) && !t.tap);
+	CHECK(mxt_decode(&m, down, true, true, &t) && !t.tap);
 	uint8_t detected_up[] = { 2, 0xa0, 0, 0, 0, 0, 0, 0 };
 	CHECK(mxt_decode(&m, detected_up, true, true, &t) && !t.down);
 	uint8_t detected_suppressed[] = { 2, 0x82, 0, 0, 0, 0, 0, 0 };

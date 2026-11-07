@@ -27,7 +27,7 @@ struct mxt_map {
 
 struct mxt_touch {
 	uint8_t finger;
-	bool down;
+	bool down, tap;
 	uint16_t x, y;
 };
 

@@ -86,11 +86,17 @@ static void message_done(int err, void *ctx)
 		push(&t);
 	} else if (msg[0] != 0xff && mxt_decode(&map, msg, wide_x, wide_y, &m) && !m.finger) {
 		struct touch t = { m.down ? (was_down ? TOUCH_MOVE : TOUCH_DOWN) : TOUCH_UP, last_x, last_y, m.down, time_ms() };
-		if (m.down) {
+		if (m.down || (m.tap && !was_down)) {
 			t.x = last_x = (int)((uint32_t)m.x * fb.width / (max_x + 1));
 			t.y = last_y = (int)((uint32_t)m.y * fb.panel_height / (max_y + 1));
 		}
-		if (m.down || was_down)
+		if (m.tap && !was_down) {
+			struct touch d = t;
+			d.event = TOUCH_DOWN;
+			d.down = true;
+			push(&d);
+			push(&t);
+		} else if (m.down || was_down)
 			push(&t);
 		was_down = m.down;
 	}
