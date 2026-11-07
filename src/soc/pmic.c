@@ -206,9 +206,6 @@ void pmic_rtc_write(uint32_t secs)
 #define VADC_CONV_REQ		(VADC + 0x52)
 #define VADC_FAST_AVG_CTL	(VADC + 0x5a)
 #define VADC_DATA		(VADC + 0x60)
-#define CHAN_VBAT_SNS		6
-#define CHAN_REF_625MV		9
-#define CHAN_REF_1250MV		10
 
 int pmic_vadc_raw(uint8_t chan, uint8_t settle)
 {
@@ -476,6 +473,17 @@ int pmic_battery_status(void)
 	if (pmic_charging())
 		return BAT_CHARGING;
 	return pmic_usb_present() && chg_done ? BAT_FULL : BAT_DISCHARGING;
+}
+
+/* How long USB in has to be gone before the charger reacts: the two
+ * low bits of USB_OVP_CTL, 0 for none, then 5, 10 and 20 ms. On smelt
+ * the cell sits behind the PMIC's battery FET, which the charger only
+ * closes after USB in drops, so the rail has to last the debounce on
+ * its capacitors: awake it falls to the lockout in a couple of
+ * milliseconds, and the 5 ms the bootloader leaves there is fatal. */
+void pmic_usb_valid_debounce(unsigned code)
+{
+	smbb_update(USB_OVP_CTL, 0x03, (uint8_t)(code & 3));
 }
 
 void pmic_charger_configure(void)
