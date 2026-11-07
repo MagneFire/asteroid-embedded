@@ -108,6 +108,10 @@ void hub_accel_on(bool on)
 }
 bool hub_accel(int16_t v[3]) { return HUB(accel) && board->hub->accel(v); }
 bool hub_can_sleep(void) { return !HUB(can_sleep) || board->hub->can_sleep(); }
+int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+{
+	return HUB(raw) ? board->hub->raw(bank, offset, w, wn, r, rn) : -1;
+}
 void hub_sleep(bool asleep)
 {
 	if (HUB(sleep))

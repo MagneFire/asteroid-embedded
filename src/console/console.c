@@ -824,6 +824,50 @@ static void cmd_hub(const char *args)
 	say("hub: send %u bytes: %d\n", n, hub_send(buf, n));
 }
 
+/* The M4 hub's registers, as the vendor's raw_i2c: bank, offset and
+ * bytes in hex. */
+static void cmd_m4(const char *args)
+{
+	uint32_t bank, offset, v;
+	uint8_t w[4], r[32];
+	unsigned n = 0;
+	if (!strncmp(args, "pm ", 3)) {
+		args += 3;
+		if (!parse_num(&args, 10, &v) || v > 1) {
+			say("usage: m4 pm 0|1\n");
+			return;
+		}
+		w[0] = (uint8_t)v;
+		say("m4: power management %s: %d\n", v ? "on" : "off", hub_raw(11, 1, w, 1, NULL, 0));
+		return;
+	}
+	bool rd = !strncmp(args, "rd ", 3), wr = !strncmp(args, "wr ", 3);
+	if ((!rd && !wr) || (args += 3, !parse_num(&args, 16, &bank)) || bank > 255 || !parse_num(&args, 16, &offset) ||
+	    offset > 255) {
+		say("usage: m4 rd <bank> <offset> <bytes> | wr <bank> <offset> <byte>... | pm 0|1 (hex)\n");
+		return;
+	}
+	if (rd) {
+		if (!parse_num(&args, 16, &v) || v < 1 || v > sizeof r) {
+			say("m4: 1 to %u bytes\n", (unsigned)sizeof r);
+			return;
+		}
+		int ret = hub_raw((uint8_t)bank, (uint8_t)offset, NULL, 0, r, v);
+		say("m4: read %02lx %02lx: %d", bank, offset, ret);
+		for (unsigned i = 0; !ret && i < v; i++)
+			say(" %02x", r[i]);
+		say("\n");
+		return;
+	}
+	for (; n < sizeof w && parse_num(&args, 16, &v) && v < 256; n++)
+		w[n] = (uint8_t)v;
+	if (!n) {
+		say("m4: 1 to %u bytes\n", (unsigned)sizeof w);
+		return;
+	}
+	say("m4: write %02lx %02lx, %u bytes: %d\n", bank, offset, n, hub_raw((uint8_t)bank, (uint8_t)offset, w, n, NULL, 0));
+}
+
 static void cmd_amp(const char *args)
 {
 	uint16_t rev;
@@ -957,6 +1001,7 @@ static const struct command commands[] = {
 	{ "amp", "", cmd_amp },
 	{ "buzz", "[ms]", cmd_buzz },
 	{ "hub", "[send <hex bytes>]", cmd_hub },
+	{ "m4", "rd <bank> <offset> <n> | wr <bank> <offset> <bytes> | pm 0|1", cmd_m4 },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "shot", "[layer [n]]", cmd_shot },
 	{ "notify", "[text] | remove <n>", cmd_notify },

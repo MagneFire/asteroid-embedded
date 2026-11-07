@@ -20,4 +20,7 @@ bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);
 void hub_status(void (*say)(const char *fmt, ...));
+/* A register access for the console: wn bytes written after the bank
+ * and offset, then rn bytes read; -1 without such a hub. */
+int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 #endif

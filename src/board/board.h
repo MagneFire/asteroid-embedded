@@ -63,6 +63,8 @@ struct hub_driver {
 	bool (*can_sleep)(void);
 	void (*sleep)(bool asleep);
 	void (*status)(void (*say)(const char *fmt, ...));
+	/* A register of the hub, written then read, for the console. */
+	int (*raw)(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 };
 
 struct motor_driver {

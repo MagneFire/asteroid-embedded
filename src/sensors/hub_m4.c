@@ -394,11 +394,27 @@ static void m4_sleep(bool asleep)
 		spm_wake_pin(MPM_PIN_WAKE, asleep, true);
 }
 
+static int m4_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+{
+	uint8_t b[6] = { bank, offset };
+	if (state != HUB_READY || wn > 4 || rn > 32)
+		return -1;
+	for (unsigned i = 0; i < wn; i++)
+		b[2 + i] = w[i];
+	return xfer(b, 2 + wn, r, rn);
+}
+
 static void m4_status(void (*say)(const char *fmt, ...))
 {
+	uint8_t pm[2] = { 0, 0 }, enable[4] = { 0 };
 	say("hub: m4 firmware %04x, %s, %lu steps\n", version, state == HUB_READY ? "up" : "not up", steps);
 	say("hub: %lu wakes, last status %08lx, %lu crashes, %lu restarts, %u fails\n", wakes, last_wake, crashes,
 	    restarts, fails);
+	if (state == HUB_READY && !m4_raw(M4_BANK_POWER, M4_POWER_ENABLE, NULL, 0, pm, 1) &&
+	    !m4_raw(M4_BANK_POWER, M4_POWER_STATE, NULL, 0, pm + 1, 1) &&
+	    !m4_raw(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, NULL, 0, enable, 4))
+		say("hub: power management %u, %s, wake interrupts %08lx\n", pm[0], pm[1] ? "moving" : "still",
+		    m4_u32(enable));
 }
 
 const struct hub_driver hub_m4 = {
@@ -413,4 +429,5 @@ const struct hub_driver hub_m4 = {
 	.can_sleep = m4_can_sleep,
 	.sleep = m4_sleep,
 	.status = m4_status,
+	.raw = m4_raw,
 };
