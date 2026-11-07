@@ -32,8 +32,13 @@ def main():
                       a.ramdisk_addr, 0, 0, a.tags_addr, PAGE, len(dt))
     hdr += b"\0" * 4 + b"\0" * 16 + a.cmdline.encode().ljust(512, b"\0")
     hdr += sha.digest().ljust(32, b"\0") + b"\0" * 1024
+    img = pad(hdr) + pad(kernel) + pad(ramdisk) + pad(dt)
+    # A whole number of 4 KiB blocks, which some USB setups need to pass the
+    # last part of a fastboot download on. The bootloader stops at the sizes
+    # in the header.
+    img += b"\0" * (-len(img) % 4096)
     with open(a.output, "wb") as f:
-        f.write(pad(hdr) + pad(kernel) + pad(ramdisk) + pad(dt))
+        f.write(img)
 
 if __name__ == "__main__":
     main()
