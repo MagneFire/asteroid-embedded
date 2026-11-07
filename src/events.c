@@ -15,7 +15,7 @@
 #define RETRY_MS	5000u
 
 static char history[EVENTS_MAX + 1];
-static bool loaded;
+static bool loaded, unsaved;
 static uint32_t sample_t, retry_t;
 static int cable = -1, usb = -1;
 
@@ -45,7 +45,7 @@ static void note(const char *what)
 	char line[320];
 	snprintf(line, sizeof line, "%lu %s", pmic_rtc_read(), what);
 	events_append(history, EVENTS_MAX, line);
-	kv_set(KV_EVENTS, history, (unsigned)strlen(history));
+	unsaved = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
 }
 
 static bool load(uint32_t now)
@@ -84,6 +84,8 @@ void events_poll(uint32_t now)
 	if (now - sample_t < SAMPLE_MS)
 		return;
 	sample_t = now;
+	if (unsaved)
+		unsaved = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
 	int c = batt_cable(), u = batt_usb();
 	if (c == cable && u == usb)
 		return;

@@ -75,8 +75,9 @@ void pmic_init(void)
 	if (c625 >= 0 && c1250 > c625) {
 		int32_t vph = pmic_vadc_raw(CHAN_VPH_PWR, 2), vbat = pmic_vadc_raw(CHAN_VBAT_SNS, 2), usb = pmic_vadc_raw(CHAN_USBIN, 2);
 #define MV(raw, div) (((625 + (int32_t)((raw) - c625) * 625 / (c1250 - c625))) * (div))
-		snprintf(reason + strlen(reason), sizeof reason - strlen(reason), ", vph %ld mV, vbat_sns %ld mV, usb %ld mV",
-			 (long)MV(vph, 3), (long)MV(vbat, 3), (long)MV(usb, 20));
+		if (vph >= 0 && vbat >= 0 && usb >= 0)
+			snprintf(reason + strlen(reason), sizeof reason - strlen(reason), ", vph %ld mV, vbat_sns %ld mV, usb %ld mV",
+				 (long)MV(vph, 3), (long)MV(vbat, 3), (long)MV(usb, 20));
 #undef MV
 	}
 }

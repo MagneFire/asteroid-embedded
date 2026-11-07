@@ -327,14 +327,14 @@ static void cmd_mem(const char *args)
 static void cmd_pmic(const char *args)
 {
 	uint32_t addr, count = 1, val;
-	if (!parse_num(&args, 16, &addr)) {
+	if (!parse_num(&args, 16, &addr) || addr > 0xfffff) {
 		say("usage: pmic <hex addr> [bytes | = <hex byte>]\n");
 		return;
 	}
 	args = skip_spaces(args);
 	if (*args == '=') {
 		args++;
-		if (!parse_num(&args, 16, &val) || val > 255) {
+		if (!parse_num(&args, 16, &val) || val > 255 || *skip_spaces(args)) {
 			say("usage: pmic <hex addr> = <hex byte>\n");
 			return;
 		}
