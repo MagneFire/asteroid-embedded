@@ -5,6 +5,13 @@
 #include <string.h>
 #include "asteroid.h"
 
+/* VADC channels (the block itself is below). */
+#define CHAN_USBIN		0
+#define CHAN_VBAT_SNS		6
+#define CHAN_VPH_PWR		7
+#define CHAN_REF_625MV		9
+#define CHAN_REF_1250MV		10
+
 #define REVID_TYPE		0x000104
 #define REVID_SUBTYPE		0x000105
 #define PON_REASON1		0x000808
@@ -59,6 +66,19 @@ void pmic_init(void)
 		 pmic_read(PON_PS_HOLD_RESET_CTL), pmic_read(PON_PS_HOLD_RESET_CTL2));
 
 	pmic_write(SMPS2_MODE, SMPS_MODE_AUTO);
+
+	/* The system rail and the battery sense pin, both divided by three,
+	 * and USB in, divided by twenty: on smelt the sense pin follows the
+	 * rail, which USB holds near 5 V, and the cell only takes over once
+	 * the rail is below it. */
+	int c625 = pmic_vadc_raw(CHAN_REF_625MV, 0), c1250 = pmic_vadc_raw(CHAN_REF_1250MV, 0);
+	if (c625 >= 0 && c1250 > c625) {
+		int32_t vph = pmic_vadc_raw(CHAN_VPH_PWR, 2), vbat = pmic_vadc_raw(CHAN_VBAT_SNS, 2), usb = pmic_vadc_raw(CHAN_USBIN, 2);
+#define MV(raw, div) (((625 + (int32_t)((raw) - c625) * 625 / (c1250 - c625))) * (div))
+		snprintf(reason + strlen(reason), sizeof reason - strlen(reason), ", vph %ld mV, vbat_sns %ld mV, usb %ld mV",
+			 (long)MV(vph, 3), (long)MV(vbat, 3), (long)MV(usb, 20));
+#undef MV
+	}
 }
 
 const char *pmic_pon_reason(void) { return reason; }

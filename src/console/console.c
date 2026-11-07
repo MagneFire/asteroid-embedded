@@ -357,6 +357,25 @@ static void cmd_pmic(const char *args)
 	}
 }
 
+/* One VADC channel, raw and in mV at the ADC input: the 0.625 and 1.25 V
+ * references calibrate it. Divided inputs (VBAT_SNS, VSYS: 1/3) are not
+ * scaled here. */
+static void cmd_vadc(const char *args)
+{
+	uint32_t chan;
+	if (!parse_num(&args, 0, &chan) || chan > 255) {
+		say("usage: vadc <channel>\n");
+		return;
+	}
+	int c625 = pmic_vadc_raw(9, 0), c1250 = pmic_vadc_raw(10, 0), raw = pmic_vadc_raw((uint8_t)chan, 2);
+	if (c625 < 0 || c1250 <= c625 || raw < 0) {
+		say("vadc: no reading (%d %d %d)\n", c625, c1250, raw);
+		return;
+	}
+	int32_t mv = 625 + (int32_t)(raw - c625) * 625 / (c1250 - c625);
+	say("vadc %lu: raw %d, %ld mV at the pin\n", chan, raw, mv);
+}
+
 static bool parse_bdaddr(const char *s, uint8_t a[6])
 {
 	for (int i = 0; i < 6; i++) {
@@ -1002,6 +1021,7 @@ static const struct command commands[] = {
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes | = <hex byte>]", cmd_pmic },
+	{ "vadc", "<channel>", cmd_vadc },
 	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
