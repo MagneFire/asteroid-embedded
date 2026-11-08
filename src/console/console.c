@@ -357,6 +357,29 @@ static void cmd_pmic(const char *args)
 	}
 }
 
+/* One TLMM pin: its configuration word and level, or made an output
+ * at a level. The configuration word is pull (bits 1:0), function
+ * (5:2), drive (8:6) and output enable (9). */
+static void cmd_gpio(const char *args)
+{
+	uint32_t n, v;
+	if (!parse_num(&args, 0, &n) || n > 116) {
+		say("usage: gpio <pin> [= 0|1]\n");
+		return;
+	}
+	args = skip_spaces(args);
+	if (*args == '=') {
+		args++;
+		if (!parse_num(&args, 0, &v) || v > 1 || *skip_spaces(args)) {
+			say("usage: gpio <pin> = 0|1\n");
+			return;
+		}
+		tlmm_config(n, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		tlmm_set(n, v);
+	}
+	say("gpio %lu: cfg %08lx level %u\n", n, readl(TLMM_GPIO_CFG(n)), tlmm_get(n));
+}
+
 /* One VADC channel, raw and in mV at the ADC input: the 0.625 and 1.25 V
  * references calibrate it. Divided inputs (VBAT_SNS, VSYS: 1/3) are not
  * scaled here. */
@@ -1022,6 +1045,7 @@ static const struct command commands[] = {
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes | = <hex byte>]", cmd_pmic },
 	{ "vadc", "<channel>", cmd_vadc },
+	{ "gpio", "<pin> [= 0|1]", cmd_gpio },
 	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },

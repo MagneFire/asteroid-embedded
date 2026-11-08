@@ -35,6 +35,9 @@ void pmic_write(uint32_t addr, uint8_t val) {}
 int pmic_vadc_raw(uint8_t chan, uint8_t settle) { return 0; }
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
+void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
+unsigned tlmm_get(unsigned n) { return 0; }
+void tlmm_set(unsigned n, unsigned v) {}
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	memset(info, 0, sizeof *info);
