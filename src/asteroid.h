@@ -62,6 +62,7 @@ enum setting {
 	SETTING_BURN_IN,
 	SETTING_CINEMA_AOD,
 	SETTING_NIGHTSTAND_ROTATE,
+	SETTING_AUTO_BRIGHTNESS,
 	SETTINGS
 };
 int setting_get(enum setting s);
@@ -209,6 +210,8 @@ const char *batt_status(void);
  * since light_start, or -1 without a reading. */
 void light_init(void);
 void light_start(void);
+/* Holds the sensor powered between readings, for reading it often. */
+void light_keep(bool on);
 int32_t light_finish(void);
 #define RPM_LDOA 0x616f646cu
 #define RPM_SMPA 0x61706d73u

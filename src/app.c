@@ -217,6 +217,7 @@ void app_flashlight(uint32_t now)
 		else if (have_display)
 			power_set_brightness();
 	}
+	power_light(now, lit);
 }
 
 void app_touch(uint32_t now)

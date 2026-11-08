@@ -27,6 +27,7 @@ static const struct {
 	[SETTING_BURN_IN] = { "burnin", 1 },
 	[SETTING_CINEMA_AOD] = { "cinema.aod", 1 },
 	[SETTING_NIGHTSTAND_ROTATE] = { "nightstand.rotate", 1 },
+	[SETTING_AUTO_BRIGHTNESS] = { "brightness.auto", 1 },
 };
 
 #define FLUSH_MS 2000

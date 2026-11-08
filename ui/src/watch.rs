@@ -130,6 +130,7 @@ pub struct UiSettings {
     fahrenheit: bool,
     nightstand_aod: bool,
     nightstand_rotate: bool,
+    auto_brightness: bool,
 }
 
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
@@ -152,7 +153,7 @@ use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiTile>() == 6);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 13);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 14);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
@@ -342,12 +343,13 @@ pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_set_board(name: *const u8, len: u32, heart_rate: bool, round: bool, burn_in: bool) {
+pub unsafe extern "C" fn ui_set_board(name: *const u8, len: u32, heart_rate: bool, round: bool, light_sensor: bool, burn_in: bool) {
     let name = unsafe { text(name, len) };
     each(|face| {
         face.set_board(name.clone());
         face.set_has_heart_rate(heart_rate);
         face.set_round_screen(round);
+        face.set_has_light_sensor(light_sensor);
         face.set_has_burn_in(burn_in);
     });
 }
@@ -594,6 +596,7 @@ pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
         face.set_nightstand_aod(s.nightstand_aod);
         face.set_nightstand_rotate(s.nightstand_rotate);
         face.set_burn_in(s.burn_in as i32);
+        face.set_auto_brightness(s.auto_brightness);
     });
 }
 

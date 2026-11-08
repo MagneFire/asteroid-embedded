@@ -162,7 +162,7 @@ struct ui_tile {
  * 0 off, 1 high, 2 medium, 3 low. */
 struct ui_settings {
 	uint8_t brightness, nightstand_brightness, nightstand_delay, burn_in;
-	bool bluetooth, vibration, aod, clock12, tilt, tap, fahrenheit, nightstand_aod, nightstand_rotate;
+	bool bluetooth, vibration, aod, clock12, tilt, tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
 };
 
 enum ui_event_kind {
@@ -191,7 +191,7 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 13 &&
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 14 &&
 	       sizeof(struct ui_tile) == 6, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
@@ -200,7 +200,7 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
 		  uint32_t year, uint32_t rtc);
 /* The watch's codename and whether it has a heart rate sensor. */
-void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool burn_in);
+void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in);
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
 int ui_app_open(void);

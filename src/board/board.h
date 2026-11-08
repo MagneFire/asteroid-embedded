@@ -83,11 +83,13 @@ struct backlight_driver {
 
 /* A light sensor read in two steps, so the integration can run while
  * something else does: start, then finish, which gives the lux or -1
- * without a reading. */
+ * without a reading. keep holds it powered between readings, so that a
+ * start has nothing to wait for. */
 struct light_driver {
 	bool (*init)(void);
 	void (*start)(void);
 	int32_t (*finish)(void);
+	void (*keep)(bool on);
 };
 
 /* What feeds the battery and how full it is: the charger's setup and

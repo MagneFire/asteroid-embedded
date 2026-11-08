@@ -151,6 +151,27 @@ static void driver_test(void)
 	fail_after = -1;
 	CHECK(reading() > 0);
 
+	/* Kept on, the rail stays up between readings and a start waits
+	 * for nothing; letting go powers it off. */
+	votes = rail_on_votes;
+	d->keep(true);
+	CHECK(rail && rail_on_votes == votes + 1);
+	now = 4000;
+	d->start();
+	CHECK(now == 4000);
+	now += 60;
+	CHECK(d->finish() > 0);
+	CHECK(now == 4060 && rail && regs[REG_CONTROL] & CONTROL_POWER);
+	d->start();
+	CHECK(rail_on_votes == votes + 1);
+	d->keep(true);
+	CHECK(rail_on_votes == votes + 1);
+	d->keep(false);
+	CHECK(!rail && !regs[REG_CONTROL]);
+	CHECK(d->finish() == -1);
+	d->keep(false);
+	CHECK(reading() > 0);
+
 	/* A conversion that never ends gives up. */
 	never_valid = true;
 	now = 3000;

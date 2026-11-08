@@ -71,6 +71,10 @@ static void cinema(void)
 
 static void others(void)
 {
+	values[SETTING_AUTO_BRIGHTNESS] = 1;
+	brightness_set = 0;
+	action_setting_toggled(SETTING_AUTO_BRIGHTNESS);
+	CHECK(!values[SETTING_AUTO_BRIGHTNESS] && brightness_set == 1);
 	action_setting_toggled(UI_WATCHFACE_FIRST + 1);
 	CHECK(values[SETTING_WATCHFACE] == 1);
 	action_setting_toggled(UI_LAUNCHER_FIRST + 1);

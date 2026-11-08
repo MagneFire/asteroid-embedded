@@ -50,6 +50,11 @@ void light_start(void)
 	if (LIGHT(start))
 		board->light->start();
 }
+void light_keep(bool on)
+{
+	if (LIGHT(keep))
+		board->light->keep(on);
+}
 int32_t light_finish(void) { return LIGHT(finish) ? board->light->finish() : -1; }
 
 bool touch_init(void) { return TOUCH(init) && board->touch->init(); }

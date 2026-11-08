@@ -11,6 +11,9 @@
  * taken again at once, so a reading can take two integrations. Counts
  * that make no sense at either gain, as in direct sun, give no reading.
  *
+ * Read often, while the screen is on, the rail stays up in between
+ * (light_keep), which leaves only the bus transfers.
+ *
  * The vendor's driver reads the ID register but never checks it, so
  * there is no value to expect here: a chip that answers is the sensor,
  * and its ID goes to the log. */
@@ -44,7 +47,7 @@
 #define INTEGRATION_MS	49
 #define TIMEOUT_MS	75
 
-static bool ready, running;
+static bool ready, running, kept;
 static enum tsl2584_mode mode = TSL2584_HIGH_LUX;
 static uint32_t started;
 
@@ -139,8 +142,8 @@ static void tsl2584_start(void)
 {
 	if (!ready)
 		return;
-	running = !power_up() && !convert();
-	if (!running)
+	running = (kept || !power_up()) && !convert();
+	if (!running && !kept)
 		power_down();
 }
 
@@ -159,8 +162,29 @@ static int32_t tsl2584_finish(void)
 		if (!r)
 			mode = tsl2584_next_mode(mode, lux);
 	}
-	power_down();
+	if (!kept)
+		power_down();
 	return r ? -1 : lux;
 }
 
-const struct light_driver light_tsl2584 = { .init = tsl2584_init, .start = tsl2584_start, .finish = tsl2584_finish };
+static void tsl2584_keep(bool on)
+{
+	if (!ready || on == kept)
+		return;
+	running = false;
+	if (on) {
+		kept = !power_up();
+		if (!kept)
+			power_down();
+	} else {
+		kept = false;
+		power_down();
+	}
+}
+
+const struct light_driver light_tsl2584 = {
+	.init = tsl2584_init,
+	.start = tsl2584_start,
+	.finish = tsl2584_finish,
+	.keep = tsl2584_keep,
+};

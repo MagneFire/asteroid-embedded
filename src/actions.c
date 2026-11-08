@@ -69,8 +69,8 @@ void action_setting_toggled(int s)
 			bt_host_stop();
 			bt_stop();
 		}
-	} else if (s == SETTING_NIGHTSTAND) {
-		setting_set(SETTING_NIGHTSTAND, !setting_get(SETTING_NIGHTSTAND));
+	} else if (s == SETTING_NIGHTSTAND || s == SETTING_AUTO_BRIGHTNESS) {
+		setting_set((enum setting)s, !setting_get((enum setting)s));
 		power_set_brightness();
 	} else if (s >= 0 && s < SETTINGS) {
 		setting_set((enum setting)s, !setting_get((enum setting)s));

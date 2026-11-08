@@ -52,6 +52,7 @@ void present_settings(void)
 		.fahrenheit = setting_get(SETTING_FAHRENHEIT),
 		.nightstand_aod = setting_get(SETTING_NIGHTSTAND_AOD),
 		.nightstand_rotate = setting_get(SETTING_NIGHTSTAND_ROTATE),
+		.auto_brightness = setting_get(SETTING_AUTO_BRIGHTNESS),
 	};
 	ui_set_settings(&u);
 	ui_set_launcher(setting_get(SETTING_LAUNCHER));

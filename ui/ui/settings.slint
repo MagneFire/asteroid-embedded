@@ -1,6 +1,6 @@
 // The Settings app, laid out as asteroid-settings: a list of icon rows, each opening a page that
 // slides in from the right. The pages are the ones the firmware has settings for: Display
-// (brightness, always on, burn-in protection, tilt and tap to wake), Nightstand (with its
+// (brightness, automatic brightness, always on, burn-in protection, tilt and tap to wake), Nightstand (with its
 // brightness, delay and always on), Watchface and Launcher pickers, Time and Date, Units (12 hour
 // clock, Fahrenheit), Bluetooth (on/off, connection, forgetting the phone), Power (off, reboot)
 // and About. Rows call setting-toggled with a setting or an action from the Codes global (the
@@ -142,6 +142,18 @@ export component SettingsApp {
                     }
                     set(v) => {
                         Face.brightness-set(v);
+                    }
+                }
+
+                if Face.has-light-sensor: VerticalLayout {
+                    RowSeparator { }
+
+                    LabeledSwitch {
+                        text: "Automatic brightness";
+                        checked: Face.auto-brightness;
+                        clicked => {
+                            Face.setting-toggled(Codes.setting-auto-brightness);
+                        }
                     }
                 }
 

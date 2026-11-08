@@ -19,6 +19,7 @@
 #include "bt/bt.h"
 #include "sensors/hub.h"
 #include "sensors/tsl2584.h"
+#include "sensors/auto_brightness.h"
 #include "screenshot/screenshot.h"
 #include "clockapps.h"
 #include "power.h"
@@ -26,6 +27,12 @@
 
 #define AOD_BRIGHTNESS 18
 #define FIN_PX 6
+/* Awake, the light sensor is read this often, a reading is ready after
+ * the integration time, and a change of brightness takes the fade time,
+ * as mce fades it. */
+#define LIGHT_READ_MS 250
+#define LIGHT_INTEGRATE_MS 60
+#define LIGHT_FADE_MS 1000
 
 static bool have_display, have_ui, have_hub;
 static struct power_policy policy = { .awake = true };
@@ -103,11 +110,73 @@ static bool aod_wanted(void)
 	return power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD));
 }
 
-/* In nightstand mode the screen takes the nightstand brightness. */
-void power_set_brightness(void)
+static struct auto_brightness autob;
+static bool light_on, light_reading;
+static uint32_t light_t, fade_t;
+static int fade_from, fade_to, fade_now;
+
+static bool auto_brightness(void)
+{
+	return board->light && setting_get(SETTING_AUTO_BRIGHTNESS);
+}
+
+/* In nightstand mode the screen takes the nightstand brightness. With
+ * automatic brightness that is the setting's curve at the light seen. */
+static int brightness_wanted(void)
 {
 	int b = setting_get(power_nightstand() ? SETTING_NIGHTSTAND_BRIGHTNESS : SETTING_BRIGHTNESS);
-	display_set_brightness((uint8_t)(b * 255 / 100));
+	return auto_brightness() ? auto_brightness_percent(&autob, b) : b;
+}
+
+void power_set_brightness(void)
+{
+	fade_from = fade_to = fade_now = brightness_wanted();
+	display_set_brightness((uint8_t)(fade_now * 255 / 100));
+}
+
+static void light_follow(bool on, uint32_t now)
+{
+	light_on = on;
+	light_reading = false;
+	light_keep(on);
+	auto_brightness_reset(&autob);
+	/* The first reading right away. */
+	light_t = now - LIGHT_READ_MS;
+}
+
+void power_light(uint32_t now, bool hold)
+{
+	bool on = policy.awake && have_display && !hold && auto_brightness();
+	if (on != light_on)
+		light_follow(on, now);
+	if (!on)
+		return;
+	if (light_reading && now - light_t >= LIGHT_INTEGRATE_MS) {
+		light_reading = false;
+		int32_t lux = light_finish();
+		if (lux >= 0) {
+			auto_brightness_add(&autob, lux);
+			int b = brightness_wanted();
+			if (b != fade_to) {
+				log_printf("light: %ld lux, brightness %d\n", lux, b);
+				fade_from = fade_now;
+				fade_to = b;
+				fade_t = now;
+			}
+		}
+	} else if (!light_reading && now - light_t >= LIGHT_READ_MS) {
+		light_start();
+		light_reading = true;
+		light_t = now;
+	}
+	if (fade_now != fade_to) {
+		uint32_t gone = now - fade_t;
+		int b = gone >= LIGHT_FADE_MS ? fade_to : fade_from + (fade_to - fade_from) * (int)gone / LIGHT_FADE_MS;
+		if (b != fade_now) {
+			fade_now = b;
+			display_set_brightness((uint8_t)(b * 255 / 100));
+		}
+	}
 }
 
 /* Once a second while awake: the brightness follows nightstand mode. */
@@ -225,6 +294,8 @@ enum power_change power_update(uint32_t *now_p)
 	}
 	enum power_step step = power_policy_step(&policy, have_display, now);
 	if (step == POWER_STEP_SLEEP) {
+		/* Before the always-on face reads the sensor its own way. */
+		light_follow(false, now);
 		clockapps_sleep();
 		settings_flush();
 		ambient = have_ui && aod_wanted();

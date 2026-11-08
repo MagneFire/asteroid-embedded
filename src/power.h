@@ -22,6 +22,9 @@ bool power_awake(void);
 bool power_nightstand(void);
 uint32_t power_next_ms(void);
 void power_set_brightness(void);
+/* Each pass: awake, the brightness follows the light sensor, unless
+ * something else is holding the brightness. */
+void power_light(uint32_t now, bool hold);
 void power_tick(void);
 void power_idle(uint32_t app_next_ms);
 uint32_t power_wakeups(void);

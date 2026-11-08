@@ -106,6 +106,7 @@ export global Face {
     in-out property <bool> nightstand-rotate: true;
     // Burn-in protection: 0 off, 1 high, 2 medium, 3 low.
     in-out property <int> burn-in: 1;
+    in-out property <bool> auto-brightness: true;
     in-out property <string> build;
     in-out property <[AlarmItem]> alarms;
     in-out property <bool> alarm-ringing;
@@ -121,11 +122,12 @@ export global Face {
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
     in-out property <string> notification-icon;
-    // The watch's codename, whether it has a heart rate sensor, whether its screen is round and
-    // whether its panel can burn in, from the firmware.
+    // The watch's codename, whether it has a heart rate sensor, whether its screen is round,
+    // whether it has a light sensor and whether its panel can burn in, from the firmware.
     in property <string> board;
     in property <bool> has-heart-rate: true;
     in property <bool> round-screen: true;
+    in property <bool> has-light-sensor;
     in property <bool> has-burn-in: true;
     in-out property <string> notification-app;
     in-out property <string> notification-summary;
