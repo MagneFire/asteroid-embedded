@@ -32,12 +32,9 @@ void power_policy_charger(struct power_policy *p, uint32_t now);
 enum power_step power_policy_step(struct power_policy *p, bool have_display, uint32_t now);
 /* Which setting picks the always-on face. */
 bool power_policy_aod(bool nightstand, bool nightstand_aod, bool aod);
-/* A peek: asleep, the always-on face for PEEK_MS from `now`, whatever
- * the setting; another peek starts it over. Awake it does nothing. */
+/* Asleep, the always-on face for PEEK_MS; another peek starts it over. */
 void power_policy_peek(struct power_policy *p, uint32_t now);
-/* Whether a peek is still on at `now`. */
 bool power_policy_peeking(struct power_policy *p, uint32_t now);
-/* The time until the peek ends, UINT32_MAX without one. */
 uint32_t power_policy_peek_next_ms(const struct power_policy *p, uint32_t now);
 
 enum aod_change { AOD_KEEP, AOD_ENTER, AOD_LEAVE };

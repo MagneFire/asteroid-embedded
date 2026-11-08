@@ -72,6 +72,10 @@ static void peek(void)
 	CHECK(!p.peeking);
 	p.awake = false;
 	CHECK(!power_policy_peeking(&p, 20200));
+	/* Stamped a little after the time the pass works with. */
+	power_policy_peek(&p, 30000);
+	CHECK(power_policy_peeking(&p, 29990));
+	CHECK(power_policy_peek_next_ms(&p, 29990) == PEEK_MS + 10);
 	/* Across the wrap of the clock. */
 	power_policy_peek(&p, UINT32_MAX - 10);
 	CHECK(power_policy_peeking(&p, PEEK_MS - 20));

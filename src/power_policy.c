@@ -55,16 +55,25 @@ void power_policy_peek(struct power_policy *p, uint32_t now)
 	p->peek_t = now;
 }
 
+/* Signed: the peek may be stamped after the pass's own time. */
+static int32_t peek_gone(const struct power_policy *p, uint32_t now)
+{
+	return (int32_t)(now - p->peek_t);
+}
+
 bool power_policy_peeking(struct power_policy *p, uint32_t now)
 {
-	if (p->peeking && (p->awake || now - p->peek_t >= PEEK_MS))
+	if (p->peeking && (p->awake || peek_gone(p, now) >= (int32_t)PEEK_MS))
 		p->peeking = false;
 	return p->peeking;
 }
 
 uint32_t power_policy_peek_next_ms(const struct power_policy *p, uint32_t now)
 {
-	return p->peeking && !p->awake ? ms_left(p->peek_t, PEEK_MS, now) : UINT32_MAX;
+	if (!p->peeking || p->awake)
+		return UINT32_MAX;
+	int32_t gone = peek_gone(p, now);
+	return gone >= (int32_t)PEEK_MS ? 1 : (uint32_t)((int32_t)PEEK_MS - gone);
 }
 
 enum aod_change power_policy_aod_change(bool ambient, bool wanted)

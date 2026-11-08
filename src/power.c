@@ -114,8 +114,6 @@ bool power_nightstand(void)
 	return setting_get(SETTING_NIGHTSTAND) && attached;
 }
 
-/* The always-on face: by the setting, or for a peek while the setting
- * has it off. */
 static bool aod_wanted(uint32_t now)
 {
 	return power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD)) ||
