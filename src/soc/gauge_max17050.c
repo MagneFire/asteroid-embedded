@@ -108,6 +108,14 @@ static void charge_check(void)
 static void gauge_init(void)
 {
 	tlmm_config(GPIO_DOCK, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
+	/* The factory kill circuit disconnects the battery while USB powers
+	 * the watch and keeps it so until it is disarmed, so the first unplug
+	 * cuts the power. The bootloader leaves the pin low (armed); the
+	 * vendor kernel drives it high unless a factory cable is in. */
+	if (board->gauge.kill_disable) {
+		tlmm_config(board->gauge.kill_disable, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		tlmm_set(board->gauge.kill_disable, 1);
+	}
 	uint16_t id = 0;
 	int r = i2c_qup_init(QUP, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
 	dock_state = dock_line();

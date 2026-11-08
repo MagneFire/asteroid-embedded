@@ -170,6 +170,9 @@ struct board {
 	struct {
 		struct board_i2c i2c;
 		uint8_t dock, dock_mpm, charge_n, charge_term, charge_rate;
+		/* Motorola's factory kill: high keeps the battery connected while
+		 * USB is in, 0 for a board without it. */
+		uint8_t kill_disable;
 	} gauge;
 
 	const struct touch_driver *touch;
