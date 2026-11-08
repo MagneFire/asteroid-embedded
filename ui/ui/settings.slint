@@ -155,14 +155,16 @@ export component SettingsApp {
                     }
                 }
 
-                RowSeparator { }
+                if Face.has-burn-in: VerticalLayout {
+                    RowSeparator { }
 
-                // OptionCycler: Off, High, Medium, Low.
-                LabeledSwitch {
-                    text: "Burn-in Protection";
-                    value: ["Off", "High", "Medium", "Low"][Face.burn-in];
-                    clicked => {
-                        Face.setting-set(Codes.setting-burn-in, Math.mod(Face.burn-in + 1, 4));
+                    // OptionCycler: Off, High, Medium, Low.
+                    LabeledSwitch {
+                        text: "Burn-in Protection";
+                        value: ["Off", "High", "Medium", "Low"][Face.burn-in];
+                        clicked => {
+                            Face.setting-set(Codes.setting-burn-in, Math.mod(Face.burn-in + 1, 4));
+                        }
                     }
                 }
 

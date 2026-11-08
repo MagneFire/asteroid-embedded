@@ -342,12 +342,13 @@ pub extern "C" fn ui_set_clock(hour: u32, minute: u32, second: u32, weekday: u32
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_set_board(name: *const u8, len: u32, heart_rate: bool, round: bool) {
+pub unsafe extern "C" fn ui_set_board(name: *const u8, len: u32, heart_rate: bool, round: bool, burn_in: bool) {
     let name = unsafe { text(name, len) };
     each(|face| {
         face.set_board(name.clone());
         face.set_has_heart_rate(heart_rate);
         face.set_round_screen(round);
+        face.set_has_burn_in(burn_in);
     });
 }
 
