@@ -7,6 +7,7 @@
 
 #define SLEEP_AFTER_MS 10000
 #define CHARGER_WAKE_MS 3000
+#define PEEK_MS 5000
 
 struct nightstand {
 	bool was_usb, lost;
@@ -19,8 +20,8 @@ bool nightstand_step(struct nightstand *n, bool usb, uint32_t now, uint32_t dela
 uint32_t nightstand_next_ms(const struct nightstand *n, uint32_t now, uint32_t delay_ms);
 
 struct power_policy {
-	bool awake, sleep_request, wake_request, charger_wake, keep_awake;
-	uint32_t last_activity;
+	bool awake, sleep_request, wake_request, charger_wake, keep_awake, peeking;
+	uint32_t last_activity, peek_t;
 };
 
 enum power_step { POWER_STEP_NONE, POWER_STEP_SLEEP, POWER_STEP_WAKE };
@@ -31,6 +32,13 @@ void power_policy_charger(struct power_policy *p, uint32_t now);
 enum power_step power_policy_step(struct power_policy *p, bool have_display, uint32_t now);
 /* Which setting picks the always-on face. */
 bool power_policy_aod(bool nightstand, bool nightstand_aod, bool aod);
+/* A peek: asleep, the always-on face for PEEK_MS from `now`, whatever
+ * the setting; another peek starts it over. Awake it does nothing. */
+void power_policy_peek(struct power_policy *p, uint32_t now);
+/* Whether a peek is still on at `now`. */
+bool power_policy_peeking(struct power_policy *p, uint32_t now);
+/* The time until the peek ends, UINT32_MAX without one. */
+uint32_t power_policy_peek_next_ms(const struct power_policy *p, uint32_t now);
 
 enum aod_change { AOD_KEEP, AOD_ENTER, AOD_LEAVE };
 

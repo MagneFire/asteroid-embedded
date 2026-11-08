@@ -97,7 +97,8 @@ export global Face {
     in-out property <bool> vibration-on: true;
     in-out property <bool> aod-on: true;
     in-out property <bool> clock12;
-    in-out property <bool> tilt-on: true;
+    // Tilt-to-wake: 0 off, 1 wakes the screen, 2 shows the always-on face for a moment.
+    in-out property <int> tilt: 1;
     in-out property <bool> tap-on: true;
     in-out property <bool> fahrenheit;
     in-out property <int> nightstand-brightness: 30;

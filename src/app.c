@@ -169,8 +169,13 @@ void app_sensors(uint32_t now)
 	if (have_hub) {
 		hub_poll();
 		app_tilt();
-		if (hub_tilted() && !power_awake() && setting_get(SETTING_TILT))
-			power_wake("tilt");
+		if (hub_tilted() && !power_awake()) {
+			int tilt = setting_get(SETTING_TILT);
+			if (tilt == TILT_WAKE)
+				power_wake("tilt");
+			else if (tilt == TILT_FACE)
+				power_peek("tilt");
+		}
 		if (steps_awake && !power_awake())
 			steps_save();
 		steps_awake = power_awake();

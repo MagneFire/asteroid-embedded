@@ -159,10 +159,12 @@ struct ui_tile {
 #define UI_TILES 16
 
 /* Brightnesses in per cent, the nightstand delay in seconds, burn_in
- * 0 off, 1 high, 2 medium, 3 low. */
+ * 0 off, 1 high, 2 medium, 3 low, tilt an enum tilt_mode. */
 struct ui_settings {
 	uint8_t brightness, nightstand_brightness, nightstand_delay, burn_in;
-	bool bluetooth, vibration, aod, clock12, tilt, tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
+	bool bluetooth, vibration, aod, clock12;
+	uint8_t tilt;
+	bool tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
 };
 
 enum ui_event_kind {

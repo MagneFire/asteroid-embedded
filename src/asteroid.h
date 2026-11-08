@@ -44,6 +44,11 @@ void power_request(bool sleep);
 void power_wake(const char *cause);
 /* Takes back a power_wake if this was its cause. */
 void power_wake_cancel(const char *cause);
+/* Asleep with the screen dark, shows the always-on face for a while. */
+void power_peek(const char *cause);
+/* What a tilt does: nothing, wake the screen, or show the always-on
+ * face for a moment. */
+enum tilt_mode { TILT_OFF, TILT_WAKE, TILT_FACE };
 enum setting {
 	SETTING_BRIGHTNESS,
 	SETTING_BLUETOOTH,

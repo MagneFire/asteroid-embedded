@@ -46,6 +46,39 @@ static void timeout(void)
 	CHECK(power_policy_step(&p, true, 7 * SLEEP_AFTER_MS + 1) == POWER_STEP_SLEEP);
 }
 
+static void peek(void)
+{
+	/* Awake a peek is ignored; asleep it lasts PEEK_MS and another one
+	 * starts it over. */
+	struct power_policy p = { .awake = true };
+	power_policy_peek(&p, 100);
+	CHECK(!power_policy_peeking(&p, 100));
+	CHECK(power_policy_peek_next_ms(&p, 100) == UINT32_MAX);
+	p.awake = false;
+	CHECK(!power_policy_peeking(&p, 100));
+	power_policy_peek(&p, 1000);
+	CHECK(power_policy_peeking(&p, 1000));
+	CHECK(power_policy_peek_next_ms(&p, 1000) == PEEK_MS);
+	CHECK(power_policy_peeking(&p, 1000 + PEEK_MS - 1));
+	CHECK(power_policy_peek_next_ms(&p, 1000 + PEEK_MS - 1) == 1);
+	power_policy_peek(&p, 1000 + PEEK_MS - 1);
+	CHECK(power_policy_peeking(&p, 1000 + PEEK_MS));
+	CHECK(!power_policy_peeking(&p, 1000 + 2 * PEEK_MS - 1));
+	CHECK(power_policy_peek_next_ms(&p, 1000 + 2 * PEEK_MS) == UINT32_MAX);
+	/* Waking ends it, and it does not come back when the watch sleeps. */
+	power_policy_peek(&p, 20000);
+	p.awake = true;
+	power_policy_woke(&p, 20100);
+	CHECK(!p.peeking);
+	p.awake = false;
+	CHECK(!power_policy_peeking(&p, 20200));
+	/* Across the wrap of the clock. */
+	power_policy_peek(&p, UINT32_MAX - 10);
+	CHECK(power_policy_peeking(&p, PEEK_MS - 20));
+	CHECK(power_policy_peek_next_ms(&p, PEEK_MS - 20) == 9);
+	CHECK(!power_policy_peeking(&p, PEEK_MS - 11));
+}
+
 static void requests(void)
 {
 	/* Awake, both at once: sleep wins. Asleep, both at once: wake wins. */
@@ -132,6 +165,7 @@ int main(void)
 	unplug();
 	touches();
 	nightstand();
+	peek();
 	timeout();
 	requests();
 	charger();

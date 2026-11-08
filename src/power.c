@@ -73,6 +73,15 @@ void power_wake_cancel(const char *cause)
 	}
 }
 
+void power_peek(const char *cause)
+{
+	if (policy.awake)
+		return;
+	if (!policy.peeking)
+		log_printf("peek: %s\n", cause);
+	power_policy_peek(&policy, time_ms());
+}
+
 void power_activity(uint32_t now)
 {
 	policy.last_activity = now;
@@ -105,9 +114,12 @@ bool power_nightstand(void)
 	return setting_get(SETTING_NIGHTSTAND) && attached;
 }
 
-static bool aod_wanted(void)
+/* The always-on face: by the setting, or for a peek while the setting
+ * has it off. */
+static bool aod_wanted(uint32_t now)
 {
-	return power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD));
+	return power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD)) ||
+	       power_policy_peeking(&policy, now);
 }
 
 static struct auto_brightness autob;
@@ -274,13 +286,20 @@ static void ambient_enter(void)
 	ambient = true;
 }
 
-/* Asleep off the charger, the end of the nightstand delay is a deadline
- * if the normal setting differs from what is on screen. */
+/* Asleep, the end of a peek is a deadline, and off the charger the end
+ * of the nightstand delay is one if the normal setting differs from
+ * what is on screen. */
 uint32_t power_next_ms(void)
 {
-	if (policy.awake || ambient == (have_ui && setting_get(SETTING_AOD)) || batt_cable())
+	if (policy.awake)
 		return UINT32_MAX;
-	return nightstand_next_ms(&stand, time_ms(), nightstand_delay_ms());
+	uint32_t now = time_ms(), next = power_policy_peek_next_ms(&policy, now);
+	if (ambient != (have_ui && setting_get(SETTING_AOD)) && !batt_cable()) {
+		uint32_t stand_next = nightstand_next_ms(&stand, now, nightstand_delay_ms());
+		if (stand_next < next)
+			next = stand_next;
+	}
+	return next;
 }
 
 enum power_change power_update(uint32_t *now_p)
@@ -298,7 +317,7 @@ enum power_change power_update(uint32_t *now_p)
 		light_follow(false, now);
 		clockapps_sleep();
 		settings_flush();
-		ambient = have_ui && aod_wanted();
+		ambient = have_ui && aod_wanted(now);
 		if (!ambient)
 			display_sleep();
 		if (have_ui) {
@@ -337,7 +356,7 @@ enum power_change power_update(uint32_t *now_p)
 	 * charger the normal one applies, either way. The picture stays off
 	 * until the face is drawn, or the last screen would flash up. */
 	if (!policy.awake) {
-		enum aod_change aod = power_policy_aod_change(ambient, have_ui && aod_wanted());
+		enum aod_change aod = power_policy_aod_change(ambient, have_ui && aod_wanted(now));
 		if (aod != AOD_KEEP)
 			cpu_clock_slow(false);
 		if (aod == AOD_LEAVE) {

@@ -182,11 +182,12 @@ export component SettingsApp {
 
                 RowSeparator { }
 
+                // OptionCycler: Off, Screen, Always-on face.
                 LabeledSwitch {
                     text: "Tilt-to-wake";
-                    checked: Face.tilt-on;
+                    value: ["Off", "Screen", "Always on"][Face.tilt];
                     clicked => {
-                        Face.setting-toggled(Codes.setting-tilt);
+                        Face.setting-set(Codes.setting-tilt, Math.mod(Face.tilt + 1, 3));
                     }
                 }
 

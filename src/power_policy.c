@@ -47,6 +47,26 @@ bool power_policy_aod(bool nightstand, bool nightstand_aod, bool aod)
 	return nightstand ? nightstand_aod : aod;
 }
 
+void power_policy_peek(struct power_policy *p, uint32_t now)
+{
+	if (p->awake)
+		return;
+	p->peeking = true;
+	p->peek_t = now;
+}
+
+bool power_policy_peeking(struct power_policy *p, uint32_t now)
+{
+	if (p->peeking && (p->awake || now - p->peek_t >= PEEK_MS))
+		p->peeking = false;
+	return p->peeking;
+}
+
+uint32_t power_policy_peek_next_ms(const struct power_policy *p, uint32_t now)
+{
+	return p->peeking && !p->awake ? ms_left(p->peek_t, PEEK_MS, now) : UINT32_MAX;
+}
+
 enum aod_change power_policy_aod_change(bool ambient, bool wanted)
 {
 	if (ambient == wanted)
@@ -75,6 +95,7 @@ enum touch_use power_policy_touch(bool *wake_touch, bool awake, bool tap_wakes, 
 void power_policy_woke(struct power_policy *p, uint32_t now)
 {
 	p->last_activity = now;
+	p->peeking = false;
 	if (p->charger_wake)
 		p->last_activity -= SLEEP_AFTER_MS - CHARGER_WAKE_MS;
 	p->charger_wake = false;

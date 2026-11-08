@@ -113,7 +113,8 @@ pub struct UiColors {
 }
 
 /// The settings as the firmware keeps them: brightnesses in per cent, the nightstand delay in
-/// seconds, burn_in 0 off, 1 high, 2 medium, 3 low.
+/// seconds, burn_in 0 off, 1 high, 2 medium, 3 low, tilt 0 off, 1 wakes the screen, 2 shows the
+/// always-on face.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct UiSettings {
@@ -125,7 +126,7 @@ pub struct UiSettings {
     vibration: bool,
     aod: bool,
     clock12: bool,
-    tilt: bool,
+    tilt: u8,
     tap: bool,
     fahrenheit: bool,
     nightstand_aod: bool,
@@ -588,7 +589,7 @@ pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
         face.set_vibration_on(s.vibration);
         face.set_aod_on(s.aod);
         face.set_clock12(s.clock12);
-        face.set_tilt_on(s.tilt);
+        face.set_tilt(s.tilt as i32);
         face.set_tap_on(s.tap);
         face.set_fahrenheit(s.fahrenheit);
         face.set_nightstand_brightness(s.nightstand_brightness as i32);
