@@ -47,6 +47,9 @@ void flatmesh_view(float scale, float dx, float dy, float shade);
 void flatmesh_colors(uint32_t center, uint32_t outer);
 unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, uint32_t outer, float dx, float dy,
 				    float alpha);
+/* The round window's outline around its centre, for a window 1 across. */
+#define FLATMESH_ROUND_SIDES 64
+const float (*flatmesh_round_edge(void))[2];
 /* One DCS write of a panel command sequence, then a pause. */
 struct dcs_step {
 	uint8_t cmd, n, delay_ms;

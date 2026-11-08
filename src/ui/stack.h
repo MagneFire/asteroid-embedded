@@ -31,6 +31,8 @@
 
 /* How far from an edge a drag counts as starting from it. */
 void stack_set_edge(int px);
+/* On a round panel an app is cut to the round window as it moves. */
+void stack_set_round(bool round);
 void stack_init(uint32_t width, uint32_t height, const uint32_t *layers, uint32_t layer_px);
 void stack_touch(int kind, int x, int y, uint32_t now_ms);
 void stack_update(uint32_t now_ms);

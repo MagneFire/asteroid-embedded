@@ -38,6 +38,7 @@
 #define APP_KEEP_MS	5000
 #define IND_NEAR	4.8f
 static int edge_px = 40;
+static bool round_panel;
 #define BAND		16
 #define BANDS		32
 
@@ -67,6 +68,11 @@ static int absi(int v) { return v < 0 ? -v : v; }
 void stack_set_edge(int px)
 {
 	edge_px = px;
+}
+
+void stack_set_round(bool round)
+{
+	round_panel = round;
 }
 
 void stack_init(uint32_t width, uint32_t height, const uint32_t *layer_base, uint32_t panel_px)
@@ -494,6 +500,11 @@ static void layer(unsigned panel, int x, int y, float alpha)
 {
 	if (x <= -W || x >= W || y <= -H || y >= H)
 		return;
+	/* A moved app stays inside its round window, as its background does. */
+	if (panel == UI_PANEL_APP && round_panel && (x || y)) {
+		gpu_draw_layer_round((uint32_t)(uintptr_t)(layers + panel * layer_px), W, H, fb.stride * 4, x, y, alpha);
+		return;
+	}
 	struct gpu_rect parts[BANDS];
 	unsigned n = 0;
 	for (int b = 0; b < BANDS && b * BAND < H; b++) {

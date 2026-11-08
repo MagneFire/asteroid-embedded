@@ -30,7 +30,9 @@
  * gpu_draw_layer_at draws a premultiplied RGBA layer with its top-left
  * corner at pixel (x, y) of the target, source-over blended and faded by
  * alpha (texture unit 0); gpu_draw_layer_parts draws only the given
- * rectangles of it, in layer pixels, in one draw; gpu_draw_layer is the
+ * rectangles of it, in layer pixels, in one draw; gpu_draw_layer_round
+ * draws what is inside the circle the layer's width across, moved with
+ * it, the outline flatmesh_round_edge gives; gpu_draw_layer is the
  * whole layer at (0, 0), opaque. gpu_draw_turn turns everything drawn
  * after it until the next gpu_draw_begin clockwise about the centre of a
  * square target, by the angle with cosine c and sine s: the layers it
@@ -95,6 +97,7 @@ void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t
 void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
 void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
 			  const struct gpu_rect *parts, unsigned n);
+void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
 void gpu_draw_turn(float c, float s);
 void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride);
 void gpu_draw_submit(void);

@@ -16,6 +16,7 @@
 #include "a3xx_ring.h"
 #include "draw.h"
 #include "shaders.h"
+#include "display/display.h"
 
 #define REG_UNKNOWN_0C3D		0x0c3d
 #define REG_GRAS_TSE_DEBUG_ECO		0x0c81
@@ -630,6 +631,32 @@ void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride)
 	}
 }
 
+static void draw_layer(const float *q, unsigned nverts, uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes,
+		       float alpha)
+{
+	bool faded = alpha < 1.0f;
+	if (!gpu_draw_program(&shader_d_vs, faded ? &shader_e_fs : &shader_d_fs))
+		return;
+	if (faded)
+		gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ alpha, alpha, alpha, alpha }, 1);
+	gpu_draw_texture(0, tex_addr, width, height, pitch_bytes);
+	gpu_draw_blend(true);
+	gpu_draw_triangles((uint32_t)(uintptr_t)q, 24, 2, (const uint8_t[]){4, 2}, nverts);
+	gpu_draw_blend(false);
+}
+
+/* A point (ex, ey) from the middle of a layer whose corner is at (x, y). */
+static void round_vertex(float *v, float ex, float ey, int x, int y, uint32_t width, uint32_t height)
+{
+	float u = 0.5f + ex, t = 0.5f + ey;
+	v[0] = 2.0f * (x + u * width) / target_w - 1.0f;
+	v[1] = 1.0f - 2.0f * (y + t * height) / target_h;
+	v[2] = 0.0f;
+	v[3] = 1.0f;
+	v[4] = u;
+	v[5] = t;
+}
+
 void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
 			  const struct gpu_rect *parts, unsigned n)
 {
@@ -641,15 +668,26 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 		quad(q + i * QUAD_FLOATS, x + r->x, y + r->y, r->width, r->height, (float)r->x / width,
 		     (float)r->y / height, (float)(r->x + (int)r->width) / width, (float)(r->y + (int)r->height) / height);
 	}
-	bool faded = alpha < 1.0f;
-	if (!gpu_draw_program(&shader_d_vs, faded ? &shader_e_fs : &shader_d_fs))
+	draw_layer(q, 6 * n, tex_addr, width, height, pitch_bytes, alpha);
+}
+
+void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+{
+	/* A fan from the centre: three vertices a side, half a quad. */
+	float *q = quads_get(FLATMESH_ROUND_SIDES / 2);
+	if (!q)
 		return;
-	if (faded)
-		gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ alpha, alpha, alpha, alpha }, 1);
-	gpu_draw_texture(0, tex_addr, width, height, pitch_bytes);
-	gpu_draw_blend(true);
-	gpu_draw_triangles((uint32_t)(uintptr_t)q, 24, 2, (const uint8_t[]){4, 2}, 6 * n);
-	gpu_draw_blend(false);
+	const float (*edge)[2] = flatmesh_round_edge();
+	for (unsigned k = 0; k < FLATMESH_ROUND_SIDES; k++) {
+		const float *a = edge[k], *b = edge[(k + 1) % FLATMESH_ROUND_SIDES];
+		float v[3 * 6];
+		round_vertex(v, 0.0f, 0.0f, x, y, width, height);
+		round_vertex(v + 6, a[0], a[1], x, y, width, height);
+		round_vertex(v + 12, b[0], b[1], x, y, width, height);
+		gpu_draw_turn_vertices(v, 3, 6);
+		memcpy(q + k * 3 * 6, v, sizeof v);
+	}
+	draw_layer(q, 3 * FLATMESH_ROUND_SIDES, tex_addr, width, height, pitch_bytes, alpha);
 }
 
 void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)

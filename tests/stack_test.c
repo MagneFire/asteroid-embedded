@@ -44,6 +44,13 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 	face_x = x;
 	face_y = y;
 }
+static int round_draws, round_x, round_y;
+void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+{
+	round_draws++;
+	round_x = x;
+	round_y = y;
+}
 static int app_x = -1;
 static void background(int x, int y, float alpha) { app_x = x; }
 
@@ -237,10 +244,45 @@ static void test_damage(void)
 	CHECK(face_n == 1 && face_parts[0].x == 10 && face_parts[0].y == 0 && face_parts[0].width == 1 && face_parts[0].height == 64);
 }
 
+/* Dragged from the top and shown, then let go; it closes. */
+static void drag_app_shown(void)
+{
+	stack_open_app();
+	settle();
+	touch(UI_TOUCH_DOWN, 200, 10);
+	stub_ms += 10;
+	touch(UI_TOUCH_MOVE, 200, 110);
+	stack_compose(background);
+	stub_ms += 10;
+	touch(UI_TOUCH_UP, 200, 110);
+	settle();
+}
+
+static void test_app_round(void)
+{
+	/* A round panel cuts the app only while it is moved. */
+	stack_set_round(true);
+	stack_open_app();
+	settle();
+	round_draws = 0;
+	stack_compose(background);
+	CHECK(round_draws == 0);
+	stack_home();
+	drag_app_shown();
+	CHECK(round_draws == 1 && round_x == 0 && round_y == 100);
+	/* A square one never does. */
+	stack_set_round(false);
+	round_draws = 0;
+	drag_app_shown();
+	CHECK(round_draws == 0);
+	stack_home();
+}
+
 int main(void)
 {
 	test_swipes();
 	test_app();
+	test_app_round();
 	test_damage();
 	printf("stack_test: %s\n", stub_failures ? "FAILED" : "ok");
 	return stub_failures != 0;

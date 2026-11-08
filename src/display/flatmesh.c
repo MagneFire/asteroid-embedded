@@ -182,8 +182,6 @@ unsigned flatmesh_vertices_gpu(float *out, uint32_t t_ms)
  * cut to the round window (a 64-gon) around its moved centre. Triangles
  * inside it pass whole, those across its edge are clipped polygon by
  * polygon and fanned out again. */
-#define ROUND_SIDES 64
-
 struct look { float pos[FLATMESH_INDICES][2]; float dx, dy; };
 
 static void look_vertex(int i, float x, float y, void *ctx)
@@ -193,23 +191,29 @@ static void look_vertex(int i, float x, float y, void *ctx)
 	l->pos[i][1] = 0.5f + (y - 0.5f) * view_scale + l->dy;
 }
 
-static unsigned clip_round(float (*p)[2], unsigned n, float cx, float cy, float radius)
+const float (*flatmesh_round_edge(void))[2]
 {
 	/* cos and sin of 2 pi / 64, stepped around from (0.5, 0). */
-	static float edge[ROUND_SIDES][2];
+	static float edge[FLATMESH_ROUND_SIDES][2];
 	if (!edge[0][0]) {
 		const float c = 0.99518473f, s = 0.09801714f;
 		edge[0][0] = 0.5f;
-		for (int k = 1; k < ROUND_SIDES; k++) {
+		for (int k = 1; k < FLATMESH_ROUND_SIDES; k++) {
 			edge[k][0] = edge[k - 1][0] * c - edge[k - 1][1] * s;
 			edge[k][1] = edge[k - 1][0] * s + edge[k - 1][1] * c;
 		}
 	}
-	float tmp[ROUND_SIDES + 3][2];
-	for (int k = 0; k < ROUND_SIDES && n; k++) {
+	return edge;
+}
+
+static unsigned clip_round(float (*p)[2], unsigned n, float cx, float cy, float radius)
+{
+	const float (*edge)[2] = flatmesh_round_edge();
+	float tmp[FLATMESH_ROUND_SIDES + 3][2];
+	for (int k = 0; k < FLATMESH_ROUND_SIDES && n; k++) {
 		float scale = radius * 2.0f;
 		float ax = cx + edge[k][0] * scale, ay = cy + edge[k][1] * scale;
-		float bx = cx + edge[(k + 1) % ROUND_SIDES][0] * scale, by = cy + edge[(k + 1) % ROUND_SIDES][1] * scale;
+		float bx = cx + edge[(k + 1) % FLATMESH_ROUND_SIDES][0] * scale, by = cy + edge[(k + 1) % FLATMESH_ROUND_SIDES][1] * scale;
 		unsigned m = 0;
 		for (unsigned j = 0; j < n; j++) {
 			float *u = p[j], *v = p[(j + 1) % n];
@@ -265,7 +269,7 @@ unsigned flatmesh_vertices_gpu_look(float *out, uint32_t t_ms, uint32_t center, 
 			int s = 16 - 8 * c;
 			rgb[c] = ((float)(center >> s & 0xff) * (1 - m) + (float)(outer >> s & 0xff) * m) / 255.0f * alpha;
 		}
-		float p[ROUND_SIDES + 3][2];
+		float p[FLATMESH_ROUND_SIDES + 3][2];
 		bool inside = true;
 		for (int k = 0; k < 3; k++) {
 			p[k][0] = l.pos[3 * t + k][0];
