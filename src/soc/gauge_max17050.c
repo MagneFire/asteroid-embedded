@@ -108,10 +108,6 @@ static void charge_check(void)
 static void gauge_init(void)
 {
 	tlmm_config(GPIO_DOCK, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
-	/* With USB in, the PMIC runs the rail from USB and switches the cell
-	 * out; unplugged awake, the rail collapsed before the 5 ms USB valid
-	 * debounce let the cell back in (SMELT.md, 2026-11-07). */
-	pmic_usb_valid_debounce(0);
 	uint16_t id = 0;
 	int r = i2c_qup_init(QUP, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
 	dock_state = dock_line();
