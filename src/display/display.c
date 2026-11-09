@@ -24,6 +24,12 @@ uint32_t display_timeouts(void) { return timeouts; }
 #define UNPACK_XRGB		(0x3 << 24 | 0x2 << 16 | 0x0 << 8 | 0x1 << 0)
 #define PIPE			MDP_PIPE_RGB0
 
+/* Clamps for the clock lane with its ULPS bit, and the bit that applies
+ * them. Data lane 0's pair depends on the wire it is on. */
+#define DSI_CLAMPS_CLOCK	(BIT(9) | BIT(8))
+#define DSI_CLAMP_EN		BIT(15)
+static uint32_t dsi_clamps;
+
 static void pp_wait(void)
 {
 	if (!kicked)
@@ -160,6 +166,11 @@ bool display_init(void)
 	if (!layer)
 		pipeline_setup();
 	writel(MDP_INTR_PP0_DONE, MDP_INTR_CLEAR);
+	/* The lane map's low two bits are the wire data lane 0 is on; the
+	 * clamps count the wires down from bit 7. */
+	unsigned wire = readl(DSI_LANE_SWAP) & 3;
+	dsi_clamps = DSI_CLAMPS_CLOCK | 3u << (6 - 2 * wire);
+	log_printf("display: data lane 0 on wire %u\n", wire);
 	if (board->backlight && !board->backlight->init())
 		log_printf("display: no backlight\n");
 	return true;
@@ -190,10 +201,6 @@ uint32_t *display_backbuffer(void) { return fb.buf[fb.back]; }
 #define CBCR_OFF		BIT(31)
 #define GDSC_SW_COLLAPSE	BIT(0)
 #define GDSC_PWR_ON		BIT(31)
-/* Clamps for the clock lane and data lane 0 (lane map 3012) with their
- * ULPS bits, and the bit that applies them. */
-#define DSI_CLAMPS		(BIT(9) | BIT(8) | BIT(5) | BIT(4))
-#define DSI_CLAMP_EN		BIT(15)
 
 static const uint32_t mdp_clocks[] = { MDSS_AXI_CBCR, MDSS_MDP_CBCR, MDSS_MDP_LUT_CBCR, MDSS_VSYNC_CBCR };
 static const uint32_t dsi_clocks[] = { MDSS_ESC0_CBCR, MDSS_BYTE0_CBCR, MDSS_PCLK0_CBCR };
@@ -270,12 +277,12 @@ static void dsi_clamp(bool on)
 {
 	clock_set(MMSS_MISC_AHB_CBCR, true);
 	if (on) {
-		writel(readl(MMSS_DSI_CLAMP) | DSI_CLAMPS, MMSS_DSI_CLAMP);
-		writel(readl(MMSS_DSI_CLAMP) | DSI_CLAMPS | DSI_CLAMP_EN, MMSS_DSI_CLAMP);
+		writel(readl(MMSS_DSI_CLAMP) | dsi_clamps, MMSS_DSI_CLAMP);
+		writel(readl(MMSS_DSI_CLAMP) | dsi_clamps | DSI_CLAMP_EN, MMSS_DSI_CLAMP);
 		writel(1, MMSS_DSI_PHY_RESET);
 	} else {
 		writel(0, MMSS_DSI_PHY_RESET);
-		writel(readl(MMSS_DSI_CLAMP) & ~(DSI_CLAMPS | DSI_CLAMP_EN), MMSS_DSI_CLAMP);
+		writel(readl(MMSS_DSI_CLAMP) & ~(dsi_clamps | DSI_CLAMP_EN), MMSS_DSI_CLAMP);
 	}
 	clock_set(MMSS_MISC_AHB_CBCR, false);
 }

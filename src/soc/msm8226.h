@@ -105,6 +105,7 @@
 #define DSI_INT_CTRL		(DSI0_BASE + 0x110)
 #define DSI_LANE_STATUS		(DSI0_BASE + 0x0a8)
 #define DSI_LANE_CTRL		(DSI0_BASE + 0x0ac)
+#define DSI_LANE_SWAP		(DSI0_BASE + 0x0b0)
 #define DSI_DLN0_PHY_ERR	(DSI0_BASE + 0x0b4)
 #define DSI_PLL_GLB_CFG		0xfd922a20u
 #define DSI_PLL_LKDET_CFG2	0xfd922a64u
