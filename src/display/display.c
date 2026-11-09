@@ -501,7 +501,8 @@ static void dcs_sequence(const struct dcs_step *steps, unsigned n)
 }
 
 /* The vendor's order and waits: off is reset, bias, logic supply; on is
- * the reverse, a reset pulse and the panel's start-up commands. */
+ * the reverse, a reset pulse and the panel's start-up commands, which it
+ * sends in low power mode. */
 #define PANEL_SLEEP_MS	85
 #define PANEL_BIAS_MS	10
 #define PANEL_RESET_MS	10
@@ -526,7 +527,9 @@ static void panel_power(bool on)
 	delay_ms(1);
 	tlmm_set(board->panel.reset_gpio, 1);
 	delay_ms(PANEL_RESET_MS);
+	dsi_low_power(true);
 	dcs_sequence(board->panel.on, board->panel.on_n);
+	dsi_low_power(false);
 }
 
 void display_sleep(void)

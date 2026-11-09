@@ -8,7 +8,15 @@
 #include "asteroid.h"
 #include "display.h"
 
+#define DMA_CTRL_LP	BIT(26)
+
 static uint8_t packet[64] __attribute__((aligned(8)));
+
+void dsi_low_power(bool on)
+{
+	uint32_t v = readl(DSI_CMD_MODE_DMA_CTRL);
+	writel(on ? v | DMA_CTRL_LP : v & ~DMA_CTRL_LP, DSI_CMD_MODE_DMA_CTRL);
+}
 
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n)
 {
