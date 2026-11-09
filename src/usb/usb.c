@@ -191,6 +191,8 @@ static uint8_t adb_rx_buf[16384] __attribute__((aligned(64)));
 static uint8_t adb_tx_buf[16384 + 64] __attribute__((aligned(64)));
 static bool adb_open, adb_tx_busy, adb_rx_queued;
 static uint32_t usb_rx_bytes, usb_tx_bytes;
+/* Transfers completed on the adb endpoints, either way. */
+static uint32_t adb_xfers;
 
 static void adb_queue_rx(void)
 {
@@ -237,6 +239,7 @@ static uint16_t adb_drv_open(uint8_t rhport, tusb_desc_interface_t const *itf, u
 static bool adb_drv_control(uint8_t rhport, uint8_t stage, tusb_control_request_t const *req) { return false; }
 static bool adb_drv_xfer(uint8_t rhport, uint8_t ep, xfer_result_t result, uint32_t n)
 {
+	adb_xfers++;
 	if (ep == EP_ADB_OUT) {
 		adb_rx_queued = false;
 		if (result == XFER_RESULT_SUCCESS) {
@@ -646,19 +649,39 @@ void usb_stats(uint32_t *rx, uint32_t *tx) { *rx = usb_rx_bytes; *tx = usb_tx_by
 /* The stack has an event to handle, an adb transfer is in flight or
  * adb has more to send: the main loop should go round again before it
  * sleeps, as a completion that lands after its poll would otherwise
- * wait for the next tick. */
+ * wait for the next tick. A host that takes nothing for STALL_MS is not
+ * waited for like that any longer, or it would keep the watch from
+ * sleeping for as long as it stays silent; the next transfer that
+ * completes brings the waiting back. */
+#define STALL_MS	2000
+/* Calls further apart than this are not one wait. */
+#define STALL_GAP_MS	500
+
 bool usb_busy(void)
 {
-	static uint32_t since;
-	bool busy = usb_connected() && (tud_task_event_ready() || adb_tx_busy || adb_pending());
-	if (!busy)
-		since = 0;
-	else if (!since)
-		since = time_ms();
-	else if (time_ms() - since > 2000) {
-		log_printf("usb: busy for %lu ms: event %d, tx %d, pending %d\n", time_ms() - since, tud_task_event_ready(),
-			   adb_tx_busy, adb_pending());
-		since = time_ms();
+	static uint32_t since, last, seen;
+	static bool stalled;
+	uint32_t now = time_ms();
+	bool adb = adb_tx_busy || adb_pending();
+	bool busy = usb_connected() && (tud_task_event_ready() || adb);
+	if (!adb || adb_xfers != seen || now - last > STALL_GAP_MS) {
+		if (stalled && adb_xfers != seen)
+			log_printf("usb: the host takes adb data again\n");
+		if (adb_xfers != seen || !adb)
+			stalled = false;
+		since = now;
+		seen = adb_xfers;
 	}
-	return busy;
+	last = now;
+	if (!busy)
+		return false;
+	if (stalled)
+		return tud_task_event_ready();
+	if (adb && now - since > STALL_MS) {
+		log_printf("usb: the host takes no adb data (tx %d, pending %d), not waiting for it\n", adb_tx_busy,
+			   adb_pending());
+		stalled = true;
+		return tud_task_event_ready();
+	}
+	return true;
 }
