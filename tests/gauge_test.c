@@ -35,6 +35,11 @@ int main(void)
 	CHECK(max17050_decidegrees((uint16_t)(-40 * 256)) == -302);
 	CHECK(max17050_decidegrees(100 * 256) == 800);
 
+	/* A fresh model: 39 % of 776 is 302; the accumulator is a sixteenth. */
+	CHECK(max17050_remcap(0x2706, 776) == 302);
+	CHECK(max17050_remcap(0x6400, 776) == 776);
+	CHECK(max17050_dqacc(776) == 48);
+
 	CHECK(max17050_lost_model(0x0002));
 	CHECK(!max17050_lost_model(0x0008));
 	CHECK(max17050_no_battery(0x0008));

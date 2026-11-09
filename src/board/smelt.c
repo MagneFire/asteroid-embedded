@@ -4,6 +4,22 @@
  * point at battery_pmic or give the charger limits. */
 #include "asteroid.h"
 #include "display/display.h"
+#include "soc/max17050.h"
+
+/* The FW3L cell as the vendor's gauge driver programs it; the watch has
+ * no battery ID, so this is the profile it falls back to. */
+static const struct max17050_model cell_model = {
+	.config = 0x4254, .learn_cfg = 0x2606, .filter_cfg = 0x87a4, .relax_cfg = 0x043b, .full_soc_thresh = 0x5f00,
+	.design_cap = 776, .fullcap = 776, .fullcapnom = 776, .ichgt_term = 0x0080,
+	.rcomp0 = 0x0070, .tempco = 0x5040, .qrtbl = { 0x2f80, 0x1500, 0x0783, 0x0507 },
+	.tgain = 0xe71c, .toff = 0x251a, .version = 0x0002,
+	.cell = {
+		0x7d00, 0xac70, 0xb760, 0xb940, 0xba50, 0xbca0, 0xbde0, 0xc020, 0xc190, 0xc320, 0xc6b0, 0xcac0,
+		0xce60, 0xd0d0, 0xd5b0, 0xdba0, 0x0020, 0x0300, 0x1100, 0x0ce0, 0x0fe0, 0x1490, 0x11d0, 0x0c90,
+		0x0df0, 0x0970, 0x0600, 0x08d0, 0x0690, 0x06f0, 0x05f0, 0x05f0, 0x0080, 0x0080, 0x0080, 0x0080,
+		0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080,
+	},
+};
 
 /* NT35350 on the large watch: its idle settings are on command page
  * 0x24, and page 0x10 is the normal one. */
@@ -68,7 +84,7 @@ const struct board board_smelt = {
 	/* MAX17050 on BLSP1 QUP3, pad detect on gpio 54 (MPM pin 25). */
 	.battery_driver = &battery_max17050,
 	.gauge = { .i2c = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x36 }, .dock = 54, .dock_mpm = 25, .charge_n = 94, .charge_term = 53, .charge_rate = 58,
-		   .kill_disable = 116 },
+		   .kill_disable = 116, .model = &cell_model },
 	/* Atmel mXT on BLSP1 QUP5, interrupt on gpio 17 (MPM pin 8), reset
 	 * on gpio 16. */
 	.touch = &touch_mxt,

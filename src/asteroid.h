@@ -209,6 +209,7 @@ uint32_t batt_mv(void);
 int32_t batt_ua(void);
 int32_t batt_avg_ua(void);
 const char *batt_status(void);
+bool gauge_model_load(void);
 /* The watch's light sensor (board->light): light_finish gives the lux
  * since light_start, or -1 without a reading. */
 void light_init(void);

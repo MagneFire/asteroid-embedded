@@ -9,6 +9,7 @@
 
 struct dcs_step;
 struct touch;
+struct max17050_model;
 
 /* An I2C device on a BLSP1 QUP. */
 struct board_i2c {
@@ -182,6 +183,8 @@ struct board {
 		/* Motorola's factory kill: high keeps the battery connected while
 		 * USB is in, 0 for a board without it. */
 		uint8_t kill_disable;
+		/* The cell model to load when the gauge has lost it. */
+		const struct max17050_model *model;
 	} gauge;
 
 	const struct touch_driver *touch;

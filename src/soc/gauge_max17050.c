@@ -1,8 +1,10 @@
 /* smelt's battery: a MAX17050 gauge on I2C and a wireless receiver that
  * charges the cell, which charge_policy tells to stop through its
- * termination line. Nothing here writes to the gauge: the cell model in
- * it is the vendor's, its driver only loads it after the gauge lost
- * power. The PMIC's charger is not touched; of its registers only the USB path's
+ * termination line. The gauge keeps the cell model the vendor loaded
+ * into it, and is left alone until its status says it lost power and the
+ * model with it; the board's copy of the model is then written back the
+ * way the vendor's driver does it, without which the percentage means
+ * nothing and charging stays off. The PMIC's charger is not touched; of its registers only the USB path's
  * status is read, which is how the vendor sees USB too.
  *
  * On the charger: the dock line is low while on the pad, and as for the
@@ -42,6 +44,106 @@ static int rd(uint8_t reg, uint16_t *v)
 	}
 	*v = (uint16_t)(b[0] | b[1] << 8);
 	return 0;
+}
+
+static int wr(uint8_t reg, uint16_t v)
+{
+	uint8_t b[3] = { reg, (uint8_t)v, (uint8_t)(v >> 8) };
+	int r = i2c_qup_xfer(QUP, ADDR, b, 3, NULL, 0);
+	if (r)
+		errors++;
+	return r;
+}
+
+/* Written until it reads back, as the vendor's driver does. */
+static int wr_verify(uint8_t reg, uint16_t v)
+{
+	uint16_t back = ~v;
+	for (int i = 0; i < 8; i++) {
+		if (!wr(reg, v) && !rd(reg, &back) && back == v)
+			return 0;
+	}
+	return -1;
+}
+
+static void wait_ms(unsigned ms)
+{
+	for (; ms; ms -= 10) {
+		delay_ms(10);
+		wdt_feed();
+	}
+}
+
+/* The vendor driver's start after a power loss: its register overrides,
+ * the configuration, the characterisation table under the model lock,
+ * the cell's own parameters and capacities, then the state of charge
+ * seeded from the voltage-only estimate and the lost-power flag cleared.
+ * The model is checked word for word and must read as zeros once
+ * locked; a step that does not take leaves the flag set, so the
+ * percentage stays untrusted and the load is tried again later. */
+static bool model_load(void)
+{
+	const struct max17050_model *m = board->gauge.model;
+	uint16_t v, vfsoc, status;
+	int r = wr(MAX17050_TGAIN, m->tgain) | wr(MAX17050_TOFF, m->toff) | wr(0x01, 0xff00) | wr(0x02, 0x7f80) |
+		wr(MAX17050_CONFIG, m->config) | wr(MAX17050_DESIGNCAP, m->design_cap) |
+		wr(MAX17050_ICHGTERM, m->ichgt_term) | wr(MAX17050_LEARNCFG, m->learn_cfg) |
+		wr(MAX17050_FILTERCFG, m->filter_cfg) | wr(MAX17050_RELAXCFG, m->relax_cfg) |
+		wr(MAX17050_FULLCAP, m->fullcap) | wr(MAX17050_FULLCAPNOM, m->fullcapnom);
+	wait_ms(500);
+	r |= wr(MAX17050_CONFIG, m->config) | wr(MAX17050_LEARNCFG, m->learn_cfg) | wr(MAX17050_FILTERCFG, m->filter_cfg) |
+	     wr(MAX17050_RELAXCFG, m->relax_cfg) | wr(MAX17050_FULLSOCTHR, m->full_soc_thresh);
+	r |= wr(MAX17050_MLOCK1, MAX17050_MLOCK1_UNLOCK) | wr(MAX17050_MLOCK2, MAX17050_MLOCK2_UNLOCK);
+	for (unsigned i = 0; i < MAX17050_MODEL_WORDS; i++)
+		r |= wr((uint8_t)(MAX17050_MODEL + i), m->cell[i]);
+	for (unsigned i = 0; i < MAX17050_MODEL_WORDS; i++)
+		if (rd((uint8_t)(MAX17050_MODEL + i), &v) || v != m->cell[i])
+			r = -1;
+	r |= wr(MAX17050_MLOCK1, 0) | wr(MAX17050_MLOCK2, 0);
+	for (unsigned i = 0; i < MAX17050_MODEL_WORDS; i++)
+		if (rd((uint8_t)(MAX17050_MODEL + i), &v) || v)
+			r = -1;
+	if (r) {
+		log_printf("gauge: cell model not taken\n");
+		return false;
+	}
+	r = wr_verify(MAX17050_RCOMP0, m->rcomp0) | wr_verify(MAX17050_TEMPCO, m->tempco) |
+	    wr_verify(MAX17050_ICHGTERM, m->ichgt_term) | wr_verify(MAX17050_QRTBL00, m->qrtbl[0]) |
+	    wr_verify(MAX17050_QRTBL10, m->qrtbl[1]) | wr_verify(MAX17050_QRTBL20, m->qrtbl[2]) |
+	    wr_verify(MAX17050_QRTBL30, m->qrtbl[3]);
+	r |= wr_verify(MAX17050_FULLCAP, m->fullcap) | wr(MAX17050_DESIGNCAP, m->design_cap) |
+	     wr_verify(MAX17050_FULLCAPNOM, m->fullcapnom);
+	wait_ms(350);
+	r |= rd(MAX17050_VFSOC, &vfsoc);
+	r |= wr(MAX17050_VFSOC0_ENABLE, MAX17050_VFSOC0_UNLOCK) | wr_verify(MAX17050_VFSOC0, vfsoc) |
+	     wr(MAX17050_VFSOC0_ENABLE, 0);
+	r |= wr_verify(MAX17050_CYCLES, MAX17050_INIT_CYCLES);
+	uint16_t remcap = max17050_remcap(vfsoc, m->fullcapnom);
+	r |= wr_verify(MAX17050_REMCAP, remcap) | wr_verify(MAX17050_REPCAP, remcap) |
+	     wr_verify(MAX17050_DQACC, max17050_dqacc(m->fullcap)) | wr_verify(MAX17050_DPACC, MAX17050_DPACC_200) |
+	     wr_verify(MAX17050_FULLCAP, m->fullcap) | wr(MAX17050_DESIGNCAP, m->design_cap) |
+	     wr_verify(MAX17050_FULLCAPNOM, m->fullcapnom) | wr(MAX17050_REPSOC, vfsoc);
+	r |= rd(MAX17050_STATUS, &status);
+	if (!r)
+		r = wr(MAX17050_STATUS, status & ~0x0002) | wr(MAX17050_CONFIG_VER, m->version);
+	log_printf("gauge: cell model %s, %u%% by voltage\n", r ? "not fully loaded" : "loaded", vfsoc >> 8);
+	return !r;
+}
+
+/* For the console: the model written again, whatever the status. */
+bool gauge_model_load(void)
+{
+	return ready && board->gauge.model && model_load();
+}
+
+/* Loads the model when the status says it is gone. */
+static void model_check(void)
+{
+	uint16_t status;
+	if (!ready || !board->gauge.model || rd(MAX17050_STATUS, &status) || !max17050_lost_model(status))
+		return;
+	log_printf("gauge: lost its cell model, loading it\n");
+	model_load();
 }
 
 static bool dock_line(void)
@@ -127,6 +229,7 @@ static void gauge_init(void)
 		return;
 	}
 	ready = true;
+	model_check();
 	refresh();
 	log_printf("gauge: max17050, %lu%%, status %04x%s, dock %u\n", soc, last_status,
 		   max17050_lost_model(last_status) ? ", lost its cell model" : "", docked());
@@ -173,6 +276,7 @@ static void gauge_poll(void)
 	if (now - poll_t < POLL_MS)
 		return;
 	poll_t = now;
+	model_check();
 	refresh();
 	charge_check();
 }

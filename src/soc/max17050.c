@@ -49,6 +49,16 @@ int max17050_decidegrees(uint16_t temp)
 	return temp_real[i] + (temp_real[i + 1] - temp_real[i]) * (t - (TEMP_START + i) * 10) / 10;
 }
 
+uint16_t max17050_remcap(uint16_t vfsoc, uint16_t fullcapnom)
+{
+	return (uint16_t)((uint32_t)(vfsoc >> 8) * fullcapnom / 100);
+}
+
+uint16_t max17050_dqacc(uint16_t fullcap)
+{
+	return fullcap / 16;
+}
+
 bool max17050_lost_model(uint16_t status)
 {
 	return status & STATUS_POR;
