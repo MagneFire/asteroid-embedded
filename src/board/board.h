@@ -136,6 +136,7 @@ struct board {
 		bool lcd;
 		/* How far from an edge a drag starts from it, 0 for the default. */
 		uint8_t edge_px;
+		/* For the panel of the first height only. */
 		const struct dcs_step *idle_on, *idle_off;
 		uint8_t idle_on_n, idle_off_n;
 	} panel;

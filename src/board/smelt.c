@@ -3,6 +3,18 @@
  * charges the cell and a separate gauge measures it, so nothing here may
  * point at battery_pmic or give the charger limits. */
 #include "asteroid.h"
+#include "display/display.h"
+
+/* NT35350 on the large watch: its idle settings are on command page
+ * 0x24, and page 0x10 is the normal one. */
+static const struct dcs_step idle_on[] = {
+	{ 0xff, 1, 0, { 0x24 } }, { 0xd2, 1, 0, { 0xc2 } }, { 0xd3, 1, 0, { 0xc2 } },
+	{ 0xd5, 1, 0, { 0x03 } }, { 0xd8, 1, 0, { 0xc3 } }, { 0xff, 1, 0, { 0x10 } },
+};
+static const struct dcs_step idle_off[] = {
+	{ 0xff, 1, 0, { 0x24 } }, { 0xd2, 1, 0, { 0xe1 } }, { 0xd3, 1, 0, { 0xe1 } },
+	{ 0xd5, 1, 0, { 0x01 } }, { 0xd8, 1, 0, { 0x43 } }, { 0xff, 1, 0, { 0x10 } },
+};
 
 /* The Bluetooth patch, GPU microcode and the rest are all under vendor. */
 static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
@@ -14,13 +26,16 @@ const struct board board_smelt = {
 	.heart_rate = false,
 	/* NT35350 or NT35355 command-mode panel, a round 360 px with the
 	 * bottom cut off: 330 lines on the large watch, 325 on the small
-	 * one, 401 with the porches at 60 Hz, TE on gpio 24. The idle
-	 * commands differ between the three panels and nothing here tells
-	 * them apart yet, so the always-on face runs in normal mode. */
+	 * one, 401 with the porches at 60 Hz, TE on gpio 24. The small
+	 * watch has one of two panels with idle commands of their own and
+	 * nothing here tells those apart yet, so only the large one's
+	 * always-on face runs in idle mode. */
 	.panel = {
 		.width = 360, .height = 330, .height_alt = 325,
 		.lines = 401, .hz = 60, .te_gpio = 24, .flip_ud = false, .round = true,
 		.lcd = true, .edge_px = 72,
+		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
+		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
 	},
 	.firmware_dirs = firmware_dirs,
 	/* BCM43430A1 on BLSP1 UART6 (gpio 20-23, function 2), REG_ON on gpio

@@ -91,6 +91,12 @@ static void pipeline_setup(void)
 	writel(CTL_FLUSH_RGB0 | CTL_FLUSH_LM0 | CTL_FLUSH_CTL, MDP_CTL0 + CTL_FLUSH);
 }
 
+/* The board's panel commands are for its first height. */
+static bool main_panel(void)
+{
+	return fb.panel_height == board->panel.height;
+}
+
 bool display_init(void)
 {
 	if (!(readl(MDP_GDSCR) & BIT(31))) {
@@ -524,6 +530,8 @@ static void dcs_sequence(const struct dcs_step *steps, unsigned n)
 
 void display_idle(bool on)
 {
+	if (!main_panel())
+		return;
 	display_active();
 	pp_wait();
 	if (on)
