@@ -399,6 +399,28 @@ static void cmd_vadc(const char *args)
 	say("vadc %lu: raw %d, %ld mV at the pin\n", chan, raw, mv);
 }
 
+/* gauge <reg>...: 16-bit registers of a MAX17050 fuel gauge, in hex. */
+static void cmd_gauge(const char *args)
+{
+	uint32_t reg;
+	if (board->battery_driver == &battery_max17050 && !strcmp(args, "load")) {
+		say("gauge: cell model %s\n", gauge_model_load() ? "loaded" : "not loaded");
+		return;
+	}
+	if (board->battery_driver != &battery_max17050 || !parse_num(&args, 16, &reg)) {
+		say("usage: gauge <reg>... | load (hex, MAX17050 only)\n");
+		return;
+	}
+	do {
+		uint8_t r = (uint8_t)reg, b[2];
+		int ret = reg > 255 ? -1 : i2c_qup_xfer(board->gauge.i2c.qup, board->gauge.i2c.addr, &r, 1, b, 2);
+		if (ret)
+			say("%02lx: error %d\n", reg, ret);
+		else
+			say("%02lx: %04x\n", reg, b[0] | b[1] << 8);
+	} while (parse_num(&args, 16, &reg));
+}
+
 static bool parse_bdaddr(const char *s, uint8_t a[6])
 {
 	for (int i = 0; i < 6; i++) {
@@ -1046,6 +1068,7 @@ static const struct command commands[] = {
 	{ "pmic", "<hex addr> [bytes | = <hex byte>]", cmd_pmic },
 	{ "vadc", "<channel>", cmd_vadc },
 	{ "gpio", "<pin> [= 0|1]", cmd_gpio },
+	{ "gauge", "<reg>...", cmd_gauge },
 	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },

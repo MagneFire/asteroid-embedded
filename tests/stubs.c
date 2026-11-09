@@ -33,6 +33,9 @@ uint32_t pmic_rtc_read(void) { return stub_rtc; }
 uint8_t pmic_read(uint32_t addr) { return 0; }
 void pmic_write(uint32_t addr, uint8_t val) {}
 int pmic_vadc_raw(uint8_t chan, uint8_t settle) { return 0; }
+const struct battery_driver battery_max17050;
+bool gauge_model_load(void) { return false; }
+int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }
 void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
 void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
