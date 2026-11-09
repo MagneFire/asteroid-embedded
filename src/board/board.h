@@ -139,6 +139,12 @@ struct board {
 		/* For the panel of the first height only. */
 		const struct dcs_step *idle_on, *idle_off;
 		uint8_t idle_on_n, idle_off_n;
+		/* A panel switched off with the screen: its commands from
+		 * reset to out of sleep, its reset line, the line that
+		 * enables its bias supply and the LDO for its logic. */
+		const struct dcs_step *on;
+		uint8_t on_n, reset_gpio, bias_gpio, io_ldo;
+		uint32_t io_uv;
 	} panel;
 
 	/* Where firmware files are on the system partition, NULL-ended. */

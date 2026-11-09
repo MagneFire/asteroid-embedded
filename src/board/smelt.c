@@ -16,6 +16,17 @@ static const struct dcs_step idle_off[] = {
 	{ 0xd5, 1, 0, { 0x01 } }, { 0xd8, 1, 0, { 0x43 } }, { 0xff, 1, 0, { 0x10 } },
 };
 
+/* The same panel from reset: its settings, the 360 x 330 window, tearing
+ * effect on and out of sleep. */
+static const struct dcs_step panel_on[] = {
+	{ 0xff, 1, 0, { 0x24 } }, { 0xfb, 1, 0, { 0x01 } }, { 0xc8, 1, 0, { 0x00 } },
+	{ 0xd2, 1, 0, { 0xe1 } }, { 0xd3, 1, 0, { 0xe1 } }, { 0xd4, 1, 0, { 0xc2 } },
+	{ 0xd5, 1, 0, { 0x01 } }, { 0xd8, 1, 0, { 0x43 } },
+	{ 0xff, 1, 0, { 0x10 } }, { 0xfb, 1, 0, { 0x01 } },
+	{ 0x2a, 4, 0, { 0x00, 0x00, 0x01, 0x67 } }, { 0x2b, 4, 0, { 0x00, 0x00, 0x01, 0x49 } },
+	{ 0xc0, 1, 0, { 0x01 } }, { 0x35, 1, 0, { 0x00 } }, { 0x11, 0, 100, { 0 } },
+};
+
 /* The Bluetooth patch, GPU microcode and the rest are all under vendor. */
 static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
 
@@ -29,13 +40,16 @@ const struct board board_smelt = {
 	 * one, 401 with the porches at 60 Hz, TE on gpio 24. The small
 	 * watch has one of two panels with idle commands of their own and
 	 * nothing here tells those apart yet, so only the large one's
-	 * always-on face runs in idle mode. */
+	 * always-on face runs in idle mode and only the large one is
+	 * switched off with the screen. */
 	.panel = {
 		.width = 360, .height = 330, .height_alt = 325,
 		.lines = 401, .hz = 60, .te_gpio = 24, .flip_ud = false, .round = true,
 		.lcd = true, .edge_px = 72,
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
+		.on = panel_on, .on_n = sizeof panel_on / sizeof panel_on[0],
+		.reset_gpio = 36, .bias_gpio = 33, .io_ldo = 27, .io_uv = 1800000,
 	},
 	.firmware_dirs = firmware_dirs,
 	/* BCM43430A1 on BLSP1 UART6 (gpio 20-23, function 2), REG_ON on gpio

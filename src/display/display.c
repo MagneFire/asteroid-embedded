@@ -91,10 +91,16 @@ static void pipeline_setup(void)
 	writel(CTL_FLUSH_RGB0 | CTL_FLUSH_LM0 | CTL_FLUSH_CTL, MDP_CTL0 + CTL_FLUSH);
 }
 
-/* The board's panel commands are for its first height. */
+/* The board's panel commands and power lines are for its first height. */
 static bool main_panel(void)
 {
 	return fb.panel_height == board->panel.height;
+}
+
+/* A panel that loses its power with the screen off. */
+static bool panel_switched(void)
+{
+	return board->panel.on_n && main_panel();
 }
 
 bool display_init(void)
@@ -177,6 +183,14 @@ bool display_init(void)
 	unsigned wire = readl(DSI_LANE_SWAP) & 3;
 	dsi_clamps = DSI_CLAMPS_CLOCK | 3u << (6 - 2 * wire);
 	log_printf("display: data lane 0 on wire %u\n", wire);
+	if (panel_switched()) {
+		if (rpm_ldo_on(board->panel.io_ldo, board->panel.io_uv))
+			log_printf("display: l%u on not acknowledged\n", board->panel.io_ldo);
+		tlmm_set(board->panel.reset_gpio, 1);
+		tlmm_config(board->panel.reset_gpio, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		tlmm_set(board->panel.bias_gpio, 1);
+		tlmm_config(board->panel.bias_gpio, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	}
 	if (board->backlight && !board->backlight->init())
 		log_printf("display: no backlight\n");
 	return true;
@@ -477,6 +491,44 @@ void display_set_backlight_code(uint8_t code)
 		board->backlight->set_code(code);
 }
 
+static void dcs_sequence(const struct dcs_step *steps, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		dsi_dcs_write(steps[i].cmd, steps[i].data, steps[i].n);
+		if (steps[i].delay_ms)
+			delay_ms(steps[i].delay_ms);
+	}
+}
+
+/* The vendor's order and waits: off is reset, bias, logic supply; on is
+ * the reverse, a reset pulse and the panel's start-up commands. */
+#define PANEL_SLEEP_MS	85
+#define PANEL_BIAS_MS	10
+#define PANEL_RESET_MS	10
+
+static void panel_power(bool on)
+{
+	if (!on) {
+		delay_ms(PANEL_SLEEP_MS);
+		tlmm_set(board->panel.reset_gpio, 0);
+		tlmm_set(board->panel.bias_gpio, 0);
+		delay_ms(2);
+		rpm_ldo_off(board->panel.io_ldo);
+		return;
+	}
+	rpm_ldo_on(board->panel.io_ldo, board->panel.io_uv);
+	delay_ms(1);
+	tlmm_set(board->panel.bias_gpio, 1);
+	delay_ms(PANEL_BIAS_MS);
+	tlmm_set(board->panel.reset_gpio, 1);
+	delay_ms(PANEL_RESET_MS);
+	tlmm_set(board->panel.reset_gpio, 0);
+	delay_ms(1);
+	tlmm_set(board->panel.reset_gpio, 1);
+	delay_ms(PANEL_RESET_MS);
+	dcs_sequence(board->panel.on, board->panel.on_n);
+}
+
 void display_sleep(void)
 {
 	if (board->backlight)
@@ -486,6 +538,8 @@ void display_sleep(void)
 	pp_wait();
 	dsi_dcs_write(0x28, NULL, 0);
 	dsi_dcs_write(0x10, NULL, 0);
+	if (panel_switched())
+		panel_power(false);
 	panel_asleep = true;
 }
 
@@ -495,6 +549,10 @@ void display_wake_hidden(void)
 {
 	display_active();
 	panel_asleep = false;
+	if (panel_switched()) {
+		panel_power(true);
+		return;
+	}
 	dsi_dcs_write(0x11, NULL, 0);
 	delay_ms(120);
 }
@@ -519,15 +577,6 @@ void display_wake(void)
 /* Idle mode keeps the panel showing its memory with fewer colours and
  * less power, for the always-on face. The command sequences are the
  * panel's, from the board. */
-static void dcs_sequence(const struct dcs_step *steps, unsigned n)
-{
-	for (unsigned i = 0; i < n; i++) {
-		dsi_dcs_write(steps[i].cmd, steps[i].data, steps[i].n);
-		if (steps[i].delay_ms)
-			delay_ms(steps[i].delay_ms);
-	}
-}
-
 void display_idle(bool on)
 {
 	if (!main_panel())
