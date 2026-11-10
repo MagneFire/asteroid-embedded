@@ -13,6 +13,13 @@ static char reason[48] = "no boot reason";
 
 const char *boot_reason(void) { return reason; }
 
+/* The bootloader names the panel it found and the version of the
+ * settings it gave it, which are the ones the display driver has. */
+#define PANEL_SETTINGS	0x081214u
+static bool panel_lit;
+
+bool boot_panel_lit(void) { return panel_lit; }
+
 /* The value of key= in the kernel command line, up to the next space. */
 static unsigned arg(const char *args, uint32_t len, const char *key, char *out, unsigned cap)
 {
@@ -43,8 +50,15 @@ void board_detect(uint32_t machtype, const void *fdt)
 			board_assumed = true;
 		const char *args = fdt_prop(fdt, "/chosen", "bootargs", &len);
 		const uint8_t *up = fdt_prop(fdt, "/chosen", "mmi,powerup_reason", NULL);
-		char why[20], hwrev[8];
+		char why[20], hwrev[8], panel[24];
 		if (args) {
+			if (arg(args, len, "panel_minnow.panel_param=", panel, sizeof panel)) {
+				uint32_t version = 0;
+				const char *v = strchr(panel, '#');
+				for (v = v ? v + 1 : ""; *v >= '0' && *v <= '9'; v++)
+					version = version * 10 + (uint32_t)(*v - '0');
+				panel_lit = panel[0] >= '2' && panel[0] <= '9' && panel[1] == '#' && version == PANEL_SETTINGS;
+			}
 			arg(args, len, "androidboot.bootreason=", why, sizeof why);
 			arg(args, len, "androidboot.hwrev=", hwrev, sizeof hwrev);
 			snprintf(reason, sizeof reason, "%s, power-up %02x%02x%02x%02x, hwrev %s", why[0] ? why : "?",
