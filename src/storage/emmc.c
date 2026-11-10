@@ -433,6 +433,80 @@ static int gpt_load(uint32_t header_lba)
 	return 0;
 }
 
+/* A disk with the old partition table has no names: the watch's table
+ * (board->part_names) gives them by partition number, counted as that
+ * table counts, four in the first sector and then the chain inside the
+ * extended one. An entry is a type at 4, its first sector at 8 and its
+ * length at 12; in the chain the first entry is the partition, counted
+ * from the sector the entry is in, and the second the next link,
+ * counted from the start of the extended partition. */
+#define MBR_ENTRIES	446
+#define MBR_SIGNATURE	510
+#define MBR_PROTECTIVE	0xee
+
+static bool mbr_extended(uint8_t type) { return type == 0x05 || type == 0x0f || type == 0x85; }
+
+static bool mbr_add(unsigned number, uint32_t first, uint32_t count)
+{
+	if (!count || first >= card.sectors || count > card.sectors - first)
+		return false;
+	if (nparts == MAX_PARTS)
+		return true;
+	struct emmc_part *p = &parts[nparts++];
+	const char *name = number <= board->part_count ? board->part_names[number - 1] : "";
+	if (*name)
+		snprintf(p->name, sizeof p->name, "%s", name);
+	else
+		snprintf(p->name, sizeof p->name, "p%u", number);
+	p->first = first;
+	p->count = count;
+	return true;
+}
+
+static int mbr_load(void)
+{
+	uint8_t sec[EMMC_BLOCK];
+	int r = emmc_read(0, 1, sec);
+	if (r)
+		return r;
+	if (sec[MBR_SIGNATURE] != 0x55 || sec[MBR_SIGNATURE + 1] != 0xaa)
+		return -30;
+	uint32_t ext = 0, ext_count = 0;
+	nparts = 0;
+	for (unsigned i = 0; i < 4; i++) {
+		const uint8_t *e = sec + MBR_ENTRIES + 16 * i;
+		if (e[4] == MBR_PROTECTIVE)
+			return -31;
+		if (!e[4])
+			continue;
+		if (mbr_extended(e[4])) {
+			ext = le32(e + 8);
+			ext_count = le32(e + 12);
+			if (!ext || ext >= card.sectors || ext_count > card.sectors - ext)
+				return -32;
+		} else if (!mbr_add(i + 1, le32(e + 8), le32(e + 12)))
+			return -32;
+	}
+	uint32_t cur = ext;
+	for (unsigned number = 5; ext && number <= MAX_PARTS; number++) {
+		if ((r = emmc_read(cur, 1, sec)))
+			return r;
+		if (sec[MBR_SIGNATURE] != 0x55 || sec[MBR_SIGNATURE + 1] != 0xaa)
+			return -33;
+		const uint8_t *e = sec + MBR_ENTRIES, *next = e + 16;
+		uint32_t room = ext + ext_count - cur, start = le32(e + 8);
+		if (e[4] && (start >= room || le32(e + 12) > room - start || !mbr_add(number, cur + start, le32(e + 12))))
+			return -34;
+		uint32_t rel = le32(next + 8);
+		if (!next[4] || !rel)
+			break;
+		if (rel >= ext_count || ext + rel <= cur)
+			return -35;
+		cur = ext + rel;
+	}
+	return 0;
+}
+
 int emmc_part_scan(void)
 {
 	nparts = 0;
@@ -442,6 +516,10 @@ int emmc_part_scan(void)
 	if (r) {
 		log_printf("emmc: primary GPT unusable (%d), trying the backup\n", r);
 		r = gpt_load(card.sectors - 1);
+	}
+	if (r && board->part_count) {
+		log_printf("emmc: no GPT (%d), trying the old partition table\n", r);
+		r = mbr_load();
 	}
 	if (r)
 		nparts = 0;
