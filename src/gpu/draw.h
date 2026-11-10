@@ -100,6 +100,9 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
 void gpu_draw_turn(float c, float s);
 void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride);
+/* The CPU's cached copy of memory the GPU draws into is dropped, before
+ * the GPU writes it and before the CPU reads the result. */
+void gpu_draw_cpu_sync(void *buf, uint32_t bytes);
 void gpu_draw_submit(void);
 bool gpu_draw_wait(void);
 bool gpu_draw_end(void);

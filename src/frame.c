@@ -54,7 +54,7 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	mesh_t = t_ms;
 	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
 	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4, false };
-	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
+	gpu_draw_cpu_sync(buf, fb.stride * fb.height * 4);
 	uint32_t t1 = time_us();
 	gpu_draw_begin(&t);
 	float c, s;
@@ -72,7 +72,7 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 			log_printf("gpu: draw did not complete\n");
 		have_gpu = false;
 	}
-	dcache_invalidate_range(buf, fb.stride * fb.height * 4);
+	gpu_draw_cpu_sync(buf, fb.stride * fb.height * 4);
 	gpu_us += time_us() - t1;
 	gpu_vert_us += t1 - t0;
 	gpu_frames++;
