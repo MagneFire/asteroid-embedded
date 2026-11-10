@@ -172,7 +172,7 @@ $(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/ramdisk.bin tools/mkb
 endif
 
 run: $(BUILD)/asteroid.img
-	python3 tools/run.py $(RUNFLAGS)
+	python3 tools/run.py $(if $(filter qcom,$(SOC)),,--soc $(SOC)) $(RUNFLAGS)
 
 SLINT_VIEWER ?= $(or $(shell command -v slint-viewer 2>/dev/null),$(HOME)/.cargo/bin/slint-viewer)
 

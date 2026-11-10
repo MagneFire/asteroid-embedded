@@ -3,7 +3,10 @@
 image is running) and show its log over adb. If the image dies and the watch
 returns to fastboot, fetch the persistent log region instead and print the
 console tail, the fault record and the symbolized addresses in it. A bootloader
-without that command gets a second boot, whose log has the previous record."""
+without that command gets a second boot, whose log has the previous record.
+--soc picks another SoC's image. A watch whose installed Linux keeps its own
+log in the same region shows the firmware's there after a reset: --pstore
+reads it from that Linux over adb."""
 import argparse, os, re, struct, subprocess, sys, time
 
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
@@ -61,7 +64,7 @@ def symbolize(text):
     addrs = set(re.findall(r"\b(?:pc|lr)=([0-9a-f]{8})", text))
     for m in re.finditer(r"stack: ((?:[0-9a-f]{8} ?)+)", text):
         addrs.update(m.group(1).split())
-    addrs = sorted(a for a in addrs if 0x8000 <= int(a, 16) < 0x01e00000)
+    addrs = sorted(a for a in addrs if 0x8000 <= int(a, 16) < 0x01e00000 or 0x88000000 <= int(a, 16) < 0x8a000000)
     if not addrs:
         return
     cross = os.environ.get("CROSS", "arm-none-eabi-")
@@ -123,6 +126,28 @@ def fetch_ramoops(tail):
     show(blob, tail)
     return True
 
+def pstore(tail):
+    """The log and fault record a Linux on the watch found in its ramoops
+    region when it started."""
+    sh = "mount | grep -q ' /sys/fs/pstore ' || mount -t pstore pstore /sys/fs/pstore; cat /sys/fs/pstore/%s-ramoops* 2>/dev/null"
+    console = subprocess.run(adb_cmd("shell", sh % "console"), capture_output=True, timeout=60).stdout
+    record = subprocess.run(adb_cmd("shell", sh % "annotate"), capture_output=True, timeout=60).stdout
+    if not console and not record:
+        sys.exit("nothing in /sys/fs/pstore: the region did not survive, or this boot was not the first after the reset")
+    lines = console.decode("utf-8", "replace").splitlines()
+    print("console (%d bytes, last %d lines):" % (len(console), min(tail, len(lines))))
+    for l in lines[-tail:]:
+        print("  " + l)
+    if record.strip(b"\0").strip():
+        text = record.decode("utf-8", "replace")
+        print("fault record:")
+        for l in text.splitlines():
+            print("  " + l)
+        symbolize(text)
+    else:
+        print("no fault record")
+        symbolize(console.decode("utf-8", "replace")[-4000:])
+
 def boot():
     t0 = time.time()
     fastboot("boot", IMG, quiet=True)
@@ -151,14 +176,25 @@ def main():
                    help="no fastboot: show the running firmware's log over adb and symbolize its record")
     p.add_argument("--serial", "-s", help="fastboot serial (and adb serial unless --adb-serial)")
     p.add_argument("--adb-serial", help="the firmware's adb serial (asteroid-<board>)")
+    p.add_argument("--soc", help="the image of this SoC's build directory (omap3)")
+    p.add_argument("--pstore", action="store_true",
+                   help="no fastboot: read the firmware's log from the Linux now running on the watch")
     p.add_argument("--timeout", type=float, default=20)
     p.add_argument("--tail", type=int, help="log lines to show (40, or 300 with --attach)")
     a = p.parse_args()
-    global SERIAL, ADB_SERIAL
+    global SERIAL, ADB_SERIAL, IMG, ELF
     SERIAL = a.serial
     ADB_SERIAL = a.adb_serial or a.serial
+    if a.soc:
+        IMG = os.path.join(BUILD, a.soc, "asteroid.img")
+        ELF = os.path.join(BUILD, a.soc, "asteroid.elf")
     if a.tail is None:
-        a.tail = 300 if a.attach else 40
+        a.tail = 300 if a.attach or a.pstore else 40
+    if a.pstore:
+        if not adb_online():
+            sys.exit("no adb device%s" % (" " + ADB_SERIAL if ADB_SERIAL else ""))
+        pstore(a.tail)
+        return
     if a.attach:
         if not adb_online():
             sys.exit("no adb device%s" % (" " + ADB_SERIAL if ADB_SERIAL else ""))

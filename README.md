@@ -1,9 +1,9 @@
 # asteroid-embedded
 
-Bare-metal firmware for Qualcomm APQ8026 smartwatches (Huawei Watch
-"sturgeon", ASUS ZenWatch 2 "sparrow"): no Linux kernel, no root filesystem,
-one image booted over fastboot. The bootloader leaves the panel on and the
-chip configured; the firmware takes it from there.
+Bare-metal firmware for smartwatches: the Qualcomm APQ8026 ones (Huawei
+Watch "sturgeon", ASUS ZenWatch 2 "sparrow", Moto 360 2015 "smelt") and the
+TI OMAP3630 one (Moto 360 2014 "minnow"). No Linux kernel, no root
+filesystem, one image per chip booted over fastboot.
 
 ## Build
 
@@ -12,11 +12,15 @@ from Homebrew's rustup, with `rustup target add armv7a-none-eabihf`). The
 user interface in `ui/` is a Slint crate built into a static library and
 linked into the image.
 
-    make                # build/asteroid.img, for every supported watch
+    make                # build/asteroid.img for the APQ8026 watches and
+                        # build/omap3/asteroid.img for minnow
+    make SOC=omap3      # only minnow's
 
-One image runs on both watches. The boot image holds a device tree per
-watch, each bootloader passes the one with its board-id, and the firmware
-picks the watch from that tree's `compatible`. What differs between the
+One image runs on every watch with the same chip. The APQ8026 image holds
+a device tree per watch, each bootloader passes the one with its board-id,
+and the firmware picks the watch from that tree's `compatible`. What
+differs between the chips is in `src/soc/<chip>`; minnow, with no driver for
+its GPU, puts its frames together on the CPU. What differs between the
 watches (pins, buses, panel timing, the battery curve, the Bluetooth
 patch, which drivers it has) is a table per watch in `src/board/<watch>.c`.
 The UI is laid out in fractions of the screen and draws its icons from
@@ -25,9 +29,10 @@ outlines at the size it shows them, so it fits any screen size.
     make TEST=abort     # a build that takes a data abort
 
 The image carries no vendor firmware. The Adreno A3xx microcode
-(`a330_pm4.fw`, `a330_pfp.fw`), the Bluetooth patch and, on sparrow, the
-sensor hub firmware are read at boot from the watch's own Android system
-partition (the directories are listed in each watch's table).
+(`a330_pm4.fw`, `a330_pfp.fw`), the Bluetooth patch or script and, on
+sparrow, the sensor hub firmware are read at boot from the watch's own
+Android system partition, ext4 or squashfs (the directories are listed in
+each watch's table).
 
 ## Run
 
@@ -43,13 +48,19 @@ attached (the fastboot and the firmware's adb serial differ).
     make run            # adb reboot bootloader, fastboot boot, show the log
     tools/run.py --attach --adb-serial asteroid-smelt   # log and record of a running watch
     make test           # host tests for the adb and console code
+    tools/run.py --soc omap3 --adb-serial asteroid-minnow   # the same for minnow
+    tools/run.py --pstore --soc omap3   # minnow's log, from its Linux after a reset
 
 The running firmware is an adb device: `adb shell` gives the command
 console (`help` lists the commands), `adb push`/`adb pull` move files to
 and from a RAM file table, `adb reboot bootloader` returns to fastboot. The firmware
 keeps its log and a fault record in DRAM across a warm reset; when an image
 dies, `tools/run.py` fetches them through `fastboot oem ramoops raw` and
-symbolizes the addresses in the fault record with `addr2line`.
+symbolizes the addresses in the fault record with `addr2line`. Minnow's
+bootloader has no such command, but its Linux kernels keep their own log in
+the region the firmware uses, and show what they find there after a reset
+as files in `/sys/fs/pstore`: a firmware that died resets into whatever is
+installed, and `--pstore` reads its log and record from there.
 
 ## License
 
