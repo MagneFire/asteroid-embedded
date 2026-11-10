@@ -5,6 +5,7 @@
 #include "asteroid.h"
 #include "display/display.h"
 #include "soc/max17050.h"
+#include "sensors/m4_proto.h"
 
 /* The FW3L cell as the vendor's gauge driver programs it; the watch has
  * no battery ID, so this is the profile it falls back to. */
@@ -93,6 +94,7 @@ const struct board board_smelt = {
 	 * gpio 62, boot0 on gpio 109. */
 	.hub = &hub_m4,
 	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x43 }, .irq = 5, .reset = 62, .boot0 = 109, .mpm = 5 },
+	.hub_variant = &m4_smelt,
 	/* LM3535 on BLSP1 QUP3 next to the gauge, enable on gpio 35. */
 	.backlight = &backlight_lm3535,
 	.backlight_pins = { .i2c = { .bus = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x38 }, .enable = 35 },

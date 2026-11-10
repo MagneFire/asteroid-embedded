@@ -5,9 +5,29 @@
 #define GESTURE_WRIST_ROTATE	2
 #define GESTURE_VIEW_ON		0
 
-/* What the vendor's flashing leaves at the end of the firmware area: the
- * M4 must not be started without it. */
-static const uint8_t barker[M4_BARKER_SIZE] = { 0xde, 0xc0, 0xce, 0x0a, 0, 0, 0, 0 };
+/* The mark is what the vendor's flashing leaves at the end of the
+ * firmware area: the M4 must not be started without it. */
+const struct m4_variant m4_smelt = {
+	.start = M4_FLASH_BASE, .mark_addr = M4_FLASH_BASE + 512 * 1024 - 8,
+	.mark = { 0xde, 0xc0, 0xce, 0x0a, 0, 0, 0, 0 }, .mark_size = 8,
+	.general = 1, .pedometer = 3, .mets = 9, .power = 11, .gesture = 13,
+	.accel_x = 0x08, .version_size = 2,
+};
+
+/* The firmware is in the upper half of the flash. */
+const struct m4_variant m4_minnow = {
+	.start = M4_FLASH_BASE + 256 * 1024, .mark_addr = M4_FLASH_BASE + 512 * 1024 - 4,
+	.mark = { 0xde, 0xc0, 0xce, 0x0a }, .mark_size = 4,
+	.general = 2, .pedometer = 4, .mets = 10, .power = 12, .gesture = 18, .settings = 11, .light = 23,
+	.accel_x = 0x04, .version_size = 1,
+	.byte_irqs = true, .drives_reset = true, .keeps_time = true,
+};
+
+/* The older hub's interrupt bits: gesture in the first byte, still and
+ * motion in the second. */
+#define INT0_GESTURE	(1u << 7)
+#define INT1_STILL	(1u << 8)
+#define INT1_MOTION	(1u << 9)
 
 void m4_bl_address(uint32_t addr, uint8_t out[5])
 {
@@ -18,9 +38,9 @@ void m4_bl_address(uint32_t addr, uint8_t out[5])
 	out[4] = out[0] ^ out[1] ^ out[2] ^ out[3];
 }
 
-bool m4_barker_ok(const uint8_t *b)
+bool m4_barker_ok(const struct m4_variant *v, const uint8_t *b)
 {
-	return !memcmp(b, barker, sizeof barker);
+	return !memcmp(b, v->mark, v->mark_size);
 }
 
 uint32_t m4_u32(const uint8_t *b)
@@ -50,6 +70,22 @@ bool m4_is_tilt(uint32_t wake_status, uint8_t gesture, int8_t value)
 uint32_t m4_wake_mask(bool tilt)
 {
 	return M4_WAKE_STILL | M4_WAKE_MOTION | (tilt ? M4_WAKE_GESTURE : 0);
+}
+
+uint32_t m4_irq_enable(const struct m4_variant *v, bool tilt)
+{
+	if (!v->byte_irqs)
+		return m4_wake_mask(tilt);
+	return INT1_STILL | INT1_MOTION | (tilt ? INT0_GESTURE : 0);
+}
+
+uint32_t m4_irq_wake(const struct m4_variant *v, uint32_t status)
+{
+	if (!v->byte_irqs)
+		return status;
+	return (status & INT1_STILL ? M4_WAKE_STILL : 0) | (status & INT1_MOTION ? M4_WAKE_MOTION : 0) |
+	       (status & INT0_GESTURE ? M4_WAKE_GESTURE : 0) |
+	       (status & ~(INT0_GESTURE | INT1_STILL | INT1_MOTION) ? M4_WAKE_OTHER : 0);
 }
 
 uint32_t m4_block_steps(const uint8_t *block)

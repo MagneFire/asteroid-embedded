@@ -1,6 +1,7 @@
 /* Moto 360 2014 (minnow), an OMAP3630 watch. The pins are those of
  * hardware revision 9, the watch as it was sold. */
 #include "asteroid.h"
+#include "sensors/m4_proto.h"
 
 /* The pads as the vendor's kernel sets them when it starts, as the
  * bootloader leaves most of the board's lines unconnected: the GPIOs
@@ -61,6 +62,14 @@ const struct board board_minnow = {
 		.reset_gpio = 14, .io_ldo = 7, .io_uv = 2850000,
 		.bridge_reset = 23, .bridge_supply = 86, .vio_gpio = 42, .vio_pad = 0x05a, .mem_gpio = 87,
 	},
+	/* M4 hub on I2C2, its interrupt on gpio 59, reset on gpio 129 and
+	 * boot0 on gpio 21. gpio 28 is a leftover of an earlier design
+	 * that the vendor's driver holds low. The hub has the clock and
+	 * the light sensor. */
+	.hub = &hub_m4,
+	.hub_pins = { .i2c = { .bus = 2, .addr = 0x39 }, .irq = 59, .reset = 129, .boot0 = 21, .mpm = WAKE_HUB, .hold_low = 28 },
+	.hub_variant = &m4_minnow,
+	.light = &light_m4,
 	.periph_clock_gpio = 177,
 	.usb_phy = { .vbus = 142, .resetn = 15, .cs = 16, .csn = 27 },
 	.part_names = part_names,

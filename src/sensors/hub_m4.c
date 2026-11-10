@@ -27,6 +27,7 @@
 #define GPIO_RESET	(board->hub_pins.reset)
 #define GPIO_BOOT0	(board->hub_pins.boot0)
 #define MPM_PIN_WAKE	(board->hub_pins.mpm)
+#define V		(board->hub_variant)
 #define BUS_HZ		384000
 /* How long the hub may hold the clock: the vendor kernel's second. */
 #define STRETCH_MS	1000
@@ -55,6 +56,7 @@ static uint16_t version;
 static volatile bool wake_pending;
 static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_wanted, accel_set;
 static unsigned fails;
+static bool light_on;
 static uint32_t wakes, last_wake, crashes, restarts;
 
 static void wait_ms(unsigned ms)
@@ -150,21 +152,28 @@ static void reset_pulse(void)
 	gpio_set(GPIO_RESET, 0);
 	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	delay_ms(10);
-	gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	if (V->drives_reset)
+		gpio_set(GPIO_RESET, 1);
+	else
+		gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	wait_ms(BL_READY_MS);
 }
 
 static bool m4_init(void)
 {
-	uint8_t barker[M4_BARKER_SIZE];
+	uint8_t barker[M4_MARK_MAX];
 	unsigned round;
 	gpio_config(GPIO_WAKE, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	if (board->hub_pins.hold_low) {
+		gpio_set(board->hub_pins.hold_low, 0);
+		gpio_config(board->hub_pins.hold_low, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
 	if (i2c_init(BUS, board->hub_pins.i2c.sda, board->hub_pins.i2c.scl, board->hub_pins.i2c.func, BUS_HZ))
 		return false;
 	i2c_set_timeout(BUS, STRETCH_MS);
 	for (round = 0; round < BL_ROUNDS; round++) {
 		reset_pulse();
-		if (bl_read(M4_BARKER_ADDR, barker, sizeof barker))
+		if (bl_read(V->mark_addr, barker, V->mark_size))
 			break;
 	}
 	if (round == BL_ROUNDS) {
@@ -173,11 +182,11 @@ static bool m4_init(void)
 			   gpio_get(GPIO_RESET), gpio_get(GPIO_BOOT0));
 		return false;
 	}
-	if (!m4_barker_ok(barker)) {
+	if (!m4_barker_ok(V, barker)) {
 		log_printf("hub: no firmware mark in the m4's flash, not starting it\n");
 		return false;
 	}
-	if (!bl_opcode(M4_BL_GO) || !bl_address(M4_FLASH_BASE)) {
+	if (!bl_opcode(M4_BL_GO) || !bl_address(V->start)) {
 		log_printf("hub: m4 bootloader refused to start the firmware\n");
 		return false;
 	}
@@ -191,26 +200,76 @@ static void set_time(void)
 	uint8_t b[4];
 	m4_put_u32(rtc_read(), b);
 	if (state == HUB_READY)
-		reg_write(M4_BANK_GENERAL, M4_GENERAL_UTC, b, 4);
+		reg_write(V->general, M4_GENERAL_UTC, b, 4);
+}
+
+/* The wake interrupts, in the hub's one register or its three. */
+static int irq_enable_write(uint32_t mask)
+{
+	uint8_t b[4];
+	m4_put_u32(mask, b);
+	if (!V->byte_irqs)
+		return reg_write(V->general, M4_GENERAL_WAKE_ENABLE, b, 4);
+	int r = 0;
+	for (unsigned i = 0; i < 3; i++)
+		r |= reg_write(V->general, (uint8_t)(M4_GENERAL_INT_ENABLE + i), &b[i], 1);
+	return r;
+}
+
+static int irq_read(uint8_t first, uint32_t *v)
+{
+	uint8_t b[4] = { 0 };
+	int r = 0;
+	if (!V->byte_irqs)
+		r = reg_read(V->general, first, b, 4);
+	else
+		for (unsigned i = 0; i < 3; i++)
+			r |= reg_read(V->general, (uint8_t)(first + i), &b[i], 1);
+	*v = m4_u32(b);
+	return r;
 }
 
 /* Sets the wake interrupts, with the gesture as tilt_wanted says, at most
- * once a second after a failure; true once they are set. */
+ * once a second after a failure; true once they are set. A hub that is
+ * told about the screen holds its gestures back while it thinks the
+ * screen is on, and the gesture is wanted when it is off. */
 static bool write_tilt(uint32_t now)
 {
 	static uint32_t tried_t;
-	uint8_t enable[4];
+	uint8_t screen = tilt_wanted ? M4_SCREEN_OFF : M4_SCREEN_ON;
 	if (state != HUB_READY || now - tried_t < RETRY_MS)
 		return false;
 	if (tilt_set)
 		return true;
-	m4_put_u32(m4_wake_mask(tilt_wanted), enable);
-	if (reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, enable, 4)) {
+	if (irq_enable_write(m4_irq_enable(V, tilt_wanted)) ||
+	    (V->settings && reg_write(V->settings, M4_SETTINGS_SCREEN, &screen, 1))) {
 		tried_t = now;
 		return false;
 	}
 	tilt_set = true;
 	return true;
+}
+
+/* The time goes to the hub, except at the start with a hub that keeps
+ * the time itself: then the clock is set from it, unless the hub has
+ * lost it and the clock has been set since. */
+#define EPOCH_PLAUSIBLE	1400000000u
+
+static void time_start(void)
+{
+	uint8_t b[4];
+	if (!V->keeps_time) {
+		set_time();
+		return;
+	}
+	if (reg_read(V->general, M4_GENERAL_UTC, b, 4))
+		return;
+	uint32_t t = m4_u32(b);
+	if (t >= EPOCH_PLAUSIBLE)
+		rtc_write(t);
+	else if (rtc_read() >= EPOCH_PLAUSIBLE)
+		set_time();
+	log_printf("hub: m4 clock %lu\n", t);
 }
 
 /* The firmware is up: the vendor driver's start, interrupts off first,
@@ -221,7 +280,7 @@ static void started(void)
 	uint8_t v[2] = { 0, 0 }, zero[4] = { 0 }, on = 1, timeout[2];
 	unsigned i;
 	for (i = 0; i < VERSION_TRIES; i++) {
-		if (!reg_read(M4_BANK_GENERAL, M4_GENERAL_VERSION, v, 2))
+		if (!reg_read(V->general, M4_GENERAL_VERSION, v, V->version_size))
 			break;
 		wait_ms(100 * (i + 1));
 	}
@@ -233,16 +292,17 @@ static void started(void)
 	}
 	version = (uint16_t)(v[0] | v[1] << 8);
 	state = HUB_READY;
-	reg_write(M4_BANK_GENERAL, M4_GENERAL_NOWAKE_ENABLE, zero, 4);
-	reg_write(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, zero, 4);
+	if (!V->byte_irqs)
+		reg_write(V->general, M4_GENERAL_NOWAKE_ENABLE, zero, 4);
+	irq_enable_write(0);
 	m4_put_u16(M4_STILL_TIMEOUT_S, timeout);
-	reg_write(M4_BANK_POWER, M4_POWER_STILL_TIMEOUT, timeout, 2);
-	set_time();
-	reg_write(M4_BANK_PEDOMETER, M4_PEDOMETER_ENABLE, &on, 1);
-	reg_write(M4_BANK_METS, M4_METS_ENABLE, &on, 1);
+	reg_write(V->power, M4_POWER_STILL_TIMEOUT, timeout, 2);
+	time_start();
+	reg_write(V->pedometer, M4_PEDOMETER_ENABLE, &on, 1);
+	reg_write(V->mets, M4_METS_ENABLE, &on, 1);
 	tilt_set = false;
 	write_tilt(time_ms());
-	accel_set = false;
+	accel_set = light_on = false;
 	gpio_irq_config(GPIO_WAKE, GPIO_IRQ_LEVEL_HIGH, wake_line);
 	gpio_irq_enable(GPIO_WAKE, true);
 	log_printf("hub: m4 firmware %04x up\n", version);
@@ -292,25 +352,26 @@ static void m4_poll(void)
 		return;
 	wake_pending = false;
 	wakes++;
-	uint8_t s[4], g[3] = { 0 };
-	if (reg_read(M4_BANK_GENERAL, M4_GENERAL_WAKE_STATUS, s, 4)) {
+	uint8_t g[3] = { 0 };
+	uint32_t raw;
+	if (irq_read(V->byte_irqs ? M4_GENERAL_INT_STATUS : M4_GENERAL_WAKE_STATUS, &raw)) {
 		wake_retry = true;
 		wake_retry_t = now;
 		return;
 	}
-	uint32_t status = m4_u32(s);
-	last_wake = status;
-	if (!status && crashed()) {
+	uint32_t status = m4_irq_wake(V, raw);
+	last_wake = raw;
+	if (!raw && crashed()) {
 		restart(now, "crashed");
 		return;
 	}
 	if (status & ~M4_WAKE_GESTURE)
-		log_printf("hub: m4 wake %08lx, %lu s after its start\n", status, (now - go_t) / 1000);
+		log_printf("hub: m4 wake %08lx, %lu s after its start\n", raw, (now - go_t) / 1000);
 	if (status & M4_WAKE_GESTURE) {
 		/* One register at a time, as the vendor reads them. */
 		int r = 0;
 		for (unsigned i = 0; i < 3; i++)
-			r |= reg_read(M4_BANK_GESTURE, (uint8_t)(M4_GESTURE_FIRST + i), &g[i], 1);
+			r |= reg_read(V->gesture, (uint8_t)(M4_GESTURE_FIRST + i), &g[i], 1);
 		if (!r && m4_is_tilt(status, g[0], (int8_t)g[2]))
 			tilt = true;
 	}
@@ -362,7 +423,7 @@ static bool m4_accel(int16_t v[3])
 	accel_t = now;
 	for (unsigned i = 0; i < 3; i++) {
 		uint8_t b[4];
-		if (reg_read(M4_BANK_ACCEL, (uint8_t)(M4_ACCEL_X + 4 * i), b, 4))
+		if (reg_read(M4_BANK_ACCEL, (uint8_t)(V->accel_x + 4 * i), b, 4))
 			return false;
 		/* 65536 to 1 g, down to the 2048 the other hubs give. */
 		int32_t a = (int32_t)m4_u32(b) / 32;
@@ -379,7 +440,7 @@ static uint32_t m4_steps(void)
 	uint8_t b[M4_PEDOMETER_BLOCK_SIZE];
 	if (now - steps_t >= STEPS_MS) {
 		steps_t = now;
-		if (!reg_read(M4_BANK_PEDOMETER, M4_PEDOMETER_BLOCK, b, sizeof b))
+		if (!reg_read(V->pedometer, M4_PEDOMETER_BLOCK, b, sizeof b))
 			steps = steps_base + m4_block_steps(b);
 	}
 	return steps;
@@ -419,16 +480,53 @@ static int m4_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, u
 
 static void m4_status(void (*say)(const char *fmt, ...))
 {
-	uint8_t pm[2] = { 0, 0 }, enable[4] = { 0 };
+	uint8_t pm[2] = { 0, 0 };
+	uint32_t enable = 0;
 	say("hub: m4 firmware %04x, %s, %lu steps\n", version, state == HUB_READY ? "up" : "not up", steps);
 	say("hub: %lu wakes, last status %08lx, %lu crashes, %lu restarts, %u fails\n", wakes, last_wake, crashes,
 	    restarts, fails);
-	if (state == HUB_READY && !m4_raw(M4_BANK_POWER, M4_POWER_ENABLE, NULL, 0, pm, 1) &&
-	    !m4_raw(M4_BANK_POWER, M4_POWER_STATE, NULL, 0, pm + 1, 1) &&
-	    !m4_raw(M4_BANK_GENERAL, M4_GENERAL_WAKE_ENABLE, NULL, 0, enable, 4))
-		say("hub: power management %u, %s, wake interrupts %08lx\n", pm[0], pm[1] ? "moving" : "still",
-		    m4_u32(enable));
+	if (state == HUB_READY && !m4_raw(V->power, M4_POWER_ENABLE, NULL, 0, pm, 1) &&
+	    !m4_raw(V->power, M4_POWER_STATE, NULL, 0, pm + 1, 1) &&
+	    !irq_read(V->byte_irqs ? M4_GENERAL_INT_ENABLE : M4_GENERAL_WAKE_ENABLE, &enable))
+		say("hub: power management %u, %s, wake interrupts %08lx\n", pm[0], pm[1] ? "moving" : "still", enable);
 }
+
+/* The hub's light sensor, where it has one: sampled by the hub at a
+ * rate in ms, -1 for off, the last value read when asked. The value is
+ * the hub's own measure, which the vendor's backlight code takes as it
+ * is. */
+#define LIGHT_MS	500
+
+static void light_rate(bool on)
+{
+	uint8_t b[2];
+	if (state != HUB_READY || !V->light || on == light_on)
+		return;
+	m4_put_u16(on ? LIGHT_MS : 0xffff, b);
+	if (!reg_write(V->light, M4_LIGHT_RATE, b, 2))
+		light_on = on;
+}
+
+static bool m4_light_init(void) { return true; }
+static void m4_light_start(void) { light_rate(true); }
+
+static int32_t m4_light_finish(void)
+{
+	uint8_t b[2];
+	if (!light_on || reg_read(V->light, M4_LIGHT_VALUE, b, 2))
+		return -1;
+	return b[0] | b[1] << 8;
+}
+
+static void m4_light_keep(bool on)
+{
+	if (!on)
+		light_rate(false);
+}
+
+const struct light_driver light_m4 = {
+	.init = m4_light_init, .start = m4_light_start, .finish = m4_light_finish, .keep = m4_light_keep,
+};
 
 const struct hub_driver hub_m4 = {
 	.init = m4_init,

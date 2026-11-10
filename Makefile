@@ -214,9 +214,9 @@ $(BUILD)/test/auto_brightness_test: tests/auto_brightness_test.c src/sensors/aut
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/sensors/auto_brightness.c -o $@
 
-$(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/board/minnow.c src/lib/fmt.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/lib/fmt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/storage/emmc.c src/board/minnow.c src/lib/fmt.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/storage/emmc.c src/lib/fmt.c -o $@
 
 $(BUILD)/test/squashfs_test: tests/squashfs_test.c src/storage/squashfs.c src/lib/inflate.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
@@ -226,9 +226,9 @@ $(BUILD)/test/soft_test: tests/soft_test.c src/gpu/soft.c $(wildcard tests/*.h s
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/gpu/soft.c -o $@
 
-$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/lib/fdt.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
 
 $(BUILD)/test/small.ext4: tests/data/small.ext4.gz
 	@mkdir -p $(dir $@)

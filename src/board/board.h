@@ -10,6 +10,7 @@
 struct dcs_step;
 struct touch;
 struct max17050_model;
+struct m4_variant;
 
 /* An I2C device: its bus and, where the SoC routes them by hand, the pins
  * and their function. */
@@ -120,7 +121,7 @@ extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4;
 extern const struct motor_driver motor_drv2605, motor_pm8226;
 extern const struct backlight_driver backlight_lm3535;
-extern const struct light_driver light_tsl2584;
+extern const struct light_driver light_tsl2584, light_m4;
 
 /* A pad whose mux or pull the bootloader's setup is changed in: its
  * offset in the SoC's pad registers and their value. */
@@ -235,7 +236,11 @@ struct board {
 		/* A UART hub (STM32): the port and its control lines. */
 		uint8_t uart, gpio, func, wake_mcu, mcu_wake, reset, boot0, boot1, ap_status, mcu_status;
 		uint8_t mpm;
+		/* A line of the hub's that is kept low. */
+		uint8_t hold_low;
 	} hub_pins;
+	/* Which of the M4 hub's firmwares the watch has. */
+	const struct m4_variant *hub_variant;
 
 	const struct backlight_driver *backlight;
 	struct {

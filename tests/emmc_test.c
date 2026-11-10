@@ -12,7 +12,13 @@
 #define SECTORS 7733248u
 #define KEPT	64
 
-const struct board *board = &board_minnow;
+/* The names minnow's board table gives its partitions. */
+static const char *const names[] = {
+	"", "mbm", "", "ebr", "cdt", "pds", "utags", "logo", "boot", "recovery", "misc", "", "", "system", "cache", "customize",
+	"userdata",
+};
+static const struct board disk_board = { .part_names = names, .part_count = ARRAY_SIZE(names) };
+const struct board *board = &disk_board;
 bool board_assumed;
 uint32_t time_ms(void) { static uint32_t t; return t++; }
 void delay_ms(uint32_t ms) {}
