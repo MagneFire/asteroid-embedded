@@ -41,7 +41,7 @@ SRCS_qcom := $(addprefix src/soc/qcom/,init.c mmu.c gic.c timer.c wdt.c spmi.c p
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c \
         src/input/touch.c src/input/touch_it7260.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c \
         src/display/display.c src/display/dsi.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
-        src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/storage/emmc.c
+        src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc.c
 CPU_qcom  := cortex-a7
 FPU_qcom  := neon-vfpv4
 TUSB_PORT_qcom := chipidea/ci_hs

@@ -130,6 +130,7 @@
 #define GCC_USB_HS_AHB_CBCR	0xfc400488u
 #define GCC_USB_HS_SYSTEM_CMD_RCGR 0xfc400490u
 #define IRQ_USB_HS		(32 + 134)
+#define USB_IRQ			IRQ_USB_HS
 
 #define IRQ_PPI_TIMER_S		18
 #define IRQ_PPI_TIMER		19
