@@ -184,7 +184,7 @@ bool display_init(void)
 	dsi_clamps = DSI_CLAMPS_CLOCK | 3u << (6 - 2 * wire);
 	log_printf("display: data lane 0 on wire %u\n", wire);
 	if (panel_switched()) {
-		if (rpm_ldo_on(board->panel.io_ldo, board->panel.io_uv))
+		if (regulator_on(board->panel.io_ldo, board->panel.io_uv))
 			log_printf("display: l%u on not acknowledged\n", board->panel.io_ldo);
 		gpio_set(board->panel.reset_gpio, 1);
 		gpio_config(board->panel.reset_gpio, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
@@ -514,10 +514,10 @@ static void panel_power(bool on)
 		gpio_set(board->panel.reset_gpio, 0);
 		gpio_set(board->panel.bias_gpio, 0);
 		delay_ms(2);
-		rpm_ldo_off(board->panel.io_ldo);
+		regulator_off(board->panel.io_ldo);
 		return;
 	}
-	rpm_ldo_on(board->panel.io_ldo, board->panel.io_uv);
+	regulator_on(board->panel.io_ldo, board->panel.io_uv);
 	delay_ms(1);
 	gpio_set(board->panel.bias_gpio, 1);
 	delay_ms(PANEL_BIAS_MS);

@@ -254,7 +254,7 @@ void rpm_bus_votes(void)
 #define RPM_CLK0		0x306b6c63u
 #define RPM_KEY_ENABLE		0x62616e45u
 
-int rpm_ldo_off(uint32_t id)
+int regulator_off(uint32_t id)
 {
 	int r = rpm_regulator_enable(RPM_LDOA, id, false);
 	return r ? r : rpm_regulator_sleep_enable(RPM_LDOA, id, false);
@@ -264,7 +264,7 @@ int rpm_ldo_off(uint32_t id)
  * would otherwise use its own minimum, below the bootloader's. A rail
  * the bootloader enabled itself looks off to the RPM, so an off vote
  * only works after this one. */
-int rpm_ldo_on(uint32_t id, uint32_t uv)
+int regulator_on(uint32_t id, uint32_t uv)
 {
 	uint32_t kvp[6] = { RPM_KEY_LSMD, 4, 1, RPM_KEY_UV, 4, uv };
 	int r = request(RPM_SET_ACTIVE, RPM_LDOA, id, kvp, 2);
@@ -278,7 +278,7 @@ int rpm_ldo_on(uint32_t id, uint32_t uv)
 void rpm_unused_rails_off(void)
 {
 	for (unsigned i = 0; i < sizeof board->unused_ldos && board->unused_ldos[i]; i++)
-		if (rpm_ldo_off(board->unused_ldos[i]))
+		if (regulator_off(board->unused_ldos[i]))
 			log_printf("rpm: l%u off not acknowledged\n", board->unused_ldos[i]);
 }
 

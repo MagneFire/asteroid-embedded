@@ -192,6 +192,9 @@ struct board {
 	struct {
 		struct board_i2c i2c;
 		uint8_t irq, reset, mpm;
+		/* The LDO a driver switches on for it and its voltage, 0 for none. */
+		uint8_t ldo;
+		uint32_t ldo_uv;
 	} touch_pins;
 
 	const struct hub_driver *hub;

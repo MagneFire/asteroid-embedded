@@ -22,7 +22,7 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
 SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c \
         src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
-        src/civil.c src/log.c src/soc/exceptions.c src/board/drivers.c \
+        src/civil.c src/log.c src/soc/mmu.c src/soc/exceptions.c src/board/drivers.c \
         src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \
         src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c \
         src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
@@ -35,7 +35,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 
-SRCS_qcom := $(addprefix src/soc/qcom/,mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
+SRCS_qcom := $(addprefix src/soc/qcom/,init.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
                suspend.S i2c_qup.c uart_dm.c rpm.c) \
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c \
@@ -95,7 +95,7 @@ FORCE:
 
 $(BUILD)/%.S.o: %.S
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 
 THIRD_PARTY_CFLAGS ?= -w

@@ -13,6 +13,12 @@ unsigned gpio_get(unsigned n)
 	return readl(TLMM_GPIO_IO(n)) & 1;
 }
 
+/* Pull (bits 1:0), function (5:2), drive (8:6) and output enable (9). */
+uint32_t gpio_raw_config(unsigned n)
+{
+	return readl(TLMM_GPIO_CFG(n));
+}
+
 void gpio_set(unsigned n, unsigned v)
 {
 	writel(v ? BIT(1) : 0, TLMM_GPIO_IO(n));

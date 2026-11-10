@@ -1,4 +1,4 @@
-/* Flat 1:1 map with 1 MiB sections, from the regions in memmap.h:
+/* The APQ8026's memory map, from the regions in memmap.h:
  *   DRAM bank 0                              normal, write-back
  *   the gap between the banks (SMEM)         normal, uncached
  *   DRAM bank 1                              normal, write-back, except the
@@ -6,78 +6,20 @@
  *                                            and the section holding the
  *                                            persistent log
  *   peripherals (APCS, clock/PMIC arbiter, TLMM, hardware mutexes, multimedia,
- *   IMEM) device, XN
- *   everything else unmapped: a wild pointer aborts instead of corrupting. */
+ *   IMEM) device, XN */
 #include "asteroid.h"
 
-extern uint32_t __mmu_l1[];
-
-#define SEC_WB	0x1c0eu		/* TEX=001 C=1 B=1, AP=11, section */
-#define SEC_NC	0x1c02u		/* TEX=001 C=0 B=0: normal, non-cacheable */
-#define SEC_DEV	0x0c16u		/* TEX=000 C=0 B=1, XN: device */
-
-static void map(uint32_t from, uint32_t to, uint32_t attr)
+void soc_memory_map(void)
 {
-	for (uint32_t a = from >> 20; a < (to >> 20); a++)
-		__mmu_l1[a] = (a << 20) | attr;
-}
-
-void mmu_init(void)
-{
-	for (int i = 0; i < 4096; i++)
-		__mmu_l1[i] = 0;
-	map(DRAM0_BASE, DRAM0_END, SEC_WB);
-	map(DRAM0_END, DRAM1_BASE, SEC_NC);
-	map(DRAM1_BASE, DRAM_END, SEC_WB);
-	map(GPU_MEM_BASE, GPU_MEM_BASE + GPU_MEM_SIZE, SEC_NC);
-	map(RAMOOPS_BASE & ~0xfffffu, (RAMOOPS_BASE + RAMOOPS_SIZE + 0xfffffu) & ~0xfffffu, SEC_NC);
-	map(0xf9000000, 0xfa000000, SEC_DEV);
-	map(0xfc100000, 0xfc200000, SEC_DEV);
-	map(0xfc400000, 0xfc500000, SEC_DEV);
-	map(0xfd400000, 0xfd600000, SEC_DEV);
-	map(0xfd800000, 0xfdc00000, SEC_DEV);
-	map(0xfe800000, 0xfe900000, SEC_DEV);
-
-	dsb();
-	uint32_t ttbr = (uint32_t)(uintptr_t)__mmu_l1;
-	__asm__ volatile("mcr p15, 0, %0, c2, c0, 2" :: "r"(0));	/* TTBCR N=0 */
-	__asm__ volatile("mcr p15, 0, %0, c2, c0, 0" :: "r"(ttbr));	/* TTBR0 */
-	__asm__ volatile("mcr p15, 0, %0, c3, c0, 0" :: "r"(1));	/* DACR: domain 0 client */
-	__asm__ volatile("mcr p15, 0, %0, c8, c7, 0" :: "r"(0));	/* TLBIALL */
-	dsb(); isb();
-	uint32_t sctlr;
-	__asm__ volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(sctlr));
-	sctlr |= (1 << 0) | (1 << 2) | (1 << 11) | (1 << 12);		/* M, C, Z, I */
-	sctlr &= ~(1 << 1);						/* A: allow unaligned */
-	__asm__ volatile("mcr p15, 0, %0, c1, c0, 0" :: "r"(sctlr));
-	isb();
-}
-
-#define CACHE_LINE 64u
-void dcache_clean_range(const void *addr, uint32_t size)
-{
-	if (!size) return;
-	uintptr_t a = (uintptr_t)addr & ~(CACHE_LINE - 1), e = (uintptr_t)addr + size;
-	dmb();
-	for (; a < e; a += CACHE_LINE)
-		__asm__ volatile("mcr p15, 0, %0, c7, c10, 1" :: "r"(a));
-	dsb();
-}
-void dcache_invalidate_range(const void *addr, uint32_t size)
-{
-	if (!size) return;
-	uintptr_t a = (uintptr_t)addr & ~(CACHE_LINE - 1), e = (uintptr_t)addr + size;
-	dmb();
-	for (; a < e; a += CACHE_LINE)
-		__asm__ volatile("mcr p15, 0, %0, c7, c6, 1" :: "r"(a));
-	dsb();
-}
-void dcache_clean_invalidate_range(const void *addr, uint32_t size)
-{
-	if (!size) return;
-	uintptr_t a = (uintptr_t)addr & ~(CACHE_LINE - 1), e = (uintptr_t)addr + size;
-	dmb();
-	for (; a < e; a += CACHE_LINE)
-		__asm__ volatile("mcr p15, 0, %0, c7, c14, 1" :: "r"(a));
-	dsb();
+	mmu_map(DRAM0_BASE, DRAM0_END, MMU_RAM);
+	mmu_map(DRAM0_END, DRAM1_BASE, MMU_RAM_UNCACHED);
+	mmu_map(DRAM1_BASE, DRAM_END, MMU_RAM);
+	mmu_map(GPU_MEM_BASE, GPU_MEM_BASE + GPU_MEM_SIZE, MMU_RAM_UNCACHED);
+	mmu_map(RAMOOPS_BASE & ~0xfffffu, (RAMOOPS_BASE + RAMOOPS_SIZE + 0xfffffu) & ~0xfffffu, MMU_RAM_UNCACHED);
+	mmu_map(0xf9000000, 0xfa000000, MMU_DEVICE);
+	mmu_map(0xfc100000, 0xfc200000, MMU_DEVICE);
+	mmu_map(0xfc400000, 0xfc500000, MMU_DEVICE);
+	mmu_map(0xfd400000, 0xfd600000, MMU_DEVICE);
+	mmu_map(0xfd800000, 0xfdc00000, MMU_DEVICE);
+	mmu_map(0xfe800000, 0xfe900000, MMU_DEVICE);
 }

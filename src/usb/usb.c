@@ -388,7 +388,7 @@ static bool phy_rails(bool on)
 	for (unsigned i = 0; i < 2; i++) {
 		if (phy_rail_off[i] == !on)
 			continue;
-		if (rpm_ldo_on(rail[i].id, rail[i].uv) || (!on && rpm_ldo_off(rail[i].id)))
+		if (regulator_on(rail[i].id, rail[i].uv) || (!on && regulator_off(rail[i].id)))
 			ok = false;
 		else
 			phy_rail_off[i] = !on;

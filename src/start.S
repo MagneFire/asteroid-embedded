@@ -4,6 +4,7 @@
  * address. */
         .syntax unified
         .arm
+#include "start.inc"
 
         .section .vectors, "ax"
         .global _start
@@ -26,6 +27,7 @@ reset:
         cpsid   if
         mov     r6, r1                          /* machine type and device tree */
         mov     r8, r2                          /* for main, past the cache code */
+        soc_entry
         ldr     sp, =__stack_svc_top
         bl      dcache_clean_invalidate_all
         mrc     p15, 0, r0, c1, c0, 0
@@ -33,10 +35,7 @@ reset:
         bic     r0, r0, #(1 << 11) | (1 << 12) | (1 << 13) /* Z, I, V */
         mcr     p15, 0, r0, c1, c0, 0
         isb
-        mrc     p15, 0, r0, c1, c0, 1
-        orr     r0, r0, #(1 << 6)                          /* ACTLR.SMP */
-        mcr     p15, 0, r0, c1, c0, 1
-        isb
+        soc_cpu
         mov     r0, #0
         mcr     p15, 0, r0, c7, c5, 0           /* ICIALLU */
         mcr     p15, 0, r0, c7, c5, 6           /* BPIALL */

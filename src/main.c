@@ -47,26 +47,14 @@ static void sink_fbcon(const char *s, size_t n)
 
 void main(uint32_t machtype, const void *fdt)
 {
-	cpu_clock_init();
-	mmu_init();
-	irq_ctrl_init();
-	timer_init();
-	dload_clear();
-	int scm = scm_wdog_debug_disable();
+	soc_init();
 	wdt_arm(3000, 4000, wdt_bark_handler);
 	irq_enable();
 	log_init();
-	log_printf("asteroid-embedded %s up, timer %lu Hz, scm %d\n", build_id, timer_hz(), scm);
+	log_printf("asteroid-embedded %s up, timer %lu Hz\n", build_id, timer_hz());
 	cpu_clock_log();
 	board_detect(machtype, fdt);
-	spmi_init();
-	pmic_init();
-	if (rpm_init()) {
-		rpm_bus_votes();
-		rpm_sleep_votes();
-		rpm_unused_rails_off();
-	}
-	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), boot_reason());
+	soc_board_init();
 	bool have_display = display_init();
 	if (have_display)
 		fbcon_init();

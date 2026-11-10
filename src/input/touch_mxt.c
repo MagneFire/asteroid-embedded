@@ -114,8 +114,8 @@ static void attention(unsigned pin)
 /* Power, then a reset pulse; the line going low says it is up. */
 static bool power_on(void)
 {
-	if (rpm_ldo_on(28, 2800000))
-		log_printf("touch: l28 on not acknowledged\n");
+	if (board->touch_pins.ldo && regulator_on(board->touch_pins.ldo, board->touch_pins.ldo_uv))
+		log_printf("touch: ldo %u on not acknowledged\n", board->touch_pins.ldo);
 	gpio_set(GPIO_RESET, 0);
 	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 6);
 	delay_ms(2);

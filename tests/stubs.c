@@ -40,6 +40,7 @@ void rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
 void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
 unsigned gpio_get(unsigned n) { return 0; }
+uint32_t gpio_raw_config(unsigned n) { return 0; }
 void gpio_set(unsigned n, unsigned v) {}
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {

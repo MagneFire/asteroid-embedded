@@ -327,7 +327,7 @@ static void cmd_mem(const char *args)
 static void cmd_pmic(const char *args)
 {
 	uint32_t addr, count = 1, val;
-	if (!parse_num(&args, 16, &addr) || addr > 0xfffff) {
+	if (!parse_num(&args, 16, &addr) || addr > PMIC_ADDR_MAX) {
 		say("usage: pmic <hex addr> [bytes | = <hex byte>]\n");
 		return;
 	}
@@ -357,13 +357,12 @@ static void cmd_pmic(const char *args)
 	}
 }
 
-/* One TLMM pin: its configuration word and level, or made an output
- * at a level. The configuration word is pull (bits 1:0), function
- * (5:2), drive (8:6) and output enable (9). */
+/* One pin: its configuration word, as the SoC has it, and level, or
+ * made an output at a level. */
 static void cmd_gpio(const char *args)
 {
 	uint32_t n, v;
-	if (!parse_num(&args, 0, &n) || n > 116) {
+	if (!parse_num(&args, 0, &n) || n >= GPIO_COUNT) {
 		say("usage: gpio <pin> [= 0|1]\n");
 		return;
 	}
@@ -377,9 +376,10 @@ static void cmd_gpio(const char *args)
 		gpio_config(n, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 		gpio_set(n, v);
 	}
-	say("gpio %lu: cfg %08lx level %u\n", n, readl(TLMM_GPIO_CFG(n)), gpio_get(n));
+	say("gpio %lu: cfg %08lx level %u\n", n, gpio_raw_config(n), gpio_get(n));
 }
 
+#ifdef PMIC_VADC
 /* One VADC channel, raw and in mV at the ADC input: the 0.625 and 1.25 V
  * references calibrate it. Divided inputs (VBAT_SNS, VSYS: 1/3) are not
  * scaled here. */
@@ -398,6 +398,7 @@ static void cmd_vadc(const char *args)
 	int32_t mv = 625 + (int32_t)(raw - c625) * 625 / (c1250 - c625);
 	say("vadc %lu: raw %d, %ld mV at the pin\n", chan, raw, mv);
 }
+#endif
 
 /* gauge <reg>...: 16-bit registers of a MAX17050 fuel gauge, in hex. */
 static void cmd_gauge(const char *args)
@@ -1066,7 +1067,9 @@ static const struct command commands[] = {
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
 	{ "pmic", "<hex addr> [bytes | = <hex byte>]", cmd_pmic },
+#ifdef PMIC_VADC
 	{ "vadc", "<channel>", cmd_vadc },
+#endif
 	{ "gpio", "<pin> [= 0|1]", cmd_gpio },
 	{ "gauge", "<reg>...", cmd_gauge },
 	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },

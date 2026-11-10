@@ -88,7 +88,7 @@ const struct board board_smelt = {
 	/* Atmel mXT on BLSP1 QUP5, interrupt on gpio 17 (MPM pin 8), reset
 	 * on gpio 16. */
 	.touch = &touch_mxt,
-	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x4a }, .irq = 17, .reset = 16, .mpm = 8 },
+	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x4a }, .irq = 17, .reset = 16, .mpm = 8, .ldo = 28, .ldo_uv = 2800000 },
 	/* M4 hub on BLSP1 QUP2, wake line on gpio 5 (MPM pin 5), reset on
 	 * gpio 62, boot0 on gpio 109. */
 	.hub = &hub_m4,

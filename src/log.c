@@ -1,8 +1,9 @@
 /* Persistent log in DRAM that survives a warm reset, laid out as a pstore
- * "ramoops" region (dump records followed by a console ring, each zone a
- * {signature, start, size} header and data) so the bootloader can stage it
- * for `fastboot get_staged`. The console ring takes every log line; a
- * fault writes one record for the next boot to report. */
+ * "ramoops" region (a zone for a record and one for a console ring, each a
+ * {signature, start, size} header and data, where the SoC's memory map
+ * puts them) so that what reads the region after a reset, a bootloader or
+ * a kernel, finds them. The console ring takes every log line; a fault
+ * writes one record for the next boot to report. */
 #include <string.h>
 #include "asteroid.h"
 
@@ -13,9 +14,8 @@ struct zone {
 	uint8_t data[];
 };
 
-#define DUMP_ZONES	((RAMOOPS_SIZE - RAMOOPS_CONSOLE_SIZE) / RAMOOPS_RECORD_SIZE)
-#define RECORD		((volatile struct zone *)(uintptr_t)RAMOOPS_BASE)
-#define CONSOLE		((volatile struct zone *)(uintptr_t)(RAMOOPS_BASE + DUMP_ZONES * RAMOOPS_RECORD_SIZE))
+#define RECORD		((volatile struct zone *)(uintptr_t)RAMOOPS_RECORD_BASE)
+#define CONSOLE		((volatile struct zone *)(uintptr_t)RAMOOPS_CONSOLE_BASE)
 #define CONSOLE_CAP	(RAMOOPS_CONSOLE_SIZE - sizeof(struct zone))
 #define RECORD_CAP	(RAMOOPS_RECORD_SIZE - sizeof(struct zone))
 

@@ -32,6 +32,13 @@ unsigned long strtoul(const char *s, char **end, int base);
 
 /* soc */
 void mmu_init(void);
+/* Adds a range to the map, in whole megabytes; soc_memory_map lists the
+ * SoC's ranges with it. */
+void mmu_map(uint32_t from, uint32_t to, uint32_t attr);
+void soc_memory_map(void);
+#define MMU_RAM		0x1c0eu	/* cached */
+#define MMU_RAM_UNCACHED	0x1c02u
+#define MMU_DEVICE	0x0c16u
 void cpu_clock_init(void);
 void cpu_clock_log(void);
 void cpu_clock_slow(bool slow);
@@ -75,9 +82,10 @@ void settings_poll(uint32_t now);	/* write them once they have been quiet for a 
 const char *setting_name(enum setting s);
 void settings_changed(void);
 
-enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
+/* The SoC's sleep states: set up, then each idle pass waits for an
+ * interrupt in the deepest state the caller allows. A wake pin is a
+ * line that has to end a deep state. */
 bool cpu_idle_init(void);
-void spm_cpu_mode(enum spm_mode mode);
 void cpu_idle(bool cluster);
 void wake_pin(unsigned pin, bool on, bool high);
 void cpu_idle_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
@@ -88,8 +96,6 @@ void dcache_clean_invalidate_all(void);
 void irq_ctrl_init(void);
 void irq_attach(unsigned id, void (*fn)(void));
 void irq_set_edge(unsigned id);
-uint32_t gic_cpu_save(void);
-void gic_cpu_restore(uint32_t ppis);
 void irq_detach(unsigned id);
 void irq_mask(unsigned id);
 void irq_unmask(unsigned id);
@@ -101,6 +107,8 @@ void irq_unmask(unsigned id);
 void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma);
 unsigned gpio_get(unsigned n);
 void gpio_set(unsigned n, unsigned v);
+/* The pin's configuration as the SoC keeps it, for the console. */
+uint32_t gpio_raw_config(unsigned n);
 int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
 int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 typedef void (*i2c_done_fn)(int err, void *ctx);
@@ -154,21 +162,11 @@ static inline uint32_t ms_left(uint32_t since, uint32_t ms, uint32_t now)
 	return gone >= ms ? 1 : ms - gone;
 }
 void delay_ms(uint32_t ms);
-#define WDT_MAX_MS (0x0fffffffu / SLEEP_CLK_HZ * 1000u)	/* about 2.3 hours */
 void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void));
 void wdt_stop(void);
 void wdt_feed(void);
-void spmi_init(void);
-uint32_t spmi_version(void);
-int spmi_read(uint32_t addr, uint8_t *buf, unsigned n);
-int spmi_write(uint32_t addr, const uint8_t *buf, unsigned n);
-int spmi_apid(uint32_t sid, uint32_t periph);
-void spmi_irq_enable(int apid, bool on);
-uint32_t spmi_irq_status(int apid);
-void spmi_irq_clear(int apid, uint32_t bits);
 uint8_t pmic_read(uint32_t addr);
 void pmic_write(uint32_t addr, uint8_t val);
-void pmic_init(void);
 void power_off_arm(void);
 const char *boot_reason(void);
 bool power_key(void);
@@ -176,25 +174,9 @@ void power_key_irq_init(void);
 bool power_key_irq(void);
 uint32_t rtc_read(void);
 void rtc_write(uint32_t secs);
-uint32_t pmic_battery_mv(void);
-int pmic_vadc_raw(uint8_t chan, uint8_t settle);
-int pmic_iadc_gain(void);
-const char *pmic_charger_status(void);
-bool pmic_charging(void);
 bool vbus_present(void);
 void vbus_irq_init(void);
 bool vbus_irq(void);
-enum { BAT_DISCHARGING, BAT_CHARGING, BAT_FULL };
-int pmic_battery_status(void);
-int32_t pmic_battery_ua(void);
-int32_t pmic_battery_avg_ua(void);
-void pmic_iadc_trim(void);
-void pmic_charger_configure(void);
-void pmic_charger_poll(void);
-void bms_init(void);
-void bms_poll(void);
-uint32_t bms_soc(void);
-uint32_t bms_percent(void);
 /* The watch's battery driver (board->battery_driver). */
 void batt_init(void);
 void batt_poll(void);
@@ -217,25 +199,14 @@ void light_start(void);
 /* Holds the sensor powered between readings, for reading it often. */
 void light_keep(bool on);
 int32_t light_finish(void);
-#define RPM_LDOA 0x616f646cu
-#define RPM_SMPA 0x61706d73u
-#define RPM_VSA 0x00617376u
-bool rpm_init(void);
-uint32_t smem_hw_platform(void);
-int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp);
-int rpm_regulator_enable(uint32_t type, uint32_t id, bool on);
-int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv);
-int rpm_regulator_sleep_enable(uint32_t type, uint32_t id, bool on);
-int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz);
-void rpm_sleep_votes(void);
-void rpm_unused_rails_off(void);
-int rpm_ldo_off(uint32_t id);
-int rpm_ldo_on(uint32_t id, uint32_t uv);
-void rpm_bus_votes(void);
-void dload_clear(void);
-int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
-int scm_wdog_debug_disable(void);
-int scm_restore_sec_cfg(uint32_t device);
+/* A supply by the number the PMIC gives it. */
+int regulator_on(uint32_t id, uint32_t uv);
+int regulator_off(uint32_t id);
+/* What main does for the SoC: soc_init before anything else (clocks,
+ * MMU, interrupts, timer, watchdog), soc_board_init once the log runs
+ * and the watch is known (PMIC, supplies). */
+void soc_init(void);
+void soc_board_init(void);
 void reboot(void) __attribute__((noreturn));
 void reboot_fatal(const char *what) __attribute__((noreturn));
 void fault_record(const char *kind, uint32_t pc, uint32_t lr, uint32_t sp, const uint32_t *regs);

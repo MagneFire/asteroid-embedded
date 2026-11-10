@@ -135,7 +135,65 @@
 #define IRQ_PPI_TIMER		19
 #define IRQ_WDT_BARK		(32 + 3)
 
+/* The log region as the bootloader's dump command reads it: fault
+ * records first, then the console ring. */
 #define RAMOOPS_RECORD_SIZE	0x2000u
 #define RAMOOPS_CONSOLE_SIZE	0x40000u
+#define RAMOOPS_RECORD_BASE	RAMOOPS_BASE
+#define RAMOOPS_CONSOLE_BASE	(RAMOOPS_BASE + (RAMOOPS_SIZE - RAMOOPS_CONSOLE_SIZE) / RAMOOPS_RECORD_SIZE * RAMOOPS_RECORD_SIZE)
+
+#define GPIO_COUNT		117
+#define PMIC_ADDR_MAX		0xfffffu
+#define PMIC_VADC		1
+#define WDT_MAX_MS (0x0fffffffu / SLEEP_CLK_HZ * 1000u)	/* about 2.3 hours */
+
+#ifndef __ASSEMBLER__
+enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
+void spm_cpu_mode(enum spm_mode mode);
+uint32_t gic_cpu_save(void);
+void gic_cpu_restore(uint32_t ppis);
+void spmi_init(void);
+uint32_t spmi_version(void);
+int spmi_read(uint32_t addr, uint8_t *buf, unsigned n);
+int spmi_write(uint32_t addr, const uint8_t *buf, unsigned n);
+int spmi_apid(uint32_t sid, uint32_t periph);
+void spmi_irq_enable(int apid, bool on);
+uint32_t spmi_irq_status(int apid);
+void spmi_irq_clear(int apid, uint32_t bits);
+void pmic_init(void);
+uint32_t pmic_battery_mv(void);
+int pmic_vadc_raw(uint8_t chan, uint8_t settle);
+int pmic_iadc_gain(void);
+const char *pmic_charger_status(void);
+bool pmic_charging(void);
+enum { BAT_DISCHARGING, BAT_CHARGING, BAT_FULL };
+int pmic_battery_status(void);
+int32_t pmic_battery_ua(void);
+int32_t pmic_battery_avg_ua(void);
+void pmic_iadc_trim(void);
+void pmic_charger_configure(void);
+void pmic_charger_poll(void);
+void bms_init(void);
+void bms_poll(void);
+uint32_t bms_soc(void);
+uint32_t bms_percent(void);
+#define RPM_LDOA 0x616f646cu
+#define RPM_SMPA 0x61706d73u
+#define RPM_VSA 0x00617376u
+bool rpm_init(void);
+uint32_t smem_hw_platform(void);
+int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp);
+int rpm_regulator_enable(uint32_t type, uint32_t id, bool on);
+int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv);
+int rpm_regulator_sleep_enable(uint32_t type, uint32_t id, bool on);
+int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz);
+void rpm_sleep_votes(void);
+void rpm_unused_rails_off(void);
+void rpm_bus_votes(void);
+void dload_clear(void);
+int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
+int scm_wdog_debug_disable(void);
+int scm_restore_sec_cfg(uint32_t device);
+#endif
 
 #endif
