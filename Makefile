@@ -27,11 +27,11 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
         src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c \
         src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
         src/display/backlight_lm3535.c src/sensors/tsl2584.c src/audio/speaker.c src/display/fbcon.c src/display/flatmesh.c \
-        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
+        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/inflate.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
         src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         src/notify/notify.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
-        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/store.c src/storage/kv.c \
+        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/squashfs.c src/storage/store.c src/storage/kv.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 
@@ -218,6 +218,10 @@ $(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/board/minnow.c
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/storage/emmc.c src/board/minnow.c src/lib/fmt.c -o $@
 
+$(BUILD)/test/squashfs_test: tests/squashfs_test.c src/storage/squashfs.c src/lib/inflate.c $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/storage/squashfs.c src/lib/inflate.c -o $@
+
 $(BUILD)/test/soft_test: tests/soft_test.c src/gpu/soft.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/gpu/soft.c -o $@
@@ -234,7 +238,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/m4_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/emmc_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/m4_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -253,6 +257,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/auto_brightness_test
 	$(BUILD)/test/soft_test
 	$(BUILD)/test/emmc_test
+	$(BUILD)/test/squashfs_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb
 	python3 tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test
