@@ -76,61 +76,61 @@ const char *setting_name(enum setting s);
 void settings_changed(void);
 
 enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
-bool spm_init(void);
+bool cpu_idle_init(void);
 void spm_cpu_mode(enum spm_mode mode);
-void spm_idle(bool cluster);
-void spm_wake_pin(unsigned pin, bool on, bool high);
-void spm_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
+void cpu_idle(bool cluster);
+void wake_pin(unsigned pin, bool on, bool high);
+void cpu_idle_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
 void dcache_clean_range(const void *addr, uint32_t size);
 void dcache_invalidate_range(const void *addr, uint32_t size);
 void dcache_clean_invalidate_range(const void *addr, uint32_t size);
 void dcache_clean_invalidate_all(void);
-void gic_init(void);
-void gic_enable(unsigned id, void (*fn)(void));
-void gic_set_edge(unsigned id);
+void irq_ctrl_init(void);
+void irq_attach(unsigned id, void (*fn)(void));
+void irq_set_edge(unsigned id);
 uint32_t gic_cpu_save(void);
 void gic_cpu_restore(uint32_t ppis);
-void gic_disable(unsigned id);
-void gic_mask(unsigned id);
-void gic_unmask(unsigned id);
-#define TLMM_INPUT 0
-#define TLMM_OUTPUT 1
-#define TLMM_PULL_NONE 0
-#define TLMM_PULL_DOWN 1
-#define TLMM_PULL_UP 3
-void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma);
-unsigned tlmm_get(unsigned n);
-void tlmm_set(unsigned n, unsigned v);
-int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
-int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
+void irq_detach(unsigned id);
+void irq_mask(unsigned id);
+void irq_unmask(unsigned id);
+#define GPIO_INPUT 0
+#define GPIO_OUTPUT 1
+#define GPIO_PULL_NONE 0
+#define GPIO_PULL_DOWN 1
+#define GPIO_PULL_UP 3
+void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma);
+unsigned gpio_get(unsigned n);
+void gpio_set(unsigned n, unsigned v);
+int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
+int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 typedef void (*i2c_done_fn)(int err, void *ctx);
-int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
-bool i2c_qup_busy(unsigned qup);
+int i2c_start(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
+bool i2c_busy(unsigned bus);
 /* How long a slave may hold the clock on a transfer this master has on
  * the bus before it is given up, beyond the usual 20 ms; 0 for none. */
-void i2c_qup_set_timeout(unsigned qup, uint32_t stretch_ms);
+void i2c_set_timeout(unsigned bus, uint32_t stretch_ms);
 bool haptics_init(void);
 void haptics_play(const uint16_t *on_off_ms, unsigned n);
 void haptics_poll(void);
 bool haptics_busy(void);
-void i2c_qup_poll(unsigned qup);
-int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow);
-int uart_dm_set_baud(unsigned uart, uint32_t baud);
-int uart_dm_write(unsigned uart, const uint8_t *p, unsigned n);
-unsigned uart_dm_read(unsigned uart, uint8_t *p, unsigned n);
-bool uart_dm_cts(unsigned uart);
-void uart_dm_stop(unsigned uart);
-bool uart_dm_idle(unsigned uart);
-void uart_dm_hold_rx(unsigned uart, bool hold);
-void uart_dm_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors);
-#define TLMM_IRQ_LEVEL_LOW 0
-#define TLMM_IRQ_LEVEL_HIGH 1
-#define TLMM_IRQ_EDGE_FALLING 2
-#define TLMM_IRQ_EDGE_RISING 3
-void tlmm_irq_init(void);
-void tlmm_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n));
-void tlmm_irq_enable(unsigned n, bool on);
-void tlmm_irq_ack(unsigned n);
+void i2c_poll(unsigned bus);
+int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow);
+int uart_set_baud(unsigned uart, uint32_t baud);
+int uart_write(unsigned uart, const uint8_t *p, unsigned n);
+unsigned uart_read(unsigned uart, uint8_t *p, unsigned n);
+bool uart_cts(unsigned uart);
+void uart_stop(unsigned uart);
+bool uart_idle(unsigned uart);
+void uart_hold_rx(unsigned uart, bool hold);
+void uart_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors);
+#define GPIO_IRQ_LEVEL_LOW 0
+#define GPIO_IRQ_LEVEL_HIGH 1
+#define GPIO_IRQ_EDGE_FALLING 2
+#define GPIO_IRQ_EDGE_RISING 3
+void gpio_irq_init(void);
+void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n));
+void gpio_irq_enable(unsigned n, bool on);
+void gpio_irq_ack(unsigned n);
 void irq_enable(void);
 void irq_disable(void);
 uint32_t irq_save(void);	/* mask IRQs, returning the state for irq_restore */
@@ -169,21 +169,21 @@ void spmi_irq_clear(int apid, uint32_t bits);
 uint8_t pmic_read(uint32_t addr);
 void pmic_write(uint32_t addr, uint8_t val);
 void pmic_init(void);
-void pmic_shutdown_mode(void);
-const char *pmic_pon_reason(void);
-bool pmic_power_key(void);
-void pmic_power_key_irq_init(void);
-bool pmic_power_key_irq(void);
-uint32_t pmic_rtc_read(void);
-void pmic_rtc_write(uint32_t secs);
+void power_off_arm(void);
+const char *boot_reason(void);
+bool power_key(void);
+void power_key_irq_init(void);
+bool power_key_irq(void);
+uint32_t rtc_read(void);
+void rtc_write(uint32_t secs);
 uint32_t pmic_battery_mv(void);
 int pmic_vadc_raw(uint8_t chan, uint8_t settle);
 int pmic_iadc_gain(void);
 const char *pmic_charger_status(void);
 bool pmic_charging(void);
-bool pmic_usb_present(void);
-void pmic_usb_irq_init(void);
-bool pmic_usb_irq(void);
+bool vbus_present(void);
+void vbus_irq_init(void);
+bool vbus_irq(void);
 enum { BAT_DISCHARGING, BAT_CHARGING, BAT_FULL };
 int pmic_battery_status(void);
 int32_t pmic_battery_ua(void);

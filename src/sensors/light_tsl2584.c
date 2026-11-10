@@ -21,7 +21,7 @@
 #include "display/display.h"
 #include "sensors/tsl2584.h"
 
-#define QUP		(board->light_pins.i2c.qup)
+#define BUS		(board->light_pins.i2c.bus)
 #define ADDR		(board->light_pins.i2c.addr)
 #define LDO		(board->light_pins.ldo)
 #define BUS_HZ		200000
@@ -54,13 +54,13 @@ static uint32_t started;
 static int wr(uint8_t reg, uint8_t val)
 {
 	uint8_t b[2] = { CMD_SELECT | reg, val };
-	return i2c_qup_xfer(QUP, ADDR, b, 2, NULL, 0);
+	return i2c_xfer(BUS, ADDR, b, 2, NULL, 0);
 }
 
 static int rd(uint8_t reg, uint8_t *v, unsigned n)
 {
 	uint8_t cmd = CMD_SELECT | reg;
-	return i2c_qup_xfer(QUP, ADDR, &cmd, 1, v, n);
+	return i2c_xfer(BUS, ADDR, &cmd, 1, v, n);
 }
 
 static int power_up(void)
@@ -121,7 +121,7 @@ static int measure(int32_t *lux)
 static bool tsl2584_init(void)
 {
 	uint8_t id = 0;
-	int r = i2c_qup_init(QUP, board->light_pins.i2c.sda, board->light_pins.i2c.scl, board->light_pins.i2c.func, BUS_HZ);
+	int r = i2c_init(BUS, board->light_pins.i2c.sda, board->light_pins.i2c.scl, board->light_pins.i2c.func, BUS_HZ);
 	if (!r)
 		r = rpm_regulator_voltage(RPM_LDOA, LDO, board->light_pins.ldo_uv);
 	if (!r)

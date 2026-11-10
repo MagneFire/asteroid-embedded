@@ -16,7 +16,7 @@
 #include "soc/max17050.h"
 #include "soc/charge_policy.h"
 
-#define QUP		(board->gauge.i2c.qup)
+#define BUS		(board->gauge.i2c.bus)
 #define ADDR		(board->gauge.i2c.addr)
 #define GPIO_DOCK	(board->gauge.dock)
 #define MPM_PIN_DOCK	(board->gauge.dock_mpm)
@@ -37,7 +37,7 @@ static struct charge_policy policy;
 static int rd(uint8_t reg, uint16_t *v)
 {
 	uint8_t b[2];
-	int r = i2c_qup_xfer(QUP, ADDR, &reg, 1, b, 2);
+	int r = i2c_xfer(BUS, ADDR, &reg, 1, b, 2);
 	if (r) {
 		errors++;
 		return r;
@@ -49,7 +49,7 @@ static int rd(uint8_t reg, uint16_t *v)
 static int wr(uint8_t reg, uint16_t v)
 {
 	uint8_t b[3] = { reg, (uint8_t)v, (uint8_t)(v >> 8) };
-	int r = i2c_qup_xfer(QUP, ADDR, b, 3, NULL, 0);
+	int r = i2c_xfer(BUS, ADDR, b, 3, NULL, 0);
 	if (r)
 		errors++;
 	return r;
@@ -148,7 +148,7 @@ static void model_check(void)
 
 static bool dock_line(void)
 {
-	return !tlmm_get(GPIO_DOCK);
+	return !gpio_get(GPIO_DOCK);
 }
 
 static bool docked(void)
@@ -172,12 +172,12 @@ static void refresh(void)
 static void charge_lines(bool stop, bool reduced)
 {
 	static bool driven;
-	tlmm_set(GPIO_CHARGE_TERM, stop);
-	tlmm_set(GPIO_CHARGE_RATE, reduced);
+	gpio_set(GPIO_CHARGE_TERM, stop);
+	gpio_set(GPIO_CHARGE_RATE, reduced);
 	if (!driven) {
 		driven = true;
-		tlmm_config(GPIO_CHARGE_TERM, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
-		tlmm_config(GPIO_CHARGE_RATE, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		gpio_config(GPIO_CHARGE_TERM, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		gpio_config(GPIO_CHARGE_RATE, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	}
 }
 
@@ -202,24 +202,24 @@ static void charge_check(void)
 			   in.valid ? "" : ", gauge not trusted");
 	if (in.valid && temp >= CHARGE_POWER_OFF_TEMP) {
 		log_printf("gauge: %d.%d C, powering off\n", temp / 10, temp % 10);
-		pmic_shutdown_mode();
+		power_off_arm();
 		reboot();
 	}
 }
 
 static void gauge_init(void)
 {
-	tlmm_config(GPIO_DOCK, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
+	gpio_config(GPIO_DOCK, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
 	/* The factory kill circuit disconnects the battery while USB powers
 	 * the watch and keeps it so until it is disarmed, so the first unplug
 	 * cuts the power. The bootloader leaves the pin low (armed); the
 	 * vendor kernel drives it high unless a factory cable is in. */
 	if (board->gauge.kill_disable) {
-		tlmm_config(board->gauge.kill_disable, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
-		tlmm_set(board->gauge.kill_disable, 1);
+		gpio_config(board->gauge.kill_disable, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		gpio_set(board->gauge.kill_disable, 1);
 	}
 	uint16_t id = 0;
-	int r = i2c_qup_init(QUP, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
+	int r = i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
 	dock_state = dock_line();
 	if (!r)
 		r = rd(MAX17050_DEVNAME, &id);
@@ -257,7 +257,7 @@ static void dock_update(uint32_t now)
 	dock_settling = false;
 	dock_state = line;
 	dock_plugged = line;
-	log_printf("gauge: dock %u, usb %u\n", line, pmic_usb_present());
+	log_printf("gauge: dock %u, usb %u\n", line, vbus_present());
 	present_clock_soon();
 }
 
@@ -270,7 +270,7 @@ static void gauge_poll(void)
 	uint32_t now = time_ms();
 	if (arm != wake_armed) {
 		wake_armed = arm;
-		spm_wake_pin(MPM_PIN_DOCK, arm, false);
+		wake_pin(MPM_PIN_DOCK, arm, false);
 	}
 	dock_update(now);
 	if (now - poll_t < POLL_MS)
@@ -283,9 +283,9 @@ static void gauge_poll(void)
 
 static uint32_t gauge_percent(void) { return soc; }
 static bool gauge_charging(void) { return docked(); }
-static bool gauge_cable(void) { return docked() || pmic_usb_present(); }
+static bool gauge_cable(void) { return docked() || vbus_present(); }
 
-static bool gauge_usb(void) { return pmic_usb_present(); }
+static bool gauge_usb(void) { return vbus_present(); }
 
 /* On the pad the charge limits need a look on time, asleep too, and so
  * does a dock line that changed. */
@@ -306,7 +306,7 @@ static uint32_t gauge_next_ms(void)
 
 static void dock_edge(unsigned n)
 {
-	tlmm_irq_ack(n);
+	gpio_irq_ack(n);
 	dock_irq = true;
 }
 
@@ -314,9 +314,9 @@ static void dock_edge(unsigned n)
  * dock line does not see. */
 static void gauge_cable_irq_init(void)
 {
-	tlmm_irq_config(GPIO_DOCK, TLMM_IRQ_EDGE_FALLING, dock_edge);
-	tlmm_irq_enable(GPIO_DOCK, true);
-	pmic_usb_irq_init();
+	gpio_irq_config(GPIO_DOCK, GPIO_IRQ_EDGE_FALLING, dock_edge);
+	gpio_irq_enable(GPIO_DOCK, true);
+	vbus_irq_init();
 }
 
 /* The dock only once the line has settled low; USB on its own edge. */
@@ -324,7 +324,7 @@ static bool gauge_cable_irq(void)
 {
 	bool fired = dock_plugged;
 	dock_plugged = false;
-	return pmic_usb_irq() || fired;
+	return vbus_irq() || fired;
 }
 
 static uint32_t gauge_mv(void)
@@ -351,7 +351,7 @@ static const char *gauge_status(void)
 		return "no gauge";
 	int r = rd(MAX17050_TEMP, &t), c = r ? 0 : max17050_decidegrees(t);
 	snprintf(s, sizeof s, "dock %u usb %u chg_n %u, %lu%%, %d.%d C, status %04x%s, %u errors", docked(),
-		 pmic_usb_present(), tlmm_get(GPIO_CHARGE_N), soc, c / 10, (c < 0 ? -c : c) % 10, last_status,
+		 vbus_present(), gpio_get(GPIO_CHARGE_N), soc, c / 10, (c < 0 ? -c : c) % 10, last_status,
 		 max17050_no_battery(last_status) ? " no battery" : "", errors);
 	return s;
 }

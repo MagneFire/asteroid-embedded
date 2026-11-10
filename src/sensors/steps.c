@@ -20,7 +20,7 @@ static bool ready, changed;
 void steps_init(void)
 {
 	if (kv_get(KV_STEPS, &saved, sizeof saved) != (int)sizeof saved)
-		saved = (struct saved){ 0, pmic_rtc_read() / 86400, 0 };
+		saved = (struct saved){ 0, rtc_read() / 86400, 0 };
 	now_state = saved;
 	ready = true;
 	log_printf("steps: %lu today, %lu in total\n", saved.total - saved.day_start, saved.total);
@@ -30,7 +30,7 @@ void steps_poll(void)
 {
 	if (!ready)
 		return;
-	uint32_t count = hub_steps(), day = pmic_rtc_read() / 86400;
+	uint32_t count = hub_steps(), day = rtc_read() / 86400;
 	if (count != HUB_NONE) {
 		if (base == HUB_NONE)
 			base = saved.total;

@@ -11,12 +11,12 @@ const struct board *board = &test_board;
 /* The last value written to each register and the enable line. */
 static uint8_t regs[256];
 static unsigned enable_line;
-void tlmm_set(unsigned n, unsigned v) { enable_line = v; }
-void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
+void gpio_set(unsigned n, unsigned v) { enable_line = v; }
+void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
 void delay_ms(uint32_t ms) {}
 void log_printf(const char *fmt, ...) {}
-int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
-int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
+int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
 	if (wn == 2)
 		regs[w[0]] = w[1];

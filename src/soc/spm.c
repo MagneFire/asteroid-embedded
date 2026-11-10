@@ -105,7 +105,7 @@ static void mpm_wake_irq(void)
  * is interrupted; the wake-up time is in system counter ticks. */
 static uint32_t extra_pins[2], extra_high[2];
 
-void spm_wake_pin(unsigned pin, bool on, bool high)
+void wake_pin(unsigned pin, bool on, bool high)
 {
 	if (on)
 		extra_pins[pin / 32] |= BIT(pin % 32);
@@ -139,7 +139,7 @@ static void mpm_arm(uint64_t wake)
  * wake-up comes from the memory-mapped timer, or from the MPM when the
  * cluster is off. Turning the cluster off and on takes several ms, so
  * it is only done for longer sleeps. */
-void spm_idle(bool cluster)
+void cpu_idle(bool cluster)
 {
 	/* With interrupts masked, an event posted before this point is seen
 	 * here and one posted after it ends the wait: wfi returns for a
@@ -182,7 +182,7 @@ void spm_idle(bool cluster)
 	__asm__ volatile("cpsie i" ::: "memory");
 }
 
-void spm_stats(uint32_t *c, uint32_t *cc, uint32_t *b)
+void cpu_idle_stats(uint32_t *c, uint32_t *cc, uint32_t *b)
 {
 	*c = collapses;
 	*cc = cluster_collapses;
@@ -242,7 +242,7 @@ static bool park_secondaries(void)
 	return ok;
 }
 
-bool spm_init(void)
+bool cpu_idle_init(void)
 {
 	uint32_t ver = readl(SAW_CPU0 + SAW_VERSION);
 	if ((ver >> 28) != 2 || ((ver >> 16) & 0xfff) != 1) {
@@ -266,8 +266,8 @@ bool spm_init(void)
 	can_collapse = !ret;
 	cluster_parked = can_collapse && park_secondaries();
 	writel(0, QTMR_CNTP_CTL);
-	gic_enable(IRQ_QTMR_FRAME0, qtmr_irq);
-	gic_set_edge(IRQ_MPM_WAKE);
-	gic_enable(IRQ_MPM_WAKE, mpm_wake_irq);
+	irq_attach(IRQ_QTMR_FRAME0, qtmr_irq);
+	irq_set_edge(IRQ_MPM_WAKE);
+	irq_attach(IRQ_MPM_WAKE, mpm_wake_irq);
 	return true;
 }

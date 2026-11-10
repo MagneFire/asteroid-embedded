@@ -88,7 +88,7 @@ static int16_t accel[3];
 
 static void time_request(uint8_t *m)
 {
-	uint64_t ms = (uint64_t)pmic_rtc_read() * 1000;
+	uint64_t ms = (uint64_t)rtc_read() * 1000;
 	m[0] = CH_SERVICE;
 	m[1] = T_REQUEST;
 	m[2] = TAG_TIME;
@@ -130,7 +130,7 @@ static int send(const uint8_t *p, unsigned n)
 	k += escape(buf + k, (uint8_t)c);
 	k += escape(buf + k, (uint8_t)(c >> 8));
 	buf[k++] = 0x7e;
-	return uart_dm_write(UART, buf, k);
+	return uart_write(UART, buf, k);
 }
 
 static void enter(enum state s)
@@ -236,7 +236,7 @@ static void frame(const uint8_t *p, unsigned n)
 	}
 	if (state == S_HANDSHAKE && n >= 3 && p[0] == CH_CONTROL && p[1] == T_RESPONSE && p[2] == 0) {
 		log_printf("hub: handshake done\n");
-		spm_wake_pin(MPM_PIN_MCU_WAKE, true, true);
+		wake_pin(MPM_PIN_MCU_WAKE, true, true);
 		load_calibration();
 		parameter = 0;
 		enter(S_PARAMETER);
@@ -321,7 +321,7 @@ static void receive(void)
 {
 	uint8_t buf[64];
 	unsigned n;
-	while ((n = uart_dm_read(UART, buf, sizeof buf)))
+	while ((n = uart_read(UART, buf, sizeof buf)))
 		for (unsigned i = 0; i < n; i++) {
 			uint8_t c = buf[i];
 			if (c == 0x7e) {
@@ -339,21 +339,21 @@ static void receive(void)
 
 static bool stm32_init(void)
 {
-	tlmm_config(GPIO_BOOT0, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_set(GPIO_BOOT0, 0);
-	tlmm_config(GPIO_BOOT1, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_set(GPIO_BOOT1, 0);
-	tlmm_config(GPIO_WAKE_MCU, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_set(GPIO_WAKE_MCU, 0);
-	tlmm_config(GPIO_AP_STATUS, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_set(GPIO_AP_STATUS, 1);
-	tlmm_config(GPIO_MCU_WAKE, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
-	tlmm_config(GPIO_MCU_STATUS, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
-	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_UP, 2);
-	tlmm_set(GPIO_RESET, 0);
+	gpio_config(GPIO_BOOT0, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_set(GPIO_BOOT0, 0);
+	gpio_config(GPIO_BOOT1, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_set(GPIO_BOOT1, 0);
+	gpio_config(GPIO_WAKE_MCU, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_set(GPIO_WAKE_MCU, 0);
+	gpio_config(GPIO_AP_STATUS, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_set(GPIO_AP_STATUS, 1);
+	gpio_config(GPIO_MCU_WAKE, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
+	gpio_config(GPIO_MCU_STATUS, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
+	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_UP, 2);
+	gpio_set(GPIO_RESET, 0);
 	delay_ms(RESET_MS);
-	tlmm_set(GPIO_RESET, 1);
-	if (uart_dm_init(UART, GPIO_UART, FUNC_UART, 115200, false)) {
+	gpio_set(GPIO_RESET, 1);
+	if (uart_init(UART, GPIO_UART, FUNC_UART, 115200, false)) {
 		enter(S_FAILED);
 		return false;
 	}
@@ -367,7 +367,7 @@ static void stm32_poll(void)
 		return;
 	receive();
 	uint32_t now = time_ms();
-	if (tlmm_get(GPIO_MCU_WAKE))
+	if (gpio_get(GPIO_MCU_WAKE))
 		wake_t = now;
 	if (state == S_BOOT && now - state_t >= BOOT_MS) {
 		enter(S_VERSION);
@@ -378,7 +378,7 @@ static void stm32_poll(void)
 				   state == S_VERSION ? "version" : state == S_HANDSHAKE ? "handshake" :
 				   state == S_PARAMETER ? "parameter" : state == S_TIME ? "time" :
 				   state == S_STEPS ? "step counter" : "wrist tilt",
-				   tlmm_get(GPIO_MCU_STATUS));
+				   gpio_get(GPIO_MCU_STATUS));
 			enter(S_FAILED);
 		} else {
 			request();
@@ -458,14 +458,14 @@ static bool stm32_tilted(void)
 
 static bool stm32_can_sleep(void)
 {
-	return state != S_READY || (!tlmm_get(GPIO_MCU_WAKE) && time_ms() - wake_t >= WAKE_HOLD_MS);
+	return state != S_READY || (!gpio_get(GPIO_MCU_WAKE) && time_ms() - wake_t >= WAKE_HOLD_MS);
 }
 
 static void stm32_sleep(bool asleep)
 {
 	if (state >= S_TILT && state <= S_READY)
-		tlmm_set(GPIO_AP_STATUS, !asleep);
-	if (!asleep && tlmm_get(GPIO_MCU_WAKE)) {
+		gpio_set(GPIO_AP_STATUS, !asleep);
+	if (!asleep && gpio_get(GPIO_MCU_WAKE)) {
 		wake_t = time_ms();
 		mcu_wakes++;
 	}
@@ -480,10 +480,10 @@ static void stm32_status(void (*say)(const char *fmt, ...))
 	static const char *const names[] = { "off", "booting", "version", "handshake", "parameter", "wrist tilt",
 					     "tilt batch", "time", "step counter", "ready", "failed" };
 	uint32_t rxb, txb, err;
-	uart_dm_stats(UART, &rxb, &txb, &err);
+	uart_stats(UART, &rxb, &txb, &err);
 	say("hub: %s, version %s, %lu tilts, %lu mcu wakes, %lu frames, %lu bad, uart %lu/%lu/%lu, mcu status %u wake %u\n",
-	    names[state], version[0] ? version : "?", tilts, mcu_wakes, frames, bad_frames, rxb, txb, err, tlmm_get(GPIO_MCU_STATUS),
-	    tlmm_get(GPIO_MCU_WAKE));
+	    names[state], version[0] ? version : "?", tilts, mcu_wakes, frames, bad_frames, rxb, txb, err, gpio_get(GPIO_MCU_STATUS),
+	    gpio_get(GPIO_MCU_WAKE));
 	say("hub: steps %ld, heart rate %s %ld status %u\n", steps == HUB_NONE ? -1L : (long)steps, heart_on ? "on" : "off",
 	    heart_rate == HUB_NONE ? -1L : (long)heart_rate, heart_status);
 	say("hub: accelerometer %s %d %d %d\n", accel_on ? "on" : "off", accel[0], accel[1], accel[2]);

@@ -47,15 +47,15 @@ static void sleep_ms(uint32_t ms)
 
 static void power(bool on)
 {
-	tlmm_set(GPIO_BT_REG_ON, 0);
-	tlmm_config(GPIO_BT_REG_ON, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
+	gpio_set(GPIO_BT_REG_ON, 0);
+	gpio_config(GPIO_BT_REG_ON, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
 	if (!on)
 		return;
-	tlmm_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
-	tlmm_config(GPIO_BT_DEV_WAKE, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_config(GPIO_BT_HOST_WAKE, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
+	gpio_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
+	gpio_config(GPIO_BT_DEV_WAKE, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_config(GPIO_BT_HOST_WAKE, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
 	sleep_ms(30);
-	tlmm_set(GPIO_BT_REG_ON, 1);
+	gpio_set(GPIO_BT_REG_ON, 1);
 }
 
 static void log_packet(uint8_t type, const uint8_t *p, unsigned n)
@@ -80,7 +80,7 @@ static int set_baud(uint32_t baud)
 	int r = hci_cmd(BCM_UPDATE_BAUD_RATE, p, sizeof p, NULL, NULL, 1000);
 	if (r)
 		return r;
-	return uart_dm_set_baud(BT_UART, baud);
+	return uart_set_baud(BT_UART, baud);
 }
 
 static int patchram(const uint8_t *hcd, uint32_t len)
@@ -113,18 +113,18 @@ static int patchram(const uint8_t *hcd, uint32_t len)
 static int fail(struct bt_info *info, const char *what, int r)
 {
 	uint32_t rx, tx, uerr, pkts, herr;
-	uart_dm_stats(BT_UART, &rx, &tx, &uerr);
+	uart_stats(BT_UART, &rx, &tx, &uerr);
 	hci_stats(&pkts, &herr);
 	info->failed = what;
 	info->status = r;
-	log_printf("bt: %s failed: %d, cts %u, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n", what, r, uart_dm_cts(BT_UART),
-		   tlmm_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts, herr);
+	log_printf("bt: %s failed: %d, cts %u, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n", what, r, uart_cts(BT_UART),
+		   gpio_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts, herr);
 	return r ? r : -1;
 }
 
 static void host_wake_irq(unsigned n)
 {
-	tlmm_irq_ack(n);
+	gpio_irq_ack(n);
 	bt_tx_activity();
 }
 
@@ -142,10 +142,10 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	hci_set_handler(log_packet);
 	power(true);
 	sleep_ms(100);
-	if (uart_dm_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, BAUD_BOOT, true))
+	if (uart_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, BAUD_BOOT, true))
 		return fail(info, "uart", -1);
 	running = true;
-	log_printf("bt: powered, cts %u, host wake %u\n", uart_dm_cts(BT_UART), tlmm_get(GPIO_BT_HOST_WAKE));
+	log_printf("bt: powered, cts %u, host wake %u\n", uart_cts(BT_UART), gpio_get(GPIO_BT_HOST_WAKE));
 	int r;
 	if ((r = reset()))
 		return fail(info, "reset", r);
@@ -155,10 +155,10 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	if ((r = patchram(hcd, hcd_len)))
 		return fail(info, "patch download", r);
 	info->patch_ms = time_ms() - t1;
-	uart_dm_set_baud(BT_UART, BAUD_BOOT);
+	uart_set_baud(BT_UART, BAUD_BOOT);
 	sleep_ms(250);
 	uint8_t junk[64];
-	while (uart_dm_read(BT_UART, junk, sizeof junk))
+	while (uart_read(BT_UART, junk, sizeof junk))
 		;
 	hci_reset_parser();
 	if ((r = reset()))
@@ -196,24 +196,24 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	}
 	info->total_ms = time_ms() - t0;
 	uint32_t rx, tx, uerr, pkts, herr;
-	uart_dm_stats(BT_UART, &rx, &tx, &uerr);
+	uart_stats(BT_UART, &rx, &tx, &uerr);
 	hci_stats(&pkts, &herr);
 	log_printf("bt: up in %lu ms (patch %lu ms), lmp subversion %04x, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n",
-		   info->total_ms, info->patch_ms, info->lmp_subversion, tlmm_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts,
+		   info->total_ms, info->patch_ms, info->lmp_subversion, gpio_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts,
 		   herr);
 	dev_awake = true;
 	tx_t = time_ms();
-	tlmm_irq_config(GPIO_BT_HOST_WAKE, HOST_WAKE_ACTIVE ? TLMM_IRQ_EDGE_RISING : TLMM_IRQ_EDGE_FALLING, host_wake_irq);
-	tlmm_irq_enable(GPIO_BT_HOST_WAKE, true);
-	spm_wake_pin(MPM_PIN_HOST_WAKE, true, HOST_WAKE_ACTIVE);
+	gpio_irq_config(GPIO_BT_HOST_WAKE, HOST_WAKE_ACTIVE ? GPIO_IRQ_EDGE_RISING : GPIO_IRQ_EDGE_FALLING, host_wake_irq);
+	gpio_irq_enable(GPIO_BT_HOST_WAKE, true);
+	wake_pin(MPM_PIN_HOST_WAKE, true, HOST_WAKE_ACTIVE);
 	return 0;
 }
 
 void bt_stop(void)
 {
-	spm_wake_pin(MPM_PIN_HOST_WAKE, false, HOST_WAKE_ACTIVE);
-	tlmm_irq_enable(GPIO_BT_HOST_WAKE, false);
-	uart_dm_stop(BT_UART);
+	wake_pin(MPM_PIN_HOST_WAKE, false, HOST_WAKE_ACTIVE);
+	gpio_irq_enable(GPIO_BT_HOST_WAKE, false);
+	uart_stop(BT_UART);
 	power(false);
 	running = false;
 	dev_awake = true;
@@ -227,7 +227,7 @@ bool bt_running(void)
 /* The raw HOST_WAKE level, whatever the board's polarity. */
 bool bt_host_wake(void)
 {
-	return tlmm_get(GPIO_BT_HOST_WAKE);
+	return gpio_get(GPIO_BT_HOST_WAKE);
 }
 
 static bool host_wake_asserted(void)
@@ -240,7 +240,7 @@ void bt_tx_activity(void)
 {
 	tx_t = time_ms();
 	if (!dev_awake) {
-		tlmm_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
+		gpio_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
 		dev_awake = true;
 	}
 }
@@ -249,8 +249,8 @@ void bt_lpm_poll(void)
 {
 	if (running && host_wake_asserted())
 		bt_tx_activity();
-	if (running && dev_awake && time_ms() - tx_t >= DEV_WAKE_IDLE_MS && uart_dm_idle(BT_UART)) {
-		tlmm_set(GPIO_BT_DEV_WAKE, !DEV_WAKE_ACTIVE);
+	if (running && dev_awake && time_ms() - tx_t >= DEV_WAKE_IDLE_MS && uart_idle(BT_UART)) {
+		gpio_set(GPIO_BT_DEV_WAKE, !DEV_WAKE_ACTIVE);
 		dev_awake = false;
 	}
 }
@@ -265,11 +265,11 @@ uint32_t bt_lpm_next_ms(void)
 
 bool bt_can_sleep(void)
 {
-	return !running || (!dev_awake && !host_wake_asserted() && uart_dm_idle(BT_UART));
+	return !running || (!dev_awake && !host_wake_asserted() && uart_idle(BT_UART));
 }
 
 void bt_sleep(bool asleep)
 {
 	if (running)
-		uart_dm_hold_rx(BT_UART, asleep);
+		uart_hold_rx(BT_UART, asleep);
 }

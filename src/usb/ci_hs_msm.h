@@ -10,7 +10,7 @@ static const ci_hs_controller_t _ci_controller[] = {
 };
 
 #define CI_HS_REG(_port)	((ci_hs_regs_t *)(uintptr_t)_ci_controller[_port].reg_base)
-#define CI_DCD_INT_ENABLE(_p)	gic_unmask(_ci_controller[_p].irqnum)
-#define CI_DCD_INT_DISABLE(_p)	gic_mask(_ci_controller[_p].irqnum)
+#define CI_DCD_INT_ENABLE(_p)	irq_unmask(_ci_controller[_p].irqnum)
+#define CI_DCD_INT_DISABLE(_p)	irq_mask(_ci_controller[_p].irqnum)
 
 #endif

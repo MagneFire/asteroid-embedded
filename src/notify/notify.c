@@ -140,7 +140,7 @@ static void handle(const char *s, const char *end)
 		field(s, end, "su", n->summary, sizeof n->summary);
 		field(s, end, "bo", n->body, sizeof n->body);
 		field(s, end, "vb", n->vibrate, sizeof n->vibrate);
-		n->time = pmic_rtc_read();
+		n->time = rtc_read();
 		n->seq = ++serial;
 		log_printf("notify: %ld from %s: %s\n", (long)id, n->app, n->summary);
 	} else if (find_tag(s, end, "removed", &e)) {

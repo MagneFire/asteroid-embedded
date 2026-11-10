@@ -186,10 +186,10 @@ bool display_init(void)
 	if (panel_switched()) {
 		if (rpm_ldo_on(board->panel.io_ldo, board->panel.io_uv))
 			log_printf("display: l%u on not acknowledged\n", board->panel.io_ldo);
-		tlmm_set(board->panel.reset_gpio, 1);
-		tlmm_config(board->panel.reset_gpio, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
-		tlmm_set(board->panel.bias_gpio, 1);
-		tlmm_config(board->panel.bias_gpio, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		gpio_set(board->panel.reset_gpio, 1);
+		gpio_config(board->panel.reset_gpio, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		gpio_set(board->panel.bias_gpio, 1);
+		gpio_config(board->panel.bias_gpio, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	}
 	if (board->backlight && !board->backlight->init())
 		log_printf("display: no backlight\n");
@@ -511,21 +511,21 @@ static void panel_power(bool on)
 {
 	if (!on) {
 		delay_ms(PANEL_SLEEP_MS);
-		tlmm_set(board->panel.reset_gpio, 0);
-		tlmm_set(board->panel.bias_gpio, 0);
+		gpio_set(board->panel.reset_gpio, 0);
+		gpio_set(board->panel.bias_gpio, 0);
 		delay_ms(2);
 		rpm_ldo_off(board->panel.io_ldo);
 		return;
 	}
 	rpm_ldo_on(board->panel.io_ldo, board->panel.io_uv);
 	delay_ms(1);
-	tlmm_set(board->panel.bias_gpio, 1);
+	gpio_set(board->panel.bias_gpio, 1);
 	delay_ms(PANEL_BIAS_MS);
-	tlmm_set(board->panel.reset_gpio, 1);
+	gpio_set(board->panel.reset_gpio, 1);
 	delay_ms(PANEL_RESET_MS);
-	tlmm_set(board->panel.reset_gpio, 0);
+	gpio_set(board->panel.reset_gpio, 0);
 	delay_ms(1);
-	tlmm_set(board->panel.reset_gpio, 1);
+	gpio_set(board->panel.reset_gpio, 1);
 	delay_ms(PANEL_RESET_MS);
 	dsi_low_power(true);
 	dcs_sequence(board->panel.on, board->panel.on_n);

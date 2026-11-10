@@ -36,7 +36,7 @@ static uint32_t shown_timer, shown_sw;
 
 static void save_timer(uint32_t now)
 {
-	struct saved_timer v = { timer_set, timer_left, timer_end ? pmic_rtc_read() + (timer_end - now + 500) / 1000 : 0 };
+	struct saved_timer v = { timer_set, timer_left, timer_end ? rtc_read() + (timer_end - now + 500) / 1000 : 0 };
 	kv_set(KV_TIMER, &v, sizeof v);
 }
 
@@ -44,7 +44,7 @@ static void save_stopwatch(uint32_t now)
 {
 	struct saved_stopwatch v = {
 		.acc_ms = sw_acc,
-		.start_rtc = sw_running ? pmic_rtc_read() - (now - sw_start) / 1000 : 0,
+		.start_rtc = sw_running ? rtc_read() - (now - sw_start) / 1000 : 0,
 		.running = sw_running,
 		.laps = laps,
 	};
@@ -57,7 +57,7 @@ static void load_timer(void)
 	struct saved_timer v;
 	if (kv_get(KV_TIMER, &v, sizeof v) != sizeof v || !v.set_ms)
 		return;
-	uint32_t rtc = pmic_rtc_read();
+	uint32_t rtc = rtc_read();
 	timer_set = v.set_ms;
 	timer_left = v.end_rtc && v.end_rtc <= rtc ? v.set_ms : v.left_ms;
 	if (v.end_rtc > rtc)
@@ -71,7 +71,7 @@ static void load_stopwatch(void)
 	unsigned head = offsetof(struct saved_stopwatch, lap_ms);
 	if (n < (int)head || v.laps > LAPS || n != (int)(head + v.laps * sizeof v.lap_ms[0]))
 		return;
-	uint32_t rtc = pmic_rtc_read();
+	uint32_t rtc = rtc_read();
 	sw_acc = v.acc_ms + (v.running && rtc > v.start_rtc ? (rtc - v.start_rtc) * 1000 : 0);
 	sw_running = v.running;
 	sw_start = time_ms();
@@ -175,7 +175,7 @@ bool clockapps_event(const struct ui_event *e, uint32_t now)
 		if (!ringing)
 			return true;
 		if (a == UI_ALARM_SNOOZE && !ring_timer)
-			alarm_snooze(pmic_rtc_read());
+			alarm_snooze(rtc_read());
 		log_printf("alarm: %s\n", a == UI_ALARM_SNOOZE ? "snoozed" : "dismissed");
 		ringing = false;
 		return true;
@@ -192,7 +192,7 @@ bool clockapps_tick(uint32_t now)
 	bool wake = false;
 	if (now - check_t >= 1000) {
 		check_t = now;
-		if (alarm_check(pmic_rtc_read()) && have_ui) {
+		if (alarm_check(rtc_read()) && have_ui) {
 			log_printf("alarm: ringing\n");
 			ringing = true;
 			ring_timer = false;
@@ -213,7 +213,7 @@ bool clockapps_tick(uint32_t now)
 	}
 	if (ringing && now - ring_t >= RING_MS) {
 		if (!ring_timer)
-			alarm_snooze(pmic_rtc_read());
+			alarm_snooze(rtc_read());
 		log_printf("alarm: %s\n", ring_timer ? "stopped ringing" : "snoozed");
 		ringing = false;
 	}
@@ -250,7 +250,7 @@ void clockapps_sleep(void)
 	if (!ringing)
 		return;
 	if (!ring_timer)
-		alarm_snooze(pmic_rtc_read());
+		alarm_snooze(rtc_read());
 	log_printf("alarm: %s\n", ring_timer ? "dismissed" : "snoozed");
 	ringing = false;
 }
@@ -262,7 +262,7 @@ bool clockapps_ringing(void)
 
 uint32_t clockapps_next_ms(uint32_t now)
 {
-	uint32_t next = UINT32_MAX, alarm = alarm_next_s(pmic_rtc_read());
+	uint32_t next = UINT32_MAX, alarm = alarm_next_s(rtc_read());
 	if (alarm != UINT32_MAX)
 		next = !alarm ? 1 : alarm > UINT32_MAX / 1000 ? UINT32_MAX : alarm * 1000;
 	if (timer_end) {

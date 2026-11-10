@@ -108,7 +108,7 @@ static bool charger_run(uint32_t now)
 
 static bool notify_run(uint32_t now)
 {
-	notify_tick(pmic_rtc_read());
+	notify_tick(rtc_read());
 	sched_after(&notify_task, now, 1000);
 	return false;
 }
@@ -299,7 +299,7 @@ static void key_pressed(void)
 void app_key(uint32_t now, bool irq)
 {
 	static uint32_t key_up_t;
-	bool key = pmic_power_key();
+	bool key = power_key();
 	if (key != key_was) {
 		key_was = key;
 		if (key) {
@@ -363,7 +363,7 @@ void app_ui_events(uint32_t now)
 			game_move(a, now);
 			break;
 		case UI_EVENT_SNOOZE:
-			notify_snooze(a, pmic_rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);
+			notify_snooze(a, rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);
 			break;
 		case UI_EVENT_BRIGHTNESS:
 			if (a >= 10 && a <= 100) {

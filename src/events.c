@@ -43,7 +43,7 @@ void events_append(char *buf, unsigned cap, const char *line)
 static void note(const char *what)
 {
 	char line[320];
-	snprintf(line, sizeof line, "%lu %s", pmic_rtc_read(), what);
+	snprintf(line, sizeof line, "%lu %s", rtc_read(), what);
 	events_append(history, EVENTS_MAX, line);
 	unsaved = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
 }
@@ -75,7 +75,7 @@ void events_poll(uint32_t now)
 		cable = batt_cable();
 		usb = batt_usb();
 		char what[300];
-		snprintf(what, sizeof what, "boot cable %d usb %d, %s%s", cable, usb, pmic_pon_reason(),
+		snprintf(what, sizeof what, "boot cable %d usb %d, %s%s", cable, usb, boot_reason(),
 			 log_ring_lost() ? ", no log from the previous boot" : "");
 		note(what);
 		sample_t = now;

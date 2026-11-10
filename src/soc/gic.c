@@ -24,7 +24,7 @@ static unsigned nirq;
 static uint32_t spurious;
 const uint32_t *irq_frame;
 
-void gic_init(void)
+void irq_ctrl_init(void)
 {
 	writel(0, GICD_CTLR);
 	nirq = ((readl(GICD_TYPER) & 0x1f) + 1) * 32;
@@ -62,7 +62,7 @@ void gic_cpu_restore(uint32_t ppis)
 	writel(1, GICC_CTLR);
 }
 
-void gic_enable(unsigned id, void (*fn)(void))
+void irq_attach(unsigned id, void (*fn)(void))
 {
 	if (id >= nirq)
 		return;
@@ -70,25 +70,25 @@ void gic_enable(unsigned id, void (*fn)(void))
 	writel(BIT(id % 32), GICD_ISENABLER(id / 32));
 }
 
-void gic_set_edge(unsigned id)
+void irq_set_edge(unsigned id)
 {
 	if (id < nirq)
 		writel(readl(GICD_ICFGR(id / 16)) | BIT(id % 16 * 2 + 1), GICD_ICFGR(id / 16));
 }
 
-void gic_mask(unsigned id)
+void irq_mask(unsigned id)
 {
 	if (id < nirq)
 		writel(BIT(id % 32), GICD_ICENABLER(id / 32));
 }
 
-void gic_unmask(unsigned id)
+void irq_unmask(unsigned id)
 {
 	if (id < nirq)
 		writel(BIT(id % 32), GICD_ISENABLER(id / 32));
 }
 
-void gic_disable(unsigned id)
+void irq_detach(unsigned id)
 {
 	if (id >= nirq)
 		return;

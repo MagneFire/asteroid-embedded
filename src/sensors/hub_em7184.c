@@ -30,7 +30,7 @@
 #include "hub.h"
 #include "power.h"
 
-#define QUP		(board->hub_pins.i2c.qup)
+#define BUS		(board->hub_pins.i2c.bus)
 #define ADDR		(board->hub_pins.i2c.addr)
 #define GPIO_IRQ	(board->hub_pins.irq)
 #define MPM_PIN_IRQ	(board->hub_pins.mpm)
@@ -147,7 +147,7 @@ static unsigned remaining, offset, chunk = FIFO_WINDOW;
 
 static int rd(uint8_t reg, void *p, unsigned n)
 {
-	return i2c_qup_xfer(QUP, ADDR, &reg, 1, p, n);
+	return i2c_xfer(BUS, ADDR, &reg, 1, p, n);
 }
 
 static int wr(uint8_t reg, const void *p, unsigned n)
@@ -155,7 +155,7 @@ static int wr(uint8_t reg, const void *p, unsigned n)
 	uint8_t buf[1 + PARAM_WRITE_MAX];
 	buf[0] = reg;
 	memcpy(buf + 1, p, n);
-	return i2c_qup_xfer(QUP, ADDR, buf, n + 1, NULL, 0);
+	return i2c_xfer(BUS, ADDR, buf, n + 1, NULL, 0);
 }
 
 static int wr8(uint8_t reg, uint8_t v)
@@ -372,7 +372,7 @@ static void chain_end(int err)
 	check_due = true;
 	busy = false;
 	if (!claimed)
-		tlmm_irq_enable(GPIO_IRQ, true);
+		gpio_irq_enable(GPIO_IRQ, true);
 }
 
 static void piece_done(int err, void *ctx);
@@ -383,7 +383,7 @@ static void fifo_next(void)
 	while (remaining) {
 		unsigned n = piece(remaining, offset);
 		reg = (uint8_t)(offset % FIFO_WINDOW);
-		int r = i2c_qup_start(QUP, ADDR, &reg, 1, rx, n, piece_done, (void *)(uintptr_t)n);
+		int r = i2c_start(BUS, ADDR, &reg, 1, rx, n, piece_done, (void *)(uintptr_t)n);
 		if (!r)
 			return;
 		if (r != -3 || chunk == 1) {
@@ -430,7 +430,7 @@ static void wake_done(int err, void *ctx)
 		}
 		wake_prev = wake_buf;
 	}
-	if (i2c_qup_start(QUP, ADDR, &reg, 1, count_buf, 2, count_done, NULL))
+	if (i2c_start(BUS, ADDR, &reg, 1, count_buf, 2, count_done, NULL))
 		chain_end(-1);
 }
 
@@ -442,9 +442,9 @@ static void chain_start(void)
 	static const uint8_t reg = REG_WAKE_SRC;
 	busy = true;
 	chains++;
-	tlmm_irq_enable(GPIO_IRQ, false);
-	tlmm_irq_ack(GPIO_IRQ);
-	if (i2c_qup_start(QUP, ADDR, &reg, 1, &wake_buf, 1, wake_done, NULL))
+	gpio_irq_enable(GPIO_IRQ, false);
+	gpio_irq_ack(GPIO_IRQ);
+	if (i2c_start(BUS, ADDR, &reg, 1, &wake_buf, 1, wake_done, NULL))
 		chain_end(-1);
 }
 
@@ -452,7 +452,7 @@ static void pin_irq(unsigned pin)
 {
 	irqs++;
 	if (busy)
-		tlmm_irq_enable(GPIO_IRQ, false);
+		gpio_irq_enable(GPIO_IRQ, false);
 	else
 		chain_start();
 }
@@ -462,9 +462,9 @@ static void pin_irq(unsigned pin)
 static void claim(void)
 {
 	claimed = true;
-	tlmm_irq_enable(GPIO_IRQ, false);
+	gpio_irq_enable(GPIO_IRQ, false);
 	while (busy) {
-		i2c_qup_poll(QUP);
+		i2c_poll(BUS);
 		wdt_feed();
 	}
 }
@@ -473,7 +473,7 @@ static void release(void)
 {
 	claimed = false;
 	if (state == S_READY)
-		tlmm_irq_enable(GPIO_IRQ, true);
+		gpio_irq_enable(GPIO_IRQ, true);
 }
 
 /* CRC-32 (MSB first, polynomial 0x04c11db7, no final xor) of the image
@@ -528,7 +528,7 @@ static bool boot(void)
 		unsigned n = size - off < step ? size - off : step;
 		for (unsigned i = 0; i < n; i++)
 			buf[1 + i] = fw[off + (i ^ 3)];
-		r = i2c_qup_xfer(QUP, ADDR, buf, n + 1, NULL, 0);
+		r = i2c_xfer(BUS, ADDR, buf, n + 1, NULL, 0);
 		if (r == -3 && step > 4) {
 			step /= 2;
 			r = 0;
@@ -598,20 +598,20 @@ static void configure(void)
 	if (rd(REG_WAKE_SRC, &wake_prev, 1))
 		wake_prev = 0;
 	chunk = FIFO_WINDOW;
-	tlmm_irq_config(GPIO_IRQ, TLMM_IRQ_EDGE_RISING, pin_irq);
-	spm_wake_pin(MPM_PIN_IRQ, true, true);
+	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_EDGE_RISING, pin_irq);
+	wake_pin(MPM_PIN_IRQ, true, true);
 	ap_suspended = false;
 	check_due = false;
 	enter(S_READY);
-	tlmm_irq_enable(GPIO_IRQ, true);
+	gpio_irq_enable(GPIO_IRQ, true);
 	kick = true;
 }
 
 static void restart(const char *why, unsigned v)
 {
 	log_printf("hub: %s %02x, restarting\n", why, v);
-	tlmm_irq_enable(GPIO_IRQ, false);
-	spm_wake_pin(MPM_PIN_IRQ, false, true);
+	gpio_irq_enable(GPIO_IRQ, false);
+	wake_pin(MPM_PIN_IRQ, false, true);
 	enter(S_FAILED);
 	if (++restarts > RESTARTS || !boot()) {
 		log_printf("hub: given up after %u restarts\n", restarts);
@@ -659,8 +659,8 @@ static void log_pending(void)
 
 static bool em7184_init(void)
 {
-	tlmm_config(GPIO_IRQ, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
-	int r = i2c_qup_init(QUP, board->hub_pins.i2c.sda, board->hub_pins.i2c.scl, board->hub_pins.i2c.func, BUS_HZ);
+	gpio_config(GPIO_IRQ, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
+	int r = i2c_init(BUS, board->hub_pins.i2c.sda, board->hub_pins.i2c.scl, board->hub_pins.i2c.func, BUS_HZ);
 	if (!r)
 		r = rd(REG_PRODUCT_ID, product, sizeof product);
 	if (r) {
@@ -669,7 +669,7 @@ static bool em7184_init(void)
 		return false;
 	}
 	bus_ok = true;
-	log_printf("hub: product %02x revision %02x, irq %u\n", product[0], product[1], tlmm_get(GPIO_IRQ));
+	log_printf("hub: product %02x revision %02x, irq %u\n", product[0], product[1], gpio_get(GPIO_IRQ));
 	if (!boot()) {
 		enter(S_FAILED);
 		return false;
@@ -682,7 +682,7 @@ static void em7184_poll(void)
 {
 	if (state == S_OFF || state == S_FAILED)
 		return;
-	i2c_qup_poll(QUP);
+	i2c_poll(BUS);
 	log_pending();
 	uint32_t now = time_ms();
 	if (state == S_START) {
@@ -716,7 +716,7 @@ static void em7184_poll(void)
 		check_t = now;
 		health();
 	}
-	if (!busy && (kick || (tlmm_get(GPIO_IRQ) && now - chain_end_t >= PIN_STUCK_MS))) {
+	if (!busy && (kick || (gpio_get(GPIO_IRQ) && now - chain_end_t >= PIN_STUCK_MS))) {
 		uint32_t flags = irq_save();
 		if (!busy) {
 			kick = false;
@@ -806,7 +806,7 @@ static bool em7184_can_sleep(void)
 		return false;
 	if (state != S_READY)
 		return true;
-	return !busy && !kick && !(tlmm_get(GPIO_IRQ) && time_ms() - chain_end_t < 5 * PIN_STUCK_MS);
+	return !busy && !kick && !(gpio_get(GPIO_IRQ) && time_ms() - chain_end_t < 5 * PIN_STUCK_MS);
 }
 
 /* Told once per sleep, not at every cluster collapse: the flag is
@@ -852,7 +852,7 @@ static void em7184_status(void (*say)(const char *fmt, ...))
 	    "piece %u, ap %s, irq pin %u\n",
 	    steps == HUB_NONE ? -1L : (long)steps, (unsigned long)tilts, (unsigned long)irqs, (unsigned long)chains,
 	    (unsigned long)fifo_bytes, (unsigned long)events, (unsigned long)overflows, (unsigned long)corrupt_reads,
-	    (unsigned long)errors, chunk, ap_suspended ? "suspended" : "awake", tlmm_get(GPIO_IRQ));
+	    (unsigned long)errors, chunk, ap_suspended ? "suspended" : "awake", gpio_get(GPIO_IRQ));
 	say("hub: accelerometer %s %d %d %d\n", accel_on ? "on" : "off", accel[0], accel[1], accel[2]);
 }
 

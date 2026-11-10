@@ -82,11 +82,11 @@ void pmic_init(void)
 	}
 }
 
-const char *pmic_pon_reason(void) { return reason; }
+const char *boot_reason(void) { return reason; }
 
 /* Makes the next PS_HOLD drop power the watch off instead of resetting
  * it; the power key, or a charger, turns it back on. */
-void pmic_shutdown_mode(void)
+void power_off_arm(void)
 {
 	pmic_write(PON_PS_HOLD_RESET_CTL2, 0);
 	delay_us(300);
@@ -97,7 +97,7 @@ void pmic_shutdown_mode(void)
 /* Power key: the PON block's real-time status, bit 0 = KPDPWR_N low. */
 #define PON_INT_RT_STS		0x000810
 
-bool pmic_power_key(void)
+bool power_key(void)
 {
 	return pmic_read(PON_INT_RT_STS) & BIT(0);
 }
@@ -134,7 +134,7 @@ static void spmi_periph_irq(void)
 	}
 }
 
-void pmic_power_key_irq_init(void)
+void power_key_irq_init(void)
 {
 	pon_apid = spmi_apid(0, 0x08);
 	if (pon_apid < 0) {
@@ -147,12 +147,12 @@ void pmic_power_key_irq_init(void)
 	pmic_write(PON_INT_LATCHED_CLR, PON_KPDPWR);
 	pmic_write(PON_INT_EN_SET, PON_KPDPWR);
 	spmi_irq_clear(pon_apid, spmi_irq_status(pon_apid));
-	gic_enable(IRQ_SPMI_PERIPH, spmi_periph_irq);
+	irq_attach(IRQ_SPMI_PERIPH, spmi_periph_irq);
 	spmi_irq_enable(pon_apid, true);
 }
 
 /* Whether the key interrupt fired since the last call. */
-bool pmic_power_key_irq(void)
+bool power_key_irq(void)
 {
 	if (!key_irq)
 		return false;
@@ -171,7 +171,7 @@ bool pmic_power_key_irq(void)
 #define RTC_READ		0x006048
 #define RTC_ENABLE		BIT(7)
 
-uint32_t pmic_rtc_read(void)
+uint32_t rtc_read(void)
 {
 	uint8_t b[4];
 	spmi_read(RTC_READ, b, 4);
@@ -185,7 +185,7 @@ uint32_t pmic_rtc_read(void)
 	return s;
 }
 
-void pmic_rtc_write(uint32_t secs)
+void rtc_write(uint32_t secs)
 {
 	uint8_t ctrl = pmic_read(RTC_CTRL);
 	uint8_t b[4] = { (uint8_t)secs, (uint8_t)(secs >> 8), (uint8_t)(secs >> 16), (uint8_t)(secs >> 24) };
@@ -431,7 +431,7 @@ bool pmic_charging(void)
 	return charging_now(pmic_read(SMBB_CHGR + SMBB_RT_STS), pmic_read(SMBB_BAT_IF + SMBB_RT_STS));
 }
 
-bool pmic_usb_present(void)
+bool vbus_present(void)
 {
 	return pmic_read(SMBB_USB + SMBB_RT_STS) & USB_RT_VALID;
 }
@@ -444,7 +444,7 @@ bool pmic_usb_present(void)
 #define USB_INT_LATCHED_CLR	(SMBB_USB + 0x14)
 #define USB_INT_EN_SET		(SMBB_USB + 0x15)
 
-void pmic_usb_irq_init(void)
+void vbus_irq_init(void)
 {
 	usb_apid = spmi_apid(0, SMBB_USB >> 8);
 	if (usb_apid < 0) {
@@ -461,7 +461,7 @@ void pmic_usb_irq_init(void)
 }
 
 /* Whether the USB interrupt fired since the last call. */
-bool pmic_usb_irq(void)
+bool vbus_irq(void)
 {
 	if (!usb_irq)
 		return false;
@@ -476,7 +476,7 @@ int pmic_battery_status(void)
 {
 	if (pmic_charging())
 		return BAT_CHARGING;
-	return pmic_usb_present() && chg_done ? BAT_FULL : BAT_DISCHARGING;
+	return vbus_present() && chg_done ? BAT_FULL : BAT_DISCHARGING;
 }
 
 void pmic_charger_configure(void)

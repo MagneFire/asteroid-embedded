@@ -109,7 +109,7 @@ const struct board board_sturgeon = {
 	.battery_driver = &battery_pmic,
 	/* Synaptics RMI4 on BLSP1 QUP5. */
 	.touch = &touch_rmi4,
-	.touch_pins = { .i2c = { .qup = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x20 }, .irq = 17, .reset = 16, .mpm = 8 },
+	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x20 }, .irq = 17, .reset = 16, .mpm = 8 },
 	/* STM32 sensor hub on BLSP1 UART1 (gpio 0-3, function 2). */
 	.hub = &hub_stm32,
 	.hub_pins = {
@@ -118,7 +118,7 @@ const struct board board_sturgeon = {
 	},
 	/* DRV2605 on BLSP1 QUP2. */
 	.motor = &motor_drv2605,
-	.motor_pins = { .i2c = { .qup = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x5a }, .trigger = 59, .enable = 60 },
+	.motor_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x5a }, .trigger = 59, .enable = 60 },
 	/* TFA9895 on BLSP1 QUP3. */
-	.speaker = { .qup = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x34 },
+	.speaker = { .bus = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x34 },
 };

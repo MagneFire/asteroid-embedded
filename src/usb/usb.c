@@ -443,7 +443,7 @@ static void usb_collapse(const char *why)
 	}
 	tud_deinit(0);
 	adb_state_clear();
-	gic_mask(IRQ_USB_HS);
+	irq_mask(IRQ_USB_HS);
 	usb_down = true;
 	rest_gave_up = !phy_rest();
 	log_printf("usb: %s, %s\n", why, rest_gave_up ? "phy did not enter low power mode, clocks left on" : "phy in low power mode");
@@ -472,7 +472,7 @@ static const char *stack_up(void)
 static void usb_start_failed(const char *fail, uint32_t t0)
 {
 	tud_deinit(0);
-	gic_mask(IRQ_USB_HS);
+	irq_mask(IRQ_USB_HS);
 	usb_down = true;
 	if (!usb_clocks_off)
 		phy_rest();
@@ -613,8 +613,8 @@ void usb_init(const char *serialno)
 	serial[n] = 0;
 	uint32_t t0 = time_ms();
 	const char *fail = controller_init() ? NULL : "controller reset";
-	gic_enable(IRQ_USB_HS, usb_irq);
-	gic_mask(IRQ_USB_HS);
+	irq_attach(IRQ_USB_HS, usb_irq);
+	irq_mask(IRQ_USB_HS);
 	static char banner[96];
 	snprintf(banner, sizeof banner, "ro.product.name=%s;ro.product.model=asteroid-embedded;ro.product.device=%s", board->name,
 		 board->name);

@@ -25,7 +25,7 @@ void wdt_arm(uint32_t bark_ms, uint32_t bite_ms, void (*bark)(void))
 	writel(ticks(bite_ms), WDT_BITE_TIME);
 	writel(1, WDT_EN);
 	if (bark)
-		gic_enable(IRQ_WDT_BARK, bark);
+		irq_attach(IRQ_WDT_BARK, bark);
 }
 
 void wdt_stop(void)

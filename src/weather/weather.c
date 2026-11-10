@@ -37,7 +37,7 @@ void weather_write(uint16_t chr, const uint8_t *p, unsigned n)
 	case 0x8002:
 		memset(state.id, 0, sizeof state.id);
 		state.days = (uint16_t)values(state.id, p, n);
-		state.time = pmic_rtc_read();
+		state.time = rtc_read();
 		break;
 	case 0x8003:
 		values(state.min, p, n);

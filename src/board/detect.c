@@ -47,9 +47,9 @@ static bool smelt_gauge_answers(void)
 {
 	const struct board *s = &board_smelt;
 	uint8_t reg = MAX17050_DEVNAME, id[2];
-	if (i2c_qup_init(s->gauge.i2c.qup, s->gauge.i2c.sda, s->gauge.i2c.scl, s->gauge.i2c.func, 200000))
+	if (i2c_init(s->gauge.i2c.bus, s->gauge.i2c.sda, s->gauge.i2c.scl, s->gauge.i2c.func, 200000))
 		return false;
-	return !i2c_qup_xfer(s->gauge.i2c.qup, s->gauge.i2c.addr, &reg, 1, id, 2) && (id[0] | id[1] << 8) == MAX17050_DEVNAME_ID;
+	return !i2c_xfer(s->gauge.i2c.bus, s->gauge.i2c.addr, &reg, 1, id, 2) && (id[0] | id[1] << 8) == MAX17050_DEVNAME_ID;
 }
 
 void board_detect(uint32_t machtype, const void *fdt)

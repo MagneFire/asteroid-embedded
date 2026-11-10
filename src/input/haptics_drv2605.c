@@ -6,7 +6,7 @@
 #include "asteroid.h"
 #include "storage/storage.h"
 
-#define QUP			(board->motor_pins.i2c.qup)
+#define BUS			(board->motor_pins.i2c.bus)
 #define ADDR			(board->motor_pins.i2c.addr)
 #define GPIO_TRIGGER		(board->motor_pins.trigger)
 #define GPIO_ENABLE		(board->motor_pins.enable)
@@ -39,12 +39,12 @@
 static int write_reg(uint8_t reg, uint8_t val)
 {
 	uint8_t b[2] = { reg, val };
-	return i2c_qup_xfer(QUP, ADDR, b, 2, NULL, 0);
+	return i2c_xfer(BUS, ADDR, b, 2, NULL, 0);
 }
 
 static int read_reg(uint8_t reg, uint8_t *val)
 {
-	return i2c_qup_xfer(QUP, ADDR, &reg, 1, val, 1);
+	return i2c_xfer(BUS, ADDR, &reg, 1, val, 1);
 }
 
 static int update_reg(uint8_t reg, uint8_t mask, uint8_t val)
@@ -74,12 +74,12 @@ static int calibrate(uint8_t *status)
 
 static bool drv2605_init(void)
 {
-	tlmm_config(GPIO_TRIGGER, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_set(GPIO_TRIGGER, 0);
-	tlmm_config(GPIO_ENABLE, 0, TLMM_OUTPUT, TLMM_PULL_DOWN, 2);
-	tlmm_set(GPIO_ENABLE, 1);
+	gpio_config(GPIO_TRIGGER, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_set(GPIO_TRIGGER, 0);
+	gpio_config(GPIO_ENABLE, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	gpio_set(GPIO_ENABLE, 1);
 	delay_ms(10);
-	if (i2c_qup_init(QUP, board->motor_pins.i2c.sda, board->motor_pins.i2c.scl, board->motor_pins.i2c.func, 384000))
+	if (i2c_init(BUS, board->motor_pins.i2c.sda, board->motor_pins.i2c.scl, board->motor_pins.i2c.func, 384000))
 		return false;
 	uint8_t status, feedback, bemf;
 	int r;

@@ -52,7 +52,7 @@ void action_setting_toggled(int s)
 	} else if (s == UI_REBOOT || s == UI_POWER_OFF) {
 		log_printf("%s\n", s == UI_REBOOT ? "rebooting" : "powering off");
 		if (s == UI_POWER_OFF)
-			pmic_shutdown_mode();
+			power_off_arm();
 		reboot();
 	} else if (s == UI_PAIR_REJECT || s == UI_PAIR_ACCEPT) {
 		bt_pairing_reply(s == UI_PAIR_ACCEPT);
@@ -83,7 +83,7 @@ void action_setting_toggled(int s)
 void action_set_clock(int kind, int v)
 {
 	struct civil c;
-	civil_from_epoch(pmic_rtc_read(), &c);
+	civil_from_epoch(rtc_read(), &c);
 	if (kind == UI_EVENT_TIME_SET) {
 		if (v < 0 || v >= 24 * 60)
 			return;
@@ -100,7 +100,7 @@ void action_set_clock(int kind, int v)
 		c.month = month;
 		c.year = year;
 	}
-	pmic_rtc_write(epoch_from_civil(&c));
+	rtc_write(epoch_from_civil(&c));
 	log_printf("clock set to %04lu-%02lu-%02lu %02lu:%02lu\n", c.year, c.month, c.day, c.hour, c.minute);
 }
 

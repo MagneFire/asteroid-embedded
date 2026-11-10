@@ -111,11 +111,11 @@ const struct board board_sparrow = {
 	/* ITE IT7260 on BLSP1 QUP5, interrupt on gpio 17 (MPM pin 8), reset on
 	 * gpio 16. */
 	.touch = &touch_it7260,
-	.touch_pins = { .i2c = { .qup = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x46 }, .irq = 17, .reset = 16, .mpm = 8 },
+	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x46 }, .irq = 17, .reset = 16, .mpm = 8 },
 	/* PNI EM7184 on BLSP1 QUP2 (gpio 6/7, function 3), interrupt on gpio
 	 * 111 (MPM pin 54); its firmware is uploaded at every boot. */
 	.hub = &hub_em7184,
-	.hub_pins = { .i2c = { .qup = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x28 }, .irq = 111, .mpm = 54 },
+	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x28 }, .irq = 111, .mpm = 54 },
 	/* The PM8226 vibrator. */
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 3000 },

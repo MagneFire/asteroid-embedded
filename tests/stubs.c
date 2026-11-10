@@ -29,18 +29,18 @@ void display_sleep(void) { stub_asleep = true; }
 void display_wake(void) { stub_asleep = false; }
 uint32_t batt_mv(void) { return 3900; }
 const char *batt_status(void) { return "discharging"; }
-uint32_t pmic_rtc_read(void) { return stub_rtc; }
+uint32_t rtc_read(void) { return stub_rtc; }
 uint8_t pmic_read(uint32_t addr) { return 0; }
 void pmic_write(uint32_t addr, uint8_t val) {}
 int pmic_vadc_raw(uint8_t chan, uint8_t settle) { return 0; }
 const struct battery_driver battery_max17050;
 bool gauge_model_load(void) { return false; }
-int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }
-void pmic_rtc_write(uint32_t secs) { stub_rtc = secs; }
+int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }
+void rtc_write(uint32_t secs) { stub_rtc = secs; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
-void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
-unsigned tlmm_get(unsigned n) { return 0; }
-void tlmm_set(unsigned n, unsigned v) {}
+void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
+unsigned gpio_get(unsigned n) { return 0; }
+void gpio_set(unsigned n, unsigned v) {}
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	memset(info, 0, sizeof *info);

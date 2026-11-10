@@ -225,7 +225,7 @@ bool gpu_init(void)
 	gpu_write(REG_RBBM_PERFCTR_CTL, 0x01);
 	gpu_write(REG_RBBM_INT_CLEAR_CMD, 0xffffffff);
 	gpu_write(REG_RBBM_INT_0_MASK, RBBM_INT_CP_RB);
-	gic_enable(IRQ_GPU, gpu_irq);
+	irq_attach(IRQ_GPU, gpu_irq);
 
 	memset((void *)ring, 0, RING_WORDS * 4);
 	wptr = submitted = 0;
@@ -291,7 +291,7 @@ void gpu_suspend(void)
 		;
 	gpu_write(REG_RBBM_INT_0_MASK, 0);
 	gpu_write(REG_RBBM_INT_CLEAR_CMD, 0xffffffff);
-	gic_mask(IRQ_GPU);
+	irq_mask(IRQ_GPU);
 	gpu_write(REG_CP_ME_CNTL, CP_ME_CNTL_HALT);
 	ready = false;
 	writel(readl(MMSS_OXILI_GFX3D_CBCR) & ~CBCR_ENABLE, MMSS_OXILI_GFX3D_CBCR);

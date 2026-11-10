@@ -73,7 +73,7 @@ static int set_time(const uint8_t *p, unsigned n)
 	if (c.month > 12 || !c.day || c.day > 31 || c.hour > 23 || c.minute > 59 || c.second > 60)
 		return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
 	uint32_t secs = epoch_from_civil(&c);
-	pmic_rtc_write(secs);
+	rtc_write(secs);
 	hub_set_time();
 	log_printf("bt: time set to %04lu-%02lu-%02lu %02lu:%02lu:%02lu (rtc %lu)\n", c.year, c.month, c.day, c.hour,
 		   c.minute, c.second, secs);

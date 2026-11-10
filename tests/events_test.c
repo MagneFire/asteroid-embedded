@@ -36,8 +36,8 @@ int kv_set(const char *key, const void *val, unsigned len)
 }
 bool batt_cable(void) { return fake_cable; }
 bool batt_usb(void) { return fake_usb; }
-uint32_t pmic_rtc_read(void) { return fake_rtc; }
-const char *pmic_pon_reason(void) { return "pon 02 smpl"; }
+uint32_t rtc_read(void) { return fake_rtc; }
+const char *boot_reason(void) { return "pon 02 smpl"; }
 bool log_ring_lost(void) { return fake_lost; }
 void log_puts(const char *s) { strncat(logged, s, sizeof logged - strlen(logged) - 1); }
 void log_printf(const char *fmt, ...) {}

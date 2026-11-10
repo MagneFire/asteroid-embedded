@@ -49,7 +49,7 @@ void main(uint32_t machtype, const void *fdt)
 {
 	cpu_clock_init();
 	mmu_init();
-	gic_init();
+	irq_ctrl_init();
 	timer_init();
 	dload_clear();
 	int scm = scm_wdog_debug_disable();
@@ -66,7 +66,7 @@ void main(uint32_t machtype, const void *fdt)
 		rpm_sleep_votes();
 		rpm_unused_rails_off();
 	}
-	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), pmic_pon_reason());
+	log_printf("spmi arbiter %08lx, %s\n", spmi_version(), boot_reason());
 	bool have_display = display_init();
 	if (have_display)
 		fbcon_init();
@@ -82,7 +82,7 @@ void main(uint32_t machtype, const void *fdt)
 
 	batt_init();
 	light_init();
-	spm_init();
+	cpu_idle_init();
 	bool have_gpu = gpu_init() && gpu_selftest();
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
 					       fb.width, fb.height);
@@ -100,8 +100,8 @@ void main(uint32_t machtype, const void *fdt)
 	log_printf("ui: %s\n", have_ui ? "ready" : "not started");
 	if (have_display && !have_ui)
 		log_set_sink(sink_fbcon);
-	tlmm_irq_init();
-	pmic_power_key_irq_init();
+	gpio_irq_init();
+	power_key_irq_init();
 	batt_cable_irq_init();
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
@@ -113,7 +113,7 @@ void main(uint32_t machtype, const void *fdt)
 	usb_init(serialno);
 	if (have_display)
 		display_set_idle_hook(usb_poll);
-	log_printf("rtc %lu, battery %lu mV, %s\n", pmic_rtc_read(), batt_mv(), batt_status());
+	log_printf("rtc %lu, battery %lu mV, %s\n", rtc_read(), batt_mv(), batt_status());
 
 	uint32_t t0 = time_ms();
 	frame_init(have_ui, have_gpu, t0);
@@ -139,7 +139,7 @@ void main(uint32_t machtype, const void *fdt)
 		if (have_haptics)
 			haptics_poll();
 		app_touch(now);
-		bool key_irq = pmic_power_key_irq();
+		bool key_irq = power_key_irq();
 		app_cable(now);
 		events_poll(now);
 		app_key(now, key_irq);

@@ -6,7 +6,7 @@
 #include "asteroid.h"
 #include "display/lm3535.h"
 
-#define QUP		(board->backlight_pins.i2c.qup)
+#define BUS		(board->backlight_pins.i2c.bus)
 #define ADDR		(board->backlight_pins.i2c.addr)
 #define GPIO_ENABLE	(board->backlight_pins.enable)
 #define BUS_HZ		200000
@@ -29,12 +29,12 @@ static bool lit;
 static int wr(uint8_t reg, uint8_t val)
 {
 	uint8_t b[2] = { reg, val };
-	return i2c_qup_xfer(QUP, ADDR, b, 2, NULL, 0);
+	return i2c_xfer(BUS, ADDR, b, 2, NULL, 0);
 }
 
 static void banks_on(void)
 {
-	tlmm_set(GPIO_ENABLE, 1);
+	gpio_set(GPIO_ENABLE, 1);
 	delay_ms(1);
 	wr(REG_ENABLE, BANKS_ON);
 	if (revision == REVISION_2 || revision == REVISION_3)
@@ -44,17 +44,17 @@ static void banks_on(void)
 
 static bool lm3535_init(void)
 {
-	tlmm_set(GPIO_ENABLE, 1);
-	tlmm_config(GPIO_ENABLE, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 8);
+	gpio_set(GPIO_ENABLE, 1);
+	gpio_config(GPIO_ENABLE, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 8);
 	delay_ms(1);
 	uint8_t reg = REG_ALS_CTRL;
-	int r = i2c_qup_init(QUP, board->backlight_pins.i2c.sda, board->backlight_pins.i2c.scl,
+	int r = i2c_init(BUS, board->backlight_pins.i2c.sda, board->backlight_pins.i2c.scl,
 			     board->backlight_pins.i2c.func, BUS_HZ);
 	if (!r)
-		r = i2c_qup_xfer(QUP, ADDR, &reg, 1, NULL, 0);
+		r = i2c_xfer(BUS, ADDR, &reg, 1, NULL, 0);
 	delay_ms(1);
 	if (!r)
-		r = i2c_qup_xfer(QUP, ADDR, NULL, 0, &revision, 1);
+		r = i2c_xfer(BUS, ADDR, NULL, 0, &revision, 1);
 	if (r) {
 		log_printf("backlight: lm3535 not found (%d)\n", r);
 		return false;
@@ -74,7 +74,7 @@ static void lm3535_set_code(uint8_t code)
 	wr(REG_BRIGHT_A, code);
 	if (!code && lit) {
 		wr(REG_ENABLE, 0);
-		tlmm_set(GPIO_ENABLE, 0);
+		gpio_set(GPIO_ENABLE, 0);
 		lit = false;
 	}
 }

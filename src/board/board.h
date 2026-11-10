@@ -11,9 +11,10 @@ struct dcs_step;
 struct touch;
 struct max17050_model;
 
-/* An I2C device on a BLSP1 QUP. */
+/* An I2C device: its bus and, where the SoC routes them by hand, the pins
+ * and their function. */
 struct board_i2c {
-	uint8_t qup, sda, scl, func, addr;
+	uint8_t bus, sda, scl, func, addr;
 };
 
 /* A cell the fuel gauge knows, told apart by the pack's ID resistor:

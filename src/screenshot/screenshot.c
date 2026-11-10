@@ -68,7 +68,7 @@ void screenshot_poll(void)
 	encoding = false;
 	log_printf("screenshot: %lux%lu jpeg, %lu bytes in %lu ms\n", fb.width, fb.height, enc.len, time_ms() - started);
 	if (to_file)
-		adb_fs_write("screen.jpg", 0100644, pmic_rtc_read(), enc.out, enc.len);
+		adb_fs_write("screen.jpg", 0100644, rtc_read(), enc.out, enc.len);
 	else
 		bt_gatt_screenshot_send(enc.len ? enc.out : NULL, enc.len);
 }

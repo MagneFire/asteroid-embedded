@@ -645,7 +645,7 @@ check_cutoff:;
 	if (fake_low && soc == 0 && status != BAT_CHARGING)
 		soc = 1;
 out:
-	if (pmic_usb_present()) {
+	if (vbus_present()) {
 		if (now_sec() >= 30) {
 			int sum = 0;
 			for (int i = 0; i < 5; i++)
@@ -820,7 +820,7 @@ void bms_init(void)
 	uint8_t stored = pmic_read(BMS_SOC_STORAGE), iavg = pmic_read(BMS_IAVG_STORAGE);
 	int stored_soc = (stored >> 1) ? (stored >> 1) - 1 : NONE;
 	status = pmic_battery_status();
-	usb_was = pmic_usb_present();
+	usb_was = vbus_present();
 	shutdown_iavg_ma = MIN_IAVG_MA;
 	int raw = recalculate(true);
 	log_printf("bms: cell %s (id %d kOhm), stored %d%%, raw %d%%\n", cell->name, kohm, stored_soc, raw);
@@ -849,7 +849,7 @@ void bms_poll(void)
 		trim_sec = now;
 		pmic_iadc_trim();
 	}
-	bool usb = pmic_usb_present();
+	bool usb = vbus_present();
 	if (usb != usb_was) {
 		usb_was = usb;
 		charger_gone_hold = !usb;
@@ -870,7 +870,7 @@ uint32_t bms_soc(void)
 uint32_t bms_percent(void)
 {
 	int soc = (int)bms_soc();
-	bool usb = pmic_usb_present();
+	bool usb = vbus_present();
 	if (held_soc == NONE || soc < 50) {
 		held_soc = soc;
 	} else if (usb && held_soc > soc && held_soc - soc < HOLD_DROP) {
@@ -907,9 +907,9 @@ const struct battery_driver battery_pmic = {
 	.poll = pmic_battery_poll,
 	.percent = bms_percent,
 	.charging = pmic_charging,
-	.cable = pmic_usb_present,
-	.cable_irq_init = pmic_usb_irq_init,
-	.cable_irq = pmic_usb_irq,
+	.cable = vbus_present,
+	.cable_irq_init = vbus_irq_init,
+	.cable_irq = vbus_irq,
 	.mv = pmic_battery_mv,
 	.ua = pmic_battery_ua,
 	.avg_ua = pmic_battery_avg_ua,

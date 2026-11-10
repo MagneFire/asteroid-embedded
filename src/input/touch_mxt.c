@@ -12,7 +12,7 @@
 #include "input/mxt.h"
 #include "input/touch.h"
 
-#define QUP		(board->touch_pins.i2c.qup)
+#define BUS		(board->touch_pins.i2c.bus)
 #define ADDR		(board->touch_pins.i2c.addr)
 #define GPIO_IRQ	(board->touch_pins.irq)
 #define GPIO_RESET	(board->touch_pins.reset)
@@ -43,7 +43,7 @@ static uint32_t retry_t, retry_ms;
 static int rd(uint16_t addr, uint8_t *buf, unsigned n)
 {
 	uint8_t a[2] = { (uint8_t)addr, (uint8_t)(addr >> 8) };
-	return i2c_qup_xfer(QUP, ADDR, a, 2, buf, n);
+	return i2c_xfer(BUS, ADDR, a, 2, buf, n);
 }
 
 static void push(const struct touch *t)
@@ -60,8 +60,8 @@ static void rearm(void)
 {
 	if (configuring)
 		return;
-	tlmm_irq_ack(GPIO_IRQ);
-	tlmm_irq_enable(GPIO_IRQ, true);
+	gpio_irq_ack(GPIO_IRQ);
+	gpio_irq_enable(GPIO_IRQ, true);
 }
 
 static void read_failed(void)
@@ -105,9 +105,9 @@ static void message_done(int err, void *ctx)
 
 static void attention(unsigned pin)
 {
-	tlmm_irq_enable(GPIO_IRQ, false);
+	gpio_irq_enable(GPIO_IRQ, false);
 	attentions++;
-	if (i2c_qup_start(QUP, ADDR, msg_ptr, 2, msg, map.msg_size, message_done, NULL))
+	if (i2c_start(BUS, ADDR, msg_ptr, 2, msg, map.msg_size, message_done, NULL))
 		read_failed();
 }
 
@@ -116,12 +116,12 @@ static bool power_on(void)
 {
 	if (rpm_ldo_on(28, 2800000))
 		log_printf("touch: l28 on not acknowledged\n");
-	tlmm_set(GPIO_RESET, 0);
-	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 6);
+	gpio_set(GPIO_RESET, 0);
+	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 6);
 	delay_ms(2);
-	tlmm_set(GPIO_RESET, 1);
+	gpio_set(GPIO_RESET, 1);
 	uint32_t t0 = time_ms();
-	while (tlmm_get(GPIO_IRQ)) {
+	while (gpio_get(GPIO_IRQ)) {
 		if (time_ms() - t0 > BOOT_WAIT_MS)
 			return false;
 		wdt_feed();
@@ -131,11 +131,11 @@ static bool power_on(void)
 
 static bool mxt_init(void)
 {
-	tlmm_config(GPIO_IRQ, 0, TLMM_INPUT, TLMM_PULL_UP, 8);
+	gpio_config(GPIO_IRQ, 0, GPIO_INPUT, GPIO_PULL_UP, 8);
 	bool up = power_on();
 	uint8_t info[INFO_SIZE], range[4];
 	static uint8_t table[MXT_MAX_OBJECTS * MXT_OBJECT_SIZE];
-	int ret = i2c_qup_init(QUP, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, BUS_HZ);
+	int ret = i2c_init(BUS, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, BUS_HZ);
 	if (!ret)
 		ret = rd(INFO_ADDR, info, INFO_SIZE);
 	if (ret) {
@@ -167,8 +167,8 @@ static bool mxt_init(void)
 	msg_ptr[1] = (uint8_t)(map.msg_addr >> 8);
 	log_printf("touch: mxt family %02x variant %02x version %02x build %02x, %u objects, range %u x %u, ids %u+%u\n", info[0],
 		   info[1], info[2], info[3], objects, max_x, max_y, map.t9_first_id, map.t9_ids);
-	tlmm_irq_config(GPIO_IRQ, TLMM_IRQ_LEVEL_LOW, attention);
-	tlmm_irq_enable(GPIO_IRQ, true);
+	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_LEVEL_LOW, attention);
+	gpio_irq_enable(GPIO_IRQ, true);
 	return true;
 }
 
@@ -179,15 +179,15 @@ static void mxt_sleep(bool on)
 	if (!map.t9_addr)
 		return;
 	configuring = true;
-	tlmm_irq_enable(GPIO_IRQ, false);
-	for (uint32_t t0 = time_ms(); i2c_qup_busy(QUP) && time_ms() - t0 < 50;)
-		i2c_qup_poll(QUP);
+	gpio_irq_enable(GPIO_IRQ, false);
+	for (uint32_t t0 = time_ms(); i2c_busy(BUS) && time_ms() - t0 < 50;)
+		i2c_poll(BUS);
 	for (unsigned i = 0; i < MXT_POWER_WRITES; i++) {
 		uint16_t addr;
 		uint8_t val;
 		if (mxt_power_write(&map, i, on, &addr, &val)) {
 			uint8_t w[3] = { (uint8_t)addr, (uint8_t)(addr >> 8), val };
-			if (i2c_qup_xfer(QUP, ADDR, w, 3, NULL, 0))
+			if (i2c_xfer(BUS, ADDR, w, 3, NULL, 0))
 				errors++;
 		}
 	}
@@ -203,7 +203,7 @@ static uint32_t mxt_next_ms(void)
 
 static bool mxt_poll(struct touch *t)
 {
-	i2c_qup_poll(QUP);
+	i2c_poll(BUS);
 	if (retry && time_ms() - retry_t >= retry_ms) {
 		retry = false;
 		rearm();

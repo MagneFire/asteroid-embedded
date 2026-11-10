@@ -226,7 +226,7 @@ static int wait_tx_ready(struct uart *u)
 	return 0;
 }
 
-int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow)
+int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow)
 {
 	const struct baud *b = find_baud(baud);
 	if (!b || uart < 1 || uart > ARRAY_SIZE(uarts))
@@ -252,18 +252,18 @@ int uart_dm_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t bau
 		return -1;
 	}
 	for (unsigned i = 0; i < 4; i++)
-		tlmm_config(first_gpio + i, func, TLMM_INPUT, TLMM_PULL_NONE, 8);
+		gpio_config(first_gpio + i, func, GPIO_INPUT, GPIO_PULL_NONE, 8);
 	u->ring_head = u->ring_tail = 0;
 	u->rx_bytes = u->tx_bytes = u->dropped = u->overruns = 0;
 	u->base = 0xf991d000u + (uart - 1) * 0x1000;
 	start(u, b);
-	gic_enable(u->irq, irqs[uart - 1]);
+	irq_attach(u->irq, irqs[uart - 1]);
 	log_printf("uart%u: %lu baud, sr %08lx isr %08lx badr %lu\n", uart, baud, readl(u->base + UART_DM_SR),
 		   readl(u->base + UART_DM_ISR), readl(u->base + UART_DM_BADR));
 	return 0;
 }
 
-int uart_dm_set_baud(unsigned uart, uint32_t baud)
+int uart_set_baud(unsigned uart, uint32_t baud)
 {
 	struct uart *u = get(uart);
 	const struct baud *b = find_baud(baud);
@@ -272,16 +272,16 @@ int uart_dm_set_baud(unsigned uart, uint32_t baud)
 	uint32_t t0 = time_us();
 	while (!(readl(u->base + UART_DM_SR) & SR_TXEMT) && time_us() - t0 < TX_TIMEOUT_US)
 		;
-	gic_mask(u->irq);
+	irq_mask(u->irq);
 	writel(CR_RX_DISABLE | CR_TX_DISABLE, u->base + UART_DM_CR);
 	dsb();
 	bool ok = set_clock(u, b);
 	start(u, b);
-	gic_unmask(u->irq);
+	irq_unmask(u->irq);
 	return ok ? 0 : -1;
 }
 
-int uart_dm_write(unsigned uart, const uint8_t *p, unsigned n)
+int uart_write(unsigned uart, const uint8_t *p, unsigned n)
 {
 	struct uart *u = get(uart);
 	if (!u || !n)
@@ -303,7 +303,7 @@ int uart_dm_write(unsigned uart, const uint8_t *p, unsigned n)
 	return 0;
 }
 
-unsigned uart_dm_read(unsigned uart, uint8_t *p, unsigned n)
+unsigned uart_read(unsigned uart, uint8_t *p, unsigned n)
 {
 	struct uart *u = get(uart);
 	unsigned k = 0;
@@ -318,27 +318,27 @@ unsigned uart_dm_read(unsigned uart, uint8_t *p, unsigned n)
 	return k;
 }
 
-bool uart_dm_cts(unsigned uart)
+bool uart_cts(unsigned uart)
 {
 	struct uart *u = get(uart);
 	return u && (readl(u->base + UART_DM_ISR) & BIT(6));
 }
 
-void uart_dm_stop(unsigned uart)
+void uart_stop(unsigned uart)
 {
 	struct uart *u = get(uart);
 	if (!u)
 		return;
-	gic_disable(u->irq);
+	irq_detach(u->irq);
 	writel(0, u->base + UART_DM_IMR);
 	writel(CR_RX_DISABLE | CR_TX_DISABLE, u->base + UART_DM_CR);
 	writel(readl(GCC_UART_APPS_CBCR(u->port)) & ~CBCR_ENABLE, GCC_UART_APPS_CBCR(u->port));
 	for (unsigned i = 0; i < 4; i++)
-		tlmm_config(u->pins + i, 0, TLMM_INPUT, TLMM_PULL_DOWN, 2);
+		gpio_config(u->pins + i, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
 	u->base = 0;
 }
 
-void uart_dm_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors)
+void uart_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors)
 {
 	struct uart *u = &uarts[uart - 1];
 	*rx = u->rx_bytes;
@@ -346,13 +346,13 @@ void uart_dm_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors)
 	*errors = u->dropped + u->overruns;
 }
 
-bool uart_dm_idle(unsigned uart)
+bool uart_idle(unsigned uart)
 {
 	struct uart *u = get(uart);
 	return !u || ((readl(u->base + UART_DM_SR) & (SR_TXEMT | SR_RXRDY)) == SR_TXEMT && u->ring_head == u->ring_tail);
 }
 
-void uart_dm_hold_rx(unsigned uart, bool hold)
+void uart_hold_rx(unsigned uart, bool hold)
 {
 	struct uart *u = get(uart);
 	if (!u)

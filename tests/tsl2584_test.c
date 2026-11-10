@@ -11,7 +11,7 @@ static const uint16_t small[4] = { 1932, 3054, 1726, 2539 };
 
 static const struct board test_board = {
 	.panel = { .height = 330, .height_alt = 325 },
-	.light_pins = { .i2c = { .qup = 3, .addr = 0x29 }, .ldo = 18, .ldo_uv = 2950000,
+	.light_pins = { .i2c = { .bus = 3, .addr = 0x29 }, .ldo = 18, .ldo_uv = 2950000,
 			.coeff = { { 1627, 2485, 1536, 2259 }, { 1932, 3054, 1726, 2539 } } },
 };
 const struct board *board = &test_board;
@@ -28,7 +28,7 @@ static int fail_after = -1;
 uint32_t time_ms(void) { return now; }
 void delay_ms(uint32_t ms) { now += ms; }
 void log_printf(const char *fmt, ...) {}
-int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
+int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
 int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv)
 {
 	rail_uv = uv;
@@ -43,9 +43,9 @@ int rpm_regulator_enable(uint32_t type, uint32_t id, bool on)
 		memset(regs, 0, sizeof regs);
 	return 0;
 }
-int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
-	CHECK(qup == 3 && addr == 0x29 && wn && (w[0] & CMD_SELECT));
+	CHECK(bus == 3 && addr == 0x29 && wn && (w[0] & CMD_SELECT));
 	if (absent || !rail || !fail_after)
 		return -2;
 	if (fail_after > 0)

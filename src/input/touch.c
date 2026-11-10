@@ -12,7 +12,7 @@
 #include "display/display.h"
 #include "touch.h"
 
-#define QUP		(board->touch_pins.i2c.qup)
+#define BUS		(board->touch_pins.i2c.bus)
 #define F11_CTRL58	0x64
 #define PALM_SIZE	40
 #define ADDR		(board->touch_pins.i2c.addr)
@@ -31,13 +31,13 @@ static unsigned status_bytes = 1, max_x = 4095, max_y = 4095;
 
 static int rd(uint8_t reg, uint8_t *buf, unsigned n)
 {
-	return i2c_qup_xfer(QUP, ADDR, &reg, 1, buf, n);
+	return i2c_xfer(BUS, ADDR, &reg, 1, buf, n);
 }
 
 static int wr(uint8_t reg, uint8_t val)
 {
 	uint8_t buf[2] = { reg, val };
-	return i2c_qup_xfer(QUP, ADDR, buf, 2, NULL, 0);
+	return i2c_xfer(BUS, ADDR, buf, 2, NULL, 0);
 }
 
 /* Power: analog supply from PM8226 LDO19, the I2C pull-ups from LVS1,
@@ -53,20 +53,20 @@ static void power_on(void)
 {
 	rpm_regulator_enable(RPM_LDOA, 19, true);
 	rpm_regulator_enable(RPM_VSA, 1, true);
-	tlmm_set(GPIO_RESET, 0);
-	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	gpio_set(GPIO_RESET, 0);
+	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	for (int i = 0; i < 16; i++) {
 		delay_ms(10);
 		wdt_feed();
 	}
-	tlmm_set(GPIO_RESET, 1);
+	gpio_set(GPIO_RESET, 1);
 	for (int i = 0; i < 15; i++) {
 		delay_ms(10);
 		wdt_feed();
 	}
 	log_printf("touch: sid1 rev %02x, l19 status %02x volt %02x.%02x, lvs1 status %02x, reset gpio %u\n",
 		   pmic_read(0x010104), pmic_read(REG_L19 + REG_STATUS1), pmic_read(REG_L19 + REG_VOLTAGE1),
-		   pmic_read(REG_L19 + REG_VOLTAGE2), pmic_read(REG_LVS1 + REG_STATUS1), tlmm_get(GPIO_RESET));
+		   pmic_read(REG_L19 + REG_VOLTAGE2), pmic_read(REG_LVS1 + REG_STATUS1), gpio_get(GPIO_RESET));
 }
 
 /* Attention handling, all in interrupt context: the level-low pin
@@ -94,8 +94,8 @@ static void push(const struct touch *t)
 
 static void rearm(void)
 {
-	tlmm_irq_ack(GPIO_ATTN);
-	tlmm_irq_enable(GPIO_ATTN, true);
+	gpio_irq_ack(GPIO_ATTN);
+	gpio_irq_enable(GPIO_ATTN, true);
 }
 
 static void palm_done(int err, void *ctx)
@@ -144,7 +144,7 @@ static void report_done(int err, void *ctx)
 	was_down = down;
 	if (t.event != TOUCH_NONE)
 		push(&t);
-	if (!palm_reg || i2c_qup_start(QUP, ADDR, &palm_reg, 1, &palm_data, 1, palm_done, NULL))
+	if (!palm_reg || i2c_start(BUS, ADDR, &palm_reg, 1, &palm_data, 1, palm_done, NULL))
 		rearm();
 }
 
@@ -192,7 +192,7 @@ static unsigned f11_data28(void)
 
 static void status_done(int err, void *ctx)
 {
-	if (err || i2c_qup_start(QUP, ADDR, &data_reg, 1, report, data_len, report_done, NULL)) {
+	if (err || i2c_start(BUS, ADDR, &data_reg, 1, report, data_len, report_done, NULL)) {
 		errors++;
 		rearm();
 	}
@@ -200,9 +200,9 @@ static void status_done(int err, void *ctx)
 
 static void attention(unsigned pin)
 {
-	tlmm_irq_enable(GPIO_ATTN, false);
+	gpio_irq_enable(GPIO_ATTN, false);
 	attentions++;
-	if (i2c_qup_start(QUP, ADDR, &status_reg, 1, irq_status, 2, status_done, NULL)) {
+	if (i2c_start(BUS, ADDR, &status_reg, 1, irq_status, 2, status_done, NULL)) {
 		errors++;
 		rearm();
 	}
@@ -250,7 +250,7 @@ static void fake_poll(void)
 
 static bool rmi4_poll(struct touch *t)
 {
-	i2c_qup_poll(QUP);
+	i2c_poll(BUS);
 	if (fake.active)
 		fake_poll();
 	if (q_tail == q_head)
@@ -270,10 +270,10 @@ static void rmi4_stats(uint32_t *att, uint32_t *err)
 
 static bool rmi4_init(void)
 {
-	tlmm_config(GPIO_ATTN, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
+	gpio_config(GPIO_ATTN, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
 	power_on();
 	uint8_t e[6];
-	int ret = i2c_qup_init(QUP, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 384000);
+	int ret = i2c_init(BUS, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 384000);
 	if (!ret)
 		ret = rd(PAGE_SELECT, e, 1);
 	if (ret) {
@@ -321,12 +321,12 @@ static bool rmi4_init(void)
 			palm_reg = (uint8_t)(f11.data + d);
 		log_printf("touch: palm detection %s, data 28 at +%u\n", palm_reg ? "on" : "off", d);
 	}
-	log_printf("touch: product %s, status %02x irq %02x, attn %u\n", (char *)id, st[0], st[1], tlmm_get(GPIO_ATTN));
+	log_printf("touch: product %s, status %02x irq %02x, attn %u\n", (char *)id, st[0], st[1], gpio_get(GPIO_ATTN));
 	status_reg = f01.data;
 	data_reg = f11.number ? f11.data : f12.data;
 	data_len = f11.number ? (uint8_t)(status_bytes + 5) : 8;
-	tlmm_irq_config(GPIO_ATTN, TLMM_IRQ_LEVEL_LOW, attention);
-	tlmm_irq_enable(GPIO_ATTN, true);
+	gpio_irq_config(GPIO_ATTN, GPIO_IRQ_LEVEL_LOW, attention);
+	gpio_irq_enable(GPIO_ATTN, true);
 	present = true;
 	return true;
 }

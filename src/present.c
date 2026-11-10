@@ -78,7 +78,7 @@ static void show_weather(void)
 {
 	const struct weather *w = weather_get();
 	int32_t ids[WEATHER_DAYS], lo[WEATHER_DAYS], hi[WEATHER_DAYS];
-	uint32_t today = pmic_rtc_read() / 86400, day0 = w->time / 86400;
+	uint32_t today = rtc_read() / 86400, day0 = w->time / 86400;
 	unsigned n = 0;
 	for (uint32_t i = today >= day0 ? today - day0 : WEATHER_DAYS; i < w->days; i++, n++) {
 		ids[n] = w->id[i];
@@ -149,7 +149,7 @@ void present_clock(uint32_t now)
 	if (have_ui && power_awake() && (!last_clock || now - last_clock >= 1000)) {
 		last_clock = now;
 		struct civil c;
-		uint32_t rtc = pmic_rtc_read();
+		uint32_t rtc = rtc_read();
 		civil_from_epoch(rtc, &c);
 		ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
 		if (rtc / 86400 != weather_day) {

@@ -235,7 +235,7 @@ static void ambient_draw(void)
 	if (board->backlight_aod_code)
 		light_start();
 	struct civil c;
-	uint32_t rtc = pmic_rtc_read(), x, y, w, h, *buf = display_backbuffer();
+	uint32_t rtc = rtc_read(), x, y, w, h, *buf = display_backbuffer();
 	civil_from_epoch(rtc, &c);
 	ambient_minute = rtc / 60;
 	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
@@ -370,7 +370,7 @@ enum power_change power_update(uint32_t *now_p)
 		if (aod != AOD_KEEP)
 			cpu_clock_slow(true);
 	}
-	if (ambient && !policy.awake && pmic_rtc_read() / 60 != ambient_minute) {
+	if (ambient && !policy.awake && rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);
 		ambient_draw();
 		cpu_clock_slow(true);
@@ -415,7 +415,7 @@ void power_idle(uint32_t app_next_ms)
 			next = lpm;
 		if (have_hub && !hub_can_sleep() && next > 50)
 			next = 50;
-		uint32_t minute = (60 - pmic_rtc_read() % 60) * 1000;
+		uint32_t minute = (60 - rtc_read() % 60) * 1000;
 		if (ambient && minute < next)
 			next = minute;
 	}
@@ -432,7 +432,7 @@ void power_idle(uint32_t app_next_ms)
 		wdt_stop();
 		t0 = time_ms();
 	}
-	spm_idle(cluster);
+	cpu_idle(cluster);
 	if (long_sleep) {
 		uint32_t slept = time_ms() - t0;
 		wdt_arm(3000, 4000, NULL);

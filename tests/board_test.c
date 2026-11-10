@@ -18,8 +18,8 @@ uint32_t smem_hw_platform(void) { return platform; }
 /* smelt's fuel gauge, for the boots with no splash. */
 static bool gauge_present;
 static unsigned gauge_reads;
-int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
-int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
+int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
 	gauge_reads++;
 	if (!gauge_present)

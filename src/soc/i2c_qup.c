@@ -91,7 +91,7 @@ struct bus {
 		void *ctx;
 	} xfer;
 	struct {
-		const char *what;	/* a failure seen in interrupt context, logged by i2c_qup_poll */
+		const char *what;	/* a failure seen in interrupt context, logged by i2c_poll */
 		uint32_t state, status, err, op;
 	} pending;
 };
@@ -221,11 +221,11 @@ static void clocks_on(unsigned qup)
 
 static void pins_to_qup(const struct bus *b)
 {
-	tlmm_config(b->sda, b->func, TLMM_INPUT, TLMM_PULL_NONE, 2);
-	tlmm_config(b->scl, b->func, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	gpio_config(b->sda, b->func, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	gpio_config(b->scl, b->func, GPIO_INPUT, GPIO_PULL_NONE, 2);
 }
 
-int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz)
+int i2c_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz)
 {
 	if (qup < 1 || qup > 6)
 		return -3;
@@ -241,7 +241,7 @@ int i2c_qup_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32
 	unsigned out_blk = (io & 3) ? (io & 3) * 16 : 16;
 	b->fifo_entries = out_blk / 2 * (2u << ((io >> 2) & 7));
 	int r = reset(b);
-	gic_enable(IRQ_QUP(qup), irqs[qup - 1]);
+	irq_attach(IRQ_QUP(qup), irqs[qup - 1]);
 	log_printf("i2c: qup%u io_mode %08lx fifo %u entries, state %08lx, reset %d\n", qup, io, b->fifo_entries,
 		   readl(b->base + QUP_STATE), r);
 	return r;
@@ -269,23 +269,23 @@ static void report(struct bus *b, const char *what, const char *where, uint32_t 
  * only ever pulled low, the bus's own pull-ups raise them. */
 static void bus_clear(const struct bus *b)
 {
-	tlmm_set(b->sda, 0);
-	tlmm_set(b->scl, 0);
-	tlmm_config(b->sda, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
-	tlmm_config(b->scl, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	gpio_set(b->sda, 0);
+	gpio_set(b->scl, 0);
+	gpio_config(b->sda, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	gpio_config(b->scl, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	for (unsigned i = 0; i < BUS_CLEAR_CLOCKS; i++) {
-		tlmm_config(b->scl, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+		gpio_config(b->scl, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 		delay_us(BUS_CLEAR_HALF_US);
-		tlmm_config(b->scl, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+		gpio_config(b->scl, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 		delay_us(BUS_CLEAR_HALF_US);
 	}
-	tlmm_config(b->scl, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	gpio_config(b->scl, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	delay_us(BUS_CLEAR_HALF_US);
-	tlmm_config(b->sda, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	gpio_config(b->sda, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	delay_us(BUS_CLEAR_HALF_US);
-	tlmm_config(b->scl, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	gpio_config(b->scl, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	delay_us(BUS_CLEAR_HALF_US);
-	tlmm_config(b->sda, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	gpio_config(b->sda, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	delay_us(BUS_CLEAR_HALF_US);
 }
 
@@ -331,11 +331,11 @@ static int fail(struct bus *b, const char *what, bool clear)
 			reset(b);
 	}
 	b->xfer.busy = false;
-	gic_unmask(IRQ_QUP(qup_of(b)));
+	irq_unmask(IRQ_QUP(qup_of(b)));
 	return -1;
 }
 
-int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done,
+int i2c_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done,
 		  void *ctx)
 {
 	struct bus *b = bus(qup);
@@ -366,7 +366,7 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 	b->xfer.done = done;
 	b->xfer.ctx = ctx;
 	b->xfer.started = time_ms();
-	gic_mask(IRQ_QUP(qup));
+	irq_mask(IRQ_QUP(qup));
 	dsb();
 	b->xfer.busy = true;
 	irq_restore(flags);
@@ -386,17 +386,17 @@ int i2c_qup_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uin
 		writel(e[i] | (i + 1 < n ? (uint32_t)e[i + 1] << 16 : 0), b->base + QUP_OUT_FIFO);
 	if (set_state(b, STATE_RUN))
 		return fail(b, "start", false);
-	gic_unmask(IRQ_QUP(qup));
+	irq_unmask(IRQ_QUP(qup));
 	return 0;
 }
 
-bool i2c_qup_busy(unsigned qup)
+bool i2c_busy(unsigned qup)
 {
 	struct bus *b = bus(qup);
 	return b && b->xfer.busy;
 }
 
-void i2c_qup_set_timeout(unsigned qup, uint32_t stretch_ms)
+void i2c_set_timeout(unsigned qup, uint32_t stretch_ms)
 {
 	struct bus *b = bus(qup);
 	if (b)
@@ -415,7 +415,7 @@ static bool timed_out(const struct bus *b, uint32_t waited)
 	return (status & (I2C_BUS_ACTIVE | I2C_BUS_MASTER)) != (I2C_BUS_ACTIVE | I2C_BUS_MASTER);
 }
 
-void i2c_qup_poll(unsigned qup)
+void i2c_poll(unsigned qup)
 {
 	struct bus *b = bus(qup);
 	if (!b)
@@ -432,14 +432,14 @@ void i2c_qup_poll(unsigned qup)
 		uint32_t flags = irq_save();
 		bool idle = !b->xfer.busy;
 		if (idle) {
-			gic_mask(IRQ_QUP(qup));
+			irq_mask(IRQ_QUP(qup));
 			b->xfer.busy = true;
 		}
 		irq_restore(flags);
 		if (idle) {
 			recover(b, b->recover_status);
 			b->xfer.busy = false;
-			gic_unmask(IRQ_QUP(qup));
+			irq_unmask(IRQ_QUP(qup));
 		}
 	}
 	if (b->xfer.busy && timed_out(b, time_ms() - b->xfer.started)) {
@@ -456,13 +456,13 @@ void i2c_qup_poll(unsigned qup)
 
 static void sync_done(int err, void *ctx) { *(volatile int *)ctx = err; }
 
-int i2c_qup_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+int i2c_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
 	volatile int result = 1;
-	int ret = i2c_qup_start(qup, addr, w, wn, r, rn, sync_done, (void *)&result);
+	int ret = i2c_start(qup, addr, w, wn, r, rn, sync_done, (void *)&result);
 	if (ret)
 		return ret;
 	while (result == 1)
-		i2c_qup_poll(qup);
+		i2c_poll(qup);
 	return result;
 }

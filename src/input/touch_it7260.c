@@ -15,7 +15,7 @@
 #include "display/display.h"
 #include "touch.h"
 
-#define QUP		(board->touch_pins.i2c.qup)
+#define BUS		(board->touch_pins.i2c.bus)
 #define ADDR		(board->touch_pins.i2c.addr)
 #define GPIO_IRQ	(board->touch_pins.irq)
 #define GPIO_RESET	(board->touch_pins.reset)
@@ -49,7 +49,7 @@
 /* Command, response and status access, all synchronous (init only). */
 static int rd(uint8_t buf_index, uint8_t *buf, unsigned n)
 {
-	return i2c_qup_xfer(QUP, ADDR, &buf_index, 1, buf, n);
+	return i2c_xfer(BUS, ADDR, &buf_index, 1, buf, n);
 }
 
 /* The controller takes commands only while its busy bit is clear. */
@@ -76,7 +76,7 @@ static int command(const uint8_t *c, unsigned n, uint8_t *resp, unsigned rn)
 	memcpy(w + 1, c, n);
 	int ret = wait_ready(100, 1, NULL);
 	if (!ret)
-		ret = i2c_qup_xfer(QUP, ADDR, w, n + 1, NULL, 0);
+		ret = i2c_xfer(BUS, ADDR, w, n + 1, NULL, 0);
 	if (!ret && rn) {
 		ret = wait_ready(100, 1, NULL);
 		if (!ret)
@@ -102,13 +102,13 @@ static void power_on(void)
 	rpm_regulator_sleep_enable(RPM_LDOA, 6, true);
 	rpm_regulator_sleep_enable(RPM_LDOA, 19, true);
 	rpm_regulator_sleep_enable(RPM_VSA, 1, true);
-	tlmm_set(GPIO_RESET, 0);
-	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 6);
+	gpio_set(GPIO_RESET, 0);
+	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 6);
 	for (int i = 0; i < 6; i++) {
 		delay_ms(10);
 		wdt_feed();
 	}
-	tlmm_config(GPIO_RESET, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	for (int i = 0; i < 5; i++) {
 		delay_ms(10);
 		wdt_feed();
@@ -116,7 +116,7 @@ static void power_on(void)
 	log_printf("touch: l6 status %02x, l19 status %02x volt %02x.%02x, lvs1 status %02x, reset gpio %u, irq gpio %u\n",
 		   pmic_read(REG_L6 + REG_STATUS1), pmic_read(REG_L19 + REG_STATUS1), pmic_read(REG_L19 + 0x40),
 		   pmic_read(REG_L19 + 0x41), pmic_read(REG_LVS1 + REG_STATUS1),
-		   tlmm_get(GPIO_RESET), tlmm_get(GPIO_IRQ));
+		   gpio_get(GPIO_RESET), gpio_get(GPIO_IRQ));
 }
 
 /* Interrupt handling, all in interrupt context: the falling-edge pin
@@ -156,7 +156,7 @@ static void rearm(void)
 		mode_wait = 0;
 	round_busy = false;
 	round_t = time_ms();
-	tlmm_irq_enable(GPIO_IRQ, true);
+	gpio_irq_enable(GPIO_IRQ, true);
 }
 
 static int scale(unsigned v, unsigned size)
@@ -230,7 +230,7 @@ static void query_done(int err, void *ctx)
 		rearm();
 	} else if (!(query & QUERY_POINT)) {
 		rearm();
-	} else if (i2c_qup_start(QUP, ADDR, &point_index, 1, rec, REC_LEN, point_done, NULL)) {
+	} else if (i2c_start(BUS, ADDR, &point_index, 1, rec, REC_LEN, point_done, NULL)) {
 		errors++;
 		rearm();
 	}
@@ -239,12 +239,12 @@ static void query_done(int err, void *ctx)
 /* Called with interrupts masked. */
 static void start_round(void)
 {
-	tlmm_irq_enable(GPIO_IRQ, false);
-	tlmm_irq_ack(GPIO_IRQ);
+	gpio_irq_enable(GPIO_IRQ, false);
+	gpio_irq_ack(GPIO_IRQ);
 	round_busy = true;
 	round_t = time_ms();
 	attentions++;
-	if (i2c_qup_start(QUP, ADDR, &query_index, 1, &query, 1, query_done, NULL)) {
+	if (i2c_start(BUS, ADDR, &query_index, 1, &query, 1, query_done, NULL)) {
 		errors++;
 		rearm();
 	}
@@ -304,7 +304,7 @@ static void fake_poll(void)
 
 static void stall_poll(void)
 {
-	if (!present || round_busy || tlmm_get(GPIO_IRQ) || time_ms() - round_t < STALL_MS)
+	if (!present || round_busy || gpio_get(GPIO_IRQ) || time_ms() - round_t < STALL_MS)
 		return;
 	uint32_t flags = irq_save();
 	if (!round_busy) {
@@ -350,10 +350,10 @@ static int set_mode(uint8_t mode, uint8_t palm)
 
 static void apply_mode(void)
 {
-	tlmm_irq_enable(GPIO_IRQ, false);
+	gpio_irq_enable(GPIO_IRQ, false);
 	uint32_t t0 = time_ms();
 	while (round_busy && time_ms() - t0 < 50)
-		i2c_qup_poll(QUP);
+		i2c_poll(BUS);
 	uint8_t q = 0xff;
 	int ret = rd(BUF_QUERY, &q, 1);
 	if (!ret)
@@ -364,7 +364,7 @@ static void apply_mode(void)
 	mode_wait = RETRY_MS;
 	if (!ret || mode_fails == RETRIES)
 		log_printf("touch: %s mode %s (%d, try %u)\n", asleep ? "idle" : "active", ret ? "not set" : "set", ret, mode_fails);
-	tlmm_irq_enable(GPIO_IRQ, true);
+	gpio_irq_enable(GPIO_IRQ, true);
 }
 
 static void it7260_sleep(bool on)
@@ -388,7 +388,7 @@ static uint32_t it7260_next_ms(void)
 
 static bool it7260_poll(struct touch *t)
 {
-	i2c_qup_poll(QUP);
+	i2c_poll(BUS);
 	stall_poll();
 	if (present && !mode_set && !round_busy && time_ms() - mode_t >= mode_wait) {
 		if (rounds != mode_rounds)
@@ -416,10 +416,10 @@ static void it7260_stats(uint32_t *att, uint32_t *err)
 
 static bool it7260_init(void)
 {
-	tlmm_config(GPIO_IRQ, 0, TLMM_INPUT, TLMM_PULL_UP, 2);
+	gpio_config(GPIO_IRQ, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
 	power_on();
 	uint8_t q = 0xff;
-	int ret = i2c_qup_init(QUP, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 384000);
+	int ret = i2c_init(BUS, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 384000);
 	if (!ret)
 		ret = wait_ready(50, 10, &q);
 	if (ret) {
@@ -445,12 +445,12 @@ static bool it7260_init(void)
 
 	ret = set_mode(POWER_ACTIVE, PALM_AWAKE);
 	mode_set = !ret;
-	log_printf("touch: active mode (%d), status %02x, irq gpio %u\n", ret, q, tlmm_get(GPIO_IRQ));
+	log_printf("touch: active mode (%d), status %02x, irq gpio %u\n", ret, q, gpio_get(GPIO_IRQ));
 
-	tlmm_irq_config(GPIO_IRQ, TLMM_IRQ_EDGE_FALLING, attention);
+	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_EDGE_FALLING, attention);
 	round_t = time_ms();
 	present = true;
-	tlmm_irq_enable(GPIO_IRQ, true);
+	gpio_irq_enable(GPIO_IRQ, true);
 	return true;
 }
 

@@ -34,10 +34,10 @@ int bt_start(const uint8_t *a, struct bt_info *i) { bt_started++; return 0; }
 void bt_stop(void) { bt_stopped++; }
 int bt_host_start(void) { return 0; }
 void bt_host_stop(void) {}
-void pmic_shutdown_mode(void) {}
+void power_off_arm(void) {}
 void reboot(void) { abort(); }
-uint32_t pmic_rtc_read(void) { return rtc; }
-void pmic_rtc_write(uint32_t t) { rtc = t; }
+uint32_t rtc_read(void) { return rtc; }
+void rtc_write(uint32_t t) { rtc = t; }
 void log_printf(const char *fmt, ...) {}
 
 #define CHECK(x) do { if (!(x)) { printf("%s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)

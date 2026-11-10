@@ -27,7 +27,7 @@ static uint32_t rnd(void)
 }
 
 uint32_t time_ms(void) { return 0; }
-uint32_t pmic_rtc_read(void) { return 1000; }
+uint32_t rtc_read(void) { return 1000; }
 void log_printf(const char *fmt, ...) {}
 void wdt_feed(void) {}
 int bt_gatt_media_command(const uint8_t *v, unsigned n) { return 0; }

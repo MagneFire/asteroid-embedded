@@ -2,18 +2,18 @@
  * drive strength, output enable) and an in/out word. */
 #include "asteroid.h"
 
-void tlmm_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma)
+void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma)
 {
 	uint32_t v = (pull & 3) | (func & 0xf) << 2 | ((drive_ma / 2 - 1) & 7) << 6 | (dir ? BIT(9) : 0);
 	writel(v, TLMM_GPIO_CFG(n));
 }
 
-unsigned tlmm_get(unsigned n)
+unsigned gpio_get(unsigned n)
 {
 	return readl(TLMM_GPIO_IO(n)) & 1;
 }
 
-void tlmm_set(unsigned n, unsigned v)
+void gpio_set(unsigned n, unsigned v)
 {
 	writel(v ? BIT(1) : 0, TLMM_GPIO_IO(n));
 }
@@ -43,18 +43,18 @@ static void summary_irq(void)
 	}
 }
 
-void tlmm_irq_init(void)
+void gpio_irq_init(void)
 {
-	gic_enable(IRQ_TLMM_SUMMARY, summary_irq);
+	irq_attach(IRQ_TLMM_SUMMARY, summary_irq);
 }
 
-void tlmm_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
+void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
 {
 	uint32_t v = INTR_TARGET_APPS | INTR_RAW_STATUS;
 	switch (type) {
-	case TLMM_IRQ_LEVEL_HIGH: v |= INTR_POLARITY_HIGH; break;
-	case TLMM_IRQ_EDGE_RISING: v |= INTR_POLARITY_HIGH | 1u << INTR_DETECT_SHIFT; break;
-	case TLMM_IRQ_EDGE_FALLING: v |= INTR_POLARITY_HIGH | 2u << INTR_DETECT_SHIFT; break;
+	case GPIO_IRQ_LEVEL_HIGH: v |= INTR_POLARITY_HIGH; break;
+	case GPIO_IRQ_EDGE_RISING: v |= INTR_POLARITY_HIGH | 1u << INTR_DETECT_SHIFT; break;
+	case GPIO_IRQ_EDGE_FALLING: v |= INTR_POLARITY_HIGH | 2u << INTR_DETECT_SHIFT; break;
 	default: break;
 	}
 	unsigned i = 0;
@@ -70,13 +70,13 @@ void tlmm_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
 	writel(0, TLMM_INTR_STATUS(n));
 }
 
-void tlmm_irq_enable(unsigned n, bool on)
+void gpio_irq_enable(unsigned n, bool on)
 {
 	uint32_t v = readl(TLMM_INTR_CFG(n));
 	writel(on ? v | INTR_ENABLE : v & ~INTR_ENABLE, TLMM_INTR_CFG(n));
 }
 
-void tlmm_irq_ack(unsigned n)
+void gpio_irq_ack(unsigned n)
 {
 	writel(0, TLMM_INTR_STATUS(n));
 }

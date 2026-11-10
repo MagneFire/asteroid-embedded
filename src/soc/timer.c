@@ -66,6 +66,6 @@ void timer_init(void)
 	uint32_t tval = hz / 1000, ctl = 1;
 	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));
 	__asm__ volatile("mcr p15, 0, %0, c14, c2, 1" :: "r"(ctl));	/* CNTP_CTL: enable */
-	gic_enable(IRQ_PPI_TIMER, tick_irq);
-	gic_enable(IRQ_PPI_TIMER_S, tick_irq);
+	irq_attach(IRQ_PPI_TIMER, tick_irq);
+	irq_attach(IRQ_PPI_TIMER_S, tick_irq);
 }

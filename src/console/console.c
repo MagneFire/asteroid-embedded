@@ -143,7 +143,7 @@ static void cmd_status(const char *args)
 	say("display frames %lu\n", display_frames());
 	say("battery %lu mV\n", batt_mv());
 	say("charger %s\n", batt_status());
-	say("rtc %lu\n", pmic_rtc_read());
+	say("rtc %lu\n", rtc_read());
 }
 
 static void log_out(const char *s, size_t n, void *ctx)
@@ -300,9 +300,9 @@ static void cmd_rtc(const char *args)
 			say("usage: rtc [seconds]\n");
 			return;
 		}
-		pmic_rtc_write(v);
+		rtc_write(v);
 	}
-	say("rtc %lu\n", pmic_rtc_read());
+	say("rtc %lu\n", rtc_read());
 }
 
 static void cmd_mem(const char *args)
@@ -374,10 +374,10 @@ static void cmd_gpio(const char *args)
 			say("usage: gpio <pin> = 0|1\n");
 			return;
 		}
-		tlmm_config(n, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
-		tlmm_set(n, v);
+		gpio_config(n, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		gpio_set(n, v);
 	}
-	say("gpio %lu: cfg %08lx level %u\n", n, readl(TLMM_GPIO_CFG(n)), tlmm_get(n));
+	say("gpio %lu: cfg %08lx level %u\n", n, readl(TLMM_GPIO_CFG(n)), gpio_get(n));
 }
 
 /* One VADC channel, raw and in mV at the ADC input: the 0.625 and 1.25 V
@@ -413,7 +413,7 @@ static void cmd_gauge(const char *args)
 	}
 	do {
 		uint8_t r = (uint8_t)reg, b[2];
-		int ret = reg > 255 ? -1 : i2c_qup_xfer(board->gauge.i2c.qup, board->gauge.i2c.addr, &r, 1, b, 2);
+		int ret = reg > 255 ? -1 : i2c_xfer(board->gauge.i2c.bus, board->gauge.i2c.addr, &r, 1, b, 2);
 		if (ret)
 			say("%02lx: error %d\n", reg, ret);
 		else

@@ -21,7 +21,7 @@
 #include "sensors/hub.h"
 #include "sensors/m4_proto.h"
 
-#define QUP		(board->hub_pins.i2c.qup)
+#define BUS		(board->hub_pins.i2c.bus)
 #define ADDR		(board->hub_pins.i2c.addr)
 #define GPIO_WAKE	(board->hub_pins.irq)
 #define GPIO_RESET	(board->hub_pins.reset)
@@ -69,7 +69,7 @@ static int xfer(const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
 	int ret = 0;
 	for (unsigned i = 0; i < XFER_TRIES; i++) {
-		ret = i2c_qup_xfer(QUP, ADDR, w, wn, r, rn);
+		ret = i2c_xfer(BUS, ADDR, w, wn, r, rn);
 		if (!ret)
 			break;
 		delay_us(XFER_RETRY_US);
@@ -135,8 +135,8 @@ static int reg_write(uint8_t bank, uint8_t offset, const uint8_t *data, unsigned
 
 static void wake_line(unsigned pin)
 {
-	tlmm_irq_enable(GPIO_WAKE, false);
-	tlmm_irq_ack(GPIO_WAKE);
+	gpio_irq_enable(GPIO_WAKE, false);
+	gpio_irq_ack(GPIO_WAKE);
 	wake_pending = true;
 }
 
@@ -144,13 +144,13 @@ static void wake_line(unsigned pin)
  * line is let go and the bootloader given time to listen. */
 static void reset_pulse(void)
 {
-	tlmm_set(GPIO_BOOT0, 1);
-	tlmm_config(GPIO_BOOT0, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	gpio_set(GPIO_BOOT0, 1);
+	gpio_config(GPIO_BOOT0, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	delay_ms(5);
-	tlmm_set(GPIO_RESET, 0);
-	tlmm_config(GPIO_RESET, 0, TLMM_OUTPUT, TLMM_PULL_NONE, 2);
+	gpio_set(GPIO_RESET, 0);
+	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	delay_ms(10);
-	tlmm_config(GPIO_RESET, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
+	gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	wait_ms(BL_READY_MS);
 }
 
@@ -158,10 +158,10 @@ static bool m4_init(void)
 {
 	uint8_t barker[M4_BARKER_SIZE];
 	unsigned round;
-	tlmm_config(GPIO_WAKE, 0, TLMM_INPUT, TLMM_PULL_NONE, 2);
-	if (i2c_qup_init(QUP, board->hub_pins.i2c.sda, board->hub_pins.i2c.scl, board->hub_pins.i2c.func, BUS_HZ))
+	gpio_config(GPIO_WAKE, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	if (i2c_init(BUS, board->hub_pins.i2c.sda, board->hub_pins.i2c.scl, board->hub_pins.i2c.func, BUS_HZ))
 		return false;
-	i2c_qup_set_timeout(QUP, STRETCH_MS);
+	i2c_set_timeout(BUS, STRETCH_MS);
 	for (round = 0; round < BL_ROUNDS; round++) {
 		reset_pulse();
 		if (bl_read(M4_BARKER_ADDR, barker, sizeof barker))
@@ -169,8 +169,8 @@ static bool m4_init(void)
 	}
 	if (round == BL_ROUNDS) {
 		log_printf("hub: m4 bootloader not answering; wake %u sda %u scl %u reset %u boot0 %u\n",
-			   tlmm_get(GPIO_WAKE), tlmm_get(board->hub_pins.i2c.sda), tlmm_get(board->hub_pins.i2c.scl),
-			   tlmm_get(GPIO_RESET), tlmm_get(GPIO_BOOT0));
+			   gpio_get(GPIO_WAKE), gpio_get(board->hub_pins.i2c.sda), gpio_get(board->hub_pins.i2c.scl),
+			   gpio_get(GPIO_RESET), gpio_get(GPIO_BOOT0));
 		return false;
 	}
 	if (!m4_barker_ok(barker)) {
@@ -189,7 +189,7 @@ static bool m4_init(void)
 static void set_time(void)
 {
 	uint8_t b[4];
-	m4_put_u32(pmic_rtc_read(), b);
+	m4_put_u32(rtc_read(), b);
 	if (state == HUB_READY)
 		reg_write(M4_BANK_GENERAL, M4_GENERAL_UTC, b, 4);
 }
@@ -243,8 +243,8 @@ static void started(void)
 	tilt_set = false;
 	write_tilt(time_ms());
 	accel_set = false;
-	tlmm_irq_config(GPIO_WAKE, TLMM_IRQ_LEVEL_HIGH, wake_line);
-	tlmm_irq_enable(GPIO_WAKE, true);
+	gpio_irq_config(GPIO_WAKE, GPIO_IRQ_LEVEL_HIGH, wake_line);
+	gpio_irq_enable(GPIO_WAKE, true);
 	log_printf("hub: m4 firmware %04x up\n", version);
 }
 
@@ -255,7 +255,7 @@ static void restart(uint32_t now, const char *why)
 	log_printf("hub: m4 %s, restarting it\n", why);
 	restarts++;
 	restart_t = now;
-	tlmm_irq_enable(GPIO_WAKE, false);
+	gpio_irq_enable(GPIO_WAKE, false);
 	wake_pending = wake_retry = false;
 	steps_base = steps;
 	state = HUB_OFF;
@@ -275,7 +275,7 @@ static bool crashed(void)
 
 static void m4_poll(void)
 {
-	i2c_qup_poll(QUP);
+	i2c_poll(BUS);
 	uint32_t now = time_ms();
 	if (state == HUB_BOOTING && now - go_t >= BOOT_MS)
 		started();
@@ -286,7 +286,7 @@ static void m4_poll(void)
 	write_accel(now);
 	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
 		wake_retry = false;
-		tlmm_irq_enable(GPIO_WAKE, true);
+		gpio_irq_enable(GPIO_WAKE, true);
 	}
 	if (!wake_pending)
 		return;
@@ -314,7 +314,7 @@ static void m4_poll(void)
 		if (!r && m4_is_tilt(status, g[0], (int8_t)g[2]))
 			tilt = true;
 	}
-	tlmm_irq_enable(GPIO_WAKE, true);
+	gpio_irq_enable(GPIO_WAKE, true);
 }
 
 static bool m4_tilt_on(bool on)
@@ -397,14 +397,14 @@ static bool m4_tilted(void)
  * with. */
 static bool m4_can_sleep(void)
 {
-	return state != HUB_BOOTING && !wake_pending && !wake_retry && !i2c_qup_busy(QUP) &&
+	return state != HUB_BOOTING && !wake_pending && !wake_retry && !i2c_busy(BUS) &&
 	       !(state == HUB_READY && !tilt_set);
 }
 
 static void m4_sleep(bool asleep)
 {
 	if (state == HUB_READY)
-		spm_wake_pin(MPM_PIN_WAKE, asleep, true);
+		wake_pin(MPM_PIN_WAKE, asleep, true);
 }
 
 static int m4_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
