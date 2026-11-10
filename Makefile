@@ -10,27 +10,48 @@ SIZE    := $(CROSS)size
 DTC     ?= dtc
 TEST    ?=
 
-BUILD  := build
+# The SoC the image is for: qcom (APQ8026) or omap3 (OMAP3630). Its code
+# is in src/soc/$(SOC), and each has its own image.
+SOC    ?= qcom
+BUILD  := build$(if $(filter qcom,$(SOC)),,/$(SOC))
 TUSB   := third_party/tinyusb/src
 NIMBLE := third_party/nimble
 MBEDTLS := third_party/mbedtls
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c src/sensors/steps.c src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c src/sensors/auto_brightness.c \
-        src/input/touch.c src/input/touch_it7260.c src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
-        src/soc/qcom/mmu.c src/soc/qcom/gic.c src/soc/qcom/timer.c src/soc/qcom/wdt.c \
-        src/soc/qcom/spmi.c src/soc/qcom/pmic.c src/soc/qcom/bms.c src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c src/soc/qcom/reboot.c src/soc/qcom/scm.c src/soc/exceptions.c \
-        src/soc/qcom/tlmm.c src/soc/qcom/clock.c src/soc/qcom/spm.c src/soc/qcom/suspend.S src/soc/qcom/i2c_qup.c src/soc/qcom/uart_dm.c src/soc/qcom/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
-        src/log.c src/display/display.c src/display/dsi.c src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
-        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c \
-        src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
-        src/bt/hci.c src/bt/bcm.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
-        src/usb/usb.c src/usb/dcd_ci_hs_msm.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c \
+        src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
+        src/civil.c src/log.c src/soc/exceptions.c src/board/drivers.c \
+        src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \
+        src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c \
+        src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
+        src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
+        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
+        src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
+        src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         src/notify/notify.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
-        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/store.c src/storage/kv.c \
+        src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/store.c src/storage/kv.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
+
+SRCS_qcom := $(addprefix src/soc/qcom/,mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
+               suspend.S i2c_qup.c uart_dm.c rpm.c) \
+        src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
+        src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c \
+        src/input/touch.c src/input/touch_it7260.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c \
+        src/display/display.c src/display/dsi.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
+        src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/storage/emmc.c
+CPU_qcom  := cortex-a7
+FPU_qcom  := neon-vfpv4
+TUSB_PORT_qcom := chipidea/ci_hs
+
+SRCS_omap3 :=
+CPU_omap3 := cortex-a8
+FPU_omap3 := neon
+TUSB_PORT_omap3 := mentor/musb
+
+SRCS += $(SRCS_$(SOC))
 NIMBLE_SRCS := $(filter-out %/ble_gatts_lcl.c,$(wildcard $(NIMBLE)/nimble/host/src/*.c)) \
         $(NIMBLE)/nimble/host/services/gap/src/ble_svc_gap.c $(NIMBLE)/nimble/host/services/gatt/src/ble_svc_gatt.c \
         $(NIMBLE)/nimble/transport/src/transport.c \
@@ -40,18 +61,21 @@ MBEDTLS_SRCS := $(addprefix $(MBEDTLS)/library/,aes.c bignum.c bignum_core.c cip
 SRCS += $(NIMBLE_SRCS) $(MBEDTLS_SRCS)
 OBJS := $(patsubst %,$(BUILD)/%.o,$(SRCS))
 
-CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -ffreestanding -nostdlib \
+CFLAGS := -mcpu=$(CPU_$(SOC)) -marm -mfloat-abi=hard -mfpu=$(FPU_$(SOC)) -ffreestanding -nostdlib \
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
-          -Isrc -Isrc/soc/qcom -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
+          -Isrc -Isrc/soc/$(SOC) -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/$(TUSB_PORT_$(SOC)) -Isrc/bt/port \
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
           -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"'
 LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,$(BUILD)/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack
 LIBS    := -lgcc
 
+# The UI is built once per CPU: the A8 has neither the A7's divide nor
+# its fused multiply-add.
 CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
-UI_LIB  := ui/target/armv7a-none-eabihf/release/libasteroid_ui.a
+UI_TARGET := ui/target$(if $(filter qcom,$(SOC)),,-$(SOC))
+UI_LIB  := $(UI_TARGET)/armv7a-none-eabihf/release/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
@@ -84,13 +108,13 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS)
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" \
-		$(CARGO) build --release --target armv7a-none-eabihf
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_ARMV7A_NONE_EABIHF_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC))" \
+		$(CARGO) build --release --target armv7a-none-eabihf --target-dir $(abspath $(UI_TARGET))
 	@touch $@
 
-$(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/qcom/memmap.h
+$(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/$(SOC)/memmap.h
 	@mkdir -p $(BUILD)
-	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/qcom $< -o $@
+	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/$(SOC) $< -o $@
 
 $(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/asteroid.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
