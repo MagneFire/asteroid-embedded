@@ -61,6 +61,8 @@ static void deliver(void)
 static void feed(uint8_t c)
 {
 	if (!type) {
+		if (bt_link_byte(c))
+			return;
 		need = header_len(c);
 		if (!need) {
 			errors++;
@@ -88,6 +90,9 @@ static void feed(uint8_t c)
 	deliver();
 	type = 0;
 }
+
+/* A byte the controller's driver took off the UART itself. */
+void hci_rx_byte(uint8_t c) { feed(c); }
 
 void hci_reset_parser(void)
 {

@@ -236,6 +236,8 @@ static bool host_wake_asserted(void)
 }
 
 
+bool bt_link_byte(uint8_t c) { return false; }
+
 void bt_tx_activity(void)
 {
 	tx_t = time_ms();

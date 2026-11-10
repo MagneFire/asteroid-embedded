@@ -18,6 +18,7 @@ typedef void (*hci_packet_fn)(uint8_t type, const uint8_t *p, unsigned n);
 void hci_reset_parser(void);
 void hci_set_handler(hci_packet_fn fn);
 void hci_poll(void);
+void hci_rx_byte(uint8_t c);
 int hci_send(uint8_t type, const uint8_t *p, unsigned n);
 int hci_cmd(uint16_t opcode, const void *param, uint8_t plen, uint8_t *rsp, unsigned *rsp_len, uint32_t timeout_ms);
 void hci_stats(uint32_t *packets, uint32_t *errors);
@@ -37,6 +38,9 @@ void bt_stop(void);
 bool bt_running(void);
 bool bt_host_wake(void);
 void bt_tx_activity(void);
+/* A byte between packets that is the controller's own business, such
+ * as a sleep handshake, and not the start of a packet. */
+bool bt_link_byte(uint8_t c);
 void bt_lpm_poll(void);
 uint32_t bt_lpm_next_ms(void);
 bool bt_can_sleep(void);
