@@ -19,9 +19,9 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
 SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c src/sensors/steps.c src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c src/sensors/auto_brightness.c \
         src/input/touch.c src/input/touch_it7260.c src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c src/sensors/orient.c src/ui/rotation.c src/civil.c \
-        src/soc/mmu.c src/soc/gic.c src/soc/timer.c src/soc/wdt.c \
-        src/soc/spmi.c src/soc/pmic.c src/soc/bms.c src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c src/soc/reboot.c src/soc/scm.c src/soc/exceptions.c \
-        src/soc/tlmm.c src/soc/clock.c src/soc/spm.c src/soc/suspend.S src/soc/i2c_qup.c src/soc/uart_dm.c src/soc/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
+        src/soc/qcom/mmu.c src/soc/qcom/gic.c src/soc/qcom/timer.c src/soc/qcom/wdt.c \
+        src/soc/qcom/spmi.c src/soc/qcom/pmic.c src/soc/qcom/bms.c src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c src/soc/qcom/reboot.c src/soc/qcom/scm.c src/soc/exceptions.c \
+        src/soc/qcom/tlmm.c src/soc/qcom/clock.c src/soc/qcom/spm.c src/soc/qcom/suspend.S src/soc/qcom/i2c_qup.c src/soc/qcom/uart_dm.c src/soc/qcom/rpm.c src/board/detect.c src/board/drivers.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
         src/log.c src/display/display.c src/display/dsi.c src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c \
         src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
@@ -43,7 +43,7 @@ OBJS := $(patsubst %,$(BUILD)/%.o,$(SRCS))
 CFLAGS := -mcpu=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -ffreestanding -nostdlib \
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
-          -Isrc -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
+          -Isrc -Isrc/soc/qcom -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/chipidea/ci_hs -Isrc/bt/port \
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
           -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"'
@@ -88,9 +88,9 @@ $(UI_LIB): $(UI_SRCS)
 		$(CARGO) build --release --target armv7a-none-eabihf
 	@touch $@
 
-$(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/memmap.h
+$(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/qcom/memmap.h
 	@mkdir -p $(BUILD)
-	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc $< -o $@
+	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/qcom $< -o $@
 
 $(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/asteroid.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
@@ -136,7 +136,7 @@ disasm: $(BUILD)/asteroid.elf
 
 HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
-               -U_FORTIFY_SOURCE -I src -I tests -DHOST_TEST -include tests/host.h \
+               -U_FORTIFY_SOURCE -I src -I src/soc/qcom -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/sensors/orient.c src/ui/rotation.c
 PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "soc/msm8226.h"
+#include "soc.h"
 #include "board/board.h"
 
 #define BIT(n) (1u << (n))

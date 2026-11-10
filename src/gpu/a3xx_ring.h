@@ -6,7 +6,7 @@
 #define A3XX_RING_H
 #include <stdint.h>
 #include <stdbool.h>
-#include "soc/msm8226.h"
+#include "soc.h"
 
 #define CP_TYPE0(reg, n)	((((n) - 1) << 16) | ((reg) & 0x7fff))
 #define CP_TYPE3(op, n)		(0xc0000000u | (((n) - 1) << 16) | ((op) << 8))

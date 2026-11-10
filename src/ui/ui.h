@@ -66,7 +66,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "soc/memmap.h"
+#include "memmap.h"
 
 #define UI_PANELS 7
 _Static_assert(UI_PANELS * UI_LAYER_STRIDE <= UI_LAYER_SIZE, "more panels than layers");

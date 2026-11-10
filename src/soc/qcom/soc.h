@@ -1,7 +1,7 @@
 /* APQ8026 / MSM8226 register map used by the firmware. */
-#ifndef MSM8226_H
-#define MSM8226_H
-#include "soc/memmap.h"
+#ifndef SOC_H
+#define SOC_H
+#include "memmap.h"
 
 #define GICD_BASE		0xf9000000u
 #define GICC_BASE		0xf9002000u
