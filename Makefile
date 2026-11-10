@@ -24,7 +24,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
         src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
         src/civil.c src/log.c src/soc/mmu.c src/soc/exceptions.c src/board/drivers.c \
         src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \
-        src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c \
+        src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c src/input/haptics_ldo.c \
         src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
         src/display/backlight_lm3535.c src/sensors/tsl2584.c src/audio/speaker.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/inflate.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
