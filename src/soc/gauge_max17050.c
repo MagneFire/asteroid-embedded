@@ -26,10 +26,15 @@
 #define BUS_HZ		200000
 #define POLL_MS		30000
 #define DOCK_DEBOUNCE_MS	2000
+#define DOCK_PULSE_MS	1500
 
 static bool ready, wake_armed, dock_state, dock_settling, dock_plugged;
 static volatile bool dock_irq;
-static uint32_t soc = 50, poll_t, dock_t;
+static volatile uint32_t pulse_t;
+static volatile bool pulsed;
+static uint32_t soc = 50, poll_t, dock_t, usb_gone_t;
+static bool usb_was;
+#define USB_GONE_MS	1000
 static uint16_t last_status;
 static unsigned errors;
 static struct charge_policy policy;
@@ -130,6 +135,53 @@ static bool model_load(void)
 	return !r;
 }
 
+/* The gauge started over, as the vendor's driver does it: the model
+ * locked and the flag cleared, then the reset command until the flag
+ * is back. */
+static bool soft_reset(void)
+{
+	uint16_t v, a = 1, b = 1;
+	for (unsigned i = 0; i < 8 && (a || b); i++) {
+		wr(MAX17050_MLOCK1, 0);
+		wr(MAX17050_MLOCK2, 0);
+		if (!rd(MAX17050_STATUS, &v))
+			wr(MAX17050_STATUS, v & ~0x0002);
+		if (rd(MAX17050_MLOCK1, &a) || rd(MAX17050_MLOCK2, &b))
+			a = 1;
+	}
+	if (a || b)
+		return false;
+	for (unsigned i = 0; i < 8; i++) {
+		wr(MAX17050_VFSOC0_ENABLE, 0x000f);
+		delay_ms(3);
+		if (!rd(MAX17050_STATUS, &v) && (v & 0x0002))
+			return true;
+	}
+	return false;
+}
+
+/* USB taken out, for long enough to be meant. */
+static void usb_check(uint32_t now)
+{
+	bool usb = vbus_present();
+	if (usb)
+		usb_gone_t = 0;
+	else if (usb_was)
+		usb_gone_t = now | 1;
+	usb_was = usb;
+	if (!usb_gone_t || now - usb_gone_t < USB_GONE_MS)
+		return;
+	usb_gone_t = 0;
+	if (!ready || !board->gauge.model)
+		return;
+	bool ok = soft_reset();
+	log_printf("gauge: usb out, %s\n", ok ? "started over" : "would not start over");
+	if (ok) {
+		model_load();
+		poll_t = now - POLL_MS;
+	}
+}
+
 /* For the console: the model written again, whatever the status. */
 bool gauge_model_load(void)
 {
@@ -146,9 +198,15 @@ static void model_check(void)
 	model_load();
 }
 
+/* On the pad the receiver holds its line low. An older one has a line
+ * that is high while it charges and another that is high with it and
+ * pulsed high while it sits on the pad without charging: there the
+ * watch is off the pad once neither has been seen for a while. */
 static bool dock_line(void)
 {
-	return !gpio_get(GPIO_DOCK);
+	if (!board->gauge.dock_pulses)
+		return !gpio_get(GPIO_DOCK);
+	return gpio_get(board->gauge.charging) || gpio_get(GPIO_DOCK) || (pulsed && time_ms() - pulse_t < DOCK_PULSE_MS);
 }
 
 static bool docked(void)
@@ -173,11 +231,13 @@ static void charge_lines(bool stop, bool reduced)
 {
 	static bool driven;
 	gpio_set(GPIO_CHARGE_TERM, stop);
-	gpio_set(GPIO_CHARGE_RATE, reduced);
+	if (GPIO_CHARGE_RATE)
+		gpio_set(GPIO_CHARGE_RATE, reduced);
 	if (!driven) {
 		driven = true;
 		gpio_config(GPIO_CHARGE_TERM, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
-		gpio_config(GPIO_CHARGE_RATE, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		if (GPIO_CHARGE_RATE)
+			gpio_config(GPIO_CHARGE_RATE, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	}
 }
 
@@ -210,6 +270,8 @@ static void charge_check(void)
 static void gauge_init(void)
 {
 	gpio_config(GPIO_DOCK, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
+	if (board->gauge.dock_pulses)
+		gpio_config(board->gauge.charging, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	/* The factory kill circuit disconnects the battery while USB powers
 	 * the watch and keeps it so until it is disarmed, so the first unplug
 	 * cuts the power. The bootloader leaves the pin low (armed); the
@@ -247,7 +309,8 @@ static void dock_update(uint32_t now)
 		dock_settling = false;
 		return;
 	}
-	if (!dock_settling || edge) {
+	/* A pulsed line's edges are what keeps it at its level. */
+	if (!dock_settling || (edge && !board->gauge.dock_pulses)) {
 		dock_settling = true;
 		dock_t = now;
 		return;
@@ -273,6 +336,8 @@ static void gauge_poll(void)
 		wake_pin(MPM_PIN_DOCK, arm, false);
 	}
 	dock_update(now);
+	if (board->gauge.usb_disturbs)
+		usb_check(now);
 	if (now - poll_t < POLL_MS)
 		return;
 	poll_t = now;
@@ -294,8 +359,15 @@ static uint32_t gauge_next_ms(void)
 	uint32_t now = time_ms(), next = UINT32_MAX;
 	if (dock_irq)
 		return 1;
+	if (board->gauge.dock_pulses && dock_state && !gpio_get(board->gauge.charging) && !gpio_get(GPIO_DOCK))
+		next = ms_left(pulse_t, DOCK_PULSE_MS, now);
 	if (dock_settling)
 		next = ms_left(dock_t, DOCK_DEBOUNCE_MS, now);
+	if (usb_gone_t) {
+		uint32_t gone = ms_left(usb_gone_t, USB_GONE_MS, now);
+		if (gone < next)
+			next = gone;
+	}
 	if (docked()) {
 		uint32_t poll = ms_left(poll_t, POLL_MS, now);
 		if (poll < next)
@@ -307,6 +379,14 @@ static uint32_t gauge_next_ms(void)
 static void dock_edge(unsigned n)
 {
 	gpio_irq_ack(n);
+	pulse_t = time_ms();
+	pulsed = true;
+	dock_irq = true;
+}
+
+static void charging_edge(unsigned n)
+{
+	gpio_irq_ack(n);
 	dock_irq = true;
 }
 
@@ -316,6 +396,11 @@ static void gauge_cable_irq_init(void)
 {
 	gpio_irq_config(GPIO_DOCK, GPIO_IRQ_EDGE_FALLING, dock_edge);
 	gpio_irq_enable(GPIO_DOCK, true);
+	/* Put on the pad, the pulsed line only rises. */
+	if (board->gauge.dock_pulses) {
+		gpio_irq_config(board->gauge.charging, GPIO_IRQ_EDGE_RISING, charging_edge);
+		gpio_irq_enable(board->gauge.charging, true);
+	}
 	vbus_irq_init();
 }
 
@@ -351,7 +436,7 @@ static const char *gauge_status(void)
 		return "no gauge";
 	int r = rd(MAX17050_TEMP, &t), c = r ? 0 : max17050_decidegrees(t);
 	snprintf(s, sizeof s, "dock %u usb %u chg_n %u, %lu%%, %d.%d C, status %04x%s, %u errors", docked(),
-		 vbus_present(), gpio_get(GPIO_CHARGE_N), soc, c / 10, (c < 0 ? -c : c) % 10, last_status,
+		 vbus_present(), board->gauge.dock_pulses ? !gpio_get(board->gauge.charging) : gpio_get(GPIO_CHARGE_N), soc, c / 10, (c < 0 ? -c : c) % 10, last_status,
 		 max17050_no_battery(last_status) ? " no battery" : "", errors);
 	return s;
 }

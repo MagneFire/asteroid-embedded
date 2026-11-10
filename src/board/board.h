@@ -119,7 +119,7 @@ struct battery_driver {
 extern const struct battery_driver battery_pmic, battery_max17050;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4;
-extern const struct motor_driver motor_drv2605, motor_pm8226;
+extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo;
 extern const struct backlight_driver backlight_lm3535;
 extern const struct light_driver light_tsl2584, light_m4;
 
@@ -212,11 +212,18 @@ struct board {
 	struct {
 		struct board_i2c i2c;
 		uint8_t dock, dock_mpm, charge_n, charge_term, charge_rate;
+		/* A receiver that pulses the pad line while it does not
+		 * charge, and its line that is high while it does. */
+		bool dock_pulses;
+		uint8_t charging;
 		/* Motorola's factory kill: high keeps the battery connected while
 		 * USB is in, 0 for a board without it. */
 		uint8_t kill_disable;
 		/* The cell model to load when the gauge has lost it. */
 		const struct max17050_model *model;
+		/* USB power reaches the gauge's side of the cell, so what
+		 * it learned with USB in is thrown away when USB goes. */
+		bool usb_disturbs;
 	} gauge;
 
 	const struct touch_driver *touch;
@@ -267,6 +274,9 @@ struct board {
 		struct board_i2c i2c;	/* DRV2605 */
 		uint8_t trigger, enable;
 		uint16_t vib_mv;	/* PMIC vibrator drive */
+		/* A motor fed by an LDO of its own, and that LDO's voltage. */
+		uint8_t ldo;
+		uint32_t ldo_uv;
 	} motor_pins;
 
 	/* The speaker amplifier, addr 0 if there is none. */
