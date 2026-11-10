@@ -26,7 +26,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
         src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \
         src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c \
         src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
-        src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
+        src/display/backlight_lm3535.c src/sensors/tsl2584.c src/audio/speaker.c src/display/fbcon.c src/display/flatmesh.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
         src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
@@ -38,18 +38,21 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
 SRCS_qcom := $(addprefix src/soc/qcom/,init.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
                suspend.S i2c_qup.c uart_dm.c rpm.c) \
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
-        src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c \
-        src/input/touch.c src/input/touch_it7260.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c \
+        src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/light_tsl2584.c \
+        src/input/touch.c src/input/touch_it7260.c src/input/haptics_drv2605.c src/input/haptics_pmic.c \
         src/display/display.c src/display/dsi.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
         src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc_msm.c
 CPU_qcom  := cortex-a7
 FPU_qcom  := neon-vfpv4
 TUSB_PORT_qcom := chipidea/ci_hs
+TUSB_DEFS_qcom := -DTUP_USBIP_CHIPIDEA_HS -DTUP_DCD_ENDPOINT_MAX=16
 
 SRCS_omap3 :=
 CPU_omap3 := cortex-a8
 FPU_omap3 := neon
 TUSB_PORT_omap3 := mentor/musb
+# The Mentor driver keeps its endpoint interrupts in 8 bits.
+TUSB_DEFS_omap3 := -DTUP_USBIP_MUSB -DTUP_USBIP_MUSB_TI -DTUP_DCD_ENDPOINT_MAX=8
 
 SRCS += $(SRCS_$(SOC))
 NIMBLE_SRCS := $(filter-out %/ble_gatts_lcl.c,$(wildcard $(NIMBLE)/nimble/host/src/*.c)) \
@@ -67,7 +70,7 @@ CFLAGS := -mcpu=$(CPU_$(SOC)) -marm -mfloat-abi=hard -mfpu=$(FPU_$(SOC)) -ffrees
           -Isrc -Isrc/soc/$(SOC) -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/$(TUSB_PORT_$(SOC)) -Isrc/bt/port \
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
-          -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"'
+          -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"' $(TUSB_DEFS_$(SOC))
 LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,$(BUILD)/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack
 LIBS    := -lgcc
 

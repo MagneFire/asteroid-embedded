@@ -1,5 +1,6 @@
-/* TinyUSB configuration: device only, one ChipIdea high-speed port, no
- * operating system, cached buffers cleaned and invalidated by the port. */
+/* TinyUSB configuration: device only, one high-speed port, no operating
+ * system, cached buffers cleaned and invalidated by the port. The
+ * Makefile names the SoC's controller and how many endpoints it has. */
 #ifndef TUSB_CONFIG_H
 #define TUSB_CONFIG_H
 
@@ -9,8 +10,6 @@
 #define CFG_TUSB_DEBUG_PRINTF		tusb_log
 int tusb_log(const char *fmt, ...);
 
-#define TUP_USBIP_CHIPIDEA_HS
-#define TUP_DCD_ENDPOINT_MAX		16
 
 #define CFG_TUD_ENABLED			1
 #define CFG_TUD_MAX_SPEED		OPT_MODE_HIGH_SPEED
