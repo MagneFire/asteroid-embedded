@@ -47,7 +47,7 @@ FPU_qcom  := neon-vfpv4
 TUSB_PORT_qcom := chipidea/ci_hs
 TUSB_DEFS_qcom := -DTUP_USBIP_CHIPIDEA_HS -DTUP_DCD_ENDPOINT_MAX=16
 
-SRCS_omap3 := $(addprefix src/soc/omap3/,init.c intc.c timer.c wdt.c clock.c gpio.c i2c.c tps65912.c reboot.c sleep.c detect.c rtc.c uart.c) \
+SRCS_omap3 := $(addprefix src/soc/omap3/,init.c intc.c timer.c wdt.c clock.c gpio.c i2c.c tps65912.c reboot.c sleep.c detect.c rtc.c uart.c hsmmc.c) \
         src/board/minnow.c src/gpu/soft.c
 CPU_omap3 := cortex-a8
 FPU_omap3 := neon
