@@ -31,6 +31,17 @@ void soc_board_init(void)
 	writel(readl(CONTROL_WKUP_CTRL) | WKUP_SIM_IO_ON, CONTROL_WKUP_CTRL);
 	for (const struct board_pad *p = board->pads; p && p->off; p++)
 		pad_config(p->off, p->value);
+	/* The bootloader's fastboot is still attached: its PHY goes off
+	 * here, so that the host has long seen it leave by the time USB
+	 * starts. */
+	if (board->usb_phy.resetn) {
+		gpio_set(board->usb_phy.resetn, 0);
+		gpio_set(board->usb_phy.cs, 0);
+		gpio_set(board->usb_phy.csn, 1);
+		gpio_config(board->usb_phy.resetn, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		gpio_config(board->usb_phy.cs, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		gpio_config(board->usb_phy.csn, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
 	tps65912_init();
 	log_printf("boot: %s\n", boot_reason());
 }
