@@ -1,5 +1,6 @@
-# asteroid-embedded: bare-metal firmware for APQ8026 smartwatches.
-# make            build/asteroid.img, for every supported watch
+# asteroid-embedded: bare-metal firmware for smartwatches.
+# make            build/asteroid.img for the APQ8026 watches and
+#                 build/omap3/asteroid.img for the OMAP3630 one
 # make run        boot it over fastboot, wait for the reboot, show the log
 # make test       host unit tests of the console, adb and the parsers
 CROSS   ?= arm-none-eabi-
@@ -84,7 +85,12 @@ UI_LIB  := $(UI_TARGET)/armv7a-none-eabihf/release/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
+ifeq ($(SOC),qcom)
 all: $(BUILD)/asteroid.img
+	$(MAKE) SOC=omap3 build/omap3/asteroid.img
+else
+all: $(BUILD)/asteroid.img
+endif
 
 $(BUILD)/gitrev.h: FORCE
 	@mkdir -p $(BUILD)
@@ -132,6 +138,7 @@ $(BUILD)/%.dtb: dts/%.dts
 	@mkdir -p $(BUILD)
 	$(DTC) -q -I dts -O dtb -o $@ $<
 
+ifeq ($(SOC),qcom)
 # One tree per watch: each bootloader picks the one whose board-id it has.
 # A new tree goes last, so the entries before it stay as they are.
 DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb
@@ -148,6 +155,21 @@ $(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/smelt.dtb tools/appen
 
 $(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/qcdt.img tools/mkbootimg.py
 	python3 tools/mkbootimg.py --kernel $< --dt $(BUILD)/qcdt.img -o $@
+else
+# The bootloader takes its tree from behind the image, as it does with
+# the vendor's kernels, and picks it by the hardware revision the tree
+# names. Its own images all have a ramdisk, so this one has one too,
+# with nothing in it.
+$(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/minnow.dtb tools/appenddtb.py
+	python3 tools/appenddtb.py -o $@ $< $(BUILD)/minnow.dtb
+
+$(BUILD)/ramdisk.bin:
+	@mkdir -p $(BUILD)
+	head -c 512 /dev/zero > $@
+
+$(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/ramdisk.bin tools/mkbootimg.py
+	python3 tools/mkbootimg.py --kernel $< --ramdisk $(BUILD)/ramdisk.bin --cmdline androidboot.hardware=minnow -o $@
+endif
 
 run: $(BUILD)/asteroid.img
 	python3 tools/run.py $(RUNFLAGS)
