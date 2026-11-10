@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	model = "Moto 360";
+	compatible = "mot,omap3-minnow", "ti,omap3";
+	/* The bootloader takes the tree that lists its hardware revision:
+	 * 9 is the watch as it was sold. The pins in the board table are
+	 * that revision's. */
+	mmi,revision = "p2";
+	mmi,hwrev = <0x09>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0>;
+	};
+};

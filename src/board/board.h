@@ -122,8 +122,21 @@ extern const struct motor_driver motor_drv2605, motor_pm8226;
 extern const struct backlight_driver backlight_lm3535;
 extern const struct light_driver light_tsl2584;
 
+/* A pad whose mux or pull the bootloader's setup is changed in: its
+ * offset in the SoC's pad registers and their value. */
+struct board_pad {
+	uint16_t off, value;
+};
+
 struct board {
 	const char *name, *compatible;
+	/* Pads to set at boot, ended by an offset of 0, for a SoC that
+	 * has the pins muxed apart from their use. */
+	const struct board_pad *pads;
+	/* The pads that can wake such a SoC, which a driver names by its
+	 * place here where another watch has an MPM pin. */
+	const uint16_t *wake_pads;
+	uint8_t wake_pad_count;
 	/* SMEM's hardware platform, where it is enough to name the watch. */
 	uint32_t smem_platform;
 	bool heart_rate;
@@ -147,8 +160,20 @@ struct board {
 		const struct dcs_step *on;
 		uint8_t on_n, reset_gpio, bias_gpio, io_ldo;
 		uint32_t io_uv;
+		/* A panel behind a bridge chip: the bridge's reset line, the
+		 * lines that switch its core supply, its I/O supply (low is
+		 * on, and the pad of that line) and its memory. */
+		uint8_t bridge_reset, bridge_supply, vio_gpio, mem_gpio;
+		uint16_t vio_pad;
 	} panel;
+	/* The line that switches a clock the panel's bridge and the USB
+	 * PHY share, 0 for none. */
+	uint8_t periph_clock_gpio;
 
+	/* The names of the partitions of a disk whose table has none, by
+	 * number from 1, "" for one the firmware has no name for. */
+	const char *const *part_names;
+	uint8_t part_count;
 	/* Where firmware files are on the system partition, NULL-ended. */
 	const char *const *firmware_dirs;
 
@@ -169,6 +194,11 @@ struct board {
 	uint32_t rsense_uohm;
 	/* USB PHY override registers 0x80-0x83, written after a PHY reset. */
 	uint8_t usb_phy_init[4];
+	/* A USB PHY run by lines alone: high while VBUS is there, its
+	 * reset (low holds it), and its two selects of opposite sense. */
+	struct {
+		uint8_t vbus, resetn, cs, csn;
+	} usb_phy;
 	/* The PHY's L10 and L20 go off with USB down. */
 	bool usb_rails_off;
 	/* LDOs the bootloader leaves on that nothing here uses, 0 ends. */
@@ -250,7 +280,7 @@ struct board {
 			       (ibat_safe) / 50 <= 0x3f && (ibat_max) <= (ibat_safe),                             \
 		       "charger current off the 50 mA steps")
 
-extern const struct board board_sturgeon, board_sparrow, board_smelt;
+extern const struct board board_sturgeon, board_sparrow, board_smelt, board_minnow;
 /* The watch this is, set by board_detect before anything uses it. */
 extern const struct board *board;
 extern const char *board_detected_by;
