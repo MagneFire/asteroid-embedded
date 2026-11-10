@@ -2,6 +2,22 @@
  * hardware revision 9, the watch as it was sold. */
 #include "asteroid.h"
 #include "sensors/m4_proto.h"
+#include "soc/max17050.h"
+
+/* The cell as the vendor's gauge driver programs it when the bootloader
+ * names none, which is how the watches come. */
+static const struct max17050_model cell_model = {
+	.config = 0x6254, .learn_cfg = 0x2606, .filter_cfg = 0x87a4, .relax_cfg = 0x043b, .full_soc_thresh = 0x5f00,
+	.design_cap = 606, .fullcap = 662, .fullcapnom = 662, .ichgt_term = 0x0066,
+	.rcomp0 = 0x0052, .tempco = 0x333a, .qrtbl = { 0x1b94, 0x0e94, 0x0594, 0x0294 },
+	.tgain = 0xe71c, .toff = 0x251a, .version = 0x0001,
+	.cell = {
+		0x9cf0, 0xa310, 0xb180, 0xb360, 0xb6a0, 0xb6e0, 0xba10, 0xbb10, 0xbbd0, 0xbc10, 0xc200, 0xc250,
+		0xc7c0, 0xc820, 0xd050, 0xd710, 0x0140, 0x0110, 0x0210, 0x02c0, 0x1000, 0x0a00, 0x06c0, 0x31a0,
+		0x0af0, 0x1170, 0x0cb0, 0x08d0, 0x0aa0, 0x0880, 0x07b0, 0x07b0, 0x0100, 0x0100, 0x0100, 0x0100,
+		0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100,
+	},
+};
 
 /* The pads as the vendor's kernel sets them when it starts, as the
  * bootloader leaves most of the board's lines unconnected: the GPIOs
@@ -70,6 +86,26 @@ const struct board board_minnow = {
 	.hub_pins = { .i2c = { .bus = 2, .addr = 0x39 }, .irq = 59, .reset = 129, .boot0 = 21, .mpm = WAKE_HUB, .hold_low = 28 },
 	.hub_variant = &m4_minnow,
 	.light = &light_m4,
+	.rsense_uohm = 10000,
+	/* MAX17050 on I2C3. The wireless receiver's charging line is gpio
+	 * 176, the line it pulses on the pad gpio 22, and gpio 78 high
+	 * stops it charging. The factory kill line, gpio 182, is left as
+	 * the bootloader has it: the vendor's kernel never drives it. */
+	.battery_driver = &battery_max17050,
+	.gauge = { .i2c = { .bus = 3, .addr = 0x36 }, .dock = 22, .dock_mpm = WAKE_DOCK, .dock_pulses = true, .charging = 176,
+		   .charge_term = 78, .model = &cell_model, .usb_disturbs = true },
+	/* Atmel mXT on I2C1, interrupt on gpio 99, reset on gpio 164. */
+	.touch = &touch_mxt,
+	.touch_pins = { .i2c = { .bus = 1, .addr = 0x4a }, .irq = 99, .reset = 164, .mpm = WAKE_TOUCH, .ldo = 8, .ldo_uv = 2800000,
+			.own_settings = true },
+	/* LM3535 on I2C3 next to the gauge, enable on gpio 98. */
+	.backlight = &backlight_lm3535,
+	.backlight_pins = { .i2c = { .bus = 3, .addr = 0x38 }, .enable = 98 },
+	/* The vendor's ambient maximum. */
+	.backlight_aod_code = 36,
+	/* The motor runs from LDO6. */
+	.motor = &motor_ldo,
+	.motor_pins = { .ldo = 6, .ldo_uv = 2400000 },
 	.periph_clock_gpio = 177,
 	.usb_phy = { .vbus = 142, .resetn = 15, .cs = 16, .csn = 27 },
 	.part_names = part_names,

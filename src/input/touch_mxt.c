@@ -38,6 +38,8 @@ static bool wide_x, wide_y, was_down;
 static int last_x, last_y;
 static uint32_t attentions, errors;
 static volatile bool configuring, retry;
+static uint8_t awake[MXT_POWER_WRITES];
+static bool kept[MXT_POWER_WRITES];
 static uint32_t retry_t, retry_ms;
 
 static int rd(uint16_t addr, uint8_t *buf, unsigned n)
@@ -167,6 +169,14 @@ static bool mxt_init(void)
 	msg_ptr[1] = (uint8_t)(map.msg_addr >> 8);
 	log_printf("touch: mxt family %02x variant %02x version %02x build %02x, %u objects, range %u x %u, ids %u+%u\n", info[0],
 		   info[1], info[2], info[3], objects, max_x, max_y, map.t9_first_id, map.t9_ids);
+	if (board->touch_pins.own_settings) {
+		for (unsigned i = 0; i < MXT_POWER_WRITES; i++) {
+			uint16_t addr;
+			uint8_t val;
+			kept[i] = mxt_power_write(&map, i, false, &addr, &val) && !rd(addr, &awake[i], 1);
+		}
+		log_printf("touch: awake settings %02x %02x %02x %02x, threshold %u\n", awake[0], awake[1], awake[2], awake[3], awake[4]);
+	}
 	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_LEVEL_LOW, attention);
 	gpio_irq_enable(GPIO_IRQ, true);
 	return true;
@@ -185,7 +195,11 @@ static void mxt_sleep(bool on)
 	for (unsigned i = 0; i < MXT_POWER_WRITES; i++) {
 		uint16_t addr;
 		uint8_t val;
+		if (board->touch_pins.own_settings && !kept[i])
+			continue;
 		if (mxt_power_write(&map, i, on, &addr, &val)) {
+			if (!on && kept[i])
+				val = awake[i];
 			uint8_t w[3] = { (uint8_t)addr, (uint8_t)(addr >> 8), val };
 			if (i2c_xfer(BUS, ADDR, w, 3, NULL, 0))
 				errors++;
