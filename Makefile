@@ -31,7 +31,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/
         src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         src/notify/notify.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
-        src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/store.c src/storage/kv.c \
+        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/store.c src/storage/kv.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 
@@ -41,7 +41,7 @@ SRCS_qcom := $(addprefix src/soc/qcom/,init.c mmu.c gic.c timer.c wdt.c spmi.c p
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/tsl2584.c src/sensors/light_tsl2584.c \
         src/input/touch.c src/input/touch_it7260.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/audio/speaker.c \
         src/display/display.c src/display/dsi.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
-        src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc.c
+        src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc_msm.c
 CPU_qcom  := cortex-a7
 FPU_qcom  := neon-vfpv4
 TUSB_PORT_qcom := chipidea/ci_hs
