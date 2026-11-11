@@ -6,6 +6,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "gpu/draw.h"
+#include "gpu/paint.h"
 
 void rotation_buffer(uint32_t *buf, uint32_t stride) {}
 
@@ -160,12 +161,167 @@ static void round_window(void)
 	}
 }
 
+/* A texture drawn into a layer matches the arithmetic done a pixel at
+ * a time, in every format, tinted and not, and stays inside its clip. */
+static void textures(void)
+{
+	enum { TW = 37, TH = 5 };
+	static uint8_t tex[TH * TW * 4];
+	static const int formats[] = { PAINT_ALPHA, PAINT_RGBA_PREMULTIPLIED, PAINT_RGBA, PAINT_RGB };
+	static const uint8_t sizes[] = { 1, 4, 4, 3 };
+	for (unsigned f = 0; f < 4; f++)
+		for (unsigned round = 0; round < 3; round++) {
+			bool colorize = round == 2 && f != 0;
+			uint32_t tint = f == 0 || colorize ? 0x80402010u + (round << 4) : round ? 0x99999999u : 0xffffffffu;
+			unsigned bytes = sizes[f];
+			for (unsigned i = 0; i < sizeof tex; i++)
+				tex[i] = (uint8_t)(rnd() % 5 == 0 ? 0 : rnd());
+			/* Premultiplied texels have no colour above their alpha. */
+			if (formats[f] == PAINT_RGBA_PREMULTIPLIED)
+				for (unsigned i = 0; i < TH * TW; i++)
+					for (int c = 0; c < 3; c++)
+						if (tex[i * 4 + c] > tex[i * 4 + 3])
+							tex[i * 4 + c] = tex[i * 4 + 3];
+			uint32_t want[H * W];
+			for (int i = 0; i < H * W; i++) {
+				uint32_t a = rnd() & 0xff;
+				layer[i] = a << 24 | div255((rnd() & 0xff) * a) << 16 | div255((rnd() & 0xff) * a) << 8 |
+					   div255((rnd() & 0xff) * a);
+				want[i] = layer[i];
+			}
+			const int32_t clip[4] = { 5, 2, 30, 6 };
+			int dx = 3, dy = 1;
+			for (int y = clip[1]; y < clip[3] && y < dy + TH; y++)
+				for (int x = clip[0]; x < clip[2] && x < dx + TW; x++) {
+					const uint8_t *q = tex + ((y - dy) * TW + (x - dx)) * bytes;
+					uint32_t p[4], t[4] = { tint & 0xff, tint >> 8 & 0xff, tint >> 16 & 0xff, tint >> 24 };
+					if (f == 0 || colorize) {
+						uint32_t a = bytes == 1 ? q[0] : bytes == 3 ? 255 : q[3];
+						for (int c = 0; c < 4; c++)
+							p[c] = div255(a * t[c]);
+					} else {
+						p[3] = bytes == 3 ? 255 : q[3];
+						for (int c = 0; c < 3; c++)
+							p[c] = formats[f] == PAINT_RGBA ? div255(q[c] * p[3]) : q[c];
+						if (tint != 0xffffffffu)
+							for (int c = 0; c < 4; c++)
+								p[c] = div255(p[c] * t[c]);
+					}
+					uint8_t *d = (uint8_t *)&want[y * W + x];
+					for (int c = 0; c < 4; c++) {
+						uint32_t v = p[c] + div255(d[c] * (255 - p[3]));
+						d[c] = (uint8_t)(v > 255 ? 255 : v);
+					}
+				}
+			check(paint_begin(layer, W, H, W), "the layer is refused");
+			check(paint_texture(tex, TW * bytes, TW, TH, formats[f], dx, dy, TW, TH, clip, tint, colorize),
+			      "a texture at its own size is refused");
+			check(!memcmp(layer, want, sizeof want), "a texture is not drawn as a pixel at a time would");
+			check(f != 0 || !paint_texture(tex, TW, TW, TH, PAINT_ALPHA, dx, dy, TW * 2, TH, clip, tint, false),
+			      "scaled coverage is taken");
+		}
+	/* Rectangles: copied, opaque and blended, inside the clip only. */
+	for (unsigned round = 0; round < 3; round++) {
+		uint32_t color = round == 0 ? 0x40201008u : round == 1 ? 0xff102030u : 0x80402010u, want[H * W];
+		for (int i = 0; i < H * W; i++)
+			want[i] = layer[i] = 0xff000000u | (rnd() & 0xffffff);
+		const int32_t clip[4] = { 4, 3, 50, 9 };
+		for (int y = 3; y < 9; y++)
+			for (int x = 7; x < 50; x++) {
+				uint8_t *d = (uint8_t *)&want[y * W + x], *c = (uint8_t *)&color;
+				for (int k = 0; k < 4; k++) {
+					uint32_t v = round == 0 ? c[k] : c[k] + div255(d[k] * (255 - c[3]));
+					d[k] = (uint8_t)(v > 255 ? 255 : v);
+				}
+			}
+		paint_rect(7.2f, 0.0f, 60.4f, 20.0f, clip, color, round == 0);
+		check(!memcmp(layer, want, sizeof want), "a rectangle is not filled as a pixel at a time would");
+	}
+}
+
+/* A scaled texture takes each pixel from the texel under it, and a
+ * rounded rectangle with a radius of half its side is a disc: the same
+ * left to right and top to bottom, of the right area, soft at its edge. */
+static void scaled_and_rounded(void)
+{
+	static uint8_t tex[4 * 4 * 4];
+	for (unsigned i = 0; i < 16; i++) {
+		uint32_t c = 0xff000000u | (i * 16) << 16 | (i * 8) << 8 | (255 - i * 10);
+		memcpy(tex + i * 4, &c, 4);
+	}
+	memset(layer, 0, sizeof(uint32_t) * H * W);
+	const int32_t all[4] = { 0, 0, W, H };
+	paint_begin(layer, W, H, W);
+	check(paint_texture(tex, 16, 4, 4, PAINT_RGBA_PREMULTIPLIED, 10, 20, 40, 12, all, 0xffffffffu, false),
+	      "a scaled picture is refused");
+	for (int y = 0; y < 12; y++)
+		for (int x = 0; x < 40; x++) {
+			uint32_t want;
+			memcpy(&want, tex + ((y / 3) * 4 + x / 10) * 4, 4);
+			check(layer[(20 + y) * W + 10 + x] == want, "a scaled picture takes the wrong texel");
+		}
+	check(!layer[19 * W + 10] && !layer[32 * W + 10] && !layer[20 * W + 9] && !layer[20 * W + 50],
+	      "a scaled picture goes past its place");
+
+	enum { D = 60 };
+	memset(layer, 0, sizeof(uint32_t) * H * W);
+	const float radii[4] = { D / 2, D / 2, D / 2, D / 2 };
+	check(paint_rounded(8, 6, 8 + D, 6 + D, radii, 0, all, 0xffffffffu, 0xffffffffu), "a rounded rectangle is refused");
+	check(!paint_rounded(8, 6, 8 + D, 6 + D, radii, 2, all, 0xffffffffu, 0xff0000ffu), "a border is taken");
+	uint32_t area = 0, soft = 0;
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++) {
+			uint32_t a = layer[y * W + x] >> 24;
+			bool in = x >= 8 && x < 8 + D && y >= 6 && y < 6 + D;
+			check(in || !a, "a rounded rectangle goes past its place");
+			if (!in)
+				continue;
+			area += a;
+			soft += a > 0 && a < 255;
+			check(a == layer[y * W + (8 + 8 + D - 1 - x)] >> 24, "a disc differs left to right");
+			check(a == layer[(6 + 6 + D - 1 - y) * W + x] >> 24, "a disc differs top to bottom");
+		}
+	/* pi * 30 * 30 = 2827 pixels. */
+	check(area > 2800 * 255 && area < 2855 * 255, "a disc has the wrong area");
+	check(soft > 100 && soft < 400, "a disc's edge is not soft");
+	check(layer[(6 + D / 2) * W + 8] >> 24 >= 250 && layer[6 * W + 8 + D / 2] >> 24 >= 250, "a disc does not reach its sides");
+}
+
+/* What is drawn under a rounded clip stays inside it and is drawn once:
+ * a half-transparent rectangle over nothing is its own colour inside. */
+static void rounded_clip(void)
+{
+	enum { D = 40 };
+	memset(layer, 0, sizeof(uint32_t) * H * W);
+	const int32_t all[4] = { 0, 0, W, H };
+	const float clip[5] = { 10, 8, 10 + D, 8 + D, D / 2 };
+	paint_begin(layer, W, H, W);
+	paint_rounded_clip(clip);
+	paint_rect(0, 0, W, H, all, 0x80808080u, false);
+	paint_rounded_clip(NULL);
+	uint32_t area = 0;
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++) {
+			uint32_t p = layer[y * W + x], a = p >> 24;
+			bool in = x >= 10 && x < 10 + D && y >= 8 && y < 8 + D;
+			check(in || !p, "a rounded clip lets something past");
+			check(a <= 0x80, "a pixel under a rounded clip is drawn twice");
+			area += a;
+		}
+	/* pi * 20 * 20 = 1257 pixels at 128. */
+	check(area > 1240 * 128 && area < 1275 * 128, "a rounded clip has the wrong area");
+	check(layer[(8 + D / 2) * W + 10 + D / 2] == 0x80808080u, "the middle of a rounded clip is not drawn");
+}
+
 int main(void)
 {
 	gpu_host_base = (uintptr_t)&mem;
 	triangles();
 	layers();
 	round_window();
+	textures();
+	scaled_and_rounded();
+	rounded_clip();
 	printf("soft_test: ok\n");
 	return 0;
 }

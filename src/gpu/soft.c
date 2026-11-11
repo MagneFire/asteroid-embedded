@@ -6,7 +6,7 @@
  * with the left and top edges counted in, so triangles that share an
  * edge neither leave a gap nor draw a pixel twice, which blending would
  * show. The picture is turned for the nightstand once it is whole, by
- * quarter turns. The UI draws its layers itself: paint_begin says no. */
+ * quarter turns. */
 #include <string.h>
 #ifdef __ARM_NEON
 #include <arm_neon.h>
@@ -56,7 +56,6 @@ void gpu_draw_begin(const struct gpu_target *t)
 bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs) { return true; }
 void gpu_draw_blend(bool premultiplied_over) { blend = premultiplied_over; }
 void gpu_draw_turn(float c, float s) {}
-void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride) {}
 void gpu_draw_submit(void) {}
 bool gpu_draw_wait(void) { return true; }
 void gpu_draw_invalidate_textures(void) {}
@@ -347,18 +346,456 @@ void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 	}
 }
 
-bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px) { return false; }
-void paint_rounded_clip(const float *clip) {}
-void paint_rect(float x0, float y0, float x1, float y1, const int32_t clip[4], uint32_t color, bool copy) {}
+/* The UI's own drawing into a layer, premultiplied pixels of bytes R, G,
+ * B, A: rectangles, flat or with rounded corners, and textures, which
+ * is the glyphs and the pictures. Rounded rectangles with a border and
+ * glyphs at another size the UI is left to draw itself, a pixel at a
+ * time. */
+static struct {
+	uint8_t *px;
+	int width, height;
+	uint32_t pitch;
+	/* A rounded rectangle that what is drawn stays inside. */
+	bool rounded;
+	int rx0, ry0, rx1, ry1;
+	float radius;
+} paint;
+
+bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px)
+{
+	paint.px = (uint8_t *)layer;
+	paint.width = (int)width;
+	paint.height = (int)height;
+	paint.pitch = stride_px * 4;
+	paint.rounded = false;
+	return true;
+}
+
+static int round_px(float v)
+{
+	return (int)(v < 0.0f ? v - 0.5f : v + 0.5f);
+}
+
+void paint_rounded_clip(const float *clip)
+{
+	paint.rounded = clip != NULL;
+	if (!clip)
+		return;
+	paint.rx0 = round_px(clip[0]);
+	paint.ry0 = round_px(clip[1]);
+	paint.rx1 = round_px(clip[2]);
+	paint.ry1 = round_px(clip[3]);
+	float w = (float)(paint.rx1 - paint.rx0), h = (float)(paint.ry1 - paint.ry0), most = (w < h ? w : h) * 0.5f;
+	paint.radius = clip[4] < 0.0f ? 0.0f : clip[4] > most ? most : clip[4];
+}
+
+static bool paint_clip(int *x0, int *y0, int *x1, int *y1, const int32_t clip[4])
+{
+	if (*x0 < clip[0])
+		*x0 = clip[0];
+	if (*y0 < clip[1])
+		*y0 = clip[1];
+	if (*x1 > clip[2])
+		*x1 = clip[2];
+	if (*y1 > clip[3])
+		*y1 = clip[3];
+	if (*x0 < 0)
+		*x0 = 0;
+	if (*y0 < 0)
+		*y0 = 0;
+	if (*x1 > paint.width)
+		*x1 = paint.width;
+	if (*y1 > paint.height)
+		*y1 = paint.height;
+	if (paint.rounded) {
+		if (*x0 < paint.rx0)
+			*x0 = paint.rx0;
+		if (*y0 < paint.ry0)
+			*y0 = paint.ry0;
+		if (*x1 > paint.rx1)
+			*x1 = paint.rx1;
+		if (*y1 > paint.ry1)
+			*y1 = paint.ry1;
+	}
+	return *x0 < *x1 && *y0 < *y1;
+}
+
+/* The square root, by the processor's own instruction where the
+ * compiler would call a routine for it. */
+static inline float root(float v)
+{
+#if defined(__arm__) && !defined(HOST_TEST)
+	float r;
+	__asm__("vsqrt.f32 %0, %1" : "=t"(r) : "t"(v));
+	return r;
+#else
+	return __builtin_sqrtf(v);
+#endif
+}
+
+/* How far in from the side of its square a corner's arc is, dy away
+ * from the height of the arc's centre. */
+static float arc_inset(float r, float dy)
+{
+	float inside = r * r - dy * dy;
+	return inside <= 0.0f ? r : r - root(inside);
+}
+
+/* A corner's arc where it crosses a row: the pixels from the side that
+ * are outside (below lo), cut by the arc (lo up to hi) and inside. */
+struct arc {
+	float r, dy;
+	int lo, hi;
+};
+
+static void arc_set(struct arc *a, float r, float dy)
+{
+	a->r = r;
+	a->dy = dy;
+	a->lo = (int)arc_inset(r, dy > 0.5f ? dy - 0.5f : 0.0f);
+	a->hi = (int)(arc_inset(r, dy + 0.5f) + 0.999f);
+}
+
+/* How much of the pixel i in from the side is inside, out of 255. */
+static uint32_t arc_cover(const struct arc *a, int i)
+{
+	if (i >= a->hi)
+		return 255;
+	if (i < a->lo)
+		return 0;
+	float dx = a->r - ((float)i + 0.5f), cover = a->r + 0.5f - root(dx * dx + a->dy * a->dy);
+	return cover <= 0.0f ? 0 : cover >= 1.0f ? 255 : (uint32_t)(cover * 255.0f + 0.5f);
+}
+
+/* The rounded clip in the row y: whether a corner's arc crosses it, and
+ * from where to where pixels are wholly inside. */
+static bool clip_arc(int y, struct arc *a, int *whole0, int *whole1)
+{
+	*whole0 = 0;
+	*whole1 = paint.width;
+	if (!paint.rounded)
+		return false;
+	*whole0 = paint.rx0;
+	*whole1 = paint.rx1;
+	float yc = (float)(y - paint.ry0) + 0.5f, h = (float)(paint.ry1 - paint.ry0), r = paint.radius;
+	if (r <= 0.0f || (yc >= r && yc <= h - r))
+		return false;
+	arc_set(a, r, yc < r ? r - yc : yc - (h - r));
+	*whole0 += a->hi;
+	*whole1 -= a->hi;
+	return true;
+}
+
+/* How much of the pixel x of that row the rounded clip leaves. */
+static uint32_t clip_cover(const struct arc *a, int x)
+{
+	int left = x - paint.rx0, right = paint.rx1 - 1 - x;
+	return arc_cover(a, left < right ? left : right);
+}
+
+/* One premultiplied pixel over another. */
+static inline void px_over(uint8_t *d, const uint8_t s[4])
+{
+	uint32_t keep = 255u - s[3];
+	for (int c = 0; c < 4; c++) {
+		uint32_t v = s[c] + scale8(d[c], keep);
+		d[c] = (uint8_t)(v > 255 ? 255 : v);
+	}
+}
+
+/* The same for a pixel only part of which is drawn on. */
+static void px_cover(uint8_t *d, const uint8_t s[4], uint32_t cover)
+{
+	if (!cover)
+		return;
+	if (cover >= 255) {
+		px_over(d, s);
+		return;
+	}
+	uint8_t part[4] = { (uint8_t)scale8(s[0], cover), (uint8_t)scale8(s[1], cover), (uint8_t)scale8(s[2], cover),
+			    (uint8_t)scale8(s[3], cover) };
+	px_over(d, part);
+}
+
+#ifdef __ARM_NEON
+static inline void px8_over(uint8_t *d, uint8x8x4_t s)
+{
+	uint8x8x4_t dst = vld4_u8(d);
+	uint8x8_t keep = vmvn_u8(s.val[3]);
+	for (int c = 0; c < 4; c++)
+		dst.val[c] = vqadd_u8(div255(vmull_u8(dst.val[c], keep)), s.val[c]);
+	vst4_u8(d, dst);
+}
+#endif
+
+/* n pixels of one colour, put there or blended over what is there. */
+static void rect_row(uint8_t *d, int n, uint32_t color, bool put)
+{
+	uint8_t s[4] = { (uint8_t)color, (uint8_t)(color >> 8), (uint8_t)(color >> 16), (uint8_t)(color >> 24) };
+	int i = 0;
+#ifdef __ARM_NEON
+	if (put) {
+		uint32x4_t c = vdupq_n_u32(color);
+		for (; i + 4 <= n; i += 4)
+			vst1q_u8(d + i * 4, vreinterpretq_u8_u32(c));
+	} else {
+		uint8x8x4_t src = { { vdup_n_u8(s[0]), vdup_n_u8(s[1]), vdup_n_u8(s[2]), vdup_n_u8(s[3]) } };
+		for (; i + 8 <= n; i += 8)
+			px8_over(d + i * 4, src);
+	}
+#endif
+	for (; i < n; i++) {
+		if (put)
+			memcpy(d + i * 4, s, 4);
+		else
+			px_over(d + i * 4, s);
+	}
+}
+
+/* One colour for the pixels x0 to x1 of the row y, as far as the
+ * rounded clip leaves them. With copy the colour replaces what is
+ * there; where the clip cuts a pixel that is by the part it leaves. */
+static void rect_span(int y, int x0, int x1, uint32_t color, bool copy)
+{
+	uint8_t *row = paint.px + (uint32_t)y * paint.pitch;
+	uint8_t s[4] = { (uint8_t)color, (uint8_t)(color >> 8), (uint8_t)(color >> 16), (uint8_t)(color >> 24) };
+	struct arc a;
+	int w0, w1;
+	bool cut = clip_arc(y, &a, &w0, &w1);
+	if (w0 < x0)
+		w0 = x0;
+	if (w1 > x1)
+		w1 = x1;
+	if (w0 < w1)
+		rect_row(row + (uint32_t)w0 * 4, w1 - w0, color, copy || s[3] == 255);
+	else
+		w0 = w1 = x1;
+	if (!cut)
+		return;
+	for (int x = x0 == w0 ? w1 : x0; x < x1; x = x + 1 == w0 ? w1 : x + 1) {
+		uint32_t cover = clip_cover(&a, x);
+		uint8_t *d = row + (uint32_t)x * 4;
+		if (copy && cover)
+			for (int c = 0; c < 4; c++)
+				d[c] = (uint8_t)(scale8(s[c], cover) + scale8(d[c], 255 - cover));
+		else
+			px_cover(d, s, cover);
+	}
+}
+
+void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4], uint32_t color, bool copy)
+{
+	int x0 = round_px(fx0), y0 = round_px(fy0), x1 = round_px(fx1), y1 = round_px(fy1);
+	if (!paint_clip(&x0, &y0, &x1, &y1, clip) || (!copy && !color))
+		return;
+	for (int y = y0; y < y1; y++)
+		rect_span(y, x0, x1, color, copy);
+}
+
+/* How a texel becomes a premultiplied pixel: its alpha alone times the
+ * tint, or its colour, premultiplied if it is not yet, times the tint. */
+enum { TEXEL_ALPHA, TEXEL_PREMULTIPLIED, TEXEL_STRAIGHT, TEXEL_RGB };
+
+struct texels {
+	unsigned bytes;
+	int kind;
+	uint8_t tint[4];
+	bool tinted;
+};
+
+/* One texel as a pixel, false if there is nothing of it. */
+static inline bool texel_px(const struct texels *k, const uint8_t *q, uint8_t p[4])
+{
+	if (k->kind == TEXEL_ALPHA) {
+		uint32_t a = k->bytes == 1 ? q[0] : k->bytes == 3 ? 255 : q[3];
+		if (!a)
+			return false;
+		for (int c = 0; c < 4; c++)
+			p[c] = (uint8_t)scale8(a, k->tint[c]);
+		return true;
+	}
+	p[3] = k->kind == TEXEL_RGB ? 255 : q[3];
+	for (int c = 0; c < 3; c++)
+		p[c] = k->kind == TEXEL_STRAIGHT ? (uint8_t)scale8(q[c], p[3]) : q[c];
+	if (k->tinted)
+		for (int c = 0; c < 4; c++)
+			p[c] = (uint8_t)scale8(p[c], k->tint[c]);
+	return p[3] != 0;
+}
+
+/* n texels in a row over the layer. */
+static void texture_row(uint8_t *d, const uint8_t *src, int n, const struct texels *k)
+{
+	unsigned bytes = k->bytes;
+	int i = 0;
+#ifdef __ARM_NEON
+	const uint8_t *t = k->tint;
+	uint8x8_t t0 = vdup_n_u8(t[0]), t1 = vdup_n_u8(t[1]), t2 = vdup_n_u8(t[2]), t3 = vdup_n_u8(t[3]);
+	for (; i + 8 <= n; i += 8) {
+		const uint8_t *q = src + (unsigned)i * bytes;
+		uint8x8x4_t p;
+		if (k->kind == TEXEL_ALPHA) {
+			uint8x8_t a = bytes == 1 ? vld1_u8(q) : bytes == 3 ? vdup_n_u8(255) : vld4_u8(q).val[3];
+			if (!vget_lane_u64(vreinterpret_u64_u8(a), 0))
+				continue;
+			p.val[0] = div255(vmull_u8(a, t0));
+			p.val[1] = div255(vmull_u8(a, t1));
+			p.val[2] = div255(vmull_u8(a, t2));
+			p.val[3] = div255(vmull_u8(a, t3));
+		} else {
+			if (k->kind == TEXEL_RGB) {
+				uint8x8x3_t rgb = vld3_u8(q);
+				p.val[0] = rgb.val[0];
+				p.val[1] = rgb.val[1];
+				p.val[2] = rgb.val[2];
+				p.val[3] = vdup_n_u8(255);
+			} else {
+				p = vld4_u8(q);
+				if (!vget_lane_u64(vreinterpret_u64_u8(p.val[3]), 0))
+					continue;
+			}
+			if (k->kind == TEXEL_STRAIGHT)
+				for (int c = 0; c < 3; c++)
+					p.val[c] = div255(vmull_u8(p.val[c], p.val[3]));
+			if (k->tinted) {
+				p.val[0] = div255(vmull_u8(p.val[0], t0));
+				p.val[1] = div255(vmull_u8(p.val[1], t1));
+				p.val[2] = div255(vmull_u8(p.val[2], t2));
+				p.val[3] = div255(vmull_u8(p.val[3], t3));
+			}
+		}
+		px8_over(d + i * 4, p);
+	}
+#endif
+	for (; i < n; i++) {
+		uint8_t p[4];
+		if (texel_px(k, src + (unsigned)i * bytes, p))
+			px_over(d + i * 4, p);
+	}
+}
+
+/* The texels src for the pixels x0 to x1 of the row y, as far as the
+ * rounded clip leaves them. */
+static void texture_span(int y, int x0, int x1, const uint8_t *src, const struct texels *k)
+{
+	uint8_t *row = paint.px + (uint32_t)y * paint.pitch;
+	struct arc a;
+	int w0, w1;
+	bool cut = clip_arc(y, &a, &w0, &w1);
+	if (w0 < x0)
+		w0 = x0;
+	if (w1 > x1)
+		w1 = x1;
+	if (w0 < w1)
+		texture_row(row + (uint32_t)w0 * 4, src + (unsigned)(w0 - x0) * k->bytes, w1 - w0, k);
+	else
+		w0 = w1 = x1;
+	if (!cut)
+		return;
+	for (int x = x0 == w0 ? w1 : x0; x < x1; x = x + 1 == w0 ? w1 : x + 1) {
+		uint8_t p[4];
+		if (texel_px(k, src + (unsigned)(x - x0) * k->bytes, p))
+			px_cover(row + (uint32_t)x * 4, p, clip_cover(&a, x));
+	}
+}
+
+/* The widest run of texels a scaled row is gathered into. */
+#define ROW_MAX	512
+
+/* A texture at another size takes the nearest texel for each pixel, as
+ * the UI does itself; a glyph's coverage would want better, and is left
+ * to the UI. */
 bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
 		   int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
 {
-	return false;
+	bool scaled = dw != (int)width || dh != (int)height;
+	if (scaled && (format == PAINT_ALPHA || dw <= 0 || dh <= 0 || !width || !height || width > 32767 || height > 32767))
+		return false;
+	int x0 = dx, y0 = dy, x1 = dx + dw, y1 = dy + dh;
+	if (!paint_clip(&x0, &y0, &x1, &y1, clip))
+		return true;
+	if (scaled && x1 - x0 > ROW_MAX)
+		return false;
+	struct texels k = {
+		.bytes = format == PAINT_ALPHA ? 1 : format == PAINT_RGB ? 3 : 4,
+		.kind = format == PAINT_ALPHA || colorize ? TEXEL_ALPHA :
+			format == PAINT_RGBA_PREMULTIPLIED ? TEXEL_PREMULTIPLIED :
+			format == PAINT_RGBA ? TEXEL_STRAIGHT : TEXEL_RGB,
+		.tint = { (uint8_t)tint, (uint8_t)(tint >> 8), (uint8_t)(tint >> 16), (uint8_t)(tint >> 24) },
+		.tinted = tint != 0xffffffffu,
+	};
+	/* Rounded up, so that a whole number of pixels to a texel comes out
+	 * as that. */
+	uint32_t step_x = scaled ? ((width << 16) + (uint32_t)dw - 1) / (uint32_t)dw : 0;
+	uint32_t step_y = scaled ? ((height << 16) + (uint32_t)dh - 1) / (uint32_t)dh : 0;
+	for (int y = y0; y < y1; y++) {
+		if (!scaled) {
+			texture_span(y, x0, x1, data + (uint32_t)(y - dy) * stride + (uint32_t)(x0 - dx) * k.bytes, &k);
+			continue;
+		}
+		uint8_t gathered[ROW_MAX * 4];
+		uint32_t sy = ((uint32_t)(y - dy) * step_y) >> 16, pos = (uint32_t)(x0 - dx) * step_x;
+		const uint8_t *line = data + (sy < height ? sy : height - 1) * stride;
+		for (int i = 0; i < x1 - x0; i++, pos += step_x) {
+			uint32_t sx = pos >> 16;
+			memcpy(gathered + (unsigned)i * k.bytes, line + (sx < width ? sx : width - 1) * k.bytes, k.bytes);
+		}
+		texture_span(y, x0, x1, gathered, &k);
+	}
+	return true;
 }
-bool paint_rounded(float x0, float y0, float x1, float y1, const float radii[4], float border, const int32_t clip[4],
+
+/* A filled rectangle with rounded corners and no border: each row is a
+ * run of whole pixels with, where a corner's arc passes, the pixels it
+ * cuts on either side. One with a border is left to the UI. */
+bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii[4], float border, const int32_t clip[4],
 		   uint32_t fill_color, uint32_t edge)
 {
-	return false;
+	if (border > 0.0f)
+		return false;
+	int x0 = round_px(fx0), y0 = round_px(fy0), x1 = round_px(fx1), y1 = round_px(fy1);
+	int cx0 = x0, cy0 = y0, cx1 = x1, cy1 = y1;
+	if (x1 <= x0 || y1 <= y0 || !paint_clip(&cx0, &cy0, &cx1, &cy1, clip) || !fill_color)
+		return true;
+	float w = (float)(x1 - x0), h = (float)(y1 - y0), most = (w < h ? w : h) * 0.5f, r[4];
+	for (int k = 0; k < 4; k++)
+		r[k] = radii[k] < 0.0f ? 0.0f : radii[k] > most ? most : radii[k];
+	uint8_t s[4] = { (uint8_t)fill_color, (uint8_t)(fill_color >> 8), (uint8_t)(fill_color >> 16),
+			 (uint8_t)(fill_color >> 24) };
+	for (int y = cy0; y < cy1; y++) {
+		uint8_t *row = paint.px + (uint32_t)y * paint.pitch;
+		float yc = (float)(y - y0) + 0.5f;
+		/* The corner this row is in on each side, if any. */
+		float rl = yc < r[0] ? r[0] : yc > h - r[3] ? r[3] : 0.0f, dl = yc < r[0] ? r[0] - yc : yc - (h - r[3]);
+		float rr = yc < r[1] ? r[1] : yc > h - r[2] ? r[2] : 0.0f, dr = yc < r[1] ? r[1] - yc : yc - (h - r[2]);
+		struct arc left = { 0 }, right = { 0 }, cut;
+		int w0, w1;
+		bool clipped = clip_arc(y, &cut, &w0, &w1);
+		if (rl > 0.0f)
+			arc_set(&left, rl, dl);
+		if (rr > 0.0f)
+			arc_set(&right, rr, dr);
+		for (int side = 0; side < 2; side++) {
+			const struct arc *a = side ? &right : &left;
+			for (int i = a->lo; i < a->hi; i++) {
+				int x = side ? x1 - 1 - i : x0 + i;
+				if (x < cx0 || x >= cx1)
+					continue;
+				uint32_t cover = arc_cover(a, i);
+				if (clipped)
+					cover = scale8(cover, clip_cover(&cut, x));
+				px_cover(row + (uint32_t)x * 4, s, cover);
+			}
+		}
+		int s0 = x0 + left.hi, s1 = x1 - right.hi;
+		if (s0 < cx0)
+			s0 = cx0;
+		if (s1 > cx1)
+			s1 = cx1;
+		if (s0 < s1)
+			rect_span(y, s0, s1, fill_color, false);
+	}
+	return true;
 }
 void paint_cpu(uint32_t y0, uint32_t y1) {}
 void paint_sync(void) {}
