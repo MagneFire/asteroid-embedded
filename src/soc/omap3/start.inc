@@ -66,3 +66,11 @@
         /* ACTLR belongs to the secure side on this chip. */
         .macro  soc_cpu
         .endm
+
+/* With tiny numbers flushed to zero and one kind of NaN, this core does
+ * its single precision arithmetic in the NEON unit, several times as
+ * fast as in its floating point unit proper. */
+        .macro  soc_fpu
+        mov     r0, #(3 << 24)
+        vmsr    fpscr, r0
+        .endm

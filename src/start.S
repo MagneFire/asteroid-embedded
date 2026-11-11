@@ -52,6 +52,7 @@ reset:
         isb
         mov     r0, #(1 << 30)
         vmsr    fpexc, r0                       /* FPEXC.EN */
+        soc_fpu
 
         cps     #0x12
         ldr     sp, =__stack_irq_top

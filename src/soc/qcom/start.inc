@@ -8,3 +8,6 @@
         mcr     p15, 0, r0, c1, c0, 1
         isb
         .endm
+
+        .macro  soc_fpu
+        .endm
