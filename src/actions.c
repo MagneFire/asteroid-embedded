@@ -2,6 +2,7 @@
 #include "asteroid.h"
 #include "ui/ui.h"
 #include "bt/bt.h"
+#include "sensors/hub.h"
 #include "power.h"
 #include "present.h"
 #include "app.h"
@@ -101,6 +102,7 @@ void action_set_clock(int kind, int v)
 		c.year = year;
 	}
 	rtc_write(epoch_from_civil(&c));
+	hub_set_time();
 	log_printf("clock set to %04lu-%02lu-%02lu %02lu:%02lu\n", c.year, c.month, c.day, c.hour, c.minute);
 }
 

@@ -301,6 +301,7 @@ static void cmd_rtc(const char *args)
 			return;
 		}
 		rtc_write(v);
+		hub_set_time();
 	}
 	say("rtc %lu\n", rtc_read());
 }
