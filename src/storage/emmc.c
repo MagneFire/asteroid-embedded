@@ -216,9 +216,10 @@ int emmc_init(bool fast)
 		card.sectors = card.sector_mode ? (uint32_t)e[EXT_CSD_SEC_COUNT] | (uint32_t)e[EXT_CSD_SEC_COUNT + 1] << 8 |
 							  (uint32_t)e[EXT_CSD_SEC_COUNT + 2] << 16 | (uint32_t)e[EXT_CSD_SEC_COUNT + 3] << 24
 						: 0;
-		if ((e[EXT_CSD_PART_CONFIG] & 7) || (fast && (e[EXT_CSD_HS_TIMING] != 1 || e[EXT_CSD_BUS_WIDTH] != (card.bus_width == 8 ? 2 : 1)))) {
-			log_printf("emmc: ext_csd disagrees: part %02x hs %02x width %02x\n", e[EXT_CSD_PART_CONFIG], e[EXT_CSD_HS_TIMING],
-				   e[EXT_CSD_BUS_WIDTH]);
+		/* The bus width is not looked at: an older card reads it back
+		 * as 0, and this read came over the bus as it is set. */
+		if ((e[EXT_CSD_PART_CONFIG] & 7) || (fast && e[EXT_CSD_HS_TIMING] != 1)) {
+			log_printf("emmc: ext_csd disagrees: part %02x hs %02x\n", e[EXT_CSD_PART_CONFIG], e[EXT_CSD_HS_TIMING]);
 			r = -6;
 		}
 		if (!card.sector_mode) {
