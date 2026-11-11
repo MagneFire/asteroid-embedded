@@ -215,8 +215,51 @@ static uint32_t mxt_next_ms(void)
 	return retry ? ms_left(retry_t, retry_ms, time_ms()) : UINT32_MAX;
 }
 
+/* A swipe made up for the console: down, moves and up over its time. */
+static struct {
+	bool active, down;
+	int x0, y0, x1, y1;
+	uint32_t t0, ms, last;
+} fake;
+
+static void mxt_inject(int x0, int y0, int x1, int y1, uint32_t ms)
+{
+	fake.x0 = x0;
+	fake.y0 = y0;
+	fake.x1 = x1;
+	fake.y1 = y1;
+	fake.ms = ms ? ms : 1;
+	fake.down = false;
+	fake.active = true;
+}
+
+static void fake_poll(void)
+{
+	uint32_t now = time_ms();
+	struct touch t = { TOUCH_DOWN, fake.x0, fake.y0, true, now };
+	if (!fake.down) {
+		fake.down = true;
+		fake.t0 = fake.last = now;
+	} else if (now - fake.t0 >= fake.ms) {
+		t = (struct touch){ TOUCH_UP, fake.x1, fake.y1, false, now };
+		fake.active = false;
+	} else if (now - fake.last >= 16) {
+		int32_t f = (int32_t)((now - fake.t0) * 1024 / fake.ms);
+		t = (struct touch){ TOUCH_MOVE, fake.x0 + (fake.x1 - fake.x0) * f / 1024, fake.y0 + (fake.y1 - fake.y0) * f / 1024,
+				    true, now };
+		fake.last = now;
+	} else {
+		return;
+	}
+	uint32_t flags = irq_save();
+	push(&t);
+	irq_restore(flags);
+}
+
 static bool mxt_poll(struct touch *t)
 {
+	if (fake.active)
+		fake_poll();
 	i2c_poll(BUS);
 	if (retry && time_ms() - retry_t >= retry_ms) {
 		retry = false;
@@ -238,4 +281,4 @@ static void mxt_stats(uint32_t *att, uint32_t *err)
 }
 
 const struct touch_driver touch_mxt = { .init = mxt_init, .sleep = mxt_sleep, .poll = mxt_poll, .stats = mxt_stats,
-					.next_ms = mxt_next_ms };
+					.next_ms = mxt_next_ms, .inject = mxt_inject };
