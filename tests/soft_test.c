@@ -313,6 +313,41 @@ static void rounded_clip(void)
 	check(layer[(8 + D / 2) * W + 10 + D / 2] == 0x80808080u, "the middle of a rounded clip is not drawn");
 }
 
+/* A picture half way through a quarter turn: its centre stays, and a
+ * mark at the top is found an eighth of a turn clockwise. */
+static void turned(void)
+{
+	enum { S = 64 };
+	memset(frame, 0, sizeof(uint32_t) * H * W);
+	for (int y = 4; y < 8; y++)
+		for (int x = S / 2 - 2; x < S / 2 + 2; x++)
+			frame[y * W + x] = 0xffffff;
+	frame[(S / 2) * W + S / 2] = 0x00ff00;
+	struct gpu_target t = { ADDR(frame), S, S, W * 4, false };
+	gpu_draw_begin(&t);
+	gpu_draw_turn(0.70710678f, 0.70710678f);
+	gpu_draw_end();
+	gpu_draw_turn(1.0f, 0.0f);
+	int found = 0, fx = 0, fy = 0;
+	for (int y = 0; y < S; y++)
+		for (int x = 0; x < S; x++)
+			if (frame[y * W + x] == 0xffffff) {
+				found++;
+				fx += x;
+				fy += y;
+			}
+	check(found >= 10 && found <= 22, "the mark is lost in the turn");
+	fx /= found;
+	fy /= found;
+	/* 26 from the centre, up and to the right: 26 / sqrt 2 = 18. */
+	check(fx >= S / 2 + 16 && fx <= S / 2 + 20 && fy >= S / 2 - 21 && fy <= S / 2 - 16, "the mark is turned to the wrong place");
+	bool centre = false;
+	for (int y = S / 2 - 1; y <= S / 2 + 1; y++)
+		for (int x = S / 2 - 1; x <= S / 2 + 1; x++)
+			centre |= frame[y * W + x] == 0x00ff00;
+	check(centre, "the centre moves in the turn");
+}
+
 int main(void)
 {
 	gpu_host_base = (uintptr_t)&mem;
@@ -322,6 +357,7 @@ int main(void)
 	textures();
 	scaled_and_rounded();
 	rounded_clip();
+	turned();
 	printf("soft_test: ok\n");
 	return 0;
 }

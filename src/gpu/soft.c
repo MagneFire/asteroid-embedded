@@ -55,16 +55,57 @@ void gpu_draw_begin(const struct gpu_target *t)
 
 bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs) { return true; }
 void gpu_draw_blend(bool premultiplied_over) { blend = premultiplied_over; }
-void gpu_draw_turn(float c, float s) {}
+/* How far the picture is turned, as the 65536ths of its cosine and
+ * sine. */
+static int32_t turn_c = 65536, turn_s;
+
+void gpu_draw_turn(float c, float s)
+{
+	turn_c = (int32_t)(c * 65536.0f + (c < 0.0f ? -0.5f : 0.5f));
+	turn_s = (int32_t)(s * 65536.0f + (s < 0.0f ? -0.5f : 0.5f));
+}
+void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride) {}
 void gpu_draw_submit(void) {}
 bool gpu_draw_wait(void) { return true; }
 void gpu_draw_invalidate_textures(void) {}
 void gpu_draw_cpu_sync(void *buf, uint32_t bytes) {}
 
+#define TURN_MAX	320
+
+/* The whole picture turned clockwise about its centre while it is on its
+ * way from one quarter turn to another: each pixel takes the one that
+ * lands on it, and what comes from outside the picture is black. */
+static void turn_frame(void)
+{
+	static uint32_t upright[TURN_MAX * TURN_MAX];
+	int size = (int)target.width;
+	uint32_t pitch = target.pitch_bytes / 4, *frame = PTR(target.base);
+	for (int y = 0; y < size; y++)
+		memcpy(upright + y * size, frame + (uint32_t)y * pitch, (size_t)size * 4);
+	/* Twice the distance from the centre, so that it is whole. */
+	int32_t mid = size - 1;
+	for (int y = 0; y < size; y++) {
+		int32_t dy = 2 * y - mid, dx = -mid;
+		/* The upright pixel under the first of the row, in 65536ths. */
+		int32_t u = (mid * 32768) + (dx * (turn_c / 2)) + (dy * (turn_s / 2)) + 32768;
+		int32_t v = (mid * 32768) - (dx * (turn_s / 2)) + (dy * (turn_c / 2)) + 32768;
+		uint32_t *d = frame + (uint32_t)y * pitch;
+		for (int x = 0; x < size; x++, u += turn_c, v -= turn_s) {
+			int sx = u >> 16, sy = v >> 16;
+			d[x] = sx >= 0 && sx < size && sy >= 0 && sy < size ? upright[sy * size + sx] : 0;
+		}
+	}
+}
+
 bool gpu_draw_end(void)
 {
-	if (target.width == target.height)
+	if (target.width != target.height)
+		return true;
+	bool quarter = (turn_c == 0 || turn_s == 0) && (turn_c == 65536 || turn_c == -65536 || turn_s == 65536 || turn_s == -65536);
+	if (quarter || target.width > TURN_MAX)
 		rotation_buffer(PTR(target.base), target.pitch_bytes / 4);
+	else
+		turn_frame();
 	return true;
 }
 
