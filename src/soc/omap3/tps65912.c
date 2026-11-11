@@ -25,6 +25,7 @@
 #define CHCONF		(CHCONF_CLKD(2) | CHCONF_WL(24) | CHCONF_DPE0)
 
 #define DCDC1_AVS	0x05
+#define DCDC1_LIMIT	0x06
 #define LDO1_OP		0x10
 #define LDO5		0x1c
 #define INT_STS		0x39
@@ -166,9 +167,11 @@ bool power_key_irq(void)
 	return true;
 }
 
-/* What the vendor's driver writes when it starts. */
+/* What the vendor's driver writes when it starts, but for the range
+ * of DCDC1, the processor's supply: its kernel sets a voltage for the
+ * new range right after, and here the bootloader's setting stays, which
+ * in another range is another voltage. */
 static const uint8_t setup[][2] = {
-	{ 0x06, 0x7f },	/* DCDC1 from 0.7 V in 12.5 mV steps */
 	{ 0x25, 0xd1 },	/* sleep allowed, interrupt line push-pull and active high */
 	{ 0x26, 0x49 },	/* DCDC1 and DCDC4 take their voltage over the SoC's own bus */
 	{ 0x29, 0x10 },	/* LDO5 goes off in sleep */
@@ -192,7 +195,7 @@ bool tps65912_init(void)
 	writel(1, SPI_MODULCTRL);
 	writel(CHCONF, SPI_CHCONF);
 	ready = true;
-	uint8_t ver = pmic_read(VERNUM), dcdc1 = pmic_read(DCDC1_AVS);
+	uint8_t ver = pmic_read(VERNUM), dcdc1 = pmic_read(DCDC1_AVS), limit = pmic_read(DCDC1_LIMIT);
 	if (ver == 0xff && dcdc1 == 0xff) {
 		log_printf("pmic: no answer (%02x)\n", ver);
 		ready = false;
@@ -200,6 +203,7 @@ bool tps65912_init(void)
 	}
 	for (unsigned i = 0; i < ARRAY_SIZE(setup); i++)
 		pmic_write(setup[i][0], setup[i][1]);
-	log_printf("pmic: tps65912 version %02x, dcdc1 %02x, key %s\n", ver, dcdc1, power_key() ? "down" : "up");
+	log_printf("pmic: tps65912 version %02x, dcdc1 %02x in range %u, key %s\n", ver, dcdc1, limit >> 6,
+		   power_key() ? "down" : "up");
 	return true;
 }
