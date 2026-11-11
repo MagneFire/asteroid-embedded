@@ -65,6 +65,7 @@ __attribute__((weak)) void ui_set_laps(const uint32_t *ms, uint32_t n) {}
 void ui_set_alarms(const struct ui_alarm *alarms, uint32_t n) {}
 int speaker_probe(uint16_t *rev) { return -1; }
 void cpu_clock_slow(bool slow) {}
+void cpu_clock_idle(bool idle) {}
 bool cpu_clock_is_slow(void) { return false; }
 void power_request(bool sleep) { stub_asleep = sleep; }
 bool stub_keep_awake;
@@ -186,3 +187,4 @@ uint32_t kv_seq(void) { return 0; }
 void prof_start(uint32_t samples) {}
 void prof_report(void (*say)(const char *fmt, ...)) {}
 void wdt_feed(void) {}
+void frame_busy(uint32_t now) {}

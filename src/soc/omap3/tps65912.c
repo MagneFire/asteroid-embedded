@@ -24,8 +24,15 @@
 /* 12 MHz, 24 bits, mode 0, chip select active high. */
 #define CHCONF		(CHCONF_CLKD(2) | CHCONF_WL(24) | CHCONF_DPE0)
 
+#define DCDC1_OP	0x04
 #define DCDC1_AVS	0x05
 #define DCDC1_LIMIT	0x06
+/* 0.5 V and 12.5 mV a step in the lowest range: 0.975 V, the vendor's
+ * for 300 MHz. */
+#define DCDC1_SEL_LOW	38
+/* The supply moves 6.25 mV in a microsecond; twice the time for the
+ * way up from the low voltage to the bootloader's. */
+#define DCDC1_RAMP_US	100
 #define LDO1_OP		0x10
 #define LDO5		0x1c
 #define INT_STS		0x39
@@ -44,7 +51,8 @@
 
 #define GPIO_PMIC_IRQ	0
 
-static bool ready;
+static bool ready, supply_scales;
+static uint8_t supply_fast;
 static volatile bool key_irq;
 
 static bool spi_wait(uint32_t bit)
@@ -167,13 +175,14 @@ bool power_key_irq(void)
 	return true;
 }
 
-/* What the vendor's driver writes when it starts, but for the range
- * of DCDC1, the processor's supply: its kernel sets a voltage for the
- * new range right after, and here the bootloader's setting stays, which
- * in another range is another voltage. */
+/* What the vendor's driver writes when it starts, but for DCDC1, the
+ * processor's supply. Its kernel moves that to another range and to the
+ * SoC's voltage bus and sets a voltage for both right after; here it
+ * stays in the bootloader's range and on this bus, where
+ * cpu_supply_low sets it. */
 static const uint8_t setup[][2] = {
 	{ 0x25, 0xd1 },	/* sleep allowed, interrupt line push-pull and active high */
-	{ 0x26, 0x49 },	/* DCDC1 and DCDC4 take their voltage over the SoC's own bus */
+	{ 0x26, 0x48 },	/* DCDC4 takes its voltage over the SoC's own bus; DCDC1 is set here */
 	{ 0x29, 0x10 },	/* LDO5 goes off in sleep */
 	{ 0x2a, 0x24 },	/* and so do DCDC1 and DCDC4 */
 	{ 0x2d, 0x88 },	/* LDO4 and LDO8 discharge when off */
@@ -184,6 +193,24 @@ static const uint8_t setup[][2] = {
 	{ 0x21, 0xf2 },	/* LDO10 in its low power mode */
 	{ 0x62, 0x00 },	/* load switch off */
 };
+
+/* The processor's supply at its low voltage, for the slow clock, or
+ * back at the bootloader's, which it has reached on return. The clock
+ * is slow already before the one and still slow after the other. */
+void cpu_supply_low(bool low)
+{
+	if (!supply_scales)
+		return;
+	pmic_write(DCDC1_OP, low ? DCDC1_SEL_LOW : supply_fast);
+	if (!low)
+		delay_us(2 * DCDC1_RAMP_US);
+	/* The first few are read back for the log. */
+	static unsigned shown;
+	if (shown < 4) {
+		shown++;
+		log_printf("pmic: dcdc1 set to %02x, reads %02x\n", low ? DCDC1_SEL_LOW : supply_fast, pmic_read(DCDC1_OP));
+	}
+}
 
 bool tps65912_init(void)
 {
@@ -201,9 +228,14 @@ bool tps65912_init(void)
 		ready = false;
 		return false;
 	}
+	uint8_t op = pmic_read(DCDC1_OP);
 	for (unsigned i = 0; i < ARRAY_SIZE(setup); i++)
 		pmic_write(setup[i][0], setup[i][1]);
-	log_printf("pmic: tps65912 version %02x, dcdc1 %02x in range %u, key %s\n", ver, dcdc1, limit >> 6,
-		   power_key() ? "down" : "up");
+	/* Only a setting that is understood is touched: the lowest range,
+	 * the voltage in this register, and higher than the low one. */
+	supply_fast = op & 0x3f;
+	supply_scales = !(limit >> 6) && !(op & 0xc0) && supply_fast > DCDC1_SEL_LOW && pmic_read(DCDC1_OP) == op;
+	log_printf("pmic: tps65912 version %02x, dcdc1 %02x/%02x in range %u%s, key %s\n", ver, op, dcdc1, limit >> 6,
+		   supply_scales ? "" : ", left alone", power_key() ? "down" : "up");
 	return true;
 }

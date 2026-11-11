@@ -11,6 +11,7 @@
  * indicator by up to two and four fin widths. */
 #include <string.h>
 #include "asteroid.h"
+#include "frame.h"
 #include "display/display.h"
 #include "ui/ui.h"
 #include "ui/stack.h"
@@ -85,6 +86,7 @@ void power_peek(const char *cause)
 void power_activity(uint32_t now)
 {
 	policy.last_activity = now;
+	frame_busy(now);
 }
 
 void power_keep_awake(bool on)

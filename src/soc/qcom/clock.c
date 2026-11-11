@@ -58,6 +58,8 @@ void cpu_clock_log(void)
 
 static bool slow_now;
 
+void cpu_clock_idle(bool idle) {}
+
 void cpu_clock_slow(bool slow)
 {
 	slow_now = slow;

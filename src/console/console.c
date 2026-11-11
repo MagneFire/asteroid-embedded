@@ -7,6 +7,7 @@
  * main loop, and the prompt or the caller's done comes when it ends. */
 #include <string.h>
 #include "asteroid.h"
+#include "frame.h"
 #include "display/display.h"
 #include "bt/bt.h"
 #include "storage/storage.h"
@@ -1118,6 +1119,7 @@ static void cmd_help(const char *args)
 
 static void run(const char *text)
 {
+	frame_busy(time_ms());
 	char buf[LINE_LEN];
 	size_t n = 0;
 	text = skip_spaces(text);

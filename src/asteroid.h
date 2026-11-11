@@ -42,6 +42,8 @@ void soc_memory_map(void);
 void cpu_clock_init(void);
 void cpu_clock_log(void);
 void cpu_clock_slow(bool slow);
+/* Awake with nothing to draw: a SoC that can run slower meanwhile does. */
+void cpu_clock_idle(bool idle);
 bool cpu_clock_is_slow(void);
 void cpu_clock_park(void);
 void cpu_clock_unpark(void);

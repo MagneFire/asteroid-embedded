@@ -12,6 +12,7 @@
 /* The bootloader left the panel showing its picture, set up as the
  * display driver would. */
 bool boot_panel_lit(void);
+void cpu_supply_low(bool low);
 #define CONTROL_PBIAS_LITE	(CONTROL_BASE + 0x520)
 #define PBIAS_3V_0		BIT(0)
 #define PBIAS_ON_0		BIT(1)

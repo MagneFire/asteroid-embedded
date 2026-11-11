@@ -20,6 +20,9 @@ static int dot_x = -1, dot_y = -1;
 static bool have_ui, have_gpu, gpu_off, woke;
 static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
 static uint32_t mesh_us, layer_us, end_us, flip_us;
+/* How long after the last thing moved the processor may slow down. */
+#define BUSY_MS	300
+static uint32_t busy_t, idle_passes;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static uint32_t start_ms, shown_step = UINT32_MAX;
 static uint32_t ui_frames, ui_us, ui_repaints, ui_repaint_us;
@@ -126,6 +129,14 @@ void frame_init(bool ui, bool gpu, uint32_t start)
 	start_ms = start;
 }
 
+/* Something is asked of the watch: full speed from now, not from the
+ * frame that shows it. */
+void frame_busy(uint32_t now)
+{
+	busy_t = now | 1;
+	cpu_clock_idle(false);
+}
+
 void frame_touch_dot(int x, int y)
 {
 	dot_x = x;
@@ -192,7 +203,14 @@ void frame_draw(uint32_t now)
 				for (uint32_t r = y; r < y + h; r++)
 					dcache_clean_range(layer + r * fb.stride + x, w * 4);
 		}
+		bool moving = repainted || stack_animating(now) || rotation_animating(now) || stack_moving();
 		frame |= repainted || stack_animating(now) || rotation_animating(now);
+		if (moving || woke)
+			busy_t = now | 1;
+		else if (busy_t && now - busy_t >= BUSY_MS)
+			busy_t = 0;
+		cpu_clock_idle(!busy_t);
+		idle_passes += !busy_t;
 		if (repainted) {
 			ui_repaints++;
 			ui_repaint_us += time_us() - u0;
@@ -245,7 +263,8 @@ void frame_log(void)
 			   end_us / gpu_frames, flip_us / gpu_frames);
 	gpu_frames = gpu_us = gpu_vert_us = mesh_us = layer_us = end_us = flip_us = 0;
 	if (ui_frames)
-		log_printf("ui: %lu of %lu frames repainted, update %lu us avg, %lu us per repaint\n", ui_repaints,
-			   ui_frames, ui_us / ui_frames, ui_repaints ? ui_repaint_us / ui_repaints : 0);
-	ui_frames = ui_us = ui_repaints = ui_repaint_us = 0;
+		log_printf("ui: %lu of %lu frames repainted, update %lu us avg, %lu us per repaint, idle %lu%%\n", ui_repaints,
+			   ui_frames, ui_us / ui_frames, ui_repaints ? ui_repaint_us / ui_repaints : 0,
+			   idle_passes * 100 / ui_frames);
+	ui_frames = ui_us = ui_repaints = ui_repaint_us = idle_passes = 0;
 }

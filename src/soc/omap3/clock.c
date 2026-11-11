@@ -1,13 +1,14 @@
 /* Clocks. The bootloader leaves the PLLs locked and the MPU at the
- * speed its voltage allows, and they stay as they are; this reads them
- * for the log and gates the modules' clocks. The slow CPU clock is the
- * same PLL divided further, which needs no relock. */
+ * speed its voltage allows; this reads them for the log and gates the
+ * modules' clocks. The slow CPU clock is the same PLL divided further,
+ * which needs no relock, with the processor's supply at the voltage
+ * that speed needs: asleep, and awake while nothing is drawn. */
 #include "asteroid.h"
 
 #define MPU_M2_SLOW	4
 
 static uint32_t m2_fast = 1;
-static bool slow;
+static bool slow, asleep, idle;
 
 uint32_t sys_clk_hz(void)
 {
@@ -61,18 +62,37 @@ void cpu_clock_log(void)
 		   mpu_hz(), core, actlr, readl(PRM_RSTST));
 }
 
-void cpu_clock_slow(bool on)
+/* The voltage only goes down once the clock is slow, and is back up
+ * before the clock is fast. */
+static void apply(void)
 {
+	bool on = asleep || idle;
 	if (on == slow)
 		return;
 	slow = on;
 	uint32_t m2 = on ? m2_fast * MPU_M2_SLOW : m2_fast;
 	if (m2 > 16)
 		m2 = 16;
+	if (!on)
+		cpu_supply_low(false);
 	writel((readl(CM_MPU + CM_CLKSEL2_PLL) & ~0x1fu) | m2, CM_MPU + CM_CLKSEL2_PLL);
+	if (on)
+		cpu_supply_low(true);
 }
 
-bool cpu_clock_is_slow(void) { return slow; }
+void cpu_clock_slow(bool on)
+{
+	asleep = on;
+	apply();
+}
+
+void cpu_clock_idle(bool on)
+{
+	idle = on;
+	apply();
+}
+
+bool cpu_clock_is_slow(void) { return asleep; }
 
 /* Nothing to hand over before a sleep: the PLL stops by itself. */
 void cpu_clock_park(void) {}
