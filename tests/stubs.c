@@ -37,6 +37,8 @@ const struct battery_driver battery_max17050;
 bool gauge_model_load(void) { return false; }
 int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }
 void rtc_write(uint32_t secs) { stub_rtc = secs; }
+bool stub_rtc_invalid;
+bool rtc_valid(void) { return !stub_rtc_invalid; }
 uint32_t readl(uint32_t a) { return a ^ 0xdeadbeefu; }
 void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
 unsigned gpio_get(unsigned n) { return 0; }

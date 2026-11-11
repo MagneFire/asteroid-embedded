@@ -33,6 +33,9 @@ static uint32_t ring_t, check_t, timer_set, timer_left, timer_end, sw_acc, sw_st
 static uint32_t lap_ms[LAPS];
 static unsigned laps;
 static uint32_t shown_timer, shown_sw;
+/* What was kept is taken once there is a clock to reckon it with, if
+ * nothing has been started by hand before that. */
+static bool restored;
 
 static void save_timer(uint32_t now)
 {
@@ -79,6 +82,18 @@ static void load_stopwatch(void)
 	laps = v.laps;
 }
 
+static void restore(void)
+{
+	if (restored || !rtc_valid())
+		return;
+	restored = true;
+	load_timer();
+	load_stopwatch();
+	shown_timer = shown_sw = 1;
+	if (have_ui)
+		ui_set_laps(lap_ms, laps);
+}
+
 void clockapps_init(bool ui, bool haptics)
 {
 	have_ui = ui;
@@ -88,10 +103,8 @@ void clockapps_init(bool ui, bool haptics)
 	timer_set = timer_left = TIMER_DEFAULT_MS;
 	laps = 0;
 	shown_timer = shown_sw = 1;
-	load_timer();
-	load_stopwatch();
-	if (have_ui)
-		ui_set_laps(lap_ms, laps);
+	restored = false;
+	restore();
 }
 
 void clockapps_show_alarms(void)
@@ -161,6 +174,7 @@ bool clockapps_event(const struct ui_event *e, uint32_t now)
 	int a = e->value;
 	switch (e->kind) {
 	case UI_EVENT_TIMER_SET:
+		restored = true;
 		if (!timer_end && a >= 1 && a <= 86399) {
 			timer_set = timer_left = (uint32_t)a * 1000;
 			shown_timer = UINT32_MAX;
@@ -180,6 +194,7 @@ bool clockapps_event(const struct ui_event *e, uint32_t now)
 		ringing = false;
 		return true;
 	case UI_EVENT_CLOCK:
+		restored = true;
 		clock_action(a, now);
 		return true;
 	default:
@@ -192,7 +207,8 @@ bool clockapps_tick(uint32_t now)
 	bool wake = false;
 	if (now - check_t >= 1000) {
 		check_t = now;
-		if (alarm_check(rtc_read()) && have_ui) {
+		restore();
+		if (rtc_valid() && alarm_check(rtc_read()) && have_ui) {
 			log_printf("alarm: ringing\n");
 			ringing = true;
 			ring_timer = false;

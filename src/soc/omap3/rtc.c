@@ -7,6 +7,9 @@
 #include "asteroid.h"
 
 static uint32_t base, last, rounds;
+static bool set;
+
+bool rtc_valid(void) { return set; }
 
 static uint32_t uptime_s(void)
 {
@@ -28,4 +31,5 @@ uint32_t rtc_read(void)
 void rtc_write(uint32_t secs)
 {
 	base = secs - uptime_s();
+	set = true;
 }

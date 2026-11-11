@@ -181,6 +181,20 @@ static void test_persistence(void)
 	CHECK(sw_ms == 15000 && sw_running);
 	CHECK(laps_n == 1 && laps_first == 2500);
 	CHECK(clockapps_next_ms(stub_ms) == 90000);
+	/* The same reboot on a watch whose clock is only set 3 s in. */
+	stub_rtc_invalid = true;
+	stub_rtc = 0;
+	stub_ms = 500;
+	clockapps_init(true, true);
+	clockapps_refresh(stub_ms);
+	CHECK(!t_running && !sw_running);
+	stub_rtc_invalid = false;
+	stub_rtc = rtc0 + 13;
+	stub_ms = 3500;
+	clockapps_tick(stub_ms);
+	clockapps_refresh(stub_ms);
+	CHECK(t_ms == 87000 && t_set == 100000 && t_running);
+	CHECK(sw_ms == 18000 && sw_running);
 	/* Reboot after the timer ended: back at its duration. */
 	stub_rtc = rtc0 + 200;
 	stub_ms = 500;

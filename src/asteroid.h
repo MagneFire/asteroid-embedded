@@ -174,6 +174,9 @@ void power_key_irq_init(void);
 bool power_key_irq(void);
 uint32_t rtc_read(void);
 void rtc_write(uint32_t secs);
+/* False while a clock that does not keep the time itself has not been
+ * set since the start. */
+bool rtc_valid(void);
 bool vbus_present(void);
 void vbus_irq_init(void);
 bool vbus_irq(void);

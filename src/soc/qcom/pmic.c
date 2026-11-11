@@ -185,6 +185,8 @@ uint32_t rtc_read(void)
 	return s;
 }
 
+bool rtc_valid(void) { return true; }
+
 void rtc_write(uint32_t secs)
 {
 	uint8_t ctrl = pmic_read(RTC_CTRL);
