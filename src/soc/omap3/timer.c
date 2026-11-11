@@ -3,6 +3,7 @@
  * added on the way out (timer_slept). GPTIMER1 on the 32 kHz clock, in
  * the domain that stays up, gives the tick that wakes the main loop. */
 #include "asteroid.h"
+#include "prof.h"
 
 #define TIOCP_CFG	0x10
 #define TISTAT		0x14
@@ -104,6 +105,7 @@ static void tick_irq(void)
 		return;
 	writel(OVF, GPT1_BASE + TISR);
 	ticks++;
+	prof_sample();
 	wdt_tick();
 }
 

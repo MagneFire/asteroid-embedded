@@ -4,6 +4,7 @@
  * timer's PPIs are wired as 18 (secure) and 19 (non-secure) on this SoC,
  * not the architectural 29 and 30. */
 #include "asteroid.h"
+#include "prof.h"
 
 static uint32_t hz = 19200000;
 static volatile uint32_t ticks;
@@ -47,6 +48,7 @@ static void tick_irq(void)
 	uint32_t tval = hz / 1000 * period_ms;
 	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));	/* CNTP_TVAL */
 	ticks++;
+	prof_sample();
 }
 
 /* After a power collapse: the core's timer starts out disabled. */

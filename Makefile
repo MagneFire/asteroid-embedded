@@ -21,7 +21,7 @@ MBEDTLS := third_party/mbedtls
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c \
         src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
         src/civil.c src/log.c src/soc/mmu.c src/soc/exceptions.c src/board/drivers.c \
         src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \

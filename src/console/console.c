@@ -10,6 +10,7 @@
 #include "display/display.h"
 #include "bt/bt.h"
 #include "storage/storage.h"
+#include "prof.h"
 #include "sensors/hub.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
@@ -873,6 +874,16 @@ static void cmd_touch(const char *args)
 	say("touch %s\n", swipe ? "swipe" : "tap");
 }
 
+static void cmd_prof(const char *args)
+{
+	uint32_t n;
+	if (*args && parse_num(&args, 10, &n)) {
+		prof_start(n);
+		say("prof: taking %lu samples\n", n);
+	} else
+		prof_report(say);
+}
+
 static void cmd_shot(const char *args)
 {
 	uint32_t n = 0;
@@ -1043,8 +1054,10 @@ static void cmd_uibench(const char *args)
 		return;
 	}
 	uint32_t t0 = time_us();
-	for (uint32_t i = 0; i < n; i++)
+	for (uint32_t i = 0; i < n; i++) {
 		ui_repaint(p, gpu);
+		wdt_feed();
+	}
 	say("panel %lu: %lu us per repaint\n", p, (time_us() - t0) / n);
 }
 
@@ -1089,6 +1102,7 @@ static const struct command commands[] = {
 	{ "hub", "[send <hex bytes>]", cmd_hub },
 	{ "m4", "rd <bank> <offset> <n> | wr <bank> <offset> <bytes> | pm 0|1", cmd_m4 },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
+	{ "prof", "[samples]", cmd_prof },
 	{ "shot", "[layer [n]]", cmd_shot },
 	{ "notify", "[text] | remove <n>", cmd_notify },
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },

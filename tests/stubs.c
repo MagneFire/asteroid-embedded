@@ -183,3 +183,6 @@ __attribute__((weak)) int kv_set(const char *key, const void *val, unsigned len)
 __attribute__((weak)) int kv_del(const char *key) { return -1; }
 int kv_each(kv_each_fn fn, void *ctx) { return -1; }
 uint32_t kv_seq(void) { return 0; }
+void prof_start(uint32_t samples) {}
+void prof_report(void (*say)(const char *fmt, ...)) {}
+void wdt_feed(void) {}
