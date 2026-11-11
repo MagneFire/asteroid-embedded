@@ -91,19 +91,28 @@ static inline uint8x8_t div255(uint16x8_t x)
 /* color is premultiplied 0xAARRGGBB. */
 static void fill(uint32_t *d, int n, uint32_t color)
 {
+	int i = 0;
 	if (!blend || color >> 24 == 0xff) {
-		for (int i = 0; i < n; i++)
-			d[i] = color & 0xffffff;
+		color &= 0xffffff;
+#ifdef __ARM_NEON
+		uint32x4_t c = vdupq_n_u32(color);
+		for (; i + 4 <= n; i += 4)
+			vst1q_u32(d + i, c);
+#endif
+		for (; i < n; i++)
+			d[i] = color;
 		return;
 	}
+	if (!color)
+		return;
 	uint32_t keep = 255 - (color >> 24);
-	int i = 0;
 #ifdef __ARM_NEON
 	uint8x8_t k = vdup_n_u8((uint8_t)keep);
-	uint8x8_t add = vreinterpret_u8_u32(vdup_n_u32(color & 0xffffff));
-	for (; i + 2 <= n; i += 2) {
-		uint8x8_t p = vreinterpret_u8_u32(vld1_u32(d + i));
-		vst1_u32(d + i, vreinterpret_u32_u8(vadd_u8(div255(vmull_u8(p, k)), add)));
+	uint8x16_t add = vreinterpretq_u8_u32(vdupq_n_u32(color & 0xffffff));
+	for (; i + 4 <= n; i += 4) {
+		uint8x16_t p = vreinterpretq_u8_u32(vld1q_u32(d + i));
+		uint8x16_t kept = vcombine_u8(div255(vmull_u8(vget_low_u8(p), k)), div255(vmull_u8(vget_high_u8(p), k)));
+		vst1q_u32(d + i, vreinterpretq_u32_u8(vaddq_u8(kept, add)));
 	}
 #endif
 	for (; i < n; i++) {
@@ -113,54 +122,80 @@ static void fill(uint32_t *d, int n, uint32_t color)
 	}
 }
 
-/* Where the edge from a to b crosses the height yc. The two ends are
- * put in one order first, so both triangles on an edge get the same
- * answer. */
-static float edge_x(const float *a, const float *b, float yc)
+/* Positions are in 65536ths of a pixel: the processor's own arithmetic
+ * on fractions is far slower than on whole numbers. */
+#define ONE	65536
+#define HALF	32768
+
+/* The first pixel, or row, whose centre is at or past v. */
+static inline int first_px(int64_t v)
+{
+	return (int)((v + HALF - 1) >> 16);
+}
+
+/* An edge as its rows see it: the rows whose centres lie between its
+ * ends, where it crosses the first of them and how far it moves on a
+ * row. The two ends are put in one order first, so both triangles on an
+ * edge get the same answers. */
+struct edge {
+	int y0, y1;
+	int64_t x, step;
+};
+
+static void edge_set(struct edge *e, const int32_t *a, const int32_t *b)
 {
 	if (a[1] > b[1] || (a[1] == b[1] && a[0] > b[0])) {
-		const float *t = a;
+		const int32_t *t = a;
 		a = b;
 		b = t;
 	}
-	if (b[1] == a[1])
-		return a[0];
-	return a[0] + (b[0] - a[0]) * ((yc - a[1]) / (b[1] - a[1]));
+	e->y0 = first_px(a[1]);
+	e->y1 = first_px(b[1]);
+	if (e->y0 >= e->y1)
+		return;
+	int64_t dx = (int64_t)b[0] - a[0], dy = (int64_t)b[1] - a[1];
+	e->step = dx * ONE / dy;
+	e->x = a[0] + dx * ((int64_t)e->y0 * ONE + HALF - a[1]) / dy;
 }
 
-/* The first pixel whose centre is at or past v. */
-static int first_px(float v)
+static inline int64_t edge_at(const struct edge *e, int y)
 {
-	int i = (int)(v - 0.5f);
-	while ((float)i + 0.5f < v)
-		i++;
-	while ((float)i - 0.5f >= v)
-		i--;
-	return i;
+	return e->x + e->step * (y - e->y0);
 }
 
-static void triangle(const float p[3][2], uint32_t color)
+static void triangle(int32_t p[3][2], uint32_t color)
 {
-	const float *v0 = p[0], *v1 = p[1], *v2 = p[2], *t;
+	const int32_t *v0 = p[0], *v1 = p[1], *v2 = p[2], *t;
 	if (v0[1] > v1[1]) { t = v0; v0 = v1; v1 = t; }
 	if (v1[1] > v2[1]) { t = v1; v1 = v2; v2 = t; }
 	if (v0[1] > v1[1]) { t = v0; v0 = v1; v1 = t; }
-	int y0 = first_px(v0[1]), y1 = first_px(v2[1]);
-	if (y0 < 0)
-		y0 = 0;
-	if (y1 > (int)target.height)
-		y1 = (int)target.height;
-	for (int y = y0; y < y1; y++) {
-		float yc = (float)y + 0.5f;
-		float a = edge_x(v0, v2, yc), b = yc < v1[1] ? edge_x(v0, v1, yc) : edge_x(v1, v2, yc);
-		int x0 = first_px(a < b ? a : b), x1 = first_px(a < b ? b : a);
-		if (x0 < 0)
-			x0 = 0;
-		if (x1 > (int)target.width)
-			x1 = (int)target.width;
+	struct edge whole, upper, lower;
+	edge_set(&whole, v0, v2);
+	edge_set(&upper, v0, v1);
+	edge_set(&lower, v1, v2);
+	int y0 = whole.y0 < 0 ? 0 : whole.y0, y1 = whole.y1 > (int)target.height ? (int)target.height : whole.y1;
+	if (y0 >= y1)
+		return;
+	int64_t a = edge_at(&whole, y0);
+	for (int y = y0; y < y1; y++, a += whole.step) {
+		const struct edge *e = y < upper.y1 ? &upper : &lower;
+		int64_t b = edge_at(e, y), lo = a < b ? a : b, hi = a < b ? b : a;
+		if (lo < 0)
+			lo = 0;
+		if (hi > (int64_t)target.width * ONE)
+			hi = (int64_t)target.width * ONE;
+		int x0 = first_px(lo), x1 = first_px(hi);
 		if (x0 < x1)
 			fill(row(y) + x0, x1 - x0, color);
 	}
+}
+
+/* A position far outside the frame is as good at its edge of what
+ * fits, and is drawn the same from there. */
+static int32_t to_fixed(float v)
+{
+	const float limit = 16000.0f * ONE;
+	return (int32_t)(v < -limit ? -limit : v > limit ? limit : v);
 }
 
 static uint32_t channel(float v)
@@ -176,13 +211,13 @@ void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, con
 	if (nattrs != 2 || stride < 32)
 		return;
 	const uint8_t *v = PTR(vbo_addr);
-	float w = (float)target.width * 0.5f, h = (float)target.height * 0.5f;
+	float w = (float)target.width * 0.5f * ONE, h = (float)target.height * 0.5f * ONE;
 	for (unsigned i = 0; i + 3 <= nverts; i += 3) {
-		float p[3][2];
+		int32_t p[3][2];
 		for (int k = 0; k < 3; k++) {
 			const float *f = (const float *)(const void *)(v + (i + (unsigned)k) * stride);
-			p[k][0] = (f[0] + 1.0f) * w;
-			p[k][1] = (1.0f - f[1]) * h;
+			p[k][0] = to_fixed((f[0] + 1.0f) * w);
+			p[k][1] = to_fixed((1.0f - f[1]) * h);
 		}
 		const float *c = (const float *)(const void *)(v + i * stride) + 4;
 		triangle(p, channel(c[3]) << 24 | channel(c[0]) << 16 | channel(c[1]) << 8 | channel(c[2]));
