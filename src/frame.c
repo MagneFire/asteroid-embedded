@@ -19,6 +19,7 @@
 static int dot_x = -1, dot_y = -1;
 static bool have_ui, have_gpu, gpu_off, woke;
 static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
+static uint32_t mesh_us, layer_us, end_us, flip_us;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static uint32_t start_ms, shown_step = UINT32_MAX;
 static uint32_t ui_frames, ui_us, ui_repaints, ui_repaint_us;
@@ -65,14 +66,19 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	gpu_draw_turn_vertices(vbo + fill * 8, n - fill, 8);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
+	uint32_t t2 = time_us();
 	if (with_layer)
 		stack_compose(app_background);
+	uint32_t t3 = time_us();
+	mesh_us += t2 - t1;
+	layer_us += t3 - t2;
 	if (!gpu_draw_end()) {
 		if (gpu_fail++ == 0)
 			log_printf("gpu: draw did not complete\n");
 		have_gpu = false;
 	}
 	gpu_draw_cpu_sync(buf, fb.stride * fb.height * 4);
+	end_us += time_us() - t3;
 	gpu_us += time_us() - t1;
 	gpu_vert_us += t1 - t0;
 	gpu_frames++;
@@ -212,7 +218,9 @@ void frame_draw(uint32_t now)
 			draw_dot(buf);
 			fbcon_draw(buf);
 		}
+		uint32_t f0 = time_us();
 		display_flip();
+		flip_us += time_us() - f0;
 		/* The indicators pop out once the first frame is on the panel. */
 		if (woke && have_ui)
 			stack_indicators();
@@ -232,7 +240,10 @@ void frame_log(void)
 	if (gpu_frames)
 		log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,
 			   gpu_us / gpu_frames, gpu_vert_us / gpu_frames);
-	gpu_frames = gpu_us = gpu_vert_us = 0;
+	if (gpu_frames)
+		log_printf("frame: mesh %lu, layers %lu, end %lu, flip %lu us\n", mesh_us / gpu_frames, layer_us / gpu_frames,
+			   end_us / gpu_frames, flip_us / gpu_frames);
+	gpu_frames = gpu_us = gpu_vert_us = mesh_us = layer_us = end_us = flip_us = 0;
 	if (ui_frames)
 		log_printf("ui: %lu of %lu frames repainted, update %lu us avg, %lu us per repaint\n", ui_repaints,
 			   ui_frames, ui_us / ui_frames, ui_repaints ? ui_repaint_us / ui_repaints : 0);
