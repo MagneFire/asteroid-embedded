@@ -245,12 +245,39 @@ static void test_alarm(void)
 	CHECK(alarm_count() == 0);
 }
 
+static void test_alarm_repeat(void)
+{
+	/* Day 3 of the epoch is a Sunday; an alarm for 07:00 on weekdays. */
+	uint32_t sunday = 86400 * 3, h7 = 3600 * 7;
+	struct alarm a = { 7, 0, 0x3e, true };
+	CHECK(alarm_set(ALARMS, &a));
+	CHECK(alarm_next_s(sunday + h7 + 3600) == 86400 - 3600);
+	CHECK(!alarm_check(sunday + h7));
+	for (uint32_t d = 1; d <= 5; d++)
+		CHECK(alarm_check(sunday + d * 86400 + h7));
+	CHECK(!alarm_check(sunday + 6 * 86400 + h7));
+	CHECK(alarm_get(0)->on);
+	/* From Friday after it rang, the next is Monday. */
+	CHECK(alarm_next_s(sunday + 5 * 86400 + h7 + 60) == 3 * 86400 - 60);
+	/* Turned off, it never rings. */
+	a.on = false;
+	CHECK(alarm_set(0, &a));
+	CHECK(alarm_next_s(sunday) == UINT32_MAX);
+	/* The table holds ALARMS. */
+	for (unsigned i = 1; i < ALARMS; i++)
+		CHECK(alarm_set(ALARMS, &a));
+	CHECK(!alarm_set(ALARMS, &a) && alarm_count() == ALARMS);
+	while (alarm_count())
+		alarm_delete(0);
+}
+
 int main(void)
 {
 	test_timer();
 	test_stopwatch();
 	test_persistence();
 	test_alarm();
+	test_alarm_repeat();
 	printf("clockapps_test: %s\n", stub_failures ? "FAILED" : "ok");
 	return stub_failures != 0;
 }
