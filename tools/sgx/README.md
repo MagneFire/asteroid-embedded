@@ -123,7 +123,8 @@ the init left.
 
 ```
 PY=minnow/sgx-study/venv/bin/python
-$PY tools/sgx/glrec.py tri tri2 tri_moved tri_color tri_blend tri_indexed tri_read   # -> build/sgx/draw/<name>
+$PY tools/sgx/glrec.py tri tri2 tri_moved tri_color tri_blend tri_indexed tri_read tri_read2 tri_two   # -> build/sgx/draw/<name>
+$PY tools/sgx/glrec.py --general-gap 0x100000 tri_read                     # -> build/sgx/draw/tri_read_gap
 $PY tools/sgx/check_draw.py tri tri2 tri_moved tri_color tri_blend tri_indexed tri_read
 $PY tools/sgx/diffrec.py build/sgx/draw/tri build/sgx/draw/tri_moved                # same kick, two recordings
 $PY tools/sgx/diffrec.py build/sgx/draw/tri2 build/sgx/draw/tri2 --kick 0 --kick-b 1
@@ -138,7 +139,10 @@ Scenarios: `tri` (one cleared triangle from a VBO), `tri2` (the same, two frames
 vertex positions), `tri_color` (other clear colour), `tri_blend` (GL_ONE, GL_ONE_MINUS_SRC_ALPHA),
 `tri_indexed` (glDrawElements, 3 unsigned shorts), `tri_read` (`tri` plus glReadPixels, which makes
 the end-of-scene kick), `tri_swap` (`tri` plus eglSwapBuffers; produces no extra kick on a
-pbuffer). `quad_tex` does not run; see Known gaps.
+pbuffer), `tri_read2` (two frames, each ended by glReadPixels: two whole scenes, four kicks),
+`tri_two` (`tri_read` with two triangles in one draw). `quad_tex` does not run; see Known gaps.
+`--general-gap N` starts the General heap N bytes later, which moves the render target (its first
+allocation) and every other General buffer; the output directory gets `_gap` appended.
 
 ## Output of one scenario (`build/sgx/draw/<name>`)
 
@@ -249,3 +253,23 @@ mem info are the requested sizes.
   plausible library return address on the stack (heuristic).
 - `check_init.py` reports one FAIL (alloc #6, microkernel trace buffer: it expects alignment 0x1000,
   `init-facts.md` and the emulation give 16). This is independent of the GLES tools.
+
+# Native scene data (minnow)
+
+`mkreplay.py` writes `src/gpu/sgx_scene_data.[ch]`, what `src/gpu/sgx_draw.c` replays: the GL
+context's allocation table (heap, size, alignment, flags, recorded GPU address, and whether the kernel
+makes it: sync data, HW render context), the memory image of `tri_read` at its first kick as runs of
+non-zero words less every word the native code writes itself, the TA command template, the 3D
+register block of the render details, the end-of-scene stream, the blend variants, the status lists
+of both kicks and the addresses of every per-frame site. It finds the sites by comparing recordings
+that differ in one input and stops when a comparison shows more or less than it expects.
+
+```
+$PY tools/sgx/glrec.py tri tri_moved tri_color tri_blend tri_read tri_read2 tri_two
+$PY tools/sgx/glrec.py --general-gap 0x100000 tri_read
+python3 tools/sgx/mkreplay.py
+python3 tools/sgx/flatten.py draw          # flat.txt per recording, for tests/sgx_draw_test.c
+SGX_LIBSRV_INIT=minnow/dump/extracted_data/system/lib/libsrv_init.so make test
+```
+
+The notes are `asteroid-embedded-notes/hw/minnow/sgx/native-scene.md`.

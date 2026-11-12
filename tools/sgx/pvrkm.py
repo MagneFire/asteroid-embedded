@@ -62,7 +62,7 @@ class FakeKernel:
     CLIENT_LIBS = ("libGLESv2_POWERVR_SGX530_125.so", "libIMGegl.so", "libEGL_POWERVR_SGX530_125.so",
                    "libglslcompiler.so", "libusc.so", "libpvrANDROID_WSEGL.so")
 
-    def __init__(self, init_dir, proc, shift=0, fill=0):
+    def __init__(self, init_dir, proc, shift=0, fill=0, general_gap=0):
         self.fill = fill
         self.proc = proc
         self.shift = shift
@@ -73,6 +73,9 @@ class FakeKernel:
         for a in self.init["allocations"]:
             if not a["freed"]:
                 self.heap_prev_end[a["heap_id"]] = a["devva"] + a["size"]
+        if general_gap:
+            # every General allocation, the render target first, moves up by the gap
+            self.heap_prev_end[0] = HEAPS[0][2] + general_gap
         self.init_dev_data = self.init["devinitpart2"]["asInitDevData"]
         self.allocs = []
         self.live = []

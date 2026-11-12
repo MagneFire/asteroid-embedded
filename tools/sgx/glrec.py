@@ -39,11 +39,11 @@ def f32(x):
 class Session:
     """One emulated process with the fake kernel, and helpers to call the GL stack."""
 
-    def __init__(self, outdir, shift=0, verbose=False, fill=0):
+    def __init__(self, outdir, shift=0, verbose=False, fill=0, general_gap=0):
         self.outdir = outdir
         self.lay = armproc.Layout(shift)
         self.proc = armproc.Proc(SYSTEM, self.lay, logfn=(lambda t: print(t[:300], file=sys.stderr)) if verbose else None)
-        self.kernel = pvrkm.FakeKernel(INIT_DIR, self.proc, shift, fill)
+        self.kernel = pvrkm.FakeKernel(INIT_DIR, self.proc, shift, fill, general_gap)
         self.proc.add_device("/dev/pvrsrvkm", self.kernel)
         self.proc.start(NEEDED)
         self.arena = glenv.Arena(self.proc)
@@ -146,10 +146,12 @@ def build_program(s, vs, fs, attribs):
 
 
 TRI_VERTS = [(-0.8, -0.8, 1.0, 0.0, 0.0, 1.0), (0.8, -0.8, 0.0, 1.0, 0.0, 1.0), (0.0, 0.8, 0.0, 0.0, 1.0, 1.0)]
+TRI_TWO = TRI_VERTS + [(-0.8, 0.8, 1.0, 1.0, 0.0, 1.0), (-0.4, 0.8, 1.0, 1.0, 0.0, 1.0), (-0.8, 0.4, 1.0, 1.0, 0.0, 1.0)]
 TRI_MOVED = [(-0.6, -0.8, 1.0, 0.0, 0.0, 1.0), (0.8, -0.6, 0.0, 1.0, 0.0, 1.0), (0.2, 0.8, 0.0, 0.0, 1.0, 1.0)]
 
 
-def tri_scene(s, verts=TRI_VERTS, clear=(0.25, 0.5, 0.75, 1.0), blend=False, indexed=False, frames=1, swap=False, readback=False):
+def tri_scene(s, verts=TRI_VERTS, clear=(0.25, 0.5, 0.75, 1.0), blend=False, indexed=False, frames=1, swap=False, readback=False,
+              read_each=False):
     egl = setup_egl(s)
     build_program(s, VS, FS, ["p", "c"])
     vbo = s.out32()
@@ -176,8 +178,10 @@ def tri_scene(s, verts=TRI_VERTS, clear=(0.25, 0.5, 0.75, 1.0), blend=False, ind
         if indexed:
             s.g("glDrawElements", 4, 3, 0x1403, 0)
         else:
-            s.g("glDrawArrays", 4, 0, 3)
+            s.g("glDrawArrays", 4, 0, len(verts))
         s.g("glFinish")
+        if read_each:
+            s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
     if readback:
         s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
     if swap:
@@ -231,6 +235,8 @@ SCENARIOS = {
     "tri_indexed": lambda s: tri_scene(s, indexed=True),
     "tri_swap": lambda s: tri_scene(s, swap=True),
     "tri_read": lambda s: tri_scene(s, readback=True),
+    "tri_read2": lambda s: tri_scene(s, frames=2, read_each=True),
+    "tri_two": lambda s: tri_scene(s, verts=TRI_TWO, readback=True),
     "quad_tex": quad_tex_scene,
 }
 
@@ -382,16 +388,16 @@ def finish(s, name, outdir, unwritten=None):
     return manifest
 
 
-def run(name, outdir, shift=0, verbose=False):
+def run(name, outdir, shift=0, verbose=False, general_gap=0):
     import shutil
     shutil.rmtree(outdir, ignore_errors=True)
     os.makedirs(outdir, exist_ok=True)
-    s = Session(outdir, shift, verbose)
+    s = Session(outdir, shift, verbose, general_gap=general_gap)
     SCENARIOS[name](s)
     import tempfile
     filldir = tempfile.mkdtemp(prefix="sgxfill")
     try:
-        sf = Session(filldir, shift, False, fill=0xA5)
+        sf = Session(filldir, shift, False, fill=0xA5, general_gap=general_gap)
         SCENARIOS[name](sf)
         unwritten = never_written(outdir, filldir, len(s.kernel.kicks))
     finally:
@@ -406,9 +412,12 @@ def main():
     ap.add_argument("--out", default=os.path.join(WORKTREE, "build", "sgx", "draw"))
     ap.add_argument("--shift", type=int, default=0)
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--general-gap", type=lambda x: int(x, 0), default=0,
+                    help="start the General heap this many bytes later (moves the render target); output NAME_gap")
     a = ap.parse_args()
     for name in a.scenarios:
-        s = run(name, os.path.join(a.out, name), a.shift, a.verbose)
+        out = os.path.join(a.out, name + ("_gap" if a.general_gap else ""))
+        s = run(name, out, a.shift, a.verbose, a.general_gap)
         print(name, "done:", len(s.kernel.allocs), "allocations,", len(s.kernel.kicks), "kicks")
 
 
