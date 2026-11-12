@@ -172,6 +172,7 @@ static float app_alpha(void)
 
 unsigned stack_screen(void) { return screen; }
 bool stack_moving(void) { return animating || dragging || opening; }
+bool stack_app_still(void) { return app_open && !app_closing && !stack_moving() && off == 0 && app_alpha() >= 1.0f; }
 void stack_offset(int *x, int *y) { *x = fx; *y = fy; }
 
 static void slide_to(unsigned s)

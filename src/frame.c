@@ -27,16 +27,33 @@ static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static uint32_t start_ms, shown_step = UINT32_MAX, hold_t;
 static uint32_t ui_frames, ui_us, ui_repaints, ui_repaint_us;
 
-static uint32_t mesh_t, app_center = 0x888888, app_outer;
+static uint32_t mesh_t, app_center = 0x888888, app_outer, shown_center = 0x888888, shown_outer;
+/* Under a still, opaque app the screen mesh is drawn in the app's
+ * colours instead of a second mesh over it. */
+static bool one_mesh;
 
 /* An open app's own mesh in its colours, under it as it moves and fades. */
 static void app_background(int x, int y, float alpha)
 {
+	if (one_mesh)
+		return;
 	static float *vbo;
+	static unsigned n;
+	static struct { uint32_t t, center, outer; int x, y; float alpha; } last;
 	if (!vbo)
 		vbo = gpu_alloc(FLATMESH_GPU_ROUND_VERTICES * 32, 64);
-	unsigned n = flatmesh_vertices_gpu_look(vbo, mesh_t, app_center, app_outer, (float)x / fb.width,
-						(float)y / fb.height, alpha);
+	/* The mesh only moves every MESH_STEP_MS. The Adreno turns the
+	 * vertices in place, so a turned picture is built anew each frame. */
+	float c, s;
+	rotation_turn(time_ms(), &c, &s);
+	bool same = n && c == 1.0f && s == 0.0f && last.t == mesh_t && last.center == app_center &&
+		    last.outer == app_outer && last.x == x && last.y == y && last.alpha == alpha;
+	if (!same) {
+		n = flatmesh_vertices_gpu_look(vbo, mesh_t, app_center, app_outer, (float)x / fb.width,
+					       (float)y / fb.height, alpha);
+		last.t = mesh_t, last.center = app_center, last.outer = app_outer;
+		last.x = x, last.y = y, last.alpha = c == 1.0f && s == 0.0f ? alpha : -1.0f;
+	}
 	gpu_draw_turn_vertices(vbo, n, 8);
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_blend(alpha < 1.0f);
@@ -104,7 +121,6 @@ static void draw_dot(uint32_t *buf)
  * screen as the launcher comes in, t from 0 to 1. */
 static void mesh_colors(float t)
 {
-	static uint32_t shown_center = 0x888888, shown_outer;
 	uint32_t lc = 0x888888, lo = 0, c = 0, o = 0;
 	struct ui_colors lcs;
 	if (t > 0.0f && ui_launcher_colors(&lcs)) {
@@ -236,6 +252,12 @@ void frame_draw(uint32_t now)
 		stack_offset(&sx, &sy);
 		flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
 		mesh_colors(stack_launcher());
+		one_mesh = have_gpu && stack_app_still();
+		if (one_mesh) {
+			flatmesh_view(1.1f, 0.0f, 0.0f, 1.0f);
+			flatmesh_colors(app_center, app_outer);
+			shown_center = ~0u;
+		}
 	}
 	if (frame) {
 		shown_step = step;
