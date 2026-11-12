@@ -31,7 +31,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/sett
         src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c src/input/haptics_ldo.c \
         src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
         src/display/backlight_lm3535.c src/sensors/tsl2584.c src/audio/speaker.c src/display/fbcon.c src/display/flatmesh.c \
-        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/inflate.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
+        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/crc32.c src/lib/inflate.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
         src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
         src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
         src/notify/notify.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
@@ -313,9 +313,9 @@ $(BUILD)/test/ramoops_test: tests/ramoops_test.c src/lib/ramoops.c $(wildcard te
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/lib/ramoops.c -o $@
 
-$(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/lib/fmt.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/lib/fmt.c src/lib/crc32.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/storage/emmc.c src/lib/fmt.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/storage/emmc.c src/lib/fmt.c src/lib/crc32.c -o $@
 
 $(BUILD)/test/squashfs_test: tests/squashfs_test.c src/storage/squashfs.c src/lib/inflate.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)

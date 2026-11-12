@@ -41,18 +41,6 @@ static uint32_t guard_first, guard_count;
 uint8_t emmc_bounce[EMMC_XFER_BLOCKS * EMMC_BLOCK] __attribute__((aligned(64)));
 static uint8_t gpt_buf[32 * EMMC_BLOCK] __attribute__((aligned(64)));
 
-uint32_t crc32(uint32_t crc, const void *buf, uint32_t n)
-{
-	const uint8_t *p = buf;
-	crc = ~crc;
-	while (n--) {
-		crc ^= *p++;
-		for (int k = 0; k < 8; k++)
-			crc = (crc >> 1) ^ (0xedb88320u & -(crc & 1));
-	}
-	return ~crc;
-}
-
 static int cmd(uint32_t index, uint32_t arg, uint32_t flags, uint32_t *resp)
 {
 	struct emmc_cmd c = { .index = index, .arg = arg, .flags = flags };
