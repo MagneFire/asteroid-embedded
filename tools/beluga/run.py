@@ -5,7 +5,7 @@ watch's application processor: swdtool is pushed there and run as root.
   tools/beluga/run.py probe
   tools/beluga/run.py backup DIR       saves the backup to DIR on the PC
   tools/beluga/run.py flash [IMAGE]    build/apollo3/asteroid.bin by default
-  tools/beluga/run.py restore FILE.flash
+  tools/beluga/run.py restore DIR/mcu.flash
   tools/beluga/run.py log
   tools/beluga/run.py shell
 
@@ -17,6 +17,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(ROOT, 'build', 'swdtool')
@@ -60,9 +61,13 @@ def main():
         if not a.arg:
             sys.exit('backup needs a directory on the PC')
         os.makedirs(a.arg, exist_ok=True)
-        shell(a.serial, f'{REMOTE} backup /tmp/mcu-backup')
-        for ext in ('.flash', '.info0'):
-            adb(a.serial, 'pull', '/tmp/mcu-backup' + ext, os.path.join(a.arg, 'mcu-backup' + ext))
+        remote = '/tmp/mcu-backup-' + time.strftime('%Y%m%d-%H%M%S')
+        shell(a.serial, f'{REMOTE} backup {remote}')
+        for name in ('mcu.flash', 'mcu.info0', 'manifest'):
+            dst = os.path.join(a.arg, name)
+            if os.path.exists(dst):
+                sys.exit(f'{dst} exists: back up into a new directory')
+            adb(a.serial, 'pull', f'{remote}/{name}', dst)
     elif a.cmd in ('flash', 'restore'):
         src = a.arg or (IMAGE if a.cmd == 'flash' else None)
         if not src or not os.path.exists(src):

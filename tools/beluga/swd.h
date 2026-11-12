@@ -36,23 +36,32 @@ bool swd_halted(const struct swd_link *l);
 int swd_reg_read(const struct swd_link *l, unsigned reg, uint32_t *val);
 int swd_reg_write(const struct swd_link *l, unsigned reg, uint32_t val);
 
-/* Halts the core with the watchdog and the interrupts off, for loading
- * or flashing. */
+/* Halts the core with the watchdog and the interrupts off, and faults
+ * caught as halts, for loading or flashing: -3 if the watchdog is
+ * locked on. */
 int swd_take(const struct swd_link *l);
-/* A system reset, with the core left to run. */
+/* Leaves the core in a loop in SRAM with the interrupts off, for when it
+ * must not run from flash and the debug session ends. */
+int swd_park(const struct swd_link *l);
+/* A system reset requested from a halt, after which the chip runs from
+ * its boot loader. */
 int swd_reset(const struct swd_link *l);
 
 /* Why an image is refused, or NULL: its vector table must point into
  * SRAM for the stack and into itself for the entry. */
 const char *swd_image_check(const uint8_t *img, uint32_t size, uint32_t base);
+/* Why loading size bytes at base in SRAM is refused, or NULL. */
+const char *swd_ram_check(uint32_t base, uint32_t size);
 /* Why a flash write of size bytes at addr is refused, or NULL. */
 const char *swd_flash_check(uint32_t addr, uint32_t size);
 
 /* Loads an image linked at an SRAM address and starts it there. */
 int swd_ram_run(const struct swd_link *l, const uint8_t *img, uint32_t size, uint32_t base);
-/* Erases and programs whole pages from addr, then reads them back. */
+/* Erases and programs whole pages from addr and reads them back, the
+ * first page last; progress returning false stops it (-7). Any failure
+ * from -3 on can leave the first page erased. */
 int swd_flash(const struct swd_link *l, uint32_t addr, const uint8_t *img, uint32_t size,
-	      void (*progress)(uint32_t done, uint32_t total));
+	      bool (*progress)(uint32_t done, uint32_t total));
 
 uint32_t swd_crc32(uint32_t crc, const void *buf, size_t n);
 #endif
