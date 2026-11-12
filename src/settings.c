@@ -31,6 +31,7 @@ static const struct {
 	[SETTING_STEP_GOAL] = { "steps.goal", 16 },
 	[SETTING_HEIGHT] = { "body.height", 170 },
 	[SETTING_WEIGHT] = { "body.weight", 70 },
+	[SETTING_HR_INTERVAL] = { "hr.interval", 0 },
 };
 
 #define FLUSH_MS 2000

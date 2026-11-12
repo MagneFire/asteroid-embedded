@@ -145,6 +145,7 @@ pub struct UiSettings {
     auto_brightness: bool,
     height_cm: u8,
     weight_kg: u8,
+    hr_interval: u8,
 }
 
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
@@ -167,7 +168,7 @@ use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiTile>() == 6 && core::mem::size_of::<UiAgenda>() == 30);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 16);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 17);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
@@ -437,6 +438,14 @@ pub extern "C" fn ui_set_workout(running: bool, start: u32, seconds: u32, steps:
     });
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_heart_log(x: *const u16, bpm: *const u8, n: u32) {
+    let n = if x.is_null() || bpm.is_null() { 0 } else { n as usize };
+    let (x, bpm) = unsafe { (core::slice::from_raw_parts(x, n), core::slice::from_raw_parts(bpm, n)) };
+    let points: Vec<HeartPoint> = x.iter().zip(bpm).map(|(&x, &b)| HeartPoint { x: x as i32, bpm: b as i32 }).collect();
+    with_ui(|ui| ui.screens[APP].global::<Face>().set_heart_log(Rc::new(VecModel::from(points)).into()));
+}
+
 /// The app on the app panel, -1 for none.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_open() -> i32 {
@@ -699,6 +708,7 @@ pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
         face.set_auto_brightness(s.auto_brightness);
         face.set_height_cm(s.height_cm as i32);
         face.set_weight_kg(s.weight_kg as i32);
+        face.set_hr_interval(s.hr_interval as i32);
     });
 }
 

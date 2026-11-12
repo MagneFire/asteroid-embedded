@@ -38,6 +38,11 @@ export struct AgendaItem {
     title: string,
 }
 
+export struct HeartPoint {
+    x: int,
+    bpm: int,
+}
+
 export struct AlarmItem {
     hour: int,
     minute: int,
@@ -106,6 +111,10 @@ export global Face {
     in-out property <int> workout-kcal;
     in-out property <int> workout-avg-bpm;
     in-out property <int> workout-max-bpm;
+    // Logged heart rates of the last day, x in thousandths of it from a day ago to now.
+    in-out property <[HeartPoint]> heart-log;
+    // Minutes between logged heart rates, 0 for none.
+    in-out property <int> hr-interval;
     in-out property <int> height-cm: 170;
     in-out property <int> weight-kg: 70;
     in-out property <[int]> activity-days: [0, 0, 0, 0, 0, 0, 0];

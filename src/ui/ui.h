@@ -183,7 +183,7 @@ struct ui_settings {
 	bool bluetooth, vibration, aod, clock12;
 	uint8_t tilt;
 	bool tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
-	uint8_t height_cm, weight_kg;
+	uint8_t height_cm, weight_kg, hr_interval;
 };
 
 enum ui_event_kind {
@@ -216,7 +216,7 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 16 &&
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 17 &&
 	       sizeof(struct ui_tile) == 6 && sizeof(struct ui_agenda) == 30, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
@@ -236,6 +236,9 @@ void ui_set_heart_rate(uint32_t bpm);
  * length, its steps and what they come to, and its average and highest heart rate. */
 void ui_set_workout(bool running, uint32_t start, uint32_t seconds, uint32_t steps, uint32_t distance_m, uint32_t kcal,
 		    uint32_t avg_bpm, uint32_t max_bpm);
+/* The logged heart rates of the last day, oldest first: when, in thousandths of the day back
+ * from now, and the rate. */
+void ui_set_heart_log(const uint16_t *x, const uint8_t *bpm, uint32_t n);
 void ui_set_activity(uint32_t today, uint32_t goal, uint32_t distance_m, uint32_t kcal, const uint32_t *days, uint32_t n);
 int ui_app_open(void);
 bool ui_flashlight_on(void);

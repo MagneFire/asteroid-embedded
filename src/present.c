@@ -15,6 +15,7 @@
 #include "agenda.h"
 #include "fitness.h"
 #include "workout.h"
+#include "hrlog.h"
 #include "power.h"
 #include "present.h"
 
@@ -98,6 +99,18 @@ void present_workout(void)
 		       fitness_kcal(w->steps, setting_get(SETTING_WEIGHT)), w->avg_bpm, w->max_bpm);
 }
 
+void present_heart_log(void)
+{
+	static uint32_t t[HRLOG_SAMPLES];
+	static uint16_t x[HRLOG_SAMPLES];
+	static uint8_t bpm[HRLOG_SAMPLES];
+	uint32_t rtc = rtc_read();
+	unsigned n = hrlog_get(rtc > 86400 ? rtc - 86400 : 0, t, bpm, HRLOG_SAMPLES);
+	for (unsigned i = 0; i < n; i++)
+		x[i] = t[i] > rtc ? 1000 : (uint16_t)(1000 - (rtc - t[i]) * 1000 / 86400);
+	ui_set_heart_log(x, bpm, n);
+}
+
 void present_settings(void)
 {
 	struct ui_settings u = {
@@ -117,6 +130,7 @@ void present_settings(void)
 		.auto_brightness = setting_get(SETTING_AUTO_BRIGHTNESS),
 		.height_cm = setting_get(SETTING_HEIGHT),
 		.weight_kg = setting_get(SETTING_WEIGHT),
+		.hr_interval = setting_get(SETTING_HR_INTERVAL),
 	};
 	ui_set_settings(&u);
 	present_activity();

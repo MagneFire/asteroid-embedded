@@ -2,7 +2,7 @@
 // shows the screen chosen by `screen` (0 watchface, 1 notifications, 2 weather, 3 launcher,
 // 4 Today, 6 app) with the overlay on top, over a backdrop instead of the FlatMesh.
 import "../fonts/NotoSans-Light.ttf";
-import { Face, Note, Day, Tile, AgendaItem, Watchface } from "face.slint";
+import { Face, Note, Day, Tile, AgendaItem, HeartPoint, Watchface } from "face.slint";
 import { NoteList } from "notes.slint";
 import { WeatherScreen } from "weather.slint";
 import { Launcher } from "launcher.slint";
@@ -60,6 +60,8 @@ export component Preview inherits Window {
     in-out property <int> workout-max-bpm <=> Face.workout-max-bpm;
     in-out property <int> heart-rate <=> Face.heart-rate;
     in-out property <int> now <=> Face.now;
+    in-out property <[HeartPoint]> heart-log <=> Face.heart-log;
+    in-out property <int> hr-interval <=> Face.hr-interval;
     in property <int> screen;
     in property <brush> backdrop: #303030;
     in property <bool> round-mask;

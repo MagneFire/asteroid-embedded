@@ -22,6 +22,7 @@
 #include "game.h"
 #include "agenda.h"
 #include "workout.h"
+#include "hrlog.h"
 #include "power.h"
 #include "frame.h"
 #include "present.h"
@@ -42,7 +43,7 @@ static struct app_caps caps;
 #define have_hub caps.hub
 #define have_heart_rate caps.heart_rate
 
-static bool steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen;
+static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen;
 static uint32_t shown_bpm, key_down_t, down_t;
 static unsigned seen_readings;
 static int down_x, down_y;
@@ -80,6 +81,7 @@ void app_open(int app)
 			steps_poll();
 		present_activity();
 		present_workout();
+		present_heart_log();
 	}
 	ui_set_app(app);
 	stack_open_app();
@@ -119,6 +121,7 @@ static bool start_run(uint32_t now)
 	if (have_hub)
 		steps_init();
 	workout_init();
+	hrlog_init();
 	if (setting_get(SETTING_BLUETOOTH))
 		action_bluetooth_start();
 	if (have_display)
@@ -236,10 +239,17 @@ void app_sensors(uint32_t now)
 		 * asteroid-hrm keeps the display from blanking until it has
 		 * a previous rate. */
 		bool measure = have_ui && power_awake() && ui_app_open() == UI_APP_HEART_RATE;
-		hub_heart_rate_on(measure || (have_heart_rate && workout_running()));
 		unsigned readings;
 		uint32_t bpm = hub_heart_rate(NULL, &readings);
 		bpm = bpm == HUB_NONE ? 0 : bpm;
+		/* The log keeps the second reading, as the app above waits
+		 * for it too. */
+		bool logging = have_heart_rate &&
+			       hrlog_poll(rtc_read(), setting_get(SETTING_HR_INTERVAL), readings >= 2 ? bpm : 0);
+		if (was_logging && !logging && have_ui)
+			present_heart_log();
+		was_logging = logging;
+		hub_heart_rate_on(measure || logging || (have_heart_rate && workout_running()));
 		if (readings > seen_readings && bpm)
 			workout_heart_rate(bpm);
 		seen_readings = readings;
@@ -519,6 +529,7 @@ uint32_t app_next_ms(void)
 		batt_next_ms(),
 		power_next_ms(),
 		sched_next_ms(time_ms()),
+		have_heart_rate ? hrlog_next_ms(rtc_read(), setting_get(SETTING_HR_INTERVAL)) : UINT32_MAX,
 	}, min = UINT32_MAX;
 	for (unsigned i = 0; i < ARRAY_SIZE(next); i++)
 		if (next[i] < min)

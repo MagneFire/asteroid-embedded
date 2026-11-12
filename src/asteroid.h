@@ -81,6 +81,7 @@ enum setting {
 	SETTING_STEP_GOAL,
 	SETTING_HEIGHT,
 	SETTING_WEIGHT,
+	SETTING_HR_INTERVAL,
 	SETTINGS
 };
 int setting_get(enum setting s);
