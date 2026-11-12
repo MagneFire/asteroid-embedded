@@ -143,6 +143,8 @@ pub struct UiSettings {
     nightstand_aod: bool,
     nightstand_rotate: bool,
     auto_brightness: bool,
+    height_cm: u8,
+    weight_kg: u8,
 }
 
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
@@ -165,7 +167,7 @@ use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiTile>() == 6 && core::mem::size_of::<UiAgenda>() == 30);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 14);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 16);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
@@ -405,13 +407,15 @@ pub extern "C" fn ui_set_heart_rate(bpm: u32) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ui_set_activity(today: u32, goal: u32, days: *const u32, n: u32) {
+pub unsafe extern "C" fn ui_set_activity(today: u32, goal: u32, distance_m: u32, kcal: u32, days: *const u32, n: u32) {
     let days = if days.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(days, n as usize) } };
     let days: Vec<i32> = days.iter().map(|&d| d as i32).collect();
     with_ui(|ui| {
         let face = ui.screens[APP].global::<Face>();
         face.set_activity_today(today as i32);
         face.set_activity_goal(goal as i32);
+        face.set_activity_distance(distance_m as i32);
+        face.set_activity_kcal(kcal as i32);
         face.set_activity_days(Rc::new(VecModel::from(days)).into());
     });
 }
@@ -676,6 +680,8 @@ pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
         face.set_nightstand_rotate(s.nightstand_rotate);
         face.set_burn_in(s.burn_in as i32);
         face.set_auto_brightness(s.auto_brightness);
+        face.set_height_cm(s.height_cm as i32);
+        face.set_weight_kg(s.weight_kg as i32);
     });
 }
 

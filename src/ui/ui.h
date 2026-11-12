@@ -183,6 +183,7 @@ struct ui_settings {
 	bool bluetooth, vibration, aod, clock12;
 	uint8_t tilt;
 	bool tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
+	uint8_t height_cm, weight_kg;
 };
 
 enum ui_event_kind {
@@ -214,7 +215,7 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 14 &&
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 16 &&
 	       sizeof(struct ui_tile) == 6 && sizeof(struct ui_agenda) == 30, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
@@ -228,8 +229,9 @@ void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, b
 void ui_set_chin(uint32_t px);
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
-/* Steps today, the goal, and the steps of the last n days, oldest first and today last. */
-void ui_set_activity(uint32_t today, uint32_t goal, const uint32_t *days, uint32_t n);
+/* Steps today, the goal, what today's steps come to, and the steps of the last n days, oldest
+ * first and today last. */
+void ui_set_activity(uint32_t today, uint32_t goal, uint32_t distance_m, uint32_t kcal, const uint32_t *days, uint32_t n);
 int ui_app_open(void);
 bool ui_flashlight_on(void);
 void ui_set_calc(const char *shown, uint32_t shown_len, uint32_t length);

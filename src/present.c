@@ -13,6 +13,7 @@
 #include "calc.h"
 #include "game.h"
 #include "agenda.h"
+#include "fitness.h"
 #include "power.h"
 #include "present.h"
 
@@ -80,7 +81,9 @@ void present_activity(void)
 	uint32_t days[7];
 	for (unsigned i = 0; i < ARRAY_SIZE(days); i++)
 		days[i] = have_hub ? steps_day(ARRAY_SIZE(days) - 1 - i) : 0;
-	ui_set_activity(days[6], setting_get(SETTING_STEP_GOAL) * STEP_GOAL_UNIT, days, ARRAY_SIZE(days));
+	ui_set_activity(days[6], setting_get(SETTING_STEP_GOAL) * STEP_GOAL_UNIT,
+			fitness_distance_m(days[6], setting_get(SETTING_HEIGHT)), fitness_kcal(days[6], setting_get(SETTING_WEIGHT)),
+			days, ARRAY_SIZE(days));
 }
 
 void present_settings(void)
@@ -100,6 +103,8 @@ void present_settings(void)
 		.nightstand_aod = setting_get(SETTING_NIGHTSTAND_AOD),
 		.nightstand_rotate = setting_get(SETTING_NIGHTSTAND_ROTATE),
 		.auto_brightness = setting_get(SETTING_AUTO_BRIGHTNESS),
+		.height_cm = setting_get(SETTING_HEIGHT),
+		.weight_kg = setting_get(SETTING_WEIGHT),
 	};
 	ui_set_settings(&u);
 	present_activity();

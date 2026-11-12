@@ -94,6 +94,11 @@ export global Face {
     // The Activity app: steps today, the daily goal, and the last seven days, today last.
     in-out property <int> activity-today;
     in-out property <int> activity-goal: 8000;
+    // In metres and kcal, from the height and weight in cm and kg.
+    in-out property <int> activity-distance;
+    in-out property <int> activity-kcal;
+    in-out property <int> height-cm: 170;
+    in-out property <int> weight-kg: 70;
     in-out property <[int]> activity-days: [0, 0, 0, 0, 0, 0, 0];
     // Whether the Flashlight app's light is on, read by the firmware for the brightness.
     in-out property <bool> flashlight-on: true;

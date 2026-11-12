@@ -120,6 +120,10 @@ void action_setting_value(int s, int v)
 		setting_set(SETTING_TILT, v);
 	} else if (s == SETTING_STEP_GOAL && v >= 1 && v <= STEP_GOAL_MAX) {
 		setting_set(SETTING_STEP_GOAL, v);
+	} else if (s == SETTING_HEIGHT && v >= 100 && v <= 230) {
+		setting_set(SETTING_HEIGHT, v);
+	} else if (s == SETTING_WEIGHT && v >= 30 && v <= 200) {
+		setting_set(SETTING_WEIGHT, v);
 	}
 	present_settings();
 }

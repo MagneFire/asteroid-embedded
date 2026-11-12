@@ -109,6 +109,12 @@ static void steps(void)
 	CHECK(values[SETTING_NIGHTSTAND_DELAY] == 15);
 	action_setting_value(SETTING_STEP_GOAL, 20);
 	CHECK(values[SETTING_STEP_GOAL] == 20);
+	action_setting_value(SETTING_HEIGHT, 181);
+	action_setting_value(SETTING_HEIGHT, 99);
+	CHECK(values[SETTING_HEIGHT] == 181);
+	action_setting_value(SETTING_WEIGHT, 82);
+	action_setting_value(SETTING_WEIGHT, 201);
+	CHECK(values[SETTING_WEIGHT] == 82);
 	action_setting_value(SETTING_STEP_GOAL, 0);
 	action_setting_value(SETTING_STEP_GOAL, STEP_GOAL_MAX + 1);
 	CHECK(values[SETTING_STEP_GOAL] == 20);
