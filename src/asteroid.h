@@ -56,6 +56,9 @@ void power_wake_cancel(const char *cause);
 /* Asleep with the screen dark, shows the always-on face for a while. */
 void power_peek(const char *cause);
 enum tilt_mode { TILT_OFF, TILT_WAKE, TILT_FACE };
+/* The daily step goal is set in units of STEP_GOAL_UNIT steps. */
+#define STEP_GOAL_UNIT	500
+#define STEP_GOAL_MAX	40
 enum setting {
 	SETTING_BRIGHTNESS,
 	SETTING_BLUETOOTH,
@@ -75,6 +78,7 @@ enum setting {
 	SETTING_CINEMA_AOD,
 	SETTING_NIGHTSTAND_ROTATE,
 	SETTING_AUTO_BRIGHTNESS,
+	SETTING_STEP_GOAL,
 	SETTINGS
 };
 int setting_get(enum setting s);

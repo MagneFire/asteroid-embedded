@@ -28,6 +28,7 @@ static const struct {
 	[SETTING_CINEMA_AOD] = { "cinema.aod", 1 },
 	[SETTING_NIGHTSTAND_ROTATE] = { "nightstand.rotate", 1 },
 	[SETTING_AUTO_BRIGHTNESS] = { "brightness.auto", 1 },
+	[SETTING_STEP_GOAL] = { "steps.goal", 16 },
 };
 
 #define FLUSH_MS 2000

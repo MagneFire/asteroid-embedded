@@ -107,6 +107,11 @@ static void steps(void)
 	CHECK(values[SETTING_NIGHTSTAND_DELAY] == 15);
 	action_setting_value(SETTING_NIGHTSTAND_DELAY, 31);
 	CHECK(values[SETTING_NIGHTSTAND_DELAY] == 15);
+	action_setting_value(SETTING_STEP_GOAL, 20);
+	CHECK(values[SETTING_STEP_GOAL] == 20);
+	action_setting_value(SETTING_STEP_GOAL, 0);
+	action_setting_value(SETTING_STEP_GOAL, STEP_GOAL_MAX + 1);
+	CHECK(values[SETTING_STEP_GOAL] == 20);
 	action_setting_value(SETTING_BURN_IN, 4);
 	CHECK(values[SETTING_BURN_IN] == 0);
 	action_setting_value(SETTING_BURN_IN, 3);

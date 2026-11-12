@@ -118,6 +118,8 @@ void action_setting_value(int s, int v)
 		setting_set(SETTING_BURN_IN, v);
 	} else if (s == SETTING_TILT && v >= TILT_OFF && v <= TILT_FACE) {
 		setting_set(SETTING_TILT, v);
+	} else if (s == SETTING_STEP_GOAL && v >= 1 && v <= STEP_GOAL_MAX) {
+		setting_set(SETTING_STEP_GOAL, v);
 	}
 	present_settings();
 }
