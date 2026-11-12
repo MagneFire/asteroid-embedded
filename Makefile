@@ -24,22 +24,27 @@ MBEDTLS := third_party/mbedtls
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/agenda.c src/fitness.c src/workout.c src/hrlog.c \
-        src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
-        src/civil.c src/log.c src/lib/ramoops.c src/soc/mmu.c src/soc/exceptions.c src/board/drivers.c \
-        src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \
-        src/input/mxt.c src/input/touch_mxt.c src/input/haptics.c src/input/haptics_ldo.c \
-        src/soc/max17050.c src/soc/charge_policy.c src/soc/gauge_max17050.c \
-        src/display/backlight_lm3535.c src/sensors/tsl2584.c src/audio/speaker.c src/display/fbcon.c src/display/flatmesh.c \
-        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/crc32.c src/lib/inflate.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
-        src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c \
-        src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/console/console.c \
-        src/notify/notify.c src/media/media.c src/weather/weather.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
-        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/squashfs.c src/storage/store.c src/storage/kv.c \
+# What every watch runs: the services, the UI's glue and the Bluetooth
+# host, with no assumption about the processor or the storage.
+SRCS := src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/agenda.c src/fitness.c src/workout.c src/hrlog.c \
+        src/power.c src/power_policy.c src/sched.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
+        src/civil.c src/log.c src/lib/ramoops.c src/board/drivers.c \
+        src/sensors/steps.c src/sensors/auto_brightness.c src/sensors/orient.c src/sensors/tsl2584.c src/input/haptics.c \
+        src/soc/charge_policy.c src/soc/max17050.c src/soc/gauge_max17050.c src/audio/speaker.c \
+        src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/crc32.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
+        src/bt/hci.c src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c src/console/console.c \
+        src/notify/notify.c src/media/media.c src/weather/weather.c src/storage/kv.c
+
+# The application processors: MMU, eMMC, USB and a frame buffer.
+SRCS_ap := src/start.S src/soc/cache.S src/frame.c src/soc/mmu.c src/soc/exceptions.c \
+        src/sensors/hub_m4.c src/sensors/m4_proto.c src/input/mxt.c src/input/touch_mxt.c src/input/haptics_ldo.c \
+        src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
+        src/lib/inflate.c src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
+        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/squashfs.c src/storage/store.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 
-SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
+SRCS_qcom := $(SRCS_ap) $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
                suspend.S i2c_qup.c spi_qup.c uart_dm.c rpm.c smem_find.c mdt.c smd.c wcnss.c wcnss_msg.c) \
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/board/swift.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_lis3dsh.c src/sensors/hub_lsm6ds3.c src/sensors/hub_nanohub.c src/sensors/hr_accept.c src/sensors/nanohub_proto.c src/sensors/light_tsl2584.c src/sensors/light_al3320.c \
@@ -53,7 +58,7 @@ FPU_qcom  := neon-vfpv4
 TUSB_PORT_qcom := chipidea/ci_hs
 TUSB_DEFS_qcom := -DTUP_USBIP_CHIPIDEA_HS -DTUP_DCD_ENDPOINT_MAX=16
 
-SRCS_omap3 := $(addprefix src/soc/omap3/,init.c intc.c timer.c wdt.c clock.c gpio.c i2c.c tps65912.c reboot.c sleep.c \
+SRCS_omap3 := $(SRCS_ap) $(addprefix src/soc/omap3/,init.c intc.c timer.c wdt.c clock.c gpio.c i2c.c tps65912.c reboot.c sleep.c \
                detect.c rtc.c hsmmc.c dss.c uart.c) \
         src/board/minnow.c src/gpu/soft.c src/gpu/sgx.c src/gpu/sgx_image.c src/gpu/sgx_draw.c src/gpu/sgx_scene_data.c src/gpu/sgx_compose.c src/gpu/sgx_paint.c src/display/display_minnow.c src/usb/dcd_musb_omap3.c src/usb/port_musb_omap3.c src/bt/ti.c
 CPU_omap3 := cortex-a8
@@ -75,7 +80,10 @@ MBEDTLS_SRCS := $(addprefix $(MBEDTLS)/library/,aes.c bignum.c bignum_core.c cip
 SRCS += $(NIMBLE_SRCS) $(MBEDTLS_SRCS)
 OBJS := $(patsubst %,$(BUILD)/%.o,$(SRCS))
 
-CFLAGS := -mcpu=$(CPU_$(SOC)) -marm -mfloat-abi=hard -mfpu=$(FPU_$(SOC)) -ffreestanding -nostdlib \
+ISA     := $(or $(ISA_$(SOC)),-marm)
+LDS     := $(or $(LDS_$(SOC)),ld/asteroid.ld.in)
+RUST_TARGET := $(or $(RUST_TARGET_$(SOC)),armv7a-none-eabihf)
+CFLAGS := -mcpu=$(CPU_$(SOC)) $(ISA) -mfloat-abi=hard -mfpu=$(FPU_$(SOC)) -ffreestanding -nostdlib \
           -Os -g -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
           -ffunction-sections -fdata-sections -fno-common \
           -Isrc -Isrc/soc/$(SOC) -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/$(TUSB_PORT_$(SOC)) -Isrc/bt/port \
@@ -89,7 +97,7 @@ LIBS    := -lgcc
 # its fused multiply-add.
 CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
 UI_TARGET := ui/target$(if $(filter qcom,$(SOC)),,-$(SOC))
-UI_LIB  := $(UI_TARGET)/armv7a-none-eabihf/release/libasteroid_ui.a
+UI_LIB  := $(UI_TARGET)/$(RUST_TARGET)/release/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
@@ -128,11 +136,12 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS)
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_ARMV7A_NONE_EABIHF_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC))$(if $(UI_CFG_$(SOC)), $(UI_CFG_$(SOC)))" \
-		$(CARGO) build --release --target armv7a-none-eabihf --target-dir $(abspath $(UI_TARGET))
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_$(shell echo $(RUST_TARGET) | tr a-z- A-Z_)_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC))$(if $(UI_CFG_$(SOC)), $(UI_CFG_$(SOC)))" \
+		$(CARGO) build --release --target $(RUST_TARGET) --target-dir $(abspath $(UI_TARGET)) \
+		$(if $(UI_FEATURES_$(SOC)),--features $(UI_FEATURES_$(SOC)))
 	@touch $@
 
-$(BUILD)/asteroid.ld: ld/asteroid.ld.in src/soc/$(SOC)/memmap.h
+$(BUILD)/asteroid.ld: $(LDS) src/soc/$(SOC)/memmap.h
 	@mkdir -p $(BUILD)
 	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/$(SOC) $< -o $@
 
