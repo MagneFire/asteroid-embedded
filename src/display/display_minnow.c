@@ -365,6 +365,7 @@ static void frame_wait(void)
 			idle_hook();
 		if (time_us() - t0 > FRAME_TIMEOUT_US)
 			break;
+		dss_frame_sleep();
 	}
 	waits += time_us() - t0;
 	kicked = false;

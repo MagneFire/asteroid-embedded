@@ -21,4 +21,7 @@ int dsi_read(bool generic, const uint8_t *req, uint8_t *buf, unsigned n);
 bool dss_frame_start(const uint32_t *buf, bool te);
 bool dss_frame_done(void);
 void dss_frame_abort(void);
+/* Sleeps until the frame-done event, or any other interrupt, unless it
+ * came already. */
+void dss_frame_sleep(void);
 #endif

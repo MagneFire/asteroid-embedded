@@ -356,8 +356,33 @@ static void dispc_setup(void)
 	writel(DISPC_FRAMEDONE, DISPC_IRQENABLE);
 }
 
+/* The controller's frame-done event wakes the CPU out of a wait for a
+ * frame: the line is masked again until the next frame, the status bit
+ * left for dss_frame_done. */
+static volatile bool frame_irq;
+
+static void dss_irq(void)
+{
+	irq_mask(IRQ_DSS);
+	frame_irq = true;
+}
+
+void dss_frame_sleep(void)
+{
+	uint32_t flags = irq_save();
+	if (!frame_irq)
+		wfi();
+	irq_restore(flags);
+}
+
 bool dss_on(uint32_t width, uint32_t height, bool from_ulps)
 {
+	static bool attached;
+	if (!attached) {
+		irq_attach(IRQ_DSS, dss_irq);
+		irq_mask(IRQ_DSS);
+		attached = true;
+	}
 	frame_w = width;
 	frame_h = height;
 	up = false;
@@ -406,6 +431,7 @@ static void ulps_enter(void)
 
 void dss_off(bool ulps)
 {
+	irq_mask(IRQ_DSS);
 	if (!(readl(CM_DSS_ICLKEN) & 1))
 		return;
 	set_bits(DSS_CONTROL, DISPC_FROM_PLL, 0);
@@ -585,6 +611,8 @@ bool dss_frame_start(const uint32_t *buf, bool te)
 	writel(size | (te ? TE_EN : TE_START), DSI_VC_TE);
 	writel(DISPC_SYSCONFIG_BUSY, DISPC_SYSCONFIG);
 	writel(DISPC_FRAMEDONE, DISPC_IRQSTATUS);
+	frame_irq = false;
+	irq_unmask(IRQ_DSS);
 	writel((uint32_t)(uintptr_t)buf, DISPC_GFX_BA0);
 	writel((uint32_t)(uintptr_t)buf, DISPC_GFX_BA1);
 	writel(DISPC_CONTROL_STALL | DISPC_LCDENABLE, DISPC_CONTROL);
@@ -599,6 +627,7 @@ bool dss_frame_done(void)
 {
 	if (!(readl(DISPC_IRQSTATUS) & DISPC_FRAMEDONE) || (readl(DSI_VC_TE) & (TE_START | TE_EN)))
 		return false;
+	irq_mask(IRQ_DSS);
 	writel(DISPC_FRAMEDONE, DISPC_IRQSTATUS);
 	writel(DISPC_SYSCONFIG_IDLE, DISPC_SYSCONFIG);
 	return true;
@@ -609,6 +638,7 @@ void dss_frame_abort(void)
 {
 	log_printf("dss: frame not done, dispc irq %08lx te %08lx dsi irq %08lx vc %08lx\n", readl(DISPC_IRQSTATUS), readl(DSI_VC_TE),
 		   readl(DSI_IRQSTATUS), readl(DSI_VC_IRQSTATUS));
+	irq_mask(IRQ_DSS);
 	set_bits(DISPC_CONTROL, DISPC_LCDENABLE, 0);
 	vc_enable(0, false);
 	writel(0, DSI_VC_TE);
