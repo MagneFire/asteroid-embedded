@@ -1,9 +1,10 @@
-/* The physical memory map: every fixed DRAM region the firmware uses, in
- * one place, checked against each other. The bootloader loads the image
- * at IMG_BASE and passes a device tree, at IMG_END on sparrow and inside
- * the UI heap on sturgeon, read by board_detect before anything else; the
- * framebuffer it leaves on is at FB_BASE; everything else is ours to
- * choose. The MMU
+/* The memory map as the firmware sees it: every fixed DRAM region it
+ * uses, in one place, checked against each other. The APQ8026 has DRAM
+ * at address 0 and runs with it as it is. The APQ8009W's DRAM starts at
+ * PHYS_OFFSET_8009, and start.S maps it down to the same addresses, so
+ * one layout serves both chips and keeps clear of what either reserves.
+ * The bootloader loads the image at IMG_BASE and passes a device tree,
+ * which board_detect reads before anything else is written. The MMU
  * table (mmu.c) and the linker script (ld/asteroid.ld.in, preprocessed)
  * are built from these names, so a change here moves everything. */
 #ifndef MEMMAP_H
@@ -19,26 +20,41 @@
 
 #define FB_BASE			0x05000000	/* two inherited frame buffers */
 #define FB_SIZE			0x01000000
-#define UI_HEAP_BASE		0x06000000	/* the Slint heap */
-#define UI_HEAP_SIZE		0x04000000
-#define UI_LAYER_BASE		0x0a000000	/* one RGBA layer per panel */
+#define UI_LAYER_BASE		0x06000000	/* one RGBA layer per panel */
 #define UI_LAYER_STRIDE		0x00100000
 #define UI_LAYER_SIZE		0x00700000
-#define SCREENSHOT_BASE		0x0b000000	/* layer copy plus JPEG */
+#define SCREENSHOT_BASE		0x06800000	/* layer copy plus JPEG */
 #define SCREENSHOT_SIZE		0x00200000
+#define UI_HEAP_BASE		0x0a000000	/* the Slint heap */
+#define UI_HEAP_SIZE		0x04000000
+
+/* The APQ8009W: DRAM is mapped from here, the splash screen the
+ * bootloader draws sits in the APQ8026's SMEM gap, and its secure
+ * world, shared memory and firmware carve-outs fill the hole below,
+ * which only gets SMEM mapped, uncached. */
+#define PHYS_OFFSET_8009	0x80000000
+#define HOLE_8009_BASE		0x07a00000
+#define SMEM_8009_BASE		0x07d00000
+#define SMEM_8009_END		0x07e00000
+#define HOLE_8009_END		0x09700000
+#define IO_8009_BASE		0x40000000	/* its peripherals, from address 0 up */
+#define IO_8009_SIZE		0x0c000000
+
 #define GPU_MEM_BASE		0x1e000000	/* ring buffer, command and vertex memory */
 #define GPU_MEM_SIZE		0x00f00000
 #define RAMOOPS_BASE		0x1ef80000	/* log and fault records across a warm reset */
 #define RAMOOPS_SIZE		0x00080000
 
-#ifndef LINKER_SCRIPT
+#if !defined(LINKER_SCRIPT) && !defined(__ASSEMBLER__)
 _Static_assert(IMG_BASE < IMG_END && IMG_END <= DRAM0_END, "image outside bank 0");
 _Static_assert(DRAM0_END <= SMEM_BASE && SMEM_BASE < DRAM1_BASE, "SMEM outside the gap");
 _Static_assert(DRAM1_BASE <= FB_BASE, "framebuffer outside bank 1");
-_Static_assert(FB_BASE + FB_SIZE <= UI_HEAP_BASE, "framebuffer overlaps the UI heap");
-_Static_assert(UI_HEAP_BASE + UI_HEAP_SIZE <= UI_LAYER_BASE, "UI heap overlaps the layers");
+_Static_assert(FB_BASE + FB_SIZE <= UI_LAYER_BASE, "framebuffer overlaps the layers");
 _Static_assert(UI_LAYER_BASE + UI_LAYER_SIZE <= SCREENSHOT_BASE, "layers overlap the screenshot");
-_Static_assert(SCREENSHOT_BASE + SCREENSHOT_SIZE <= GPU_MEM_BASE, "screenshot overlaps GPU memory");
+_Static_assert(SCREENSHOT_BASE + SCREENSHOT_SIZE <= HOLE_8009_BASE, "screenshot overlaps the APQ8009W's hole");
+_Static_assert(HOLE_8009_END <= UI_HEAP_BASE, "UI heap overlaps the APQ8009W's hole");
+_Static_assert(HOLE_8009_BASE <= SMEM_8009_BASE && SMEM_8009_END <= HOLE_8009_END, "APQ8009W SMEM outside its hole");
+_Static_assert(UI_HEAP_BASE + UI_HEAP_SIZE <= GPU_MEM_BASE, "UI heap overlaps GPU memory");
 _Static_assert(GPU_MEM_BASE + GPU_MEM_SIZE <= RAMOOPS_BASE, "GPU memory overlaps ramoops");
 _Static_assert(RAMOOPS_BASE + RAMOOPS_SIZE <= DRAM_END, "ramoops outside DRAM");
 _Static_assert((GPU_MEM_BASE & 0xfffff) == 0 && (GPU_MEM_SIZE & 0xfffff) == 0, "GPU memory not section aligned");
