@@ -39,7 +39,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/sett
 
 SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
                suspend.S i2c_qup.c uart_dm.c rpm.c) \
-        src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
+        src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/light_tsl2584.c \
         src/input/touch.c src/input/touch_it7260.c src/input/haptics_drv2605.c src/input/haptics_pmic.c \
         src/display/display.c src/display/dsi.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c \
@@ -142,7 +142,7 @@ $(BUILD)/%.dtb: dts/%.dts
 ifeq ($(SOC),qcom)
 # One tree per watch: each bootloader picks the one whose board-id it has.
 # A new tree goes last, so the entries before it stay as they are.
-DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb
+DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb $(BUILD)/catfish.dtb
 
 $(BUILD)/qcdt.img: $(DTBS) tools/qcdt.py
 	python3 tools/qcdt.py -o $@ $(DTBS)
@@ -303,9 +303,9 @@ $(BUILD)/test/sgx_stack_test: tests/sgx_stack_test.c $(SGX_STACK) $(wildcard tes
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(SGX_STACK) -o $@
 
-$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
 
 $(BUILD)/test/small.ext4: tests/data/small.ext4.gz
 	@mkdir -p $(dir $@)

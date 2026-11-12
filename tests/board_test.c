@@ -12,6 +12,9 @@ const struct backlight_driver backlight_lm3535;
 const struct battery_driver battery_pmic, battery_max17050;
 const struct light_driver light_tsl2584;
 
+const struct qcom_chip chip_8026, chip_8009;
+const struct qcom_chip *chip = &chip_8026;
+
 static uint32_t splash_w, splash_h, platform = 8;
 uint32_t smem_hw_platform(void) { return platform; }
 
@@ -28,8 +31,10 @@ int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t 
 	r[1] = 0;
 	return 0;
 }
+static unsigned splash_reads;
 void display_splash_size(uint32_t *w, uint32_t *h)
 {
+	splash_reads++;
 	*w = splash_w;
 	*h = splash_h;
 }
@@ -92,6 +97,12 @@ int main(int argc, char **argv)
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon && gauge_reads == 0);
 	gauge_present = false;
 	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
+	/* On the APQ8009W only catfish, and the APQ8026's display is not
+	 * looked at. */
+	chip = &chip_8009;
+	splash_reads = 0;
+	CHECK(detect(400, 400, sturgeon) == &board_catfish && !board_assumed && splash_reads == 0);
+	chip = &chip_8026;
 	/* A guess stays a guess. */
 	CHECK(detect(0, 0, NULL) == &board_sturgeon && board_assumed);
 	CHECK(detect(123, 456, NULL) == &board_sturgeon && board_assumed);

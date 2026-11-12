@@ -54,11 +54,13 @@ static bool smelt_gauge_answers(void)
 
 void board_detect(uint32_t machtype, const void *fdt)
 {
-	uint32_t w, h;
-	display_splash_size(&w, &h);
+	uint32_t w = 0, h = 0;
 	const char *model = fdt_valid(fdt) ? fdt_prop(fdt, "/", "model", NULL) : NULL;
 	uint32_t platform = smem_hw_platform();
-	if (platform == board_smelt.smem_platform) {
+	if (chip == &chip_8009) {
+		board = &board_catfish;
+		board_detected_by = "SoC";
+	} else if (display_splash_size(&w, &h), platform == board_smelt.smem_platform) {
 		board = &board_smelt;
 		board_detected_by = "SMEM";
 	} else if (by_panel(w, h) == &board_smelt) {

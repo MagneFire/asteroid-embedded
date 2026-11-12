@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "Mobvoi TicWatch Pro";
+	compatible = "mobvoi,catfish", "qcom,apq8009w";
+	qcom,msm-id = <265 0>, <301 0>;
+	qcom,board-id = <8 0x105>, <8 0x5>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};
