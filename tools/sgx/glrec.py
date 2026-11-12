@@ -495,7 +495,10 @@ SCENARIOS.update({
     "mix2": lambda s: mix_scene(s, frames=2),
 })
 SCENARIOS["tri_tq"] = lambda s: tri_scene(s)        # `tri` with the gralloc transfer context created: the baseline for quad_*
-TRANSFER_SCENARIOS = {n for n in SCENARIOS if n.startswith(("quad_", "mesh", "mix"))} | {"tri_tq"}
+# The tri scenes under the same conditions: they have the addresses of the mix scenes (the native scene's).
+for _name in ("tri_read", "tri_color", "tri_moved", "tri_blend", "tri_two", "tri_read2"):
+    SCENARIOS[_name + "_tq"] = SCENARIOS[_name]
+TRANSFER_SCENARIOS = {n for n in SCENARIOS if n.startswith(("quad_", "mesh", "mix")) or n.endswith("_tq")}
 
 
 def sha256(path):

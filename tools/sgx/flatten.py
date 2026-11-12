@@ -6,7 +6,7 @@
         script <before|after|off> <register> <value>
 
     flatten.py draw [DRAW_DIR]      -> DRAW_DIR/<scenario>/flat.txt (build/sgx/draw)
-        alloc <index> <heap> <size> <address> <file>
+        alloc <index> <heap> <size> <address> <file> [tq: made by the transfer context]
         kick <index> <shared header offset in the TA CCB> <first> <last> <the six command data words>
         hostkick <microkernel address of the TA command, from the init recording>
 """
@@ -37,7 +37,8 @@ def draw(top):
     ta = m0["devinitpart2"]["aui32HostKickAddr"]["TA"]
     for path in sorted(top.glob("*/manifest.json")):
         m = json.loads(path.read_text())
-        lines = [f"alloc {a['index']} {a['heap_id']} {a['size']:#x} {a['devva']:#x} {a['file']}" for a in m["allocations"]]
+        lines = [f"alloc {a['index']} {a['heap_id']} {a['size']:#x} {a['devva']:#x} {a['file']}"
+                 + (" tq" if a.get("group") == "transfer-context" else "") for a in m["allocations"]]
         for k in m["kicks"]:
             f = k["fields"]
             data = " ".join(f"{d:#x}" for d in f["sCommand"]["ui32Data"])

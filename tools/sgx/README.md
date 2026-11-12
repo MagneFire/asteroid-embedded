@@ -164,6 +164,7 @@ with the gralloc transfer context, see "Transfer path"). The vertex shader is
 | Scenario | Texture | Fragment shader |
 |---|---|---|
 | `tri_tq` | none; `tri` with the transfer context created, the baseline for the rest | `tri`'s |
+| `tri_read_tq`, `tri_color_tq`, `tri_moved_tq`, `tri_blend_tq`, `tri_two_tq`, `tri_read2_tq` | the tri scenes of the same names with the transfer context: they have the mix scenes' addresses, which the native scene uses | `tri`'s |
 | `quad_tex` | 32x32 RGBA | `texture2D(s,u)` |
 | `quad_tex_read` | as `quad_tex`, plus glReadPixels (end-of-scene kick) | |
 | `quad_tex100` | 100x100 RGBA (not in the request: an NPOT size that is not a multiple of 32) | |
@@ -309,7 +310,7 @@ not the GL driver's: EGL gets it from the Android gralloc module (`gralloc_modul
 services init), and `gralloc.omap3.so` creates it at load with libsrv_um's `SGXCreateTransferContext`.
 A NULL context makes `SGXQueueTransfer` abort ("invalid parameters"), a zeroed block makes it use a null mutex.
 
-What the lab does, for scenarios named `quad_*` and `tri_tq` (`glrec.TRANSFER_SCENARIOS`):
+What the lab does, for scenarios named `quad_*`, `mesh*`, `mix*` and `*_tq` (`glrec.TRANSFER_SCENARIOS`):
 
 - The synthetic gralloc's +0x10c callback does, on first call and with libsrv_um's own functions called from
   the callback (`glenv.call_nested`: a nested emulator call with registers and stack saved), what
@@ -373,16 +374,22 @@ What the lab does, for scenarios named `quad_*` and `tri_tq` (`glrec.TRANSFER_SC
 # Native scene data (minnow)
 
 `mkreplay.py` writes `src/gpu/sgx_scene_data.[ch]`, what `src/gpu/sgx_draw.c` replays: the GL
-context's allocation table (heap, size, alignment, flags, recorded GPU address, and whether the kernel
-makes it: sync data, HW render context), the memory image of `tri_read` at its first kick as runs of
-non-zero words less every word the native code writes itself, the TA command template, the 3D
-register block of the render details, the end-of-scene stream, the blend variants, the status lists
-of both kicks and the addresses of every per-frame site. It finds the sites by comparing recordings
-that differ in one input and stops when a comparison shows more or less than it expects.
+context of `mix` (both programs) as an allocation table (heap, size, alignment, flags, recorded GPU
+address, and whether the kernel makes it: sync data, HW render context; the transfer context's
+allocations become holes that keep the addresses, the one in General is the native vertex buffer),
+mix's memory at its first kick as runs of non-zero words less every word the native code writes
+itself (the rings past the two background objects, the per-frame sites, the kernel's words), the TA
+command template, the 3D register block of the render details, the end-of-scene stream, the blend
+variants, the status lists of both kicks, the addresses of every per-frame site and the templates
+of a draw (state blocks, MTE-copy entry, vertex programs, secondary programs, a texture's pixel
+program, sampling words). It finds the sites by comparing recordings that differ in one input and
+stops when a comparison shows more or less than it expects. The tri scenes it compares are the ones
+recorded with the transfer context (`*_tq`), which have mix's addresses.
 
 ```
-$PY tools/sgx/glrec.py tri tri_moved tri_color tri_blend tri_read tri_read2 tri_two
-$PY tools/sgx/glrec.py --general-gap 0x100000 tri_read
+$PY tools/sgx/glrec.py tri_tq tri_read_tq tri_moved_tq tri_color_tq tri_blend_tq tri_two_tq tri_read2_tq tri_read2
+$PY tools/sgx/glrec.py --general-gap 0x100000 tri_read_tq
+$PY tools/sgx/glrec.py mesh mix mix_minus mix_plus mix_swap mix_alpha mix_tex mix_tex3 mix_back mix2 quad_tex320 quad_linear
 python3 tools/sgx/mkreplay.py
 python3 tools/sgx/flatten.py draw          # flat.txt per recording, for tests/sgx_draw_test.c
 SGX_LIBSRV_INIT=minnow/dump/extracted_data/system/lib/libsrv_init.so make test
