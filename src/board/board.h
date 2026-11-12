@@ -53,6 +53,12 @@ struct touch_driver {
 
 struct hub_profile;
 
+/* What a hub's fuel gauge last said about the cell. */
+struct hub_gauge {
+	uint32_t mv, percent;
+	int32_t ua, decidegrees;
+};
+
 struct hub_driver {
 	bool (*init)(void);
 	void (*poll)(void);
@@ -74,6 +80,8 @@ struct hub_driver {
 	void (*status)(void (*say)(const char *fmt, ...));
 	/* A register of the hub, written then read, for the console. */
 	int (*raw)(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
+	bool (*gauge)(struct hub_gauge *g);
+	void (*poll_gauge)(void);
 };
 
 struct motor_driver {
@@ -122,7 +130,7 @@ struct battery_driver {
 	const char *(*status)(void);
 };
 
-extern const struct battery_driver battery_pmic, battery_max17050;
+extern const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo;
@@ -232,6 +240,12 @@ struct board {
 		 * it learned with USB in is thrown away when USB goes. */
 		bool usb_disturbs;
 	} gauge;
+
+	/* A charger of its own, with the cell's numbers from the hub. */
+	struct {
+		struct board_i2c i2c;
+		uint8_t irq, mpm, suspend;
+	} charger;
 
 	const struct touch_driver *touch;
 	struct {

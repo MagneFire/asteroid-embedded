@@ -25,6 +25,9 @@ const struct board board_catfish = {
 	},
 	.pmic_mpm = 62,
 	.usb_phy_init = { 0x73 },
+	/* SMB231 on BLSP1 QUP1, its STAT line on gpio 95. */
+	.battery_driver = &battery_smb231,
+	.charger = { .i2c = { .bus = 1, .sda = 6, .scl = 7, .func = 3, .addr = 0x12 }, .irq = 95, .mpm = 35, .suspend = 58 },
 	.touch_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x38 }, .irq = 65, .reset = 23, .mpm = 3,
 			.ldo = 17, .ldo_uv = 2850000 },
 	.hub_pins = { .irq = 97, .wake_mcu = 71, .reset = 72, .boot0 = 70, .mpm = 37 },
