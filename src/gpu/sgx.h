@@ -19,4 +19,11 @@ bool sgx_running(void);
 bool sgx_query(struct sgx_info *info);
 /* The microkernel's trace of its last steps, for the log. */
 void sgx_log_state(void);
+
+/* For the drawing on top (sgx_draw.c): the GPU's memory, and a TA
+ * command for a render context, with the cache-control bits of
+ * SGX_CACHE_INVAL_* the context's page tables need. */
+struct sgx_mem;
+struct sgx_mem *sgx_memory(void);
+bool sgx_submit_ta(uint32_t context, uint32_t cache);
 #endif

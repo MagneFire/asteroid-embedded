@@ -145,8 +145,7 @@ static const struct { uint32_t off, size; } pds_programs[5] = {
 
 enum { UKERNEL, TA, SPM, R3D };
 
-/* A 32-bit constant in one of the GPU processor's instructions. */
-static void use_constant(uint32_t *program, uint32_t off, uint32_t v)
+void sgx_set_constant(uint32_t *program, uint32_t off, uint32_t v)
 {
 	uint32_t *ins = program + off / 4;
 	ins[0] = (ins[0] & 0xffe00000) | (v & 0x1fffff);
@@ -197,17 +196,17 @@ bool sgx_image_build(struct sgx_mem *m, struct sgx_image *img, sgx_read_fn read,
 		return false;
 
 	uint32_t loopback = (img->pds[4] - pds_base) >> 4;
-	use_constant(code[UKERNEL], 0x2260, 0x41801000);
-	use_constant(code[UKERNEL], 0x2270, (img->pds[1] - pds_base) >> 4);
-	use_constant(code[UKERNEL], 0x2278, img->ta3d_ctl);
-	use_constant(code[UKERNEL], 0x22b0, 0x41800900);
-	use_constant(code[UKERNEL], 0x22c0, (img->pds[2] - pds_base) >> 4);
-	use_constant(code[UKERNEL], 0x2310, (img->pds[3] - pds_base) & ~15u);
-	use_constant(code[UKERNEL], 0x2320, 7);
+	sgx_set_constant(code[UKERNEL], 0x2260, 0x41801000);
+	sgx_set_constant(code[UKERNEL], 0x2270, (img->pds[1] - pds_base) >> 4);
+	sgx_set_constant(code[UKERNEL], 0x2278, img->ta3d_ctl);
+	sgx_set_constant(code[UKERNEL], 0x22b0, 0x41800900);
+	sgx_set_constant(code[UKERNEL], 0x22c0, (img->pds[2] - pds_base) >> 4);
+	sgx_set_constant(code[UKERNEL], 0x2310, (img->pds[3] - pds_base) & ~15u);
+	sgx_set_constant(code[UKERNEL], 0x2320, 7);
 	static const uint32_t loop_at[4] = { 0x5328, 0x5228, 0x4428, 0x6728 };
 	for (unsigned i = 0; i < 4; i++) {
-		use_constant(code[i], loop_at[i], 0x42000900);
-		use_constant(code[i], loop_at[i] + 0x18, loopback);
+		sgx_set_constant(code[i], loop_at[i], 0x42000900);
+		sgx_set_constant(code[i], loop_at[i] + 0x18, loopback);
 	}
 
 	uint32_t uk = img->code[UKERNEL];
@@ -262,6 +261,17 @@ bool sgx_image_build(struct sgx_mem *m, struct sgx_image *img, sgx_read_fn read,
 	memcpy(sgx_ptr(m, img->ta_sig), ta_regs, sizeof ta_regs);
 	memcpy(sgx_ptr(m, img->sig_3d), regs_3d, sizeof regs_3d);
 	return true;
+}
+
+/* Where in the microkernel each command is handled. */
+static const uint16_t handlers[SGX_CMDS] = { 0x1ec, 0x1cd, 0, 0x18d, 0x1ab, 0x21d, 0x40e, 0x3b1 };
+
+void sgx_command_words(uint32_t c[8], unsigned type, uint32_t cache_control, uint32_t arg)
+{
+	memset(c, 0, 8 * sizeof *c);
+	c[0] = handlers[type];
+	c[1] = cache_control;
+	c[3] = arg;
 }
 
 unsigned sgx_script(const struct sgx_image *img, unsigned which, struct sgx_reg *out)

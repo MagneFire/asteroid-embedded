@@ -70,6 +70,16 @@ typedef bool (*sgx_read_fn)(void *ctx, uint32_t off, void *buf, uint32_t len);
  * the bytes of. */
 bool sgx_image_build(struct sgx_mem *m, struct sgx_image *img, sgx_read_fn read, void *ctx);
 
+/* Commands to the microkernel, and the eight words of one in its queue. */
+enum { SGX_CMD_TA, SGX_CMD_TRANSFER, SGX_CMD_2D, SGX_CMD_POWER, SGX_CMD_SUSPEND, SGX_CMD_CLEANUP, SGX_CMD_GETMISCINFO,
+       SGX_CMD_PROCESS_QUEUES, SGX_CMDS };
+#define SGX_CACHE_INVAL_PT	1u
+#define SGX_CACHE_INVAL_PD	2u
+void sgx_command_words(uint32_t c[8], unsigned type, uint32_t cache_control, uint32_t arg);
+
+/* Puts v into the 32-bit constant of the GPU instruction at off. */
+void sgx_set_constant(uint32_t *program, uint32_t off, uint32_t v);
+
 struct sgx_reg {
 	uint32_t off, value;
 };

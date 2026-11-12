@@ -72,12 +72,7 @@ enum {
 #define INTERRUPT_ACTIVE_POWER	BIT(1)
 #define INTERRUPT_IDLE		BIT(2)
 
-/* Commands, and where the microkernel handles each. */
-enum { CMD_TA, CMD_TRANSFER, CMD_2D, CMD_POWER, CMD_SUSPEND, CMD_CLEANUP, CMD_GETMISCINFO, CMD_PROCESS_QUEUES, CMD_COUNT };
-static const uint16_t handlers[CMD_COUNT] = { 0x1ec, 0x1cd, 0, 0x18d, 0x1ab, 0x21d, 0x40e, 0x3b1 };
 #define POWER_OFF		1u
-#define CACHE_INVAL_PT		1u
-#define CACHE_INVAL_PD		2u
 #define MISC_READY		1u
 #define MISC_STRUCT_SIZES	2u
 #define BUILD_OPTIONS		0x0016801cu
@@ -171,7 +166,7 @@ static bool build(void)
 	ccb = sgx_ptr(&mem, img.ccb);
 	ccb_ctl = sgx_ptr(&mem, img.ccb_ctl);
 	kicker = sgx_ptr(&mem, img.kicker);
-	cache_control = CACHE_INVAL_PD;
+	cache_control = SGX_CACHE_INVAL_PD;
 	log_printf("sgx: image of %lu KiB built in %lu us\n", mem.used >> 10, time_us() - t0);
 	return true;
 }
@@ -263,20 +258,17 @@ static void kick(void)
 	writel(1, EVENT_KICK);
 }
 
-static bool command(unsigned type, uint32_t arg)
+static bool command(unsigned type, uint32_t arg, uint32_t cache)
 {
-	uint32_t t0 = time_us(), at;
+	uint32_t t0 = time_us(), at, words[8];
 	while ((((at = ccb_ctl[0]) + 1) & 0xff) == ccb_ctl[1])
 		if (time_us() - t0 > HW_WAIT_US) {
 			log_printf("sgx: command queue full\n");
 			return false;
 		}
-	volatile uint32_t *c = ccb + at * 8;
-	c[0] = handlers[type];
-	c[1] = cache_control;
-	c[2] = 0;
-	c[3] = arg;
-	c[4] = c[5] = c[6] = c[7] = 0;
+	sgx_command_words(words, type, cache_control | cache, arg);
+	for (unsigned i = 0; i < 8; i++)
+		ccb[at * 8 + i] = words[i];
 	cache_control = 0;
 	ccb_ctl[0] = (at + 1) & 0xff;
 	uint32_t flags = irq_save();
@@ -315,6 +307,13 @@ void sgx_log_state(void)
 }
 
 bool sgx_running(void) { return running; }
+
+struct sgx_mem *sgx_memory(void) { return built ? &mem : NULL; }
+
+bool sgx_submit_ta(uint32_t context, uint32_t cache)
+{
+	return running && command(SGX_CMD_TA, context, cache);
+}
 
 bool sgx_start(void)
 {
@@ -366,7 +365,7 @@ void sgx_stop(void)
 		return;
 	running = false;
 	host[HOST_POWER_STATUS] = 0;
-	if (!command(CMD_POWER, POWER_OFF) || !wait_word(&host[HOST_POWER_STATUS], POWER_OFF_COMPLETE, HW_WAIT_US) ||
+	if (!command(SGX_CMD_POWER, POWER_OFF, 0) || !wait_word(&host[HOST_POWER_STATUS], POWER_OFF_COMPLETE, HW_WAIT_US) ||
 	    !wait_reg(CLKGATESTATUS, 0xffffffff, 0, HW_WAIT_US)) {
 		log_printf("sgx: microkernel did not stop\n");
 		sgx_log_state();
@@ -386,7 +385,7 @@ bool sgx_query(struct sgx_info *info)
 	for (unsigned i = 1; i < 21; i++)
 		misc[i] = 0;
 	misc[0] = MISC_STRUCT_SIZES;
-	if (!command(CMD_GETMISCINFO, img.misc) || !wait_word(&misc[0], MISC_READY, HW_WAIT_US)) {
+	if (!command(SGX_CMD_GETMISCINFO, img.misc, 0) || !wait_word(&misc[0], MISC_READY, HW_WAIT_US)) {
 		log_printf("sgx: no answer to the query\n");
 		sgx_log_state();
 		return false;
