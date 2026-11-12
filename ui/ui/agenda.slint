@@ -408,43 +408,48 @@ export component AgendaApp {
                         }
                     }
 
-                    for i in 31: Rectangle {
-                        property <float> near: Math.max(0, 1 - Math.abs(i * parent.item - parent.scroll) / parent.item);
-                        property <length> cx: 50 * Theme.unit + i * parent.item - parent.scroll;
+                    for k in 7: day := Rectangle {
+                        // Only the days on screen are made: seven reused as the strip moves.
+                        property <int> i: Math.round(parent.scroll / parent.item) - 3 + k;
+                        property <length> sz: Math.round(self.height / 1phx) * 1phx;
+                        property <float> near: Math.max(0, 1 - Math.abs(day.i * parent.item - parent.scroll) / parent.item);
+                        property <length> cx: 50 * Theme.unit + day.i * parent.item - parent.scroll;
 
                         x: self.cx - parent.item / 2;
                         y: parent.mh;
                         width: parent.item;
                         height: parent.dh;
-                        visible: i < Cal.days(root.year, root.month) && self.cx > -parent.item && self.cx < 100 * Theme.unit + parent.item;
+                        visible: day.i >= 0 && day.i < Cal.days(root.year, root.month) && self.cx > -parent.item && self.cx < 100 * Theme.unit + parent.item;
 
                         // day-background.svg, in its colours, the arrows left and right only where
                         // there are days that way.
                         Rectangle {
-                            x: (parent.width - self.width) / 2;
-                            width: parent.height;
-                            height: parent.height;
+                            x: Math.round((parent.width - self.width) / 2 / 1phx) * 1phx;
+                            width: day.sz;
+                            height: day.sz;
                             opacity: parent.near;
 
                             Image {
                                 width: parent.width;
                                 height: parent.height;
-                                source: Icons.get("agenda-day-mark", 43 * Theme.unit, 43 * Theme.unit);
+                                source: Icons.get("agenda-day-mark", day.sz, day.sz);
                                 colorize: #ffb147;
                             }
 
-                            if i > 0: Image {
+                            Image {
+                                visible: day.i > 0;
                                 width: parent.width;
                                 height: parent.height;
-                                source: Icons.get("agenda-day-left", 43 * Theme.unit, 43 * Theme.unit);
+                                source: Icons.get("agenda-day-left", day.sz, day.sz);
                                 colorize: white;
                                 opacity: 0.267;
                             }
 
-                            if i + 1 < Cal.days(root.year, root.month): Image {
+                            Image {
+                                visible: day.i + 1 < Cal.days(root.year, root.month);
                                 width: parent.width;
                                 height: parent.height;
-                                source: Icons.get("agenda-day-right", 43 * Theme.unit, 43 * Theme.unit);
+                                source: Icons.get("agenda-day-right", day.sz, day.sz);
                                 colorize: white;
                                 opacity: 0.267;
                             }
@@ -452,7 +457,7 @@ export component AgendaApp {
                             Image {
                                 width: parent.width;
                                 height: parent.height;
-                                source: Icons.get("agenda-day-notches", 43 * Theme.unit, 43 * Theme.unit);
+                                source: Icons.get("agenda-day-notches", day.sz, day.sz);
                                 colorize: black;
                                 opacity: 0.467;
                             }
@@ -462,8 +467,8 @@ export component AgendaApp {
                             y: (-0.6 - 3.9 * parent.near) * Theme.unit;
                             width: parent.width;
                             height: parent.height;
-                            text: i + 1;
-                            font-size: parent.height / 2.4 * (1 + 0.5 * parent.near);
+                            text: day.i + 1;
+                            font-size: Math.round(parent.height / 2.4 * (1 + 0.5 * parent.near) / 1phx) * 1phx;
                             font-family: parent.near > 0.5 ? "Noto Sans SemiCondensed Bold" : "Noto Sans Condensed Medium";
                             horizontal-alignment: center;
                             shade: 0.6 + 0.4 * parent.near;
@@ -473,18 +478,18 @@ export component AgendaApp {
                             y: (10 + parent.near) * Theme.unit;
                             width: parent.width;
                             height: parent.height;
-                            text: Cal.weekdays[Cal.weekday(root.year, root.month, i + 1)];
-                            font-size: parent.height / 9 * (1 + 0.5 * parent.near);
+                            text: Cal.weekdays[Cal.weekday(root.year, root.month, day.i + 1)];
+                            font-size: Math.round(parent.height / 9 * (1 + 0.5 * parent.near) / 1phx) * 1phx;
                             font-family: "Noto Sans SemiCondensed Light";
                             horizontal-alignment: center;
                             shade: 0.7 + 0.3 * parent.near;
                         }
 
                         // The number of events, on the picked day.
-                        if i == days.index && Face.agenda.length > 0: Rectangle {
+                        if day.i == days.index && Face.agenda.length > 0: Rectangle {
                             property <length> size: parent.height * 0.23;
 
-                            x: parent.width / 2 + parent.height * (i > 8 ? 0.35 : 0.2) - self.size / 2;
+                            x: parent.width / 2 + parent.height * (day.i > 8 ? 0.35 : 0.2) - self.size / 2;
                             y: parent.height * 0.2 - self.size / 2;
                             width: self.size;
                             height: self.size;
