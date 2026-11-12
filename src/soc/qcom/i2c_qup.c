@@ -16,11 +16,10 @@
  * the slave sees the transaction end. */
 #include "asteroid.h"
 
-#define GCC_BASE			0xfc400000u
-#define GCC_BLSP1_AHB_VOTE		(GCC_BASE + 0x1484)
-#define GCC_QUP_I2C_CMD_RCGR(n)		(GCC_BASE + 0x0660 + ((n) - 1) * 0x80)
-#define GCC_QUP_I2C_CBCR(n)		(GCC_BASE + 0x0648 + ((n) - 1) * 0x80)
-#define GCC_QUP_BCR(n)			(GCC_BASE + 0x0640 + ((n) - 1) * 0x80)
+#define GCC_BLSP1_AHB_VOTE		GCC(chip->blsp_vote)
+#define GCC_QUP_I2C_CMD_RCGR(n)		GCC(chip->qup_i2c_rcgr[(n) - 1])
+#define GCC_QUP_I2C_CBCR(n)		GCC(chip->qup_i2c_cbcr[(n) - 1])
+#define GCC_QUP_BCR(n)			GCC(chip->qup_bcr[(n) - 1])
 #define IRQ_QUP(n)			(32 + 95 + (n) - 1)
 
 #define QUP_CONFIG		0x000
@@ -209,7 +208,7 @@ static struct bus *bus(unsigned qup)
 
 static void clocks_on(unsigned qup)
 {
-	writel(readl(GCC_BLSP1_AHB_VOTE) | BIT(17), GCC_BLSP1_AHB_VOTE);
+	writel(readl(GCC_BLSP1_AHB_VOTE) | chip->blsp_vote_bit, GCC_BLSP1_AHB_VOTE);
 	writel(0, GCC_QUP_I2C_CMD_RCGR(qup) + 4);
 	writel(readl(GCC_QUP_I2C_CMD_RCGR(qup)) | 1, GCC_QUP_I2C_CMD_RCGR(qup));
 	for (int i = 0; i < 1000 && (readl(GCC_QUP_I2C_CMD_RCGR(qup)) & 1); i++)
@@ -230,7 +229,7 @@ int i2c_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t b
 	if (qup < 1 || qup > 6)
 		return -3;
 	struct bus *b = &buses[qup - 1];
-	b->base = 0xf9923000u + (qup - 1) * 0x1000;
+	b->base = chip->qup1 + (qup - 1) * 0x1000;
 	b->sda = sda;
 	b->scl = scl;
 	b->func = func;

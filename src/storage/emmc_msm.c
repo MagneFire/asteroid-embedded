@@ -1,6 +1,6 @@
-/* The eMMC's host on the APQ8026, SDCC1: the MSM SDHCI core (standard
- * SDHCI registers at 0xf9824900, the vendor "core" block with HC mode
- * and the power-control handshake at 0xf9824000). The card clock comes
+/* The eMMC's host on the Qualcomm chips, SDCC1: the MSM SDHCI core (standard
+ * SDHCI registers 0x900 into the block, the vendor "core" block with HC
+ * mode and the power-control handshake at its start). The card clock comes
  * straight from the GCC clock generator, the SDHCI divider is not used,
  * and at 400 kHz status clears need 40 us to land. The bootloader
  * deselects the card, puts it to sleep and turns HC mode off before it
@@ -10,16 +10,15 @@
 #include "asteroid.h"
 #include "emmc_host.h"
 
-#define GCC_BASE		0xfc400000u
-#define GCC_GPLL0_STATUS	(GCC_BASE + 0x001c)
-#define GCC_GPLL_ENA_VOTE	(GCC_BASE + 0x1480)
-#define GCC_SDCC1_APPS_CBCR	(GCC_BASE + 0x04c4)
-#define GCC_SDCC1_AHB_CBCR	(GCC_BASE + 0x04c8)
-#define GCC_SDCC1_CMD_RCGR	(GCC_BASE + 0x04d0)
-#define GCC_SDCC1_CFG_RCGR	(GCC_BASE + 0x04d4)
-#define TLMM_SDC1_HDRV_PULL	(TLMM_BASE + 0x2044)
+#define GCC_GPLL0_STATUS	GCC(chip->gpll0_status)
+#define GCC_GPLL_ENA_VOTE	GCC(chip->gpll0_vote)
+#define GCC_SDCC1_APPS_CBCR	GCC(chip->sdcc1_apps_cbcr)
+#define GCC_SDCC1_AHB_CBCR	GCC(chip->sdcc1_ahb_cbcr)
+#define GCC_SDCC1_CMD_RCGR	GCC(chip->sdcc1_rcgr)
+#define GCC_SDCC1_CFG_RCGR	(GCC_SDCC1_CMD_RCGR + 4)
+#define TLMM_SDC1_HDRV_PULL	(chip->sdc1_pads)
 
-#define CORE			0xf9824000u
+#define CORE			(chip->sdcc1)
 #define CORE_MCI_VERSION	(CORE + 0x050)
 #define CORE_POWER		(CORE + 0x000)
 #define CORE_SW_RST		BIT(7)
@@ -35,7 +34,7 @@
 #define PWRCTL_BUS_SUCCESS	BIT(0)
 #define PWRCTL_IO_SUCCESS	BIT(2)
 
-#define HC			0xf9824900u
+#define HC			(chip->sdcc1 + 0x900)
 #define HC_BLKSZ		0x004
 #define HC_BLKCNT		0x006
 #define HC_ARG			0x008
@@ -109,15 +108,22 @@ static bool wait_clear(uint32_t addr, uint32_t mask, uint32_t us)
 	return true;
 }
 
+/* A rate of GPLL0's, which runs at 600 MHz on the APQ8026 and 800 MHz on
+ * the APQ8009W. */
+static uint32_t gpll0_cfg(uint32_t hz)
+{
+	return 1u << 8 | (2 * (chip->gpll0_khz / (hz / 1000)) - 1);
+}
+
 static void gcc_enable(void)
 {
 	writel(readl(GCC_GPLL_ENA_VOTE) | BIT(0), GCC_GPLL_ENA_VOTE);
 	uint32_t t0 = time_us();
-	while (!(readl(GCC_GPLL0_STATUS) & BIT(17)) && time_us() - t0 < 1000)
+	while (!(readl(GCC_GPLL0_STATUS) & chip->gpll0_ready) && time_us() - t0 < 1000)
 		;
 	writel(readl(GCC_SDCC1_AHB_CBCR) | BIT(0), GCC_SDCC1_AHB_CBCR);
 	wait_clear(GCC_SDCC1_AHB_CBCR, BIT(31), 1000);
-	writel(1u << 8 | (2 * 3 - 1), GCC_SDCC1_CFG_RCGR);
+	writel(gpll0_cfg(200000000), GCC_SDCC1_CFG_RCGR);
 	writel(readl(GCC_SDCC1_CMD_RCGR) | BIT(0), GCC_SDCC1_CMD_RCGR);
 	wait_clear(GCC_SDCC1_CMD_RCGR, BIT(0), 1000);
 	writel(readl(GCC_SDCC1_APPS_CBCR) | BIT(0), GCC_SDCC1_APPS_CBCR);
@@ -174,7 +180,7 @@ static const struct {
 	uint32_t hz, cfg, m, n;
 } rates[] = {
 	{ 400000, 0u << 8 | (2 * 12 - 1) | 2u << 12, 1, 4 },
-	{ 50000000, 1u << 8 | (2 * 12 - 1), 0, 0 },
+	{ 50000000, 0, 0, 0 },
 };
 
 int emmc_host_clock(uint32_t hz, uint32_t *actual)
@@ -188,7 +194,7 @@ int emmc_host_clock(uint32_t hz, uint32_t *actual)
 	writel(rates[i].m, GCC_SDCC1_CMD_RCGR + 0x8);
 	writel(rates[i].n ? ~(rates[i].n - rates[i].m) : 0, GCC_SDCC1_CMD_RCGR + 0xc);
 	writel(rates[i].n ? ~rates[i].n : 0, GCC_SDCC1_CMD_RCGR + 0x10);
-	writel(rates[i].cfg, GCC_SDCC1_CFG_RCGR);
+	writel(rates[i].cfg ? rates[i].cfg : gpll0_cfg(rates[i].hz), GCC_SDCC1_CFG_RCGR);
 	writel(readl(GCC_SDCC1_CMD_RCGR) | BIT(0), GCC_SDCC1_CMD_RCGR);
 	wait_clear(GCC_SDCC1_CMD_RCGR, BIT(0), 1000);
 	hc_ww(CLK_INT_EN, HC_CLK);
@@ -301,10 +307,10 @@ int emmc_host_send(struct emmc_cmd *c)
 
 static void rails_on(void)
 {
-	uint32_t l17[6] = { 0x6e657773, 4, 1, 0x7675, 4, 2950000 };
-	uint32_t l6[6] = { 0x6e657773, 4, 1, 0x7675, 4, 1800000 };
-	rpm_request(RPM_LDOA, 17, l17, 2);
-	rpm_request(RPM_LDOA, 6, l6, 2);
+	uint32_t vcc[6] = { 0x6e657773, 4, 1, 0x7675, 4, chip->emmc_vcc.uv };
+	uint32_t vccq[6] = { 0x6e657773, 4, 1, 0x7675, 4, chip->emmc_vccq.uv };
+	rpm_request(RPM_LDOA, chip->emmc_vcc.ldo, vcc, 2);
+	rpm_request(RPM_LDOA, chip->emmc_vccq.ldo, vccq, 2);
 }
 
 int emmc_host_init(struct emmc_info *card)

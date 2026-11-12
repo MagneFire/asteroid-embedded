@@ -6,16 +6,12 @@
 #include "asteroid.h"
 #include "sched.h"
 
-#define SAW_CPU0		0xf9089000u
-#define SAW_L2			0xf9012000u
-#define QTMR_FRAME0		0xf9021000u
 #define QTMR_CNTP_TVAL		(QTMR_FRAME0 + 0x28)
 #define QTMR_CNTP_CTL		(QTMR_FRAME0 + 0x2c)
 #define IRQ_QTMR_FRAME0		(32 + 8)
 #define IRQ_MPM_WAKE		(32 + 171)
-#define APCS_IPC		0xf9011008u
 #define APCS_IPC_MPM		BIT(1)
-#define VMPM			0xfc4281d0u
+#define VMPM			(chip->rpm_msg_ram + 0x1d0)
 #define MPM_PIN_TOUCH		(board->touch_pins.mpm)
 #define MPM_PIN_PMIC		(board->pmic_mpm)
 
@@ -60,7 +56,6 @@ static const uint8_t l2_seq[] = {
 static bool ready, can_collapse, cluster_parked;
 static uint32_t collapses, cluster_collapses, bailouts;
 
-#define APCS_ACC(cpu)		(0xf9088000u + (cpu) * 0x10000)
 #define ACC_PWR_STATUS		0x08
 #define ACC_COLLAPSED		BIT(19)
 #define SCM_FLAG_COLDBOOT_CPU123	(0x01 | 0x08 | 0x20)

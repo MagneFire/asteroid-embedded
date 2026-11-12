@@ -1,0 +1,114 @@
+/* The chip is known from where the bootloader loaded the image (start.S):
+ * the APQ8009W's DRAM is not at address 0. */
+#include "asteroid.h"
+
+const struct qcom_chip chip_8026 = {
+	.name = "apq8026",
+	.apcs = 0xf9000000,
+	.imem = 0xfe805000,
+	.ps_hold = 0xfc4ab000,
+	.smem = SMEM_BASE,
+	.rpm_msg_ram = 0xfc428000,
+	.handoff_lock = 0xfd484380,
+	.spmi_core = 0xfc4cf000,
+	.spmi_cnfg = 0xfc4ca000,
+	.spmi_intr = 0xfc4cb000,
+	.tlmm_pins = 0xfd511000,
+	.tlmm_stride = 0x10,
+	.sdc1_pads = 0xfd512044,
+	.gpios = 117,
+	.gcc = 0xfc400000,
+	.gpll0_vote = 0x1480,
+	.gpll0_status = 0x001c,
+	.gpll0_ready = BIT(17),
+	.blsp_vote = 0x1484,
+	.blsp_vote_bit = BIT(17),
+	.sleep_vote = 0x1488,
+	.gpll0_khz = 600000,
+	.qup1 = 0xf9923000,
+	.qup_i2c_rcgr = { 0x0660, 0x06e0, 0x0760, 0x07e0, 0x0860, 0x08e0 },
+	.qup_i2c_cbcr = { 0x0648, 0x06c8, 0x0748, 0x07c8, 0x0848, 0x08c8 },
+	.qup_spi_rcgr = { 0x064c, 0x06cc, 0x074c, 0x07cc, 0x084c, 0x08cc },
+	.qup_spi_cbcr = { 0x0644, 0x06c4, 0x0744, 0x07c4, 0x0844, 0x08c4 },
+	.qup_bcr = { 0x0640, 0x06c0, 0x0740, 0x07c0, 0x0840, 0x08c0 },
+	.uart1 = 0xf991d000,
+	.uarts = 6,
+	.uart_cbcr = { 0x0684, 0x0704, 0x0784, 0x0804, 0x0884, 0x0904 },
+	.uart_rcgr = { 0x068c, 0x070c, 0x078c, 0x080c, 0x088c, 0x090c },
+	.sdcc1 = 0xf9824000,
+	.sdcc1_apps_cbcr = 0x04c4,
+	.sdcc1_ahb_cbcr = 0x04c8,
+	.sdcc1_rcgr = 0x04d0,
+	.emmc_vcc = { 17, 2950000 },
+	.emmc_vccq = { 6, 1800000 },
+	.usb = 0xf9a55000,
+	.usb_bcr = 0x0480,
+	.usb_system_cbcr = 0x0484,
+	.usb_ahb_cbcr = 0x0488,
+	.usb_system_rcgr = 0x0490,
+	.dsi = 0xfd922800,
+	.cnoc = true,
+};
+
+#define IO(pa)	(IO_8009_BASE + (pa))
+
+const struct qcom_chip chip_8009 = {
+	.name = "apq8009w",
+	.io_offset = IO_8009_BASE,
+	.apcs = IO(0x0b000000),
+	.imem = IO(0x08600000),
+	.ps_hold = IO(0x004ab000),
+	.smem = SMEM_8009_BASE,
+	.rpm_msg_ram = IO(0x00060000),
+	.handoff_lock = IO(0x01907000),
+	.spmi_core = IO(0x0200f000),
+	.spmi_cnfg = IO(0x0200a000),
+	.spmi_intr = IO(0x03800000),
+	.spmi_chnls = IO(0x02400000),
+	.spmi_obsrvr = IO(0x02c00000),
+	.tlmm_pins = IO(0x01000000),
+	.tlmm_stride = 0x1000,
+	.sdc1_pads = IO(0x0110a000),
+	.gpios = 113,
+	.gcc = IO(0x01800000),
+	.gpll0_vote = 0x45000,
+	.gpll0_status = 0x21000,
+	.gpll0_ready = BIT(30),
+	.blsp_vote = 0x45004,
+	.blsp_vote_bit = BIT(10),
+	.sleep_vote = 0x45008,
+	.gpll0_khz = 800000,
+	.qup1 = IO(0x078b5000),
+	.qup_i2c_rcgr = { 0x0200c, 0x03000, 0x04000, 0x05000, 0x06000, 0x07000 },
+	.qup_i2c_cbcr = { 0x02008, 0x03010, 0x04020, 0x05020, 0x06020, 0x07020 },
+	.qup_spi_rcgr = { 0x02024, 0x03014, 0x04024, 0x05024, 0x06024, 0x07024 },
+	.qup_spi_cbcr = { 0x02004, 0x0300c, 0x0401c, 0x0501c, 0x0601c, 0x0701c },
+	.qup_bcr = { 0x02000, 0x03008, 0x04018, 0x05018, 0x06018, 0x07018 },
+	.uart1 = IO(0x078af000),
+	.uarts = 2,
+	.uart_cbcr = { 0x0203c, 0x0302c },
+	.uart_rcgr = { 0x02044, 0x03034 },
+	.sdcc1 = IO(0x07824000),
+	.sdcc1_apps_cbcr = 0x42018,
+	.sdcc1_ahb_cbcr = 0x4201c,
+	.sdcc1_rcgr = 0x42004,
+	.emmc_vcc = { 8, 2900000 },
+	.emmc_vccq = { 5, 1800000 },
+	.usb = IO(0x078d9000),
+	.usb_bcr = 0x41000,
+	.usb_system_cbcr = 0x41004,
+	.usb_ahb_cbcr = 0x41008,
+	.usb_system_rcgr = 0x41010,
+	.dsi = IO(0x01ac8000),
+};
+
+const struct qcom_chip *chip = &chip_8026;
+uint32_t suspend_saw_cpu0 = 0xf9089000, suspend_handoff_lock = 0xfd484380;
+
+void chip_init(void)
+{
+	if (phys_offset)
+		chip = &chip_8009;
+	suspend_saw_cpu0 = SAW_CPU0;
+	suspend_handoff_lock = chip->handoff_lock;
+}

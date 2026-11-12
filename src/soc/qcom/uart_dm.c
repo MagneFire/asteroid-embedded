@@ -9,12 +9,11 @@
  * core has its own state, so several UARTs can run at once. */
 #include "asteroid.h"
 
-#define GCC_BASE			0xfc400000u
-#define GCC_GPLL0_STATUS		(GCC_BASE + 0x001c)
-#define GCC_APCS_GPLL_ENA_VOTE		(GCC_BASE + 0x1480)
-#define GCC_BLSP1_AHB_VOTE		(GCC_BASE + 0x1484)
-#define GCC_UART_APPS_CBCR(n)		(GCC_BASE + 0x0684 + ((n) - 1) * 0x80)
-#define GCC_UART_APPS_CMD_RCGR(n)	(GCC_BASE + 0x068c + ((n) - 1) * 0x80)
+#define GCC_GPLL0_STATUS		GCC(chip->gpll0_status)
+#define GCC_APCS_GPLL_ENA_VOTE		GCC(chip->gpll0_vote)
+#define GCC_BLSP1_AHB_VOTE		GCC(chip->blsp_vote)
+#define GCC_UART_APPS_CBCR(n)		GCC(chip->uart_cbcr[(n) - 1])
+#define GCC_UART_APPS_CMD_RCGR(n)	GCC(chip->uart_rcgr[(n) - 1])
 #define RCG_CFG				0x04
 #define RCG_M				0x08
 #define RCG_N				0x0c
@@ -229,7 +228,7 @@ static int wait_tx_ready(struct uart *u)
 int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow)
 {
 	const struct baud *b = find_baud(baud);
-	if (!b || uart < 1 || uart > ARRAY_SIZE(uarts))
+	if (!b || uart < 1 || uart > chip->uarts)
 		return -1;
 	struct uart *u = &uarts[uart - 1];
 	u->port = uart;
@@ -237,9 +236,9 @@ int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, 
 	u->flow = flow;
 	u->irq = 32 + 107 + uart - 1;
 	writel(readl(GCC_APCS_GPLL_ENA_VOTE) | BIT(0), GCC_APCS_GPLL_ENA_VOTE);
-	for (int i = 0; i < 1000 && !(readl(GCC_GPLL0_STATUS) & BIT(17)); i++)
+	for (int i = 0; i < 1000 && !(readl(GCC_GPLL0_STATUS) & chip->gpll0_ready); i++)
 		delay_us(1);
-	writel(readl(GCC_BLSP1_AHB_VOTE) | BIT(17), GCC_BLSP1_AHB_VOTE);
+	writel(readl(GCC_BLSP1_AHB_VOTE) | chip->blsp_vote_bit, GCC_BLSP1_AHB_VOTE);
 	if (!set_clock(u, b)) {
 		log_printf("uart%u: baud clock rcg stuck (%08lx)\n", uart, readl(GCC_UART_APPS_CMD_RCGR(uart)));
 		return -1;
@@ -255,7 +254,7 @@ int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, 
 		gpio_config(first_gpio + i, func, GPIO_INPUT, GPIO_PULL_NONE, 8);
 	u->ring_head = u->ring_tail = 0;
 	u->rx_bytes = u->tx_bytes = u->dropped = u->overruns = 0;
-	u->base = 0xf991d000u + (uart - 1) * 0x1000;
+	u->base = chip->uart1 + (uart - 1) * 0x1000;
 	start(u, b);
 	irq_attach(u->irq, irqs[uart - 1]);
 	log_printf("uart%u: %lu baud, sr %08lx isr %08lx badr %lu\n", uart, baud, readl(u->base + UART_DM_SR),

@@ -12,12 +12,12 @@
         .fpu    neon
 
 #define SCM_TERMINATE_PC        0x00402221
-#define HANDOFF_LOCK            0xfd484380
 #define HANDOFF_TID             128
 
         .macro  handoff_lock cpu, tmp, addr
         add     \cpu, \cpu, #HANDOFF_TID
-        ldr     \addr, =HANDOFF_LOCK
+        ldr     \addr, =suspend_handoff_lock
+        ldr     \addr, [\addr]
 1:      str     \cpu, [\addr]
         dsb
         ldr     \tmp, [\addr]
@@ -114,7 +114,6 @@ scm_ctx:
  * it lets the last core take the cluster down. Each one points its SAW
  * at the power collapse sequence, counts its entry and asks the secure
  * world to collapse it as a hotplugged core. Runs with the MMU off. */
-#define SAW_CPU0                0xf9089000
 #define SAW_SPM_CTL             0x30
 #define SPM_CTL_POWER_COLLAPSE  0x59
 #define SCM_CORE_HOTPLUGGED     0x10
@@ -130,7 +129,8 @@ secondary_park:
         ldr     r0, [r5]
         add     r0, r0, #1
         str     r0, [r5]
-        ldr     r6, =SAW_CPU0
+        ldr     r6, =suspend_saw_cpu0
+        ldr     r6, [r6]
         add     r6, r6, r4, lsl #16
         mov     r0, #SPM_CTL_POWER_COLLAPSE
         str     r0, [r6, #SAW_SPM_CTL]

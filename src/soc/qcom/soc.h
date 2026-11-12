@@ -1,25 +1,40 @@
-/* APQ8026 / MSM8226 register map used by the firmware. */
+/* The Qualcomm register map used by the firmware. Blocks that move
+ * between the APQ8026 and the APQ8009W are in the chip table; the
+ * display's MDP5, MMSS and DSI PLL registers are the APQ8026's only. */
 #ifndef SOC_H
 #define SOC_H
 #include "memmap.h"
+#ifndef __ASSEMBLER__
+#include "chip.h"
+#endif
 
-#define GICD_BASE		0xf9000000u
-#define GICC_BASE		0xf9002000u
-#define APCS_WDT_BASE		0xf9017000u
+#define APCS_BASE		(chip->apcs)
+#define GICD_BASE		(APCS_BASE + 0x00000)
+#define GICC_BASE		(APCS_BASE + 0x02000)
+#define APCS_IPC		(APCS_BASE + 0x11008)
+#define APCS_A7_CMD_RCGR	(APCS_BASE + 0x11050)
+#define APCS_A7_CFG_RCGR	(APCS_BASE + 0x11054)
+#define SAW_L2			(APCS_BASE + 0x12000)
+#define A7_PLL_BASE		(APCS_BASE + 0x16000)
+#define APCS_WDT_BASE		(APCS_BASE + 0x17000)
+#define QTMR_FRAME0		(APCS_BASE + 0x21000)
+#define APCS_ACC(cpu)		(APCS_BASE + 0x88000 + (cpu) * 0x10000)
+#define SAW_CPU0		(APCS_BASE + 0x89000)
 #define SLEEP_CLK_HZ		32768u
 
-#define IMEM_BASE		0xfe805000u
+#define GCC(off)		(chip->gcc + (off))
+
+#define IMEM_BASE		(chip->imem)
 #define IMEM_DLOAD_MAGIC	(IMEM_BASE + 0x000)
 #define IMEM_EDLOAD_MAGIC	(IMEM_BASE + 0xfe0)
 #define IMEM_RESTART_REASON	(IMEM_BASE + 0x65c)
 
-#define MPM2_PS_HOLD		0xfc4ab000u
+#define MPM2_PS_HOLD		(chip->ps_hold)
 
-#define SPMI_BASE		0xfc4c0000u
-#define SPMI_ARB_VERSION	(SPMI_BASE + 0xf000)
-#define SPMI_ARB_CHNL(n)	(SPMI_BASE + 0xf800 + (n) * 0x80)
-#define SPMI_INTR		(SPMI_BASE + 0xb000)
-#define SPMI_CNFG		(SPMI_BASE + 0xa000)
+#define SPMI_ARB_VERSION	(chip->spmi_core)
+#define SPMI_ARB_CHNL(n)	(chip->spmi_core + 0x800 + (n) * 0x80)
+#define SPMI_INTR		(chip->spmi_intr)
+#define SPMI_CNFG		(chip->spmi_cnfg)
 #define IRQ_SPMI_PERIPH		(32 + 190)
 #define SPMI_CMD		0x00
 #define SPMI_CONFIG		0x04
@@ -91,14 +106,13 @@
 #define PP_VSYNC_COUNTER_EN	BIT(19)
 #define PP_VSYNC_IN_EN		BIT(20)
 
-#define TLMM_BASE		0xfd510000u
-#define TLMM_GPIO_CFG(n)	(TLMM_BASE + 0x1000 + (n) * 0x10)
-#define TLMM_GPIO_IO(n)		(TLMM_BASE + 0x1004 + (n) * 0x10)
+#define TLMM_GPIO_CFG(n)	(chip->tlmm_pins + (n) * chip->tlmm_stride)
+#define TLMM_GPIO_IO(n)		(TLMM_GPIO_CFG(n) + 4)
 
 #define MMSS_MISC_BASE		0xfd828000u
 #define MMSS_DSI_CLAMP		(MMSS_MISC_BASE + 0x014)
 #define MMSS_DSI_PHY_RESET	(MMSS_MISC_BASE + 0x108)
-#define DSI0_BASE		0xfd922800u
+#define DSI0_BASE		(chip->dsi)
 #define DSI_DMA_CMD_OFFSET	(DSI0_BASE + 0x048)
 #define DSI_DMA_CMD_LENGTH	(DSI0_BASE + 0x04c)
 #define DSI_CMD_MODE_DMA_CTRL	(DSI0_BASE + 0x03c)
@@ -116,7 +130,7 @@
 #define DSI_PHY_REGULATOR_CTRL_6 0xfd922d98u
 
 
-#define USB_HS_BASE		0xf9a55000u
+#define USB_HS_BASE		(chip->usb)
 #define USB_SBUSCFG		(USB_HS_BASE + 0x090)
 #define USB_AHB_MODE		(USB_HS_BASE + 0x098)
 #define USB_GENCONFIG_2		(USB_HS_BASE + 0x0a0)
@@ -125,10 +139,10 @@
 #define USB_PORTSC		(USB_HS_BASE + 0x184)
 #define USB_PHY_CTRL		(USB_HS_BASE + 0x240)
 #define USB_USBMODE		(USB_HS_BASE + 0x1a8)
-#define GCC_USB_HS_BCR		0xfc400480u
-#define GCC_USB_HS_SYSTEM_CBCR	0xfc400484u
-#define GCC_USB_HS_AHB_CBCR	0xfc400488u
-#define GCC_USB_HS_SYSTEM_CMD_RCGR 0xfc400490u
+#define GCC_USB_HS_BCR		GCC(chip->usb_bcr)
+#define GCC_USB_HS_SYSTEM_CBCR	GCC(chip->usb_system_cbcr)
+#define GCC_USB_HS_AHB_CBCR	GCC(chip->usb_ahb_cbcr)
+#define GCC_USB_HS_SYSTEM_CMD_RCGR GCC(chip->usb_system_rcgr)
 #define IRQ_USB_HS		(32 + 134)
 #define USB_IRQ			IRQ_USB_HS
 
@@ -143,7 +157,7 @@
 #define RAMOOPS_RECORD_BASE	RAMOOPS_BASE
 #define RAMOOPS_CONSOLE_BASE	(RAMOOPS_BASE + (RAMOOPS_SIZE - RAMOOPS_CONSOLE_SIZE) / RAMOOPS_RECORD_SIZE * RAMOOPS_RECORD_SIZE)
 
-#define GPIO_COUNT		117
+#define GPIO_COUNT		(chip->gpios)
 #define PMIC_ADDR_MAX		0xfffffu
 #define PMIC_VADC		1
 #define WDT_MAX_MS (0x0fffffffu / SLEEP_CLK_HZ * 1000u)	/* about 2.3 hours */

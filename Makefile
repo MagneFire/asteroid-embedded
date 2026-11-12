@@ -37,7 +37,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/sett
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 
-SRCS_qcom := $(addprefix src/soc/qcom/,init.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
+SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
                suspend.S i2c_qup.c uart_dm.c rpm.c) \
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/light_tsl2584.c \

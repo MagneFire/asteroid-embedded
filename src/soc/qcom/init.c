@@ -5,6 +5,7 @@ static int scm;
 
 void soc_init(void)
 {
+	chip_init();
 	cpu_clock_init();
 	mmu_init();
 	irq_ctrl_init();

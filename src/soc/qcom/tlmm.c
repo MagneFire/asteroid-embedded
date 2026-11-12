@@ -27,8 +27,8 @@ void gpio_set(unsigned n, unsigned v)
 /* Pin interrupts: each pin has an interrupt configuration word (enable,
  * polarity, detection, raw status, target processor) and a status word;
  * all pins share one summary interrupt, SPI 208. */
-#define TLMM_INTR_CFG(n)	(TLMM_BASE + 0x1008 + (n) * 0x10)
-#define TLMM_INTR_STATUS(n)	(TLMM_BASE + 0x100c + (n) * 0x10)
+#define TLMM_INTR_CFG(n)	(TLMM_GPIO_CFG(n) + 8)
+#define TLMM_INTR_STATUS(n)	(TLMM_GPIO_CFG(n) + 0xc)
 #define INTR_ENABLE		BIT(0)
 #define INTR_POLARITY_HIGH	BIT(1)
 #define INTR_DETECT_SHIFT	2

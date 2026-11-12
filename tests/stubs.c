@@ -15,6 +15,10 @@ const char build_id[] = "hosttest";
 static const struct board host_board = { .name = "host", .compatible = "host" };
 const struct board *board = &host_board;
 const char *board_detected_by = "test";
+#ifdef CHIP_H
+static const struct qcom_chip host_chip = { .name = "host", .gpios = 117 };
+const struct qcom_chip *chip = &host_chip;
+#endif
 uint32_t stub_ms = 12345, stub_rtc = 1000, stub_brightness;
 bool stub_asleep;
 jmp_buf *stub_reboot_jmp;

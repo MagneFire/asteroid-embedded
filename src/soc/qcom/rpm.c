@@ -1,5 +1,5 @@
 /* Resource requests to the RPM processor over its shared-memory channel.
- * SMEM at 0x03000000 holds an allocation table; item 13 lists the SMD
+ * SMEM holds an allocation table; item 13 lists the SMD
  * channels, item 14+cid the channel's two stream descriptors (ours, then
  * the RPM's; eleven words each), item 338+cid the FIFO pair. A packet is
  * a five-word header (length first) plus payload; the RPM is told about
@@ -10,12 +10,11 @@
 #include "asteroid.h"
 #include "board/board.h"
 
-#define SMEM_ALLOC_TABLE	(SMEM_BASE + 0xd0)
+#define SMEM_ALLOC_TABLE	(chip->smem + 0xd0)
 #define SMEM_CHANNEL_ALLOC_TBL	13
 #define SMEM_SMD_BASE_ID	14
 #define SMEM_SMD_FIFO_BASE_ID	338
 #define SMD_EDGE_RPM		15
-#define APCS_IPC		0xf9011008u
 #define SS_OPENING		1
 #define SS_OPENED		2
 #define RPM_REQ			0x00716572u
@@ -36,7 +35,8 @@ static uint32_t fifo_size, msg_id;
 static bool ready;
 
 /* An entry's base_ext names an auxiliary region (the RPM's message RAM
- * at 0xfc428000 for the RPM edge); otherwise the offset is from SMEM. */
+ * for the RPM edge), by its physical address; otherwise the offset is
+ * from SMEM. */
 static void *smem_item(unsigned id, uint32_t *size)
 {
 	volatile struct alloc_entry *e = (volatile struct alloc_entry *)(uintptr_t)(SMEM_ALLOC_TABLE + id * 16);
@@ -44,7 +44,7 @@ static void *smem_item(unsigned id, uint32_t *size)
 		return NULL;
 	if (size)
 		*size = e->size;
-	uint32_t base = e->base_ext ? e->base_ext : SMEM_BASE;
+	uint32_t base = e->base_ext ? e->base_ext + chip->io_offset : chip->smem;
 	log_printf("smem: item %u at %08lx + %08lx size %08lx (ext %08lx)\n", id, base, e->offset, e->size, e->base_ext);
 	return (void *)(uintptr_t)(base + e->offset);
 }
@@ -72,12 +72,10 @@ bool rpm_init(void)
 	uint32_t size;
 	volatile struct chan_alloc *tbl = smem_item(SMEM_CHANNEL_ALLOC_TBL, &size);
 	if (!tbl) {
-		for (uint32_t base = SMEM_BASE; base <= 0x0fa00000; base += 0x0ca00000) {
-			volatile uint32_t *w = (volatile uint32_t *)(uintptr_t)base;
-			log_printf("smem %08lx: ver %08lx %08lx heap %lu/%08lx/%08lx item13 %08lx %08lx %08lx item14 %08lx %08lx %08lx\n",
-				   base, w[16], w[17], w[48], w[49], w[50], w[52 + 13 * 4], w[53 + 13 * 4], w[54 + 13 * 4],
-				   w[52 + 14 * 4], w[53 + 14 * 4], w[54 + 14 * 4]);
-		}
+		volatile uint32_t *w = (volatile uint32_t *)(uintptr_t)chip->smem;
+		log_printf("smem %08lx: ver %08lx %08lx heap %lu/%08lx/%08lx item13 %08lx %08lx %08lx item14 %08lx %08lx %08lx\n",
+			   chip->smem, w[16], w[17], w[48], w[49], w[50], w[52 + 13 * 4], w[53 + 13 * 4], w[54 + 13 * 4],
+			   w[52 + 14 * 4], w[53 + 14 * 4], w[54 + 14 * 4]);
 		log_printf("rpm: no channel table in smem\n");
 		return false;
 	}
@@ -246,8 +244,9 @@ void rpm_bus_votes(void)
 	int failed = !!rpm_clock_rate(RPM_CLK2, 0, 200000);
 	failed += !!rpm_clock_rate(RPM_CLK1, 1, 100000);
 	failed += !!rpm_clock_rate(RPM_CLK1, 0, 50000);
-	failed += !!rpm_clock_rate(RPM_CLK1, 2, 50000);
-	log_printf("rpm: bus votes in %lu us, %d of 4 not acknowledged\n", time_us() - t0, failed);
+	if (chip->cnoc)
+		failed += !!rpm_clock_rate(RPM_CLK1, 2, 50000);
+	log_printf("rpm: bus votes in %lu us, %d not acknowledged\n", time_us() - t0, failed);
 }
 
 /* Requests in the sleep set apply while the CPU cluster is powered down
@@ -284,7 +283,7 @@ void rpm_unused_rails_off(void)
 			log_printf("rpm: l%u off not acknowledged\n", board->unused_ldos[i]);
 }
 
-#define APCS_CLOCK_SLEEP_ENA_VOTE	0xfc401488u
+#define APCS_CLOCK_SLEEP_ENA_VOTE	GCC(chip->sleep_vote)
 
 void rpm_sleep_votes(void)
 {
@@ -295,7 +294,7 @@ void rpm_sleep_votes(void)
 	};
 	uint32_t kvp[3] = { RPM_KEY_ENABLE, 4, 0 };
 	request(RPM_SET_SLEEP, RPM_CLK0, 0, kvp, 1);
-	for (unsigned i = 0; i < 4; i++) {
+	for (unsigned i = 0; i < (chip->cnoc ? 4u : 3u); i++) {
 		uint32_t khz[3] = { RPM_KEY_KHZ, 4, bus[i].khz };
 		if (request(RPM_SET_SLEEP, bus[i].type, bus[i].id, khz, 1))
 			log_printf("rpm: sleep vote for bus %u not acknowledged\n", i);
