@@ -10,6 +10,7 @@ import { FlashlightScreen } from "flash.slint";
 import { CalculatorScreen } from "calc.slint";
 import { DiamondsScreen } from "game.slint";
 import { AgendaApp } from "agenda.slint";
+import { ActivityScreen } from "activity.slint";
 
 export component AppScreen {
     width: 100%;
@@ -26,4 +27,5 @@ export component AppScreen {
     if Face.app == 8: CalculatorScreen { }
     if Face.app == 9: DiamondsScreen { }
     if Face.app == 10: AgendaApp { }
+    if Face.app == 11: ActivityScreen { }
 }

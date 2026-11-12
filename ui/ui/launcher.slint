@@ -20,6 +20,7 @@ export struct App {
 export global Apps {
     // The Heart Rate app only where the watch has the sensor (Face.has-heart-rate).
     property <[App]> all: [
+        { id: 11, name: "Activity", icon: "ios-walk", center: #CC5200, outer: #0C0300 },
         { id: 10, name: "Agenda", icon: "ios-calendar-outline", center: #CC7700, outer: #0C0300 },
         { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
         { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },
@@ -33,6 +34,7 @@ export global Apps {
         { id: 5, name: "Weather", icon: "launcher-cloudy-outline", center: #990019, outer: #0C0200 },
     ];
     property <[App]> without-heart-rate: [
+        { id: 11, name: "Activity", icon: "ios-walk", center: #CC5200, outer: #0C0300 },
         { id: 10, name: "Agenda", icon: "ios-calendar-outline", center: #CC7700, outer: #0C0300 },
         { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
         { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },

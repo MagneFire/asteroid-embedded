@@ -75,6 +75,14 @@ void present_agenda_day(uint32_t date)
 	present_agenda();
 }
 
+void present_activity(void)
+{
+	uint32_t days[7];
+	for (unsigned i = 0; i < ARRAY_SIZE(days); i++)
+		days[i] = have_hub ? steps_day(ARRAY_SIZE(days) - 1 - i) : 0;
+	ui_set_activity(days[6], setting_get(SETTING_STEP_GOAL) * STEP_GOAL_UNIT, days, ARRAY_SIZE(days));
+}
+
 void present_settings(void)
 {
 	struct ui_settings u = {
@@ -94,6 +102,7 @@ void present_settings(void)
 		.auto_brightness = setting_get(SETTING_AUTO_BRIGHTNESS),
 	};
 	ui_set_settings(&u);
+	present_activity();
 	ui_set_launcher(setting_get(SETTING_LAUNCHER));
 	stack_set_launcher(setting_get(SETTING_LAUNCHER));
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
@@ -209,8 +218,8 @@ void present_clock(uint32_t now)
 			snprintf(addr_text, sizeof addr_text, "%02X:%02X:%02X:%02X:%02X:%02X", addr[5], addr[4], addr[3],
 				 addr[2], addr[1], addr[0]);
 		ui_set_info(addr_text, now / 1000);
-		if (have_hub)
-			steps_poll();
+		if (have_hub && steps_poll())
+			present_activity();
 		power_tick();
 		ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 	}

@@ -92,6 +92,7 @@ enum ui_app {
 	UI_APP_CALCULATOR,
 	UI_APP_DIAMONDS,
 	UI_APP_AGENDA,
+	UI_APP_ACTIVITY,
 };
 enum ui_clock_action {
 	UI_TIMER_START = 20,
@@ -227,6 +228,8 @@ void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, b
 void ui_set_chin(uint32_t px);
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
+/* Steps today, the goal, and the steps of the last n days, oldest first and today last. */
+void ui_set_activity(uint32_t today, uint32_t goal, const uint32_t *days, uint32_t n);
 int ui_app_open(void);
 bool ui_flashlight_on(void);
 void ui_set_calc(const char *shown, uint32_t shown_len, uint32_t length);

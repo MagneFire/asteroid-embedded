@@ -72,5 +72,16 @@
         }
     ],
     "round-mask": true,
-    "notification-icon": 569
+    "notification-icon": 569,
+    "activity-today": 5234,
+    "activity-goal": 8000,
+    "activity-days": [
+        6120,
+        9840,
+        3410,
+        8200,
+        7015,
+        11230,
+        5234
+    ]
 }

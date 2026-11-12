@@ -72,6 +72,11 @@ void app_open(int app)
 		civil_from_epoch(rtc_read(), &c);
 		present_agenda_day((c.year - 2000) << 9 | c.month << 5 | c.day);
 	}
+	if (app == UI_APP_ACTIVITY) {
+		if (have_hub)
+			steps_poll();
+		present_activity();
+	}
 	ui_set_app(app);
 	stack_open_app();
 }
@@ -167,8 +172,8 @@ static bool weather_run(uint32_t now)
  * not the next morning's. */
 static bool steps_run(uint32_t now)
 {
-	if (have_hub)
-		steps_poll();
+	if (have_hub && steps_poll() && have_ui)
+		present_activity();
 	sched_after(&steps_task, now, steps_next_ms());
 	return false;
 }

@@ -404,6 +404,18 @@ pub extern "C" fn ui_set_heart_rate(bpm: u32) {
     each(|face| face.set_heart_rate(bpm as i32));
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_activity(today: u32, goal: u32, days: *const u32, n: u32) {
+    let days = if days.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(days, n as usize) } };
+    let days: Vec<i32> = days.iter().map(|&d| d as i32).collect();
+    with_ui(|ui| {
+        let face = ui.screens[APP].global::<Face>();
+        face.set_activity_today(today as i32);
+        face.set_activity_goal(goal as i32);
+        face.set_activity_days(Rc::new(VecModel::from(days)).into());
+    });
+}
+
 /// The app on the app panel, -1 for none.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_open() -> i32 {
