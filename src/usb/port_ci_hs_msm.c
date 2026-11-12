@@ -107,8 +107,16 @@ static bool clock_on(uint32_t cbcr)
 	return false;
 }
 
+/* The APQ8009W's PHY is reset through its block reset in the GCC. */
 static void phy_reset(void)
 {
+	if (chip->usb_phy_bcr) {
+		writel(1, GCC(chip->usb_phy_bcr));
+		delay_us(10);
+		writel(0, GCC(chip->usb_phy_bcr));
+		dsb();
+		return;
+	}
 	writel(readl(USB_PHY_CTRL) | PHY_POR, USB_PHY_CTRL);
 	delay_us(15);
 	writel(readl(USB_PHY_CTRL) & ~PHY_POR, USB_PHY_CTRL);
@@ -209,7 +217,7 @@ const char *usb_port_restore(void)
 		return "controller reset";
 	delay_ms(100);
 	phy_reset();
-	for (unsigned i = 0; i < 4; i++)
+	for (unsigned i = 0; i < 4 && board->usb_phy_init[i]; i++)
 		if (ulpi_write((uint8_t)(ULPI_PHY_OVERRIDE + i), board->usb_phy_init[i]))
 			return "phy overrides";
 	phy_reset();

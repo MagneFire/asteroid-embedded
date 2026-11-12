@@ -103,6 +103,7 @@ const struct qcom_chip chip_8009 = {
 	.usb_system_cbcr = 0x41004,
 	.usb_ahb_cbcr = 0x41008,
 	.usb_system_rcgr = 0x41010,
+	.usb_phy_bcr = 0x41034,
 	.dsi = IO(0x01ac8000),
 	.mdp3 = IO(0x01a00000),
 	.gpu = IO(0x01c00000),

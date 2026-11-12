@@ -201,7 +201,7 @@ struct board {
 	/* The battery current sense resistor. */
 	uint32_t rsense_uohm;
 	/* USB PHY override registers 0x80-0x83, written after a PHY reset. */
-	uint8_t usb_phy_init[4];
+	uint8_t usb_phy_init[4];	/* up to the first 0 */
 	/* A USB PHY run by lines alone: high while VBUS is there, its
 	 * reset (low holds it), and its two selects of opposite sense. */
 	struct {

@@ -26,7 +26,7 @@ struct qcom_chip {
 	uint32_t sdcc1;
 	uint32_t sdcc1_apps_cbcr, sdcc1_ahb_cbcr, sdcc1_rcgr;
 	struct { uint8_t ldo; uint32_t uv; } emmc_vcc, emmc_vccq;
-	uint32_t usb, usb_bcr, usb_system_cbcr, usb_ahb_cbcr, usb_system_rcgr;
+	uint32_t usb, usb_bcr, usb_system_cbcr, usb_ahb_cbcr, usb_system_rcgr, usb_phy_bcr;
 	uint32_t dsi;
 	uint32_t mdp3;			/* 0 with the MDP5 */
 	uint32_t gpu;
