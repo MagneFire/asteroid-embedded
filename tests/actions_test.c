@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <time.h>
 #include "asteroid.h"
 #include "ui/ui.h"
 #include "bt/bt.h"
@@ -133,6 +134,24 @@ static void clock_set(void)
 	CHECK(c.hour == 7 && c.minute == 5 && c.second == 0 && c.day == 28);
 }
 
+/* Every day the RTC can hold, against the host's gmtime, both ways. */
+static void civil_days(void)
+{
+	for (uint64_t s = 43200; s <= UINT32_MAX; s += 86400) {
+		time_t t = (time_t)s;
+		struct tm tm;
+		gmtime_r(&t, &tm);
+		struct civil c;
+		civil_from_epoch((uint32_t)s, &c);
+		if (c.year != (uint32_t)tm.tm_year + 1900 || c.month != (uint32_t)tm.tm_mon + 1 ||
+		    c.day != (uint32_t)tm.tm_mday || c.weekday != (uint32_t)tm.tm_wday || epoch_from_civil(&c) != s) {
+			printf("civil: wrong at %llu s\n", (unsigned long long)s);
+			failures++;
+			return;
+		}
+	}
+}
+
 int main(void)
 {
 	brightness();
@@ -140,6 +159,7 @@ int main(void)
 	others();
 	steps();
 	clock_set();
+	civil_days();
 	if (failures)
 		return 1;
 	puts("actions_test: ok");
