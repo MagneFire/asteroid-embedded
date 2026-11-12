@@ -4,7 +4,7 @@
 #define SGX_SCENE_DATA_H
 #include <stdint.h>
 
-enum { SGX_SCENE_USER, SGX_SCENE_SYNC, SGX_SCENE_CONTEXT };
+enum { SGX_SCENE_USER, SGX_SCENE_SYNC, SGX_SCENE_CONTEXT, SGX_SCENE_HOLE };
 
 struct sgx_scene_alloc {
 	uint32_t addr, size;
@@ -27,13 +27,17 @@ struct sgx_scene_word {
 	uint32_t value;
 };
 
-#define SGX_SCENE_ALLOCS               0x00000052
-#define SGX_SCENE_RUNS                 0x00000035
-#define SGX_SCENE_CMD_WORDS            0x00000014
+#define SGX_SCENE_ALLOCS               0x00000058
+#define SGX_SCENE_RUNS                 0x00000031
+#define SGX_SCENE_CMD_WORDS            0x00000015
 #define SGX_SCENE_TA_STATUS            0x00000007
 #define SGX_SCENE_3D_STATUS            0x00000003
 #define SGX_SCENE_TA_SEQ               0x00000006
 #define SGX_SCENE_3D_SEQ               0x00000002
+#define SGX_SCENE_TA_VDM               0x00000000
+#define SGX_SCENE_TA_PV                0x00000003
+#define SGX_SCENE_TA_MT                0x00000005
+#define SGX_SCENE_3D_PP                0x00000000
 
 #define SGX_SCENE_CCB                  0x0f095000
 #define SGX_SCENE_CCB_CTL              0x0f0a6000
@@ -43,39 +47,65 @@ struct sgx_scene_word {
 #define SGX_SCENE_PB_LINKS             0x0bbdd000
 #define SGX_SCENE_PB_FIRST_PAGE        0x00000000
 #define SGX_SCENE_PB_PAGES             0x000003dd
-#define SGX_SCENE_DETAILS              0x0f0ac000
-#define SGX_SCENE_DETAILS_ACCESS       0x0d807000
-#define SGX_SCENE_SYNC_LIST            0x0f0ad000
-#define SGX_SCENE_SYNC_LIST_ACCESS     0x0d808000
-#define SGX_SCENE_DATASET              0x0f0af000
-#define SGX_SCENE_RT_PENDING           0x0f0ae000
-#define SGX_SCENE_RTDATA0              0x0f0af018
+#define SGX_SCENE_DETAILS              0x0f0c0000
+#define SGX_SCENE_DETAILS_ACCESS       0x0d80b000
+#define SGX_SCENE_SYNC_LIST            0x0f0c1000
+#define SGX_SCENE_SYNC_LIST_ACCESS     0x0d80c000
+#define SGX_SCENE_DATASET              0x0f0c3000
+#define SGX_SCENE_RT_PENDING           0x0f0c2000
+#define SGX_SCENE_RTDATA0              0x0f0c3018
 #define SGX_SCENE_REGIONS0             0x0c803000
-#define SGX_SCENE_RTDATA1              0x0f0af04c
+#define SGX_SCENE_RTDATA1              0x0f0c304c
 #define SGX_SCENE_REGIONS1             0x0c806000
 #define SGX_SCENE_TA3D_SYNC            0x0d801000
-#define SGX_SCENE_SURFACE_SYNC         0x0d809000
+#define SGX_SCENE_SURFACE_SYNC         0x0d80d000
 
-#define SGX_SCENE_PBUFFER              0x00001000
-#define SGX_SCENE_VERTICES             0x000e1000
-#define SGX_SCENE_INDICES              0x000e2000
-#define SGX_SCENE_INDEX_TABLE          0x00000400
-#define SGX_SCENE_INDEX_COUNT          0x00078050
-#define SGX_SCENE_INDEX_LIST           0x81c00000
-#define SGX_SCENE_CLEAR                0x0007d00c
+#define SGX_SCENE_PBUFFER              0x00041000
+#define SGX_SCENE_VERTICES             0x00001000
+#define SGX_SCENE_VERTICES_SIZE        0x00040000
+#define SGX_SCENE_INDICES              0x00126000
+#define SGX_SCENE_INDEX_TABLE          0x00000800
+#define SGX_SCENE_FLAT_PROGRAM         0x0e81d000
+#define SGX_SCENE_CLEAR                0x000bd00c
 #define SGX_SCENE_CLEARS               0x00000006
 #define SGX_SCENE_CLEAR_STEP           0x00000010
-#define SGX_SCENE_MTE_LAUNCH           0x00078004
-#define SGX_SCENE_MTE_WORD             0x0c02a202
-#define SGX_SCENE_BLEND_STATE          0x0e8020e4
-#define SGX_SCENE_BLEND_CODE           0x0f408134
-#define SGX_SCENE_TILE_STORE0          0x0f400018
-#define SGX_SCENE_TILE_STORE1          0x0f400058
-#define SGX_SCENE_BG_TEXTURE           0x0dc080c8
-#define SGX_SCENE_TERMINATE            0x00078084
+#define SGX_SCENE_MTE_LAUNCH           0x000b8004
+#define SGX_SCENE_BLEND_CODE           0x0f440134
+#define SGX_SCENE_TILE_STORE0          0x0f43a018
+#define SGX_SCENE_TILE_STORE1          0x0f43a058
+#define SGX_SCENE_BG_TEXTURE           0x0dc100c8
+#define SGX_SCENE_TEX_FS_CODE          0x0f440140
+#define SGX_SCENE_TEX_FS_WORDS         0x00000004
+#define SGX_SCENE_TEX_VS_CODE          0x0fc082b0
+#define SGX_SCENE_TEX_VS_WORDS         0x0000000a
 
-#define SGX_SCENE_STREAM_FIRST         0x00078000
-#define SGX_SCENE_STREAM_LAST          0x00078084
+/* The rings a frame is written into, from frame one's place: the
+ * part before the first draw (the clear) is in the image. */
+#define SGX_SCENE_VDM                  0x000b8000
+#define SGX_SCENE_VDM_SIZE             0x00005000
+#define SGX_SCENE_VDM_PREFIX           0x00000040
+#define SGX_SCENE_PV                   0x0e802000
+#define SGX_SCENE_PV_SIZE              0x0000c800
+#define SGX_SCENE_PV_PREFIX            0x000000e0
+#define SGX_SCENE_MT                   0x0e810000
+#define SGX_SCENE_MT_SIZE              0x0000c800
+#define SGX_SCENE_MT_PREFIX            0x00000100
+#define SGX_SCENE_PP                   0x0dc10000
+#define SGX_SCENE_PP_SIZE              0x00019000
+#define SGX_SCENE_PP_PREFIX            0x00000120
+#define SGX_SCENE_PC                   0x0dc08000
+#define SGX_SCENE_PC_SIZE              0x00008000
+#define SGX_SCENE_PC_PREFIX            0x00000060
+#define SGX_SCENE_BG_LAUNCHES          0x00000002
+#define SGX_SCENE_VERTEX_BASE          0x0e800000
+#define SGX_SCENE_PIXEL_BASE           0x0dc00000
+#define SGX_SCENE_LAUNCH               0x400c0000
+#define SGX_SCENE_MTE_WORD             0x0c02a200
+#define SGX_SCENE_VSEC_WORD            0x0c016103
+#define SGX_SCENE_PROGRAM_WORD         0x0c000000
+#define SGX_SCENE_TEX_FORMAT           0x8d000000
+
+#define SGX_SCENE_STREAM_FIRST         0x000b8000
 #define SGX_SCENE_A_FIRST_EVER         0x00000071
 #define SGX_SCENE_A_FIRST              0x00000061
 #define SGX_SCENE_A_LAST               0x00000062
@@ -87,8 +117,35 @@ extern const struct sgx_scene_run sgx_scene_runs[SGX_SCENE_RUNS];
 extern const uint32_t sgx_scene_words[];
 extern const struct sgx_scene_word sgx_scene_cmd[SGX_SCENE_CMD_WORDS];
 extern const uint32_t sgx_scene_regs3d[34];
-extern const uint32_t sgx_scene_terminate[7];
-extern const uint32_t sgx_scene_blend[2][4];
+extern const uint32_t sgx_scene_end[7];
+extern const uint32_t sgx_scene_blend[2][3];
+extern const uint32_t sgx_scene_isp[2];
 extern const struct sgx_scene_status sgx_scene_ta_status[2][SGX_SCENE_TA_STATUS];
 extern const struct sgx_scene_status sgx_scene_3d_status[2][SGX_SCENE_3D_STATUS];
+
+/* State blocks: the first draw's (flat, with the viewport), a flat
+ * one after a textured draw, a textured one after a flat draw (pixel
+ * programs in words 3 and 5) and after a textured one (1 and 3). */
+extern const uint32_t sgx_scene_first_flat[18];
+extern const uint32_t sgx_scene_flat_block[9];
+extern const uint32_t sgx_scene_tex_block9[9];
+extern const uint32_t sgx_scene_tex_block4[4];
+/* MTE-copy entry: copy and destination words by block size, code. */
+extern const uint32_t sgx_scene_mte_copy[3][3];
+extern const uint32_t sgx_scene_mte_code[8];
+/* Vertex programs: data (stream addresses in words 0 and 2), code. */
+extern const uint32_t sgx_scene_vprog_flat[12];
+extern const uint32_t sgx_scene_vprog_tex[12];
+extern const uint32_t sgx_scene_vprog_code[6];
+/* Vertex-secondary constants and the descriptor of both secondary
+ * programs (address first), and their code. */
+extern const uint32_t sgx_scene_vsec_const[10];
+extern const uint32_t sgx_scene_vsec_desc[2];
+extern const uint32_t sgx_scene_psec_desc[2];
+extern const uint32_t sgx_scene_sec_code[3];
+/* A texture's pixel program: sampling in word 2, size in 3, address
+ * in 10; sampling nearest and linear. */
+extern const uint32_t sgx_scene_tex_program[16];
+extern const uint32_t sgx_scene_sampling[2];
+extern const uint32_t sgx_scene_index_list[6];
 #endif

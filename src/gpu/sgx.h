@@ -15,6 +15,8 @@ struct sgx_info {
  * watch's system partition the first time. */
 bool sgx_start(void);
 void sgx_stop(void);
+/* Off at once, without asking the microkernel: after it stopped working. */
+void sgx_halt(void);
 bool sgx_running(void);
 bool sgx_query(struct sgx_info *info);
 /* The microkernel's trace of its last steps, for the log. */

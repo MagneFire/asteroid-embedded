@@ -377,6 +377,19 @@ void sgx_stop(void)
 	power_off();
 }
 
+void sgx_halt(void)
+{
+	if (!running)
+		return;
+	running = false;
+	irq_mask(IRQ_SGX);
+	writel(1, OCP_IRQENABLE_CLR_2);
+	writel(SOFT_RESET_ALL, SOFT_RESET);
+	settle();
+	run_script(SGX_SCRIPT_OFF);
+	power_off();
+}
+
 bool sgx_query(struct sgx_info *info)
 {
 	static const uint32_t sizes[13] = { 1304, 1128, 1204, 268, 136, 68, 64, 1040, 52, 76, 228, 76, 32 };

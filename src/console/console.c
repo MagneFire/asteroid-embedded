@@ -1066,8 +1066,9 @@ static void cmd_uibench(const char *args)
 
 #ifdef SGX_BASE
 /* A red triangle on a blue-grey ground, drawn by the GPU into the back
- * buffer: red and blue swapped, or the picture upside down, show at a
- * glance. */
+ * buffer, apex up: its y is flipped for GL's origin in the bottom row, as
+ * every vertex of a frame is. Red and blue swapped, or the picture upside
+ * down, show at a glance. */
 static void sgx_tri(void)
 {
 	static const float verts[] = {
@@ -1075,19 +1076,26 @@ static void sgx_tri(void)
 		0.8f, -0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
 		0.0f, 0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
 	};
-	const struct sgx_frame f = { 0xff4080bf, verts, 1, false };
 	const uint32_t bytes = SGX_DRAW_SIZE * SGX_DRAW_SIZE * 4;
 	struct sgx_times t;
-	uint32_t *buf = display_backbuffer(), gpu;
-	if (!sgx_start() || !sgx_draw_setup() || !(gpu = sgx_draw_map((uint32_t)(uintptr_t)buf, bytes))) {
+	uint32_t *buf = display_backbuffer(), gpu, vgpu;
+	float *v;
+	if (!sgx_start() || !sgx_draw_setup() || !(gpu = sgx_draw_map((uint32_t)(uintptr_t)buf, bytes)) ||
+	    !(v = sgx_draw_vertices(sizeof verts, &vgpu))) {
 		say("failed, see the log\n");
 		return;
 	}
+	for (unsigned i = 0; i < ARRAY_SIZE(verts); i++)
+		v[i] = i % 6 == 1 ? -verts[i] : verts[i];
+	const struct sgx_draw d = { .verts = vgpu, .count = 3, .kind = SGX_DRAW_FLAT };
+	const struct sgx_frame f = { 0xff4080bf, &d, 1 };
 	dcache_clean_invalidate_range(buf, bytes);
 	sgx_draw_target(gpu);
 	bool ok = sgx_draw_frame(&f, &t);
 	dcache_invalidate_range(buf, bytes);
 	if (!ok) {
+		log_printf("sgx: %s\n", sgx_draw_failure());
+		sgx_log_state();
 		say("no frame, see the log\n");
 		return;
 	}

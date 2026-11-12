@@ -1,13 +1,18 @@
-/* The native SGX triangle path (sgx_draw.c) against the vendor's GLES
- * driver as tools/sgx/glrec.py recorded it: at every kick the GPU memory
- * the native code built must equal the recording's, byte for byte, and
+/* The native SGX path (sgx_draw.c) against the vendor's GLES driver as
+ * tools/sgx/glrec.py recorded it: at every kick the GPU memory the
+ * native code built must equal the recording's, byte for byte, and
  * where it deliberately does not, each byte is named here with what it
  * must equal instead. The microkernel is replaced by the completion the
  * recording harness applied (pvrkm.py complete_kick), so the memory a
  * second frame starts from is the recording's too. Needs the vendor's
  * libsrv_init.so (SGX_LIBSRV_INIT) and the recordings with their
  * flat.txt (SGX_RECORDINGS, build/sgx/draw; tools/sgx/flatten.py draw);
- * without them it checks the tables and runs frames on its own. */
+ * without them it checks the tables and runs frames on its own.
+ *
+ * The scene is the mix recordings' GL context, so the tri scenes are the
+ * ones recorded with the transfer context (*_tq), which have its
+ * addresses. Allocations of the transfer context, and textures, are the
+ * caller's or nobody's and are not compared. */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +38,7 @@ static uint8_t *pool, *lib;
 static long lib_size;
 static int failures;
 static const char *recordings;
+static bool running = true;
 
 #define CHECK(cond, ...) \
 	do { \
@@ -51,7 +57,7 @@ uint32_t time_us(void)
 }
 void wdt_feed(void) {}
 void sgx_log_state(void) { printf("  log: microkernel state\n"); }
-bool sgx_running(void) { return true; }
+bool sgx_running(void) { return running; }
 struct sgx_mem *sgx_memory(void) { return &mem; }
 
 void log_printf(const char *fmt, ...)
@@ -166,37 +172,18 @@ static void run(const char *name, void (*fn)(void))
 		printf("%s: ok\n", name);
 }
 
-/* --- frames */
-
-static const float tri_v[] = {
-	-0.8f, -0.8f, 1, 0, 0, 1, 0.8f, -0.8f, 0, 1, 0, 1, 0.0f, 0.8f, 0, 0, 1, 1,
-};
-static const float moved_v[] = {
-	-0.6f, -0.8f, 1, 0, 0, 1, 0.8f, -0.6f, 0, 1, 0, 1, 0.2f, 0.8f, 0, 0, 1, 1,
-};
-static const float two_v[] = {
-	-0.8f, -0.8f, 1, 0, 0, 1, 0.8f, -0.8f, 0, 1, 0, 1, 0.0f, 0.8f, 0, 0, 1, 1,
-	-0.8f, 0.8f, 1, 1, 0, 1, -0.4f, 0.8f, 1, 1, 0, 1, -0.8f, 0.4f, 1, 1, 0, 1,
-};
-
-static bool frame(const float *v, unsigned tris, uint32_t clear, bool blend)
-{
-	struct sgx_frame f = { clear, v, tris, blend };
-	struct sgx_times t;
-	return sgx_draw_frame(&f, &t);
-}
-
 /* --- recordings */
 
 struct rec_alloc {
 	unsigned index, heap;
 	uint32_t size, addr;
 	char file[40];
+	bool tq;
 };
 
 struct rec {
-	char dir[400];
-	struct rec_alloc a[128];
+	char name[64], dir[400];
+	struct rec_alloc a[160];
 	unsigned n, nk;
 	struct { uint32_t off, data[6]; unsigned first, last; } k[8];
 	uint32_t hostkick;
@@ -204,8 +191,9 @@ struct rec {
 
 static bool load(struct rec *r, const char *name)
 {
-	char path[512], line[256];
+	char path[512], line[256], tq[8];
 	memset(r, 0, sizeof *r);
+	snprintf(r->name, sizeof r->name, "%s", name);
 	snprintf(r->dir, sizeof r->dir, "%s/%s", recordings, name);
 	snprintf(path, sizeof path, "%s/flat.txt", r->dir);
 	FILE *f = fopen(path, "r");
@@ -218,10 +206,13 @@ static bool load(struct rec *r, const char *name)
 		struct rec_alloc *a = &r->a[r->n];
 		unsigned i, first, last;
 		uint32_t off, d[6];
-		if (r->n < 128 && sscanf(line, "alloc %u %u %x %x %39s", &a->index, &a->heap, &a->size, &a->addr, a->file) == 5)
+		int got = r->n < 160 ? sscanf(line, "alloc %u %u %x %x %39s %7s", &a->index, &a->heap, &a->size, &a->addr,
+					      a->file, tq) : 0;
+		if (got >= 5) {
+			a->tq = got == 6 && !strcmp(tq, "tq");
 			r->n++;
-		else if (sscanf(line, "kick %u %x %u %u %x %x %x %x %x %x", &i, &off, &first, &last, &d[0], &d[1], &d[2], &d[3],
-				&d[4], &d[5]) == 10 && i < 8) {
+		} else if (sscanf(line, "kick %u %x %u %u %x %x %x %x %x %x", &i, &off, &first, &last, &d[0], &d[1], &d[2],
+				  &d[3], &d[4], &d[5]) == 10 && i < 8) {
 			r->k[i].off = off;
 			r->k[i].first = first;
 			r->k[i].last = last;
@@ -245,11 +236,13 @@ static const struct rec_alloc *rec_at(const struct rec *r, uint32_t addr)
 /* The bytes of a recorded kick image at addr, cached per file. */
 static const uint8_t *rec_bytes(const struct rec *r, unsigned kick, uint32_t addr)
 {
-	static struct { const struct rec *r; unsigned kick; const struct rec_alloc *a; uint8_t *data; } cache[512];
+	static struct { const struct rec *r; unsigned kick; const struct rec_alloc *a; uint8_t *data; } cache[1024];
 	static unsigned ncache;
 	const struct rec_alloc *a = rec_at(r, addr);
-	if (!a)
-		return NULL;
+	if (!a) {
+		printf("FAIL %s: nothing recorded at %08x\n", r->name, addr);
+		exit(1);
+	}
 	for (unsigned i = 0; i < ncache; i++)
 		if (cache[i].r == r && cache[i].kick == kick && cache[i].a == a)
 			return cache[i].data + (addr - a->addr);
@@ -257,7 +250,7 @@ static const uint8_t *rec_bytes(const struct rec *r, unsigned kick, uint32_t add
 	snprintf(path, sizeof path, "%s/kick%02u_pre/%s", r->dir, kick, a->file);
 	long n;
 	uint8_t *d = slurp(path, &n);
-	if (!d || n != (long)a->size || ncache == 512) {
+	if (!d || n != (long)a->size || ncache == 1024) {
 		printf("FAIL unreadable %s\n", path);
 		exit(1);
 	}
@@ -275,18 +268,19 @@ static uint32_t rec_word(const struct rec *r, unsigned kick, uint32_t addr)
 	return w;
 }
 
-/* Bytes a native image is compared against something else than the same
- * address of the same kick: another kick, another address, another
- * recording, or nothing (ref NULL). */
+/* Bytes compared against something else than the same address of the
+ * same kick: another kick, address or recording (ref), or with the
+ * native bytes taken from elsewhere (native, for what the native scene
+ * keeps at another place), or nothing at all (r and native 0). */
 struct sub {
 	uint32_t addr, len;
 	const struct rec *r;
 	unsigned kick;
-	uint32_t ref;
+	uint32_t ref, native;
 	const char *why;
 };
 
-#define MAX_SUBS 64
+#define MAX_SUBS 128
 static struct sub subs[MAX_SUBS];
 static unsigned nsubs;
 
@@ -296,23 +290,42 @@ static void sub(uint32_t addr, uint32_t len, const struct rec *r, unsigned kick,
 		printf("FAIL more than %d substitutions\n", MAX_SUBS);
 		exit(1);
 	}
-	subs[nsubs++] = (struct sub){ addr, len, r, kick, ref, why };
+	subs[nsubs++] = (struct sub){ addr, len, r, kick, ref, 0, why };
 }
+
+static void moved(uint32_t addr, uint32_t len, uint32_t native, const char *why)
+{
+	sub(addr, len, NULL, 0, 0, why);
+	subs[nsubs - 1].native = native;
+}
+
+/* Whether the native scene has the recorded allocation: inside one of
+ * its own, not in a hole. */
+static bool native_has(const struct rec_alloc *a)
+{
+	for (unsigned i = 0; i < SGX_SCENE_ALLOCS; i++) {
+		const struct sgx_scene_alloc *s = &sgx_scene_allocs[i];
+		if (s->kind != SGX_SCENE_HOLE && a->addr >= s->addr && a->addr + a->size <= s->addr + s->size)
+			return true;
+	}
+	return false;
+}
+
+static unsigned compared;
 
 static void compare(const struct rec *r, unsigned kick, const char *what)
 {
 	for (unsigned i = 0; i < r->n; i++) {
 		const struct rec_alloc *a = &r->a[i];
-		const uint8_t *got = sgx_ptr(&mem, a->addr), *same = rec_bytes(r, kick, a->addr);
-		if (!got) {
-			CHECK(0, "%s: allocation #%u at %08x is not mapped", what, a->index, a->addr);
+		if (a->tq || !native_has(a))
 			continue;
-		}
+		const uint8_t *got = sgx_ptr(&mem, a->addr), *same = rec_bytes(r, kick, a->addr);
 		const struct sub *mine[MAX_SUBS];
 		unsigned n = 0, bad = 0;
 		for (unsigned j = 0; j < nsubs; j++)
 			if (subs[j].addr < a->addr + a->size && subs[j].addr + subs[j].len > a->addr)
 				mine[n++] = &subs[j];
+		compared += a->size;
 		if (!n && !memcmp(got, same, a->size))
 			continue;
 		for (uint32_t o = 0; o < a->size; o++) {
@@ -321,11 +334,12 @@ static void compare(const struct rec *r, unsigned kick, const char *what)
 			for (unsigned j = 0; j < n && !s; j++)
 				if (addr - mine[j]->addr < mine[j]->len)
 					s = mine[j];
-			if (s && !s->r)
+			if (s && !s->r && !s->native)
 				continue;
-			uint8_t want = s ? *rec_bytes(s->r, s->kick, s->ref + (addr - s->addr)) : same[o];
-			if (got[o] != want && bad++ < 4)
-				printf("  %s: #%u %08x: %02x, recorded %02x%s%s\n", what, a->index, addr, got[o], want,
+			uint8_t g = s && s->native ? *(uint8_t *)sgx_ptr(&mem, s->native + (addr - s->addr)) : got[o];
+			uint8_t want = s && s->r ? *rec_bytes(s->r, s->kick, s->ref + (addr - s->addr)) : same[o];
+			if (g != want && bad++ < 6)
+				printf("  %s: #%u %08x: %02x, recorded %02x%s%s\n", what, a->index, addr, g, want,
 				       s ? " against " : "", s ? s->why : "");
 		}
 		CHECK(!bad, "%s: allocation #%u (%08x) differs in %u bytes", what, a->index, a->addr, bad);
@@ -335,7 +349,7 @@ static void compare(const struct rec *r, unsigned kick, const char *what)
 /* --- one recorded scene */
 
 static const struct rec *cur;
-static unsigned frames_in_rec;
+static struct rec mixref, meshref, notq;
 static void (*subs_for)(unsigned n);
 
 static uint32_t cmd_at(unsigned n) { return SGX_SCENE_CCB + cur->k[n].off - SHARED; }
@@ -344,8 +358,8 @@ static void check_kick(unsigned n, const uint32_t c[8])
 {
 	if (n >= cur->nk)
 		return;
-	char what[64];
-	snprintf(what, sizeof what, "%s kick %u", cur->dir + strlen(recordings) + 1, n);
+	char what[96];
+	snprintf(what, sizeof what, "%s kick %u", cur->name, n);
 	uint32_t *cmd = P(cmd_at(n)), *ctl = P(SGX_SCENE_CCB_CTL);
 	CHECK(ctl[0] == (cur->k[n].off - SHARED + CMD_SIZE) % 0x10000, "%s: command not at the recorded offset", what);
 	CHECK(((cmd[1] & 5) != 0) == cur->k[n].first && ((cmd[1] & 3) >> 1) == cur->k[n].last, "%s: first/last", what);
@@ -358,79 +372,143 @@ static void check_kick(unsigned n, const uint32_t c[8])
 	 * here the pool's. */
 	sub(SGX_SCENE_HW_CONTEXT + SGX_SCENE_PD_OFFSET, 4, NULL, 0, 0, "page directory");
 	CHECK(*P(SGX_SCENE_HW_CONTEXT + SGX_SCENE_PD_OFFSET) == PHYS, "%s: page directory", what);
+	/* With the transfer context the last kick waits for its 3D work, the
+	 * texture uploads (h3DSyncInfo: read and write pending values,
+	 * complete addresses); the native path has no transfer context, so
+	 * these words are as in the recording made without one. */
+	for (unsigned k = 0; k <= n; k++)
+		sub(cmd_at(k) + SHARED + 0x18, 0x14, &notq, n, cmd_at(k) + SHARED + 0x18,
+		    "tri_read2 without the transfer context");
 	if (subs_for)
 		subs_for(n);
 	compare(cur, n, what);
 }
 
-static void scene(const char *name, const struct sgx_frame *f, unsigned nf, void (*subs_fn)(unsigned), uint32_t target)
+/* A draw as the test gives it: vertices at a recorded address. */
+struct tdraw {
+	uint32_t verts;
+	uint16_t count;
+	uint32_t tex;
+	uint8_t alpha;
+	bool blend;
+};
+#define FLAT(v, n)		{ (v), (n), 0, 0, false }
+#define FLAT_BLEND(v, n)	{ (v), (n), 0, 0, true }
+#define TEX(v, n, t, a)		{ (v), (n), (t), (a), true }
+
+static struct sgx_frame frame_of(const struct tdraw *td, unsigned n, uint32_t clear)
+{
+	static struct sgx_draw d[SGX_DRAW_MAX_DRAWS];
+	for (unsigned i = 0; i < n; i++)
+		d[i] = (struct sgx_draw){ .verts = td[i].verts, .count = td[i].count, .kind = td[i].tex ? SGX_DRAW_TEXTURED : 0,
+					  .blend = td[i].blend, .tex = td[i].tex, .width = 320, .height = 320,
+					  .alpha = td[i].alpha };
+	return (struct sgx_frame){ clear, d, n };
+}
+
+/* The application's vertices, which the vendor's driver never wrote:
+ * copied from the recording into the same place. */
+static void vertices(const struct rec *r, const struct tdraw *td, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++) {
+		const struct rec_alloc *a = rec_at(r, td[i].verts);
+		memcpy(P(a->addr), rec_bytes(r, 0, a->addr), a->size);
+	}
+}
+
+static void (*between)(unsigned frame);
+
+static void scene(const char *name, const struct tdraw *td, unsigned n, uint32_t clear, unsigned frames,
+		  void (*subs_fn)(unsigned), uint32_t target)
 {
 	static struct rec r;
-	if (!load(&r, name))
+	if (!load(&r, name) || !load(&notq, "tri_read2"))
 		return;
 	cur = &r;
-	frames_in_rec = nf;
 	subs_for = subs_fn;
 	on_kick = check_kick;
 	CHECK(sgx_draw_setup(), "%s: setup", name);
 	if (target)
 		sgx_draw_target(target);
-	for (unsigned i = 0; i < nf; i++) {
+	vertices(&r, td, n);
+	for (unsigned i = 0; i < frames; i++) {
+		struct sgx_frame f = frame_of(td, n, clear);
 		struct sgx_times t;
-		CHECK(sgx_draw_frame(&f[i], &t), "%s: frame %u", name, i);
+		if (between)
+			between(i);
+		CHECK(sgx_draw_frame(&f, &t), "%s: frame %u: %s", name, i, sgx_draw_failure());
 	}
 	CHECK(kick_no >= r.nk, "%s: %u kicks recorded, %u made", name, r.nk, kick_no);
 }
 
-#define FRAME(v, n, clear, blend) ((struct sgx_frame){ (clear), (v), (n), (blend) })
+#define CLEAR		0xff4080bf
+#define MESH_VBO	0x00121000
+#define QUAD_VBO	0x00125000
+#define TA		0x00127000
+#define TB		0x0018b000
+#define TC		0x001ef000
+#define Q(first)	(QUAD_VBO + 16 * (first))
 
-static void tri(void)
+/* Where the first draw's index list has the table's address, and the
+ * flat draws' vertex-secondary constants. */
+#define FIRST_INDEX_ADDR	(SGX_SCENE_VDM + SGX_SCENE_VDM_PREFIX + 16 + 4)
+#define FIRST_FLAT_CONSTS	(SGX_SCENE_PV + SGX_SCENE_PV_PREFIX + 0x60)
+
+/* Scenes that only compiled the flat program have no textured code,
+ * and their identity index table lies behind their own vertex buffer:
+ * compared with mix's, and the native table with theirs. */
+static uint32_t rec_table;
+
+static void flat_only(unsigned n)
 {
-	struct sgx_frame f = FRAME(tri_v, 1, 0xff4080bf, false);
-	scene("tri", &f, 1, NULL, 0);
+	sub(SGX_SCENE_TEX_VS_CODE, 4 * SGX_SCENE_TEX_VS_WORDS, &mixref, 0, SGX_SCENE_TEX_VS_CODE, "mix's textured code");
+	sub(SGX_SCENE_TEX_FS_CODE, 4 * SGX_SCENE_TEX_FS_WORDS, &mixref, 0, SGX_SCENE_TEX_FS_CODE, "mix's textured code");
+	moved(rec_table, 2048, SGX_SCENE_INDICES, "the native index table");
+	sub(FIRST_INDEX_ADDR, 4, &mixref, 0, FIRST_INDEX_ADDR, "mix's index table address");
 }
 
-static void tri_read(void)
+static uint32_t table_of(const char *name)
 {
-	struct sgx_frame f = FRAME(tri_v, 1, 0xff4080bf, false);
-	scene("tri_read", &f, 1, NULL, 0);
+	struct rec r;
+	if (!load(&r, name))
+		return 0;
+	for (unsigned i = 0; i < r.n; i++)
+		if (r.a[i].heap == 0 && r.a[i].size == 2048 && r.a[i].addr > MESH_VBO)
+			return r.a[i].addr;
+	return 0;
 }
 
-static void tri_moved(void)
+static void tri_scene(const char *name, const struct tdraw *td, unsigned n, uint32_t clear, unsigned frames,
+		      void (*more)(unsigned))
 {
-	struct sgx_frame f = FRAME(moved_v, 1, 0xff4080bf, false);
-	scene("tri_moved", &f, 1, NULL, 0);
+	load(&mixref, "mix");
+	rec_table = table_of(name);
+	CHECK(rec_table, "%s: no index table", name);
+	scene(name, td, n, clear, frames, more, 0);
 }
 
-static void tri_color(void)
-{
-	struct sgx_frame f = FRAME(tri_v, 1, 0xffbf4080, false);
-	scene("tri_color", &f, 1, NULL, 0);
-}
+static const struct tdraw tri_d[] = { FLAT(MESH_VBO, 3) };
+static const struct tdraw two_d[] = { FLAT(MESH_VBO, 6) };
+static const struct tdraw blend_d[] = { FLAT_BLEND(MESH_VBO, 3) };
 
-static void tri_blend(void)
-{
-	struct sgx_frame f = FRAME(tri_v, 1, 0xff4080bf, true);
-	scene("tri_blend", &f, 1, NULL, 0);
-}
-
-static void tri_two(void)
-{
-	struct sgx_frame f = FRAME(two_v, 2, 0xff4080bf, false);
-	scene("tri_two", &f, 1, NULL, 0);
-}
+static void tri_tq(void) { tri_scene("tri_tq", tri_d, 1, CLEAR, 1, flat_only); }
+static void tri_read(void) { tri_scene("tri_read_tq", tri_d, 1, CLEAR, 1, flat_only); }
+static void tri_moved(void) { tri_scene("tri_moved_tq", tri_d, 1, CLEAR, 1, flat_only); }
+static void tri_color(void) { tri_scene("tri_color_tq", tri_d, 1, 0xffbf4080, 1, flat_only); }
+static void tri_blend(void) { tri_scene("tri_blend_tq", blend_d, 1, CLEAR, 1, flat_only); }
+static void tri_two(void) { tri_scene("tri_two_tq", two_d, 1, CLEAR, 1, flat_only); }
 
 /* The vendor appends every frame to its rings and the native code
  * rewrites frame one's place in them, so where a second frame's bytes
  * depend on where in a ring it is, they must equal the first frame's. */
 static const struct { uint32_t addr, size; const char *name; } rings[] = {
-	{ 0x00078000, 0x5000, "VDM control stream ring" },
-	{ 0x0007d000, 0x32000, "vertex ring" },
-	{ 0x000af000, 0x32000, "index ring" },
-	{ 0x0e802000, 0xc800, "PDS vertex ring" },
-	{ 0x0e810000, 0xc800, "MTE copy ring" },
-	{ 0x0dc08000, 0x19000, "PDS pixel ring" },
-	{ 0x0f400000, 0x400, "tile-store code ring" },
+	{ SGX_SCENE_VDM, SGX_SCENE_VDM_SIZE, "VDM control stream ring" },
+	{ SGX_SCENE_CLEAR & ~0xfffu, 0x32000, "vertex ring" },
+	{ 0x000ef000, 0x32000, "index ring" },
+	{ SGX_SCENE_PV, SGX_SCENE_PV_SIZE, "PDS vertex ring" },
+	{ SGX_SCENE_MT, SGX_SCENE_MT_SIZE, "MTE copy ring" },
+	{ SGX_SCENE_PP, SGX_SCENE_PP_SIZE, "PDS pixel ring" },
+	{ SGX_SCENE_TILE_STORE0 & ~0xfffu, 0x400, "tile-store code ring" },
 };
 
 static void second_frame(unsigned n)
@@ -441,7 +519,12 @@ static void second_frame(unsigned n)
 	uint32_t stream = rec_word(cur, fa, cmd_at(fa) + 0x4e4);
 	sub(SGX_SCENE_MTE_LAUNCH, 4, cur, fa, stream + 4, "the vendor's frame 2 first MTE launch");
 	for (unsigned i = 0; i < sizeof rings / sizeof rings[0]; i++)
-		sub(rings[i].addr, rings[i].size, cur, 1, rings[i].addr, rings[i].name);
+		if (rings[i].addr != SGX_SCENE_VDM)
+			sub(rings[i].addr, rings[i].size, cur, 1, rings[i].addr, rings[i].name);
+		else {
+			sub(rings[i].addr, 4, cur, 1, rings[i].addr, rings[i].name);
+			sub(rings[i].addr + 8, rings[i].size - 8, cur, 1, rings[i].addr + 8, rings[i].name);
+		}
 	for (unsigned k = 2; k <= n; k++) {
 		uint32_t at = cmd_at(k), first = cmd_at(k - 2);
 		sub(at + 0x010, 4, cur, k - 2, first + 0x010, "frame 1 background PDS offset");
@@ -465,36 +548,154 @@ static void second_frame(unsigned n)
 	sub(SGX_SCENE_DETAILS + 0x54, 4, cur, 0, SGX_SCENE_DETAILS + 0x54, "frame 1 pixel-event PDS offset");
 }
 
-static void tri_read2(void)
+static void tri_frame2(unsigned n)
 {
-	struct sgx_frame f[2] = { FRAME(tri_v, 1, 0xff4080bf, false), FRAME(tri_v, 1, 0xff4080bf, false) };
-	scene("tri_read2", f, 2, second_frame, 0);
+	flat_only(n);
+	second_frame(n);
 }
+
+static void tri_read2(void) { tri_scene("tri_read2_tq", tri_d, 1, CLEAR, 2, tri_frame2); }
 
 static struct rec gap;
 
 static void moved_target(unsigned n)
 {
-	sub(SGX_SCENE_TILE_STORE0, 8, &gap, n, SGX_SCENE_TILE_STORE0, "tri_read_gap");
-	sub(SGX_SCENE_TILE_STORE1, 8, &gap, n, SGX_SCENE_TILE_STORE1, "tri_read_gap");
-	sub(SGX_SCENE_BG_TEXTURE, 4, &gap, n, SGX_SCENE_BG_TEXTURE, "tri_read_gap");
+	flat_only(n);
+	sub(SGX_SCENE_TILE_STORE0, 8, &gap, n, SGX_SCENE_TILE_STORE0, "tri_read_tq_gap");
+	sub(SGX_SCENE_TILE_STORE1, 8, &gap, n, SGX_SCENE_TILE_STORE1, "tri_read_tq_gap");
+	sub(SGX_SCENE_BG_TEXTURE, 4, &gap, n, SGX_SCENE_BG_TEXTURE, "tri_read_tq_gap");
 }
 
-/* tri_read_gap moved the whole General heap, the render target first,
- * 1 MiB up; of what it changed, only the target's words concern the
- * scene here, which keeps its other buffers where tri_read had them. */
+/* tri_read_tq_gap moved the whole General heap, the render target with
+ * it, 1 MiB up; of what it changed, only the target's words concern the
+ * scene here, which keeps its other buffers where tri_read_tq had them. */
 static void retarget(void)
 {
-	if (!load(&gap, "tri_read_gap"))
+	if (!load(&gap, "tri_read_tq_gap"))
 		return;
-	uint32_t moved = 0;
+	uint32_t moved_to = 0;
 	for (unsigned i = 0; i < gap.n; i++)
-		if (gap.a[i].index == 10)
-			moved = gap.a[i].addr;
-	CHECK(moved == SGX_SCENE_PBUFFER + 0x100000, "tri_read_gap target at %08x", moved);
-	struct sgx_frame f = FRAME(tri_v, 1, 0xff4080bf, false);
-	scene("tri_read", &f, 1, moved_target, moved);
-	CHECK(sgx_draw_get_target() == moved, "target");
+		if (gap.a[i].index == 77)
+			moved_to = gap.a[i].addr;
+	CHECK(moved_to == SGX_SCENE_PBUFFER + 0x100000, "tri_read_tq_gap target at %08x", moved_to);
+	load(&mixref, "mix");
+	rec_table = table_of("tri_read_tq");
+	scene("tri_read_tq", tri_d, 1, CLEAR, 1, moved_target, moved_to);
+	CHECK(sgx_draw_get_target() == moved_to, "target");
+}
+
+/* --- the mesh and the textured draws */
+
+/* mix's flat draws hold stale driver memory in five words of their
+ * vertex-secondary constants (a CPU address of the lab and four small
+ * numbers); mesh, the same draw, has the clean words, which the native
+ * code writes. */
+static unsigned flat_consts[4], nflat;
+
+static void clean_consts(unsigned n)
+{
+	static const uint8_t stale[] = { 1, 6, 7, 8, 9 };
+	for (unsigned i = 0; i < nflat; i++)
+		for (unsigned k = 0; k < sizeof stale; k++)
+			sub(flat_consts[i] + 4 * stale[k], 4, &meshref, 0, FIRST_FLAT_CONSTS + 4 * stale[k], "mesh's clean constants");
+}
+
+static void mesh_subs(unsigned n)
+{
+	flat_only(n);
+}
+
+static void mix_subs(unsigned n)
+{
+	clean_consts(n);
+}
+
+static void mix2_subs(unsigned n)
+{
+	clean_consts(n);
+	second_frame(n);
+}
+
+static const struct tdraw mesh_d[] = { FLAT(MESH_VBO, 516) };
+static const struct tdraw mix_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), TEX(Q(6), 6, TB, 0x80),
+				      TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw minus_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw plus_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), TEX(Q(6), 6, TB, 0x80),
+				       TEX(Q(12), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw tex3_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), TEX(Q(6), 6, TB, 0x80),
+				       TEX(Q(12), 6, TC, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+/* Textures get their memory in the order they are first drawn. */
+static const struct tdraw swap_d[] = { FLAT(MESH_VBO, 516), TEX(Q(6), 6, TA, 0x80), TEX(Q(0), 6, TB, 0xff),
+				       TEX(Q(18), 192, TB, 0xbf) };
+static const struct tdraw alpha_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), TEX(Q(6), 6, TB, 0x40),
+					TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw back_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), FLAT(MESH_VBO, 180),
+				       TEX(Q(6), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+
+static void mix_scene(const char *name, const struct tdraw *td, unsigned n, unsigned frames, void (*more)(unsigned))
+{
+	load(&meshref, "mesh");
+	load(&mixref, "mix");
+	nflat = 0;
+	/* Where each flat draw's constants land: the first after its state
+	 * block, a later one after its vertex program and block. */
+	uint32_t pv = SGX_SCENE_PV + SGX_SCENE_PV_PREFIX;
+	for (unsigned i = 0; i < n; i++) {
+		if (!td[i].tex && !i) {
+			flat_consts[nflat++] = pv + 0x60;
+			pv += 0x60 + 0x80;
+		} else if (!td[i].tex) {
+			flat_consts[nflat++] = pv + 0x60 + 0x40;
+			pv += 0x60 + 0x40 + 0x80;
+		} else {
+			bool after_flat = !td[i - 1].tex;
+			pv += 0x60 + (after_flat ? 0x40 : 0x20);
+			if (after_flat || td[i - 1].tex != td[i].tex)
+				pv += 0x80;
+		}
+	}
+	scene(name, td, n, CLEAR, frames, more, 0);
+}
+
+static void mesh(void)
+{
+	load(&mixref, "mix");
+	rec_table = table_of("mesh");
+	scene("mesh", mesh_d, 1, CLEAR, 1, mesh_subs, 0);
+}
+
+static void mix(void) { mix_scene("mix", mix_d, 4, 1, mix_subs); }
+static void mix_minus(void) { mix_scene("mix_minus", minus_d, 3, 1, mix_subs); }
+static void mix_plus(void) { mix_scene("mix_plus", plus_d, 5, 1, mix_subs); }
+static void mix_tex(void) { mix_scene("mix_tex", mix_d, 4, 1, mix_subs); }
+static void mix_tex3(void) { mix_scene("mix_tex3", tex3_d, 5, 1, mix_subs); }
+static void mix_swap(void) { mix_scene("mix_swap", swap_d, 4, 1, mix_subs); }
+static void mix_alpha(void) { mix_scene("mix_alpha", alpha_d, 4, 1, mix_subs); }
+static void mix_back(void) { mix_scene("mix_back", back_d, 5, 1, mix_subs); }
+static void mix2(void) { mix_scene("mix2", mix_d, 4, 2, mix2_subs); }
+
+/* The GPU goes off between the frames, as when the watch sleeps: a
+ * frame asked for meanwhile is refused without touching anything, and
+ * the next frame after the start goes on from the scene in memory as if
+ * nothing had happened. */
+static void power_cycle(unsigned frame)
+{
+	if (frame != 1)
+		return;
+	running = false;
+	uint32_t ctl = *P(SGX_SCENE_CCB_CTL), kicks = kick_no, details = *P(SGX_SCENE_DETAILS + 0x18);
+	struct sgx_frame f = frame_of(mix_d, 4, CLEAR);
+	struct sgx_times t;
+	CHECK(!sgx_draw_frame(&f, &t), "a frame while the GPU is off");
+	CHECK(*P(SGX_SCENE_CCB_CTL) == ctl && kick_no == kicks && *P(SGX_SCENE_DETAILS + 0x18) == details,
+	      "the refused frame touched the scene");
+	running = true;
+}
+
+static void mix2_power(void)
+{
+	between = power_cycle;
+	mix_scene("mix2", mix_d, 4, 2, mix2_subs);
 }
 
 /* --- what holds without recordings */
@@ -515,33 +716,89 @@ static void tables(void)
 		for (unsigned j = 0; j < SGX_SCENE_ALLOCS; j++)
 			if (r->addr - sgx_scene_allocs[j].addr < sgx_scene_allocs[j].size)
 				a = &sgx_scene_allocs[j];
-		CHECK(a && r->times && r->addr + (r->times - 1) * r->step + 4 * r->words <= a->addr + a->size,
-		      "run %u outside its allocation", i);
+		CHECK(a && a->kind != SGX_SCENE_HOLE && r->times &&
+		      r->addr + (r->times - 1) * r->step + 4 * r->words <= a->addr + a->size, "run %u outside its allocation", i);
 	}
 	CHECK(words * 4 + SGX_SCENE_RUNS * sizeof(struct sgx_scene_run) < 8192, "scene data of %u words", words);
 	for (unsigned i = 0; i < SGX_SCENE_ALLOCS; i++) {
 		const struct sgx_scene_alloc *a = &sgx_scene_allocs[i];
 		CHECK(a->heap < SGX_HEAPS && !(a->align & (a->align - 1)) && !(a->flags & ~0x4fu) && a->size, "allocation %u", i);
 	}
+	CHECK(SGX_DRAW_MAX_VERTS <= SGX_SCENE_INDEX_TABLE, "vertices a draw may have");
+	/* The most a frame can put into each ring. */
+	CHECK(SGX_SCENE_VDM_PREFIX + SGX_DRAW_MAX_DRAWS * 40 + 2 * 28 <= SGX_SCENE_VDM_SIZE &&
+	      SGX_SCENE_PV_PREFIX + SGX_DRAW_MAX_DRAWS * 0x140 <= SGX_SCENE_PV_SIZE &&
+	      SGX_SCENE_MT_PREFIX + SGX_DRAW_MAX_DRAWS * 0x80 <= SGX_SCENE_MT_SIZE &&
+	      SGX_SCENE_PP_PREFIX + SGX_DRAW_MAX_DRAWS * 0x80 <= SGX_SCENE_PP_SIZE &&
+	      SGX_SCENE_PC_PREFIX + SGX_DRAW_MAX_DRAWS * 0x40 <= SGX_SCENE_PC_SIZE, "ring sizes");
+}
+
+static bool frame(const struct tdraw *td, unsigned n, uint32_t clear)
+{
+	struct sgx_frame f = frame_of(td, n, clear);
+	struct sgx_times t;
+	return sgx_draw_frame(&f, &t);
 }
 
 static void own_frames(void)
 {
 	CHECK(sgx_draw_setup(), "setup");
 	CHECK(sgx_draw_get_target() == SGX_SCENE_PBUFFER, "first target");
-	CHECK(!frame(tri_v, 0, 0, false) && !frame(two_v, SGX_DRAW_MAX_TRIS + 1, 0, false), "triangle count limits");
-	CHECK(frame(tri_v, 1, 0xff4080bf, false), "frame 1");
-	CHECK(*P(SGX_SCENE_CCB_CTL) == 2 * CMD_SIZE && *P(SGX_SCENE_RT_PENDING) == 2, "kicks of a frame");
+	uint32_t vgpu;
+	float *v = sgx_draw_vertices(2048 * 24, &vgpu);
+	CHECK(v && vgpu == SGX_SCENE_VERTICES, "vertex room");
+	for (unsigned i = 0; i < 2048 * 6; i++)
+		v[i] = (float)(i % 7) * 0.1f;
+	const struct tdraw first_tex[] = { TEX(vgpu, 6, TA, 255) };
+	const struct tdraw flat_flat[] = { FLAT(vgpu, 3), FLAT(vgpu, 3) };
+	const struct tdraw two_blends[] = { FLAT_BLEND(vgpu, 3), TEX(vgpu, 6, TA, 1), FLAT(vgpu, 3) };
+	const struct tdraw odd[] = { FLAT(vgpu, 4) };
+	const struct tdraw many[] = { FLAT(vgpu, SGX_DRAW_MAX_VERTS + 3) };
+	CHECK(!frame(first_tex, 1, 0) && !frame(flat_flat, 2, 0) && !frame(two_blends, 3, 0) && !frame(odd, 1, 0) &&
+	      !frame(many, 1, 0) && !frame(tri_d, 0, 0), "refusals");
+	struct sgx_draw bad = { .verts = vgpu, .count = 6, .kind = SGX_DRAW_TEXTURED, .blend = true, .tex = TA,
+				.width = 320, .height = 320, .alpha = 9 };
+	struct sgx_draw fl = { .verts = vgpu, .count = 3 };
+	struct sgx_draw pair[2] = { fl, bad };
+	struct sgx_frame f = { 0, pair, 2 };
+	struct sgx_times t;
+	pair[1].blend = false;
+	CHECK(!sgx_draw_frame(&f, &t), "a textured draw without blending");
+	pair[1] = bad;
+	pair[1].width = 256;
+	CHECK(!sgx_draw_frame(&f, &t), "a power-of-two texture");
+	pair[1] = bad;
+	pair[1].tex += 64;
+	CHECK(!sgx_draw_frame(&f, &t), "a texture off a page");
+	pair[1] = bad;
+	pair[1].linear = true;
+	CHECK(sgx_draw_frame(&f, &t), "a linear texture");
+	CHECK(P(SGX_SCENE_PC + SGX_SCENE_PC_PREFIX)[2] == sgx_scene_sampling[1], "linear sampling word");
+	CHECK(kick_no == 2 && *P(SGX_SCENE_CCB_CTL) == 2 * CMD_SIZE && *P(SGX_SCENE_RT_PENDING) == 2, "kicks of a frame");
 	CHECK(P(SGX_SCENE_CCB)[SHARED / 4] & 1 && P(SGX_SCENE_CCB + CMD_SIZE)[SHARED / 4] & 1, "ready");
 	CHECK(P(SGX_SCENE_SURFACE_SYNC)[0] == 1 && P(SGX_SCENE_TA3D_SYNC)[0] == 1, "sync counters");
 	uint32_t rt1 = P(SGX_SCENE_CCB)[0x58 / 4];
-	CHECK(frame(two_v, 2, 0, true), "frame 2");
+	/* The most draws a frame may have, each the biggest kind. */
+	struct sgx_draw most[SGX_DRAW_MAX_DRAWS];
+	most[0] = fl;
+	for (unsigned i = 1; i < SGX_DRAW_MAX_DRAWS; i++) {
+		most[i] = i % 2 ? bad : fl;
+		most[i].count = SGX_DRAW_MAX_VERTS - 2;
+		most[i].tex += 0x1000 * i;
+	}
+	f = (struct sgx_frame){ 0xff000000, most, SGX_DRAW_MAX_DRAWS };
+	CHECK(sgx_draw_frame(&f, &t), "frame of %u draws", SGX_DRAW_MAX_DRAWS);
 	CHECK(P(SGX_SCENE_CCB + 2 * CMD_SIZE)[0x58 / 4] != rt1, "render targets alternate");
 	/* Enough frames to wrap the TA command ring twice. */
 	for (unsigned i = 0; i < 60; i++)
-		CHECK(frame(tri_v, 1, i, i & 1), "frame %u", i + 3);
+		CHECK(frame(i & 1 ? mix_d : tri_d, i & 1 ? 4 : 1, i), "frame %u", i + 3);
 	CHECK(*P(SGX_SCENE_CCB_CTL) == (124 * CMD_SIZE) % 0x10000, "ring offset");
 	CHECK(P(SGX_SCENE_SURFACE_SYNC)[0] == 62 && P(SGX_SCENE_SURFACE_SYNC)[1] == 62, "surface sync");
+	CHECK(!sgx_draw_vertices(SGX_SCENE_VERTICES_SIZE + 1, &vgpu) && sgx_draw_vertices(16, &vgpu) &&
+	      vgpu == SGX_SCENE_VERTICES, "vertex room starts again after a frame");
+	void *cpu;
+	uint32_t aux = sgx_draw_alloc(409600, &cpu);
+	CHECK(aux && cpu == P(aux) && aux >= 0x00127000, "memory of the GPU's own");
 	uint32_t gpu = sgx_draw_map(0x8a000000u, 2 * 409600);
 	CHECK(gpu && sgx_draw_map(0x8a000000u + 409600, 409600) == gpu + 409600 && !sgx_draw_map(0x8a000001u, 4096),
 	      "mapping");
@@ -549,11 +806,7 @@ static void own_frames(void)
 	CHECK(immediate(P(SGX_SCENE_TILE_STORE0)) == gpu + 409600 && immediate(P(SGX_SCENE_TILE_STORE1)) == gpu + 409600 &&
 	      *P(SGX_SCENE_BG_TEXTURE) == gpu + 409600, "target words");
 	CHECK(P(SGX_SCENE_TILE_STORE0)[0] >> 21 == 3, "tile-store register kept");
-	struct sgx_frame f = FRAME(tri_v, 1, 0, false);
-	struct sgx_times t;
-	uint32_t at = *P(SGX_SCENE_CCB_CTL);
-	CHECK(sgx_draw_frame(&f, &t), "frame into a mapped buffer");
-	(void)at;
+	CHECK(frame(tri_d, 1, 0), "frame into a mapped buffer");
 }
 
 static void wrong_place(void)
@@ -574,7 +827,7 @@ int main(void)
 	run("own frames", own_frames);
 	run("refusal", wrong_place);
 	char flat[512];
-	snprintf(flat, sizeof flat, "%s/tri/manifest.json", recordings);
+	snprintf(flat, sizeof flat, "%s/mix/flat.txt", recordings);
 	FILE *f = fopen(flat, "r");
 	if (f)
 		fclose(f);
@@ -582,14 +835,25 @@ int main(void)
 		printf("sgx_draw_test: %s, recordings not compared\n", !lib ? "no vendor library" : "no recordings");
 	} else {
 		CHECK(sgx_crc32(0, lib + SGX_FILE_FIRST, SGX_FILE_END - SGX_FILE_FIRST) == SGX_FILE_CRC, "library");
-		run("tri", tri);
-		run("tri_read", tri_read);
-		run("tri_moved", tri_moved);
-		run("tri_color", tri_color);
-		run("tri_blend", tri_blend);
-		run("tri_two", tri_two);
-		run("tri_read2", tri_read2);
-		run("tri_read_gap", retarget);
+		run("tri_tq", tri_tq);
+		run("tri_read_tq", tri_read);
+		run("tri_moved_tq", tri_moved);
+		run("tri_color_tq", tri_color);
+		run("tri_blend_tq", tri_blend);
+		run("tri_two_tq", tri_two);
+		run("tri_read2_tq", tri_read2);
+		run("tri_read_tq_gap", retarget);
+		run("mesh", mesh);
+		run("mix", mix);
+		run("mix_minus", mix_minus);
+		run("mix_plus", mix_plus);
+		run("mix_tex", mix_tex);
+		run("mix_tex3", mix_tex3);
+		run("mix_swap", mix_swap);
+		run("mix_alpha", mix_alpha);
+		run("mix_back", mix_back);
+		run("mix2", mix2);
+		run("mix2 with the GPU off between the frames", mix2_power);
 	}
 	if (failures)
 		return 1;
