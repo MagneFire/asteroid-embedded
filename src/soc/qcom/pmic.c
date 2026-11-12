@@ -100,7 +100,7 @@ void power_off_arm(void)
 
 bool power_key(void)
 {
-	return pmic_read(PON_INT_RT_STS) & BIT(0);
+	return (pmic_read(PON_INT_RT_STS) & BIT(0)) || (board->key2.gpio && !gpio_get(board->key2.gpio));
 }
 
 /* The key also raises a PMIC interrupt on both edges, which reaches the
@@ -135,8 +135,21 @@ static void spmi_periph_irq(void)
 	}
 }
 
+static void key2_edge(unsigned n)
+{
+	gpio_irq_ack(n);
+	key_irq = true;
+}
+
 void power_key_irq_init(void)
 {
+	if (board->key2.gpio) {
+		gpio_config(board->key2.gpio, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
+		gpio_irq_config(board->key2.gpio, GPIO_IRQ_EDGE_BOTH, key2_edge);
+		gpio_irq_enable(board->key2.gpio, true);
+		if (board->key2.mpm)
+			wake_pin(board->key2.mpm, true, false);
+	}
 	pon_apid = spmi_apid(0, 0x08);
 	if (pon_apid < 0) {
 		log_printf("pmic: no interrupt mapping for the power key\n");
@@ -158,6 +171,8 @@ bool power_key_irq(void)
 	if (!key_irq)
 		return false;
 	key_irq = false;
+	if (pon_apid < 0)
+		return true;
 	pmic_write(PON_INT_LATCHED_CLR, PON_KPDPWR);
 	spmi_irq_clear(pon_apid, spmi_irq_status(pon_apid));
 	spmi_irq_enable(pon_apid, true);

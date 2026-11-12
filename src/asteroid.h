@@ -152,6 +152,7 @@ void uart_stats(unsigned uart, uint32_t *rx, uint32_t *tx, uint32_t *errors);
 #define GPIO_IRQ_LEVEL_HIGH 1
 #define GPIO_IRQ_EDGE_FALLING 2
 #define GPIO_IRQ_EDGE_RISING 3
+#define GPIO_IRQ_EDGE_BOTH 4
 void gpio_irq_init(void);
 void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n));
 void gpio_irq_enable(unsigned n, bool on);

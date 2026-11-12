@@ -35,7 +35,7 @@ void gpio_set(unsigned n, unsigned v)
 #define INTR_RAW_STATUS		BIT(4)
 #define INTR_TARGET_APPS	(4u << 5)
 #define IRQ_TLMM_SUMMARY	(32 + 208)
-#define MAX_PIN_IRQS		4
+#define MAX_PIN_IRQS		8
 
 static struct { unsigned pin; void (*fn)(unsigned n); } pin_irqs[MAX_PIN_IRQS];
 static unsigned npin_irqs;
@@ -61,6 +61,7 @@ void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
 	case GPIO_IRQ_LEVEL_HIGH: v |= INTR_POLARITY_HIGH; break;
 	case GPIO_IRQ_EDGE_RISING: v |= INTR_POLARITY_HIGH | 1u << INTR_DETECT_SHIFT; break;
 	case GPIO_IRQ_EDGE_FALLING: v |= INTR_POLARITY_HIGH | 2u << INTR_DETECT_SHIFT; break;
+	case GPIO_IRQ_EDGE_BOTH: v |= INTR_POLARITY_HIGH | 3u << INTR_DETECT_SHIFT; break;
 	default: break;
 	}
 	unsigned i = 0;

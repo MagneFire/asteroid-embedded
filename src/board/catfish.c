@@ -24,6 +24,7 @@ const struct board board_catfish = {
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},
 	.pmic_mpm = 62,
+	.key2 = { .gpio = 98, .mpm = 38 },
 	.usb_phy_init = { 0x73 },
 	/* SMB231 on BLSP1 QUP1, its STAT line on gpio 95. */
 	.battery_driver = &battery_smb231,

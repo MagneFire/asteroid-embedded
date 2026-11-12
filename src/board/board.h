@@ -241,6 +241,11 @@ struct board {
 		bool usb_disturbs;
 	} gauge;
 
+	/* A second key, low while pressed, that does what the power key does. */
+	struct {
+		uint8_t gpio, mpm;
+	} key2;
+
 	/* A charger of its own, with the cell's numbers from the hub. */
 	struct {
 		struct board_i2c i2c;
