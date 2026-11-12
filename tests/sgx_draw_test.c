@@ -405,7 +405,7 @@ static struct sgx_frame frame_of(const struct tdraw *td, unsigned n, uint32_t cl
 	for (unsigned i = 0; i < n; i++)
 		d[i] = (struct sgx_draw){ .verts = td[i].verts, .count = td[i].count, .kind = td[i].tex ? SGX_DRAW_TEXTURED : 0,
 					  .blend = td[i].blend, .tex = td[i].tex, .width = 320, .height = 320,
-					  .alpha = td[i].alpha };
+					  .alpha = td[i].alpha, .tiled = true };
 	return (struct sgx_frame){ clear, d, n };
 }
 
@@ -760,7 +760,7 @@ static void own_frames(void)
 	CHECK(!frame(first_tex, 1, 0) && !frame(flat_flat, 2, 0) && !frame(two_blends, 3, 0) && !frame(odd, 1, 0) &&
 	      !frame(many, 1, 0) && !frame(tri_d, 0, 0) && sgx_draw_refused() && !kick_no, "refusals");
 	struct sgx_draw bad = { .verts = vgpu, .count = 6, .kind = SGX_DRAW_TEXTURED, .blend = true, .tex = TA,
-				.width = 320, .height = 320, .alpha = 9 };
+				.width = 320, .height = 320, .alpha = 9, .tiled = true };
 	struct sgx_draw fl = { .verts = vgpu, .count = 3 };
 	struct sgx_draw pair[2] = { fl, bad };
 	struct sgx_frame f = { 0, pair, 2 };
@@ -773,6 +773,10 @@ static void own_frames(void)
 	pair[1] = bad;
 	pair[1].tex += 64;
 	CHECK(!sgx_draw_frame(&f, &t), "a texture off a page");
+	pair[1] = bad;
+	pair[1].tiled = false;
+	pair[1].linear = true;
+	CHECK(!sgx_draw_frame(&f, &t), "a linear texture of rows");
 	pair[1] = bad;
 	pair[1].linear = true;
 	CHECK(sgx_draw_frame(&f, &t), "a linear texture");
@@ -817,6 +821,12 @@ static void own_frames(void)
 	      "data caches invalidated by the first kick: %x %x", caches[(kick_no - 2) % 8], caches[(kick_no - 1) % 8]);
 	sgx_draw_inval_data(false);
 	CHECK(frame(tri_d, 1, 0) && !caches[(kick_no - 2) % 8], "data caches no longer invalidated");
+	pair[1] = bad;
+	pair[1].tiled = false;
+	f = (struct sgx_frame){ 0, pair, 2 };
+	CHECK(sgx_draw_frame(&f, &t), "a texture of rows");
+	CHECK(P(SGX_SCENE_PC + SGX_SCENE_PC_PREFIX)[2] == 0x80020138 &&
+	      P(SGX_SCENE_PC + SGX_SCENE_PC_PREFIX)[3] == 0xed13f13f, "texture of rows state");
 }
 
 /* A frame that times out leaves the scene stuck, and every frame after

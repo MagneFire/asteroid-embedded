@@ -45,6 +45,9 @@ enum { WRITE_PENDING, WRITE_DONE, READ_PENDING, READ_DONE, READ2_PENDING, READ2_
 #define TEX_PROGRAM_ADDR	10
 #define TEX_PROGRAM_SAMPLING	2
 #define TEX_PROGRAM_SIZE	3
+/* A texture of rows, sampled as the driver samples its own surface. */
+#define ROWS_STRIDE		0x80020000
+#define ROWS_SIZE		0xe0000000
 #define ALPHA_WORD		9
 
 static const uint32_t rtdata[2] = { SGX_SCENE_RTDATA0, SGX_SCENE_RTDATA1 };
@@ -52,6 +55,7 @@ static const uint32_t regions[2] = { SGX_SCENE_REGIONS0, SGX_SCENE_REGIONS1 };
 
 static struct sgx_mem *mem;
 static bool ready, stuck, refused, inval;
+static uint8_t rows_format = 0x0d;
 static uint32_t gen, ccb_at, kicks, scenes, rt, target, cache, launches, verts_used;
 static struct { uint32_t phys, size, gpu; } maps[4];
 static unsigned nmaps;
@@ -180,6 +184,8 @@ void sgx_draw_discard(void) { verts_used = 0; }
 void sgx_draw_inval_data(bool on) { inval = on; }
 
 bool sgx_draw_inval_data_on(void) { return inval; }
+
+void sgx_draw_rows_format(uint8_t format) { rows_format = format; }
 
 void sgx_draw_target(uint32_t gpu_addr)
 {
@@ -396,6 +402,7 @@ static bool valid(const struct sgx_frame *f)
 			if (i && (d->blend || f->draws[i - 1].kind != SGX_DRAW_TEXTURED))
 				return false;
 		} else if (d->kind != SGX_DRAW_TEXTURED || !d->blend || d->tex & (SGX_PAGE - 1) || d->width % 32 ||
+			   (d->linear && !d->tiled) ||
 			   d->width > 2048 || !d->height || d->height > 2048 || power_of_two(d->width) ||
 			   power_of_two(d->height)) {
 			return false;
@@ -411,13 +418,18 @@ static uint32_t texture_program(const struct sgx_draw *d, const struct sgx_draw 
 	for (unsigned j = 0; j < i; j++) {
 		const struct sgx_draw *e = &draws[j];
 		if (e->kind == SGX_DRAW_TEXTURED && e->tex == d->tex && e->width == d->width && e->height == d->height &&
-		    e->linear == d->linear)
+		    e->linear == d->linear && e->tiled == d->tiled)
 			return slots[j];
 	}
-	uint32_t p[16];
+	uint32_t p[16], size = (uint32_t)(d->width - 1) << 12 | (uint32_t)(d->height - 1);
 	memcpy(p, sgx_scene_tex_program, sizeof p);
-	p[TEX_PROGRAM_SAMPLING] = sgx_scene_sampling[d->linear];
-	p[TEX_PROGRAM_SIZE] = SGX_SCENE_TEX_FORMAT | (uint32_t)(d->width - 1) << 12 | (uint32_t)(d->height - 1);
+	if (d->tiled) {
+		p[TEX_PROGRAM_SAMPLING] = sgx_scene_sampling[d->linear];
+		p[TEX_PROGRAM_SIZE] = SGX_SCENE_TEX_FORMAT | size;
+	} else {
+		p[TEX_PROGRAM_SAMPLING] = ROWS_STRIDE | ((uint32_t)(d->width - 1) & ~7u);
+		p[TEX_PROGRAM_SIZE] = ROWS_SIZE | (uint32_t)rows_format << 24 | size;
+	}
 	p[TEX_PROGRAM_ADDR] = d->tex;
 	put(pc, p, 16);
 	pc += 0x40;
@@ -478,7 +490,7 @@ static void put_draws(const struct sgx_frame *f)
 				state(b, 4);
 			}
 			if (prev->kind == SGX_DRAW_FLAT || prev->tex != d->tex || prev->width != d->width ||
-			    prev->height != d->height || prev->linear != d->linear)
+			    prev->height != d->height || prev->linear != d->linear || prev->tiled != d->tiled)
 				vertex_secondary();
 		}
 		index_list(d->count, program);

@@ -20,7 +20,9 @@
  * when it is the only flat one; textured draws blend premultiplied
  * (colour + target * (1 - alpha)). A texture is width * height texels
  * of bytes R, G, B, A, rows of width * 4 bytes, page aligned; widths a
- * multiple of 32 and neither side a power of two. */
+ * multiple of 32 and neither side a power of two. A tiled one is laid
+ * out as the vendor's driver lays out its own textures, in tiles of
+ * 32x32 texels, and only it may be sampled linearly. */
 #ifndef SGX_DRAW_H
 #define SGX_DRAW_H
 #include <stdint.h>
@@ -41,6 +43,7 @@ struct sgx_draw {
 	uint16_t width, height;
 	uint8_t alpha;		/* the texels times alpha / 255 */
 	bool linear;
+	bool tiled;
 };
 
 struct sgx_frame {
@@ -79,4 +82,6 @@ bool sgx_draw_refused(void);
 /* Every frame's first kick also invalidates the GPU's data caches. */
 void sgx_draw_inval_data(bool on);
 bool sgx_draw_inval_data_on(void);
+/* The format byte of the texture state for textures of rows. */
+void sgx_draw_rows_format(uint8_t format);
 #endif

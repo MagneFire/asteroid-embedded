@@ -1138,12 +1138,105 @@ static void sgx_tri(const char *arg)
 	say("geometry %lu us, render %lu us\n", t.ta_us, t.render_us);
 }
 
+/* A 320x320 texture of rows drawn over the whole back buffer, texel for
+ * pixel, each texel holding its place: bytes x, y, the high bits of
+ * both, 255. A few pixels read back show in the log whether texels land
+ * where they belong and in which byte order, for the format byte given
+ * in hex (0d if none). */
+static void sgx_tex(const char *arg)
+{
+	static uint32_t tex_gpu, tex_gen;
+	static uint8_t *tex;
+	static const uint16_t at[][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 37, 5 }, { 300, 17 }, { 160, 160 }, { 7, 290 },
+					  { 319, 319 } };
+	const uint32_t bytes = SGX_DRAW_SIZE * SGX_DRAW_SIZE * 4;
+	char *end;
+	unsigned long format = *arg ? strtoul(arg, &end, 16) : 0x0d;
+	if (*arg && (*end || format > 0xff)) {
+		say("usage: sgx tex [format byte]\n");
+		return;
+	}
+	struct sgx_times t;
+	uint32_t *buf = display_backbuffer(), fb_gpu, vgpu;
+	float *v;
+	bool was = sgx_running();
+	if (!sgx_start()) {
+		say("failed, see the log\n");
+		return;
+	}
+	bool set = sgx_draw_setup();
+	if (tex_gen != sgx_generation())
+		tex_gpu = 0;
+	if (set && !tex_gpu && (tex_gpu = sgx_draw_alloc(bytes, (void **)&tex)))
+		tex_gen = sgx_generation();
+	if (!set || !tex_gpu || !(fb_gpu = sgx_draw_map(FB_BASE, FB_SIZE)) ||
+	    !(v = sgx_draw_vertices(3 * 24 + 6 * 16, &vgpu))) {
+		if (!was)
+			sgx_stop();
+		say("failed, see the log\n");
+		return;
+	}
+	for (uint32_t y = 0; y < SGX_DRAW_SIZE; y++)
+		for (uint32_t x = 0; x < SGX_DRAW_SIZE; x++) {
+			uint8_t *p = &tex[(y * SGX_DRAW_SIZE + x) * 4];
+			p[0] = (uint8_t)x;
+			p[1] = (uint8_t)y;
+			p[2] = (uint8_t)(x >> 8 | (y >> 8) << 4);
+			p[3] = 255;
+		}
+	/* A flat triangle of no area first, as a frame starts with one. */
+	memset(v, 0, 3 * 24);
+	static const float quad[6][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
+	float *q = v + 18;
+	for (unsigned i = 0; i < 6; i++, q += 4) {
+		q[0] = quad[i][0] * 2.0f - 1.0f;
+		q[1] = quad[i][1] * 2.0f - 1.0f;
+		q[2] = quad[i][0];
+		q[3] = quad[i][1];
+	}
+	const struct sgx_draw d[2] = {
+		{ .verts = vgpu, .count = 3, .kind = SGX_DRAW_FLAT },
+		{ .verts = vgpu + 72, .count = 6, .kind = SGX_DRAW_TEXTURED, .blend = true, .tex = tex_gpu,
+		  .width = SGX_DRAW_SIZE, .height = SGX_DRAW_SIZE, .alpha = 255 },
+	};
+	const struct sgx_frame f = { 0xff000000, d, 2 };
+	uint32_t gpu = fb_gpu + ((uint32_t)(uintptr_t)buf - FB_BASE);
+	dcache_clean_invalidate_range(buf, bytes);
+	sgx_draw_rows_format((uint8_t)format);
+	sgx_draw_target(gpu);
+	bool ok = sgx_draw_frame(&f, &t);
+	sgx_draw_rows_format(0x0d);
+	if (!ok) {
+		log_printf("sgx: %s\n", sgx_draw_failure());
+		if (sgx_draw_refused()) {
+			if (!was)
+				sgx_stop();
+		} else {
+			sgx_log_state();
+			sgx_halt();
+		}
+	}
+	dcache_invalidate_range(buf, bytes);
+	if (!ok) {
+		say("no frame, see the log\n");
+		return;
+	}
+	display_flip();
+	frame_hold(10000);
+	for (unsigned i = 0; i < ARRAY_SIZE(at); i++)
+		log_printf("sgx: format %02lx: pixel %u,%u holds %08lx\n", format, at[i][0], at[i][1],
+			   buf[at[i][1] * fb.stride + at[i][0]]);
+	say("geometry %lu us, render %lu us\n", t.ta_us, t.render_us);
+}
+
 static void cmd_sgx(const char *args)
 {
 	struct sgx_info i;
 	args = skip_spaces(args);
 	if (!strncmp(args, "tri", 3) && (!args[3] || args[3] == ' ')) {
 		sgx_tri(skip_spaces(args + 3));
+	} else if (!strncmp(args, "tex", 3) && (!args[3] || args[3] == ' ')) {
+		sgx_tex(skip_spaces(args + 3));
 	} else if (!strcmp(args, "off")) {
 		sgx_compose(false);
 		say("off\n");
@@ -1161,7 +1254,7 @@ static void cmd_sgx(const char *args)
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri [rrggbb] | ui [on | off] | inval [on | off]]\n");
+		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1219,7 +1312,7 @@ static const struct command commands[] = {
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
-	{ "sgx", "[off | state | tri [rrggbb] | ui [on | off] | inval [on | off]]", cmd_sgx },
+	{ "sgx", "[off | state | tri [rrggbb] | tex [format] | ui [on | off] | inval [on | off]]", cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };
