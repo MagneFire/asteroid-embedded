@@ -229,13 +229,18 @@ int i2c_init(unsigned qup, unsigned sda, unsigned scl, unsigned func, uint32_t b
 	if (qup < 1 || qup > 6)
 		return -3;
 	struct bus *b = &buses[qup - 1];
+	uint32_t clk_ctl = 3u << 8 | ((19200000 / bus_hz) / 2 - 3);
+	/* A second device on a bus that is set up, which a reset would cut
+	 * off in the middle of a transfer. */
+	if (b->base && b->sda == sda && b->scl == scl && b->func == func && b->clk_ctl == clk_ctl)
+		return 0;
 	b->base = chip->qup1 + (qup - 1) * 0x1000;
 	b->sda = sda;
 	b->scl = scl;
 	b->func = func;
 	clocks_on(qup);
 	pins_to_qup(b);
-	b->clk_ctl = 3u << 8 | ((19200000 / bus_hz) / 2 - 3);
+	b->clk_ctl = clk_ctl;
 	uint32_t io = readl(b->base + QUP_IO_MODE);
 	unsigned out_blk = (io & 3) ? (io & 3) * 16 : 16;
 	b->fifo_entries = out_blk / 2 * (2u << ((io >> 2) & 7));
@@ -455,10 +460,17 @@ void i2c_poll(unsigned qup)
 
 static void sync_done(int err, void *ctx) { *(volatile int *)ctx = err; }
 
+/* A transfer started from an interrupt, on a bus another device shares,
+ * is waited for first. */
+#define BUSY_WAIT_MS	50
+
 int i2c_xfer(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {
 	volatile int result = 1;
-	int ret = i2c_start(qup, addr, w, wn, r, rn, sync_done, (void *)&result);
+	uint32_t t0 = time_ms();
+	int ret;
+	while ((ret = i2c_start(qup, addr, w, wn, r, rn, sync_done, (void *)&result)) == -4 && time_ms() - t0 < BUSY_WAIT_MS)
+		i2c_poll(qup);
 	if (ret)
 		return ret;
 	while (result == 1)
