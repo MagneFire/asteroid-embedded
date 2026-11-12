@@ -156,6 +156,11 @@ void frame_sleep(void)
 		gpu_suspend();
 		gpu_off = true;
 	}
+#ifdef SGX_BASE
+	/* The console can start the SGX after frames stopped using it. */
+	else
+		gpu_suspend();
+#endif
 }
 
 void frame_wake(void)
