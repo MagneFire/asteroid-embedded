@@ -87,6 +87,8 @@ UI_FEATURES_apollo3 := mcu
 UI_PROFILE_apollo3 := mcu
 # Only the minnow build sets glyph_bins.
 UI_CFG_apollo3 := --check-cfg cfg(glyph_bins)
+# For tools/ui-mcu/size.py.
+LDFLAGS_apollo3 := -Wl,-Map,$(BUILD)/asteroid.map
 # Panic locations name their files: keep the paths short.
 UI_RUSTFLAGS_apollo3 := --remap-path-prefix=$(CURDIR)/= --remap-path-prefix=$(HOME)/.cargo/registry/src/=
 
@@ -169,7 +171,7 @@ $(BUILD)/asteroid.ld: $(LDS) src/soc/$(SOC)/memmap.h
 	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/$(SOC) $< -o $@
 
 $(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/asteroid.ld
-	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_$(SOC)) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
 	$(SIZE) $@
 
 $(BUILD)/asteroid.bin: $(BUILD)/asteroid.elf
