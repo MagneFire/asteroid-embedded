@@ -1,0 +1,73 @@
+/* What main does for this SoC: the core at 48 MHz with the flash cache
+ * on, interrupts, time and the pads. Without an MMU or a data cache in
+ * front of SRAM there is no memory map to set up and no cache to keep. */
+#include "asteroid.h"
+
+#define CACHECFG		(CACHECTRL_BASE + 0x00)
+#define CACHE_ENABLE		BIT(0)
+#define CACHE_1WAY_1024		(8u << 4)
+#define CACHE_ICACHE		BIT(8)
+#define CACHE_DCACHE		BIT(9)
+#define CACHE_CLKGATE		BIT(10)
+#define CACHE_DATA_CLKGATE	BIT(20)
+#define FPCCR_ASPEN_LSPEN	(3u << 30)
+
+void mmu_init(void) {}
+void mmu_map(uint32_t from, uint32_t to, uint32_t attr) {}
+void soc_memory_map(void) {}
+void dcache_clean_range(const void *addr, uint32_t size) {}
+void dcache_invalidate_range(const void *addr, uint32_t size) {}
+void dcache_clean_invalidate_range(const void *addr, uint32_t size) {}
+void dcache_clean_invalidate_all(void) {}
+
+void cpu_clock_init(void)
+{
+	writel(CLKKEY, CLKGEN_CLKKEY);
+	writel(0, CLKGEN_CCTRL);
+	writel(0, CLKGEN_CLKKEY);
+	writel(readl(CACHECFG) & ~(CACHE_ICACHE | CACHE_DCACHE), CACHECFG);
+	writel(CACHE_CLKGATE | CACHE_DATA_CLKGATE | CACHE_1WAY_1024 | CACHE_ICACHE | CACHE_DCACHE, CACHECFG);
+	writel(readl(CACHECFG) | CACHE_ENABLE, CACHECFG);
+	writel(readl(FPU_FPCCR) | FPCCR_ASPEN_LSPEN, FPU_FPCCR);
+}
+
+void cpu_clock_log(void)
+{
+	log_printf("clock: core %u Hz, chip %08lx rev %08lx, supply %08lx, power %08lx, boot loader %08lx\n",
+		   CORE_HZ, readl(MCUCTRL_CHIPPN), readl(MCUCTRL_CHIPREV), readl(PWRCTRL_SUPPLYSTATUS),
+		   readl(PWRCTRL_DEVPWRSTATUS), readl(MCUCTRL_BOOTLOADER));
+}
+
+/* One speed: the burst mode's 96 MHz is not used. */
+static bool slow;
+void cpu_clock_slow(bool on) { slow = on; }
+void cpu_clock_idle(bool on) {}
+bool cpu_clock_is_slow(void) { return slow; }
+void cpu_clock_park(void) {}
+void cpu_clock_unpark(void) {}
+
+void soc_init(void)
+{
+	cpu_clock_init();
+	irq_ctrl_init();
+	timer_init();
+	gpio_init();
+	swdbox_init();
+}
+
+void soc_board_init(void)
+{
+	for (const struct board_mcu_pad *p = board->mcu_pads; p && p->func != 0xff; p++)
+		pad_config(p->pad, p->func, p->flags);
+	log_printf("boot: %s\n", boot_reason());
+}
+
+/* No PMIC of its own: the application processor's has the charger and
+ * the supplies. */
+uint8_t pmic_read(uint32_t addr) { return 0; }
+void pmic_write(uint32_t addr, uint8_t val) {}
+int regulator_on(uint32_t id, uint32_t uv) { return -1; }
+int regulator_off(uint32_t id) { return -1; }
+bool vbus_present(void) { return false; }
+void vbus_irq_init(void) {}
+bool vbus_irq(void) { return false; }

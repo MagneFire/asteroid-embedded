@@ -1,0 +1,40 @@
+/* The memory map: the image runs from flash above the boot loader, and
+ * everything it writes is in the 384 KiB of SRAM. The log region sits at
+ * the top of SRAM, outside what start.S clears, so that it survives a
+ * warm reset and the application processor can read it over SWD. The
+ * last flash pages hold the settings, and the ones below them are left
+ * to the vendor's own data. The UI has no layers: it draws straight to
+ * the panel, a few lines at a time. */
+#ifndef MEMMAP_H
+#define MEMMAP_H
+
+#define FLASH_BASE		0x00000000
+#define FLASH_END		0x00100000
+#define FLASH_PAGE		0x2000
+#define IMG_BASE		0x0000c000	/* below it the boot loader, never written */
+#define IMG_END			0x000f6000
+#define STORE_FLASH_BASE	0x000fc000	/* two pages of settings */
+#define STORE_FLASH_SIZE	0x00004000
+
+#define SRAM_BASE		0x10000000
+#define SRAM_END		0x10060000
+#define RAMOOPS_BASE		0x1005b000	/* log and fault record, kept across a warm reset */
+#define RAMOOPS_SIZE		0x00004800
+#define SWD_BOX_BASE		0x1005f800	/* the console over SWD */
+#define SWD_BOX_SIZE		0x00000800
+#define DRAM0_END		RAMOOPS_BASE	/* the stack ends below this */
+
+#define UI_HEAP_SIZE		0x00020000
+#define UI_LAYER_BASE		0
+#define UI_LAYER_STRIDE		0
+#define UI_LAYER_SIZE		0
+
+#if !defined(LINKER_SCRIPT) && !defined(__ASSEMBLER__)
+#include <stdint.h>
+extern uint8_t ui_heap[];
+#define UI_HEAP_BASE		((uintptr_t)ui_heap)
+_Static_assert(IMG_END <= STORE_FLASH_BASE && STORE_FLASH_BASE + STORE_FLASH_SIZE <= FLASH_END, "store outside flash");
+_Static_assert(RAMOOPS_BASE + RAMOOPS_SIZE <= SWD_BOX_BASE && SWD_BOX_BASE + SWD_BOX_SIZE <= SRAM_END,
+	       "log region overlaps the SWD box");
+#endif
+#endif

@@ -1,0 +1,49 @@
+/* A Cortex-M image: code and constants in flash from IMG_BASE, where the
+ * boot loader jumps through the vector table, data copied to SRAM by
+ * start.S. SRAM from the bss up holds the UI heap and the stack; the log
+ * region above DRAM0_END is never cleared. The Makefile runs this
+ * through the C preprocessor. */
+#include "memmap.h"
+MEMORY
+{
+    FLASH (rx)  : ORIGIN = IMG_BASE, LENGTH = IMG_END - IMG_BASE
+    SRAM (rwx)  : ORIGIN = SRAM_BASE, LENGTH = DRAM0_END - SRAM_BASE
+}
+ENTRY(_start)
+SECTIONS
+{
+    .text : {
+        KEEP(*(.vectors))
+        *(.text*)
+        *(.rodata*)
+        . = ALIGN(4);
+    } > FLASH
+    .data : {
+        . = ALIGN(4);
+        __data_start = .;
+        *(.ramfunc*) *(.data*)
+        . = ALIGN(4);
+        __data_end = .;
+    } > SRAM AT > FLASH
+    __data_load = LOADADDR(.data);
+    __image_end = __data_load + SIZEOF(.data);
+    .bss (NOLOAD) : {
+        . = ALIGN(4);
+        __bss_start = .;
+        *(.bss*) *(COMMON)
+        . = ALIGN(8);
+        ui_heap = .;
+        . += UI_HEAP_SIZE;
+        . = ALIGN(4);
+        __bss_end = .;
+    } > SRAM
+    .stack (NOLOAD) : {
+        . = ALIGN(8);
+        __stack_bottom = .;
+        . += 16384;
+        __stack_top = .;
+        __stack_svc_top = .;
+    } > SRAM
+    __ram_end = .;
+    /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
+}
