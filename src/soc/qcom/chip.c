@@ -47,6 +47,7 @@ const struct qcom_chip chip_8026 = {
 	.usb_ahb_cbcr = 0x0488,
 	.usb_system_rcgr = 0x0490,
 	.dsi = 0xfd922800,
+	.gpu = 0xfdb00000,
 	.cnoc = true,
 	.imem_dload = true,
 };
@@ -102,6 +103,7 @@ const struct qcom_chip chip_8009 = {
 	.usb_system_rcgr = 0x41010,
 	.dsi = IO(0x01ac8000),
 	.mdp3 = IO(0x01a00000),
+	.gpu = IO(0x01c00000),
 	.pon_restart_reason = true,
 };
 

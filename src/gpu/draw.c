@@ -261,7 +261,7 @@ static bool upload(struct gpu_shader *s)
 		return false;
 	memset(p, 0, n * 4);
 	memcpy(p, s->code, s->ndwords * 4);
-	s->addr = (uint32_t)(uintptr_t)p;
+	s->addr = dma_addr(p);
 	return true;
 }
 
@@ -324,9 +324,9 @@ static void restore(void)
 void gpu_draw_begin(const struct gpu_target *t)
 {
 	if (!pvt_mem) {
-		pvt_mem = (uint32_t)(uintptr_t)gpu_alloc(0x4000, 4096);
+		pvt_mem = dma_addr(gpu_alloc(0x4000, 4096));
 		fence_ptr = gpu_alloc(32, 32);
-		fence = (uint32_t)(uintptr_t)fence_ptr;
+		fence = dma_addr(fence_ptr);
 	}
 	uint32_t w = t->width, h = t->height, pitch_px = t->pitch_bytes / 4;
 	target_w = w;
@@ -344,7 +344,7 @@ void gpu_draw_begin(const struct gpu_target *t)
 	for (int i = 0; i < 4; i++) {
 		if (i == 0)
 			reg(REG_RB_MRT_BUF_INFO(0), 2, RB_R8G8B8A8_UNORM | RB_MRT_BUF_INFO_SWAP(t->rgba ? SWAP_WZYX : SWAP_WXYZ) |
-			    RB_MRT_BUF_INFO_PITCH(t->pitch_bytes), RB_MRT_BUF_BASE(t->base));
+			    RB_MRT_BUF_INFO_PITCH(t->pitch_bytes), RB_MRT_BUF_BASE(t->base + phys_offset));
 		else
 			reg(REG_RB_MRT_BUF_INFO(i), 2, 0, 0);
 		reg(REG_SP_FS_IMAGE_OUTPUT_REG(i), 1, i == 0 ? RB_R8G8B8A8_UNORM : 0);
@@ -502,7 +502,7 @@ void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, con
 		if (!vs->attr[i].compmask || (int)i > last)
 			continue;
 		unsigned size = attr_ncomp[i] * 4, next = (int)i != last;
-		reg(REG_VFD_FETCH_INSTR_0(j), 2, VFD_FETCH_INSTR_0(size, stride, next, j), vbo_addr + off);
+		reg(REG_VFD_FETCH_INSTR_0(j), 2, VFD_FETCH_INSTR_0(size, stride, next, j), vbo_addr + phys_offset + off);
 		reg(REG_VFD_DECODE_INSTR(j), 1, VFD_DECODE_INSTR(vs->attr[i].compmask, VFMT_32_FLOAT + attr_ncomp[i] - 1,
 		    SWAP_WZYX, vs->attr[i].regid, size, next));
 		total += __builtin_popcount(vs->attr[i].compmask);
@@ -567,7 +567,7 @@ void gpu_draw_texture_format(int unit, uint32_t addr, uint32_t width, uint32_t h
 	pkt3(CP_LOAD_STATE, 2 + MIP_LEVELS);
 	out(LOAD_STATE_0(MIP_LEVELS * slot, SS_DIRECT, SB_FRAG_MIPADDR, MIP_LEVELS));
 	out(ST_CONSTANTS);
-	out(addr);
+	out(addr + phys_offset);
 	for (int i = 1; i < MIP_LEVELS; i++)
 		out(0);
 }

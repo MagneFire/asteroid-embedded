@@ -1,9 +1,12 @@
-/* Adreno 305B. The GPU sits behind its own power domain (OXILICX GDSC in
- * the multimedia clock controller) and three clock branches; its core
- * and OCMEM clocks are RPM resources. Once powered it is configured as
- * the Linux driver does for this revision (VBIF limits, RBBM, CP
- * protection), the command processor's two microcode images are loaded
- * from the system partition (PM4 for the micro engine, PFP for the
+/* Adreno 305B on the APQ8026, Adreno 304 on the APQ8009W. The 305B sits
+ * behind its own power domain (OXILICX GDSC in the multimedia clock
+ * controller) and three clock branches; its core and OCMEM clocks are
+ * RPM resources. The 304's clocks and power domain are in the GCC, and
+ * it reaches memory through an SMMU whose clocks have to run. Once
+ * powered it is configured as the Linux driver does for the revision
+ * (VBIF limits, RBBM, CP protection), the command processor's two
+ * microcode images are loaded from the vendor files (PM4 for the micro
+ * engine, PFP for the
  * prefetch parser, the first word of each file being a version), the
  * micro engine is released and initialised with CP_ME_INIT, and
  * commands flow through a ring buffer in uncached DRAM: type-0 packets
@@ -15,7 +18,7 @@
 #include "a3xx.h"
 #include "a3xx_ring.h"
 
-#define GPU_BASE		0xfdb00000u
+#define GPU_BASE		(chip->gpu)
 #define IRQ_GPU			(32 + 33)
 #define MMSS_OXILI_GFX3D_CBCR	(MMSS_CC_BASE + 0x4028)
 #define MMSS_OXILICX_BCR	(MMSS_CC_BASE + 0x4030)
@@ -29,6 +32,21 @@
 #define GDSC_PWR_ON		BIT(31)
 #define CBCR_ENABLE		BIT(0)
 #define CBCR_OFF		BIT(31)
+#define CBCR_RETAIN		(BIT(13) | BIT(14))
+
+#define GCC_SMMU_VOTE		GCC(0x4500c)
+#define SMMU_VOTE_GPU		(BIT(2) | BIT(3))
+#define SMMU_VOTE_SHARED	(BIT(12) | BIT(13))
+#define GCC_BIMC_GFX_CBCR	GCC(0x31024)
+#define GCC_BIMC_GPU_CBCR	GCC(0x31040)
+#define GCC_GFX3D_CMD_RCGR	GCC(0x59000)
+#define GFX3D_GPLL0_DIV4	0x107
+#define GCC_OXILI_GFX3D_CBCR	GCC(0x59020)
+#define GCC_OXILI_AHB_CBCR	GCC(0x59028)
+#define GCC_OXILI_GDSCR		GCC(0x5901c)
+#define GDSC_HW_CONTROL		BIT(1)
+#define GDSC_WAITS_MASK		(0xfffu << 12)
+#define GDSC_WAITS_8009		(2u << 20 | 8u << 16 | 2u << 12)
 
 #define RPM_CLK2		0x326b6c63u
 #define RPM_KEY_SWEN		0x6e657773u
@@ -168,8 +186,37 @@ static bool branch_on(uint32_t cbcr)
 	return false;
 }
 
+static bool a304(void) { return chip == &chip_8009; }
+
+static bool power_on_8009(void)
+{
+	writel(readl(GCC_SMMU_VOTE) | SMMU_VOTE_GPU | SMMU_VOTE_SHARED, GCC_SMMU_VOTE);
+	writel(GFX3D_GPLL0_DIV4, GCC_GFX3D_CMD_RCGR + 4);
+	writel(readl(GCC_GFX3D_CMD_RCGR) | 1, GCC_GFX3D_CMD_RCGR);
+	for (int i = 0; i < 1000 && (readl(GCC_GFX3D_CMD_RCGR) & 1); i++)
+		delay_us(1);
+	uint32_t g = readl(GCC_OXILI_GDSCR);
+	if (!(g & GDSC_PWR_ON)) {
+		g &= ~(GDSC_SW_COLLAPSE | GDSC_HW_CONTROL | GDSC_WAITS_MASK);
+		writel(g | GDSC_WAITS_8009, GCC_OXILI_GDSCR);
+		uint32_t t0 = time_ms();
+		while (!(readl(GCC_OXILI_GDSCR) & GDSC_PWR_ON))
+			if (time_ms() - t0 > 100) {
+				log_printf("gpu: power domain stays off (%08lx)\n", readl(GCC_OXILI_GDSCR));
+				return false;
+			}
+	}
+	writel(readl(GCC_OXILI_GFX3D_CBCR) | CBCR_RETAIN, GCC_OXILI_GFX3D_CBCR);
+	delay_us(1);
+	/* The GPU's own branches only run with its power domain up. */
+	return branch_on(GCC_OXILI_GFX3D_CBCR) && branch_on(GCC_OXILI_AHB_CBCR) && branch_on(GCC_BIMC_GFX_CBCR) &&
+	       branch_on(GCC_BIMC_GPU_CBCR);
+}
+
 static bool power_on(void)
 {
+	if (a304())
+		return power_on_8009();
 	uint32_t kvp[6] = { RPM_KEY_SWEN, 4, 1, RPM_KEY_KHZ, 4, 200000 };
 	rpm_request(RPM_CLK2, RPM_CLK_GFX3D, kvp, 2);
 	uint32_t g = readl(MMSS_OXILICX_GDSCR);
@@ -197,7 +244,8 @@ static void load_ucode(uint32_t addr_reg, uint32_t data_reg, const uint32_t *fw,
 bool gpu_init(void)
 {
 	uint32_t pm4_len, pfp_len;
-	const uint32_t *pm4 = firmware_get("a330_pm4.fw", &pm4_len), *pfp = firmware_get("a330_pfp.fw", &pfp_len);
+	const uint32_t *pm4 = firmware_get(a304() ? "a300_pm4.fw" : "a330_pm4.fw", &pm4_len);
+	const uint32_t *pfp = firmware_get(a304() ? "a300_pfp.fw" : "a330_pfp.fw", &pfp_len);
 	if (!pm4 || !pfp || pm4_len < 8 || pfp_len < 24) {
 		log_printf("gpu: no microcode, not started\n");
 		return false;
@@ -205,13 +253,15 @@ bool gpu_init(void)
 	if (!power_on())
 		return false;
 	uint32_t ver = gpu_read(REG_RBBM_HW_VERSION);
-	log_printf("gpu: powered, hw version %08lx, gdsc %08lx\n", ver, readl(MMSS_OXILICX_GDSCR));
+	log_printf("gpu: powered, hw version %08lx, gdsc %08lx\n", ver, readl(a304() ? GCC_OXILI_GDSCR : MMSS_OXILICX_GDSCR));
 
-	gpu_write(REG_VBIF_IN_RD_LIM_CONF0, 0x00181818);
-	gpu_write(REG_VBIF_IN_WR_LIM_CONF0, 0x00181818);
-	gpu_write(REG_VBIF_OUT_RD_LIM_CONF0, 0x00000018);
-	gpu_write(REG_VBIF_OUT_WR_LIM_CONF0, 0x00000018);
-	gpu_write(REG_VBIF_DDR_OUT_MAX_BURST, 0x00000303);
+	if (!a304()) {
+		gpu_write(REG_VBIF_IN_RD_LIM_CONF0, 0x00181818);
+		gpu_write(REG_VBIF_IN_WR_LIM_CONF0, 0x00181818);
+		gpu_write(REG_VBIF_OUT_RD_LIM_CONF0, 0x00000018);
+		gpu_write(REG_VBIF_OUT_WR_LIM_CONF0, 0x00000018);
+		gpu_write(REG_VBIF_DDR_OUT_MAX_BURST, 0x00000303);
+	}
 	gpu_write(REG_VBIF_ROUND_ROBIN_QOS_ARB, 0x0003);
 	gpu_write(REG_RBBM_GPU_BUSY_MASKED, 0xffffffff);
 	gpu_write(REG_RBBM_SP_HYST_CNT, 0x10);
@@ -230,7 +280,7 @@ bool gpu_init(void)
 	memset((void *)ring, 0, RING_WORDS * 4);
 	wptr = submitted = 0;
 	gpu_write(REG_CP_RB_CNTL, 12 | 2 << 8 | CP_RB_CNTL_NO_UPDATE);
-	gpu_write(REG_CP_RB_BASE, (uint32_t)(uintptr_t)ring);
+	gpu_write(REG_CP_RB_BASE, dma_addr(ring));
 	gpu_write(REG_CP_PROTECT_CTRL, 0x00000007);
 	static const uint32_t protect[] = {
 		0x63000040, 0x62000080, 0x600000cc, 0x60000108, 0x64000140, 0x66000400, 0x65000700,
@@ -242,7 +292,7 @@ bool gpu_init(void)
 	gpu_write(REG_CP_DEBUG, CP_DEBUG_DYNAMIC_CLK_DISABLE | CP_DEBUG_MIU_128BIT_WRITE);
 	load_ucode(REG_CP_ME_RAM_WADDR, REG_CP_ME_RAM_DATA, pm4, pm4 + pm4_len / 4);
 	load_ucode(REG_CP_PFP_UCODE_ADDR, REG_CP_PFP_UCODE_DATA, pfp, pfp + pfp_len / 4);
-	gpu_write(REG_CP_QUEUE_THRESHOLDS, 0x003e2008);
+	gpu_write(REG_CP_QUEUE_THRESHOLDS, a304() ? 0x000e0602 : 0x003e2008);
 	gpu_write(REG_CP_ME_CNTL, 0);
 
 	static const uint32_t me_init[] = {
@@ -267,7 +317,7 @@ bool gpu_selftest(void)
 	emit(CP_TYPE0(REG_CP_SCRATCH_REG(2), 1));
 	emit(0x5eed0001);
 	emit(CP_TYPE3(CP_MEM_WRITE, 2));
-	emit((uint32_t)(uintptr_t)scratch);
+	emit(dma_addr(scratch));
 	emit(0xc0ffee42);
 	emit(CP_TYPE3(CP_WAIT_FOR_IDLE, 1));
 	emit(0);
@@ -294,6 +344,15 @@ void gpu_suspend(void)
 	irq_mask(IRQ_GPU);
 	gpu_write(REG_CP_ME_CNTL, CP_ME_CNTL_HALT);
 	ready = false;
+	if (a304()) {
+		writel(readl(GCC_OXILI_GFX3D_CBCR) & ~CBCR_ENABLE, GCC_OXILI_GFX3D_CBCR);
+		writel(readl(GCC_OXILI_AHB_CBCR) & ~CBCR_ENABLE, GCC_OXILI_AHB_CBCR);
+		writel(readl(GCC_OXILI_GDSCR) | GDSC_SW_COLLAPSE, GCC_OXILI_GDSCR);
+		writel(readl(GCC_BIMC_GPU_CBCR) & ~CBCR_ENABLE, GCC_BIMC_GPU_CBCR);
+		writel(readl(GCC_BIMC_GFX_CBCR) & ~CBCR_ENABLE, GCC_BIMC_GFX_CBCR);
+		writel(readl(GCC_SMMU_VOTE) & ~SMMU_VOTE_GPU, GCC_SMMU_VOTE);
+		return;
+	}
 	writel(readl(MMSS_OXILI_GFX3D_CBCR) & ~CBCR_ENABLE, MMSS_OXILI_GFX3D_CBCR);
 	writel(readl(MMSS_OXILICX_AXI_CBCR) & ~CBCR_ENABLE, MMSS_OXILICX_AXI_CBCR);
 	writel(readl(MMSS_OXILICX_AHB_CBCR) & ~CBCR_ENABLE, MMSS_OXILICX_AHB_CBCR);
