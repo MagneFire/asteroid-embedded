@@ -60,6 +60,15 @@ void pad_config(unsigned p, unsigned func, unsigned flags)
 	set_pad(p, padreg, cfg, flags & PAD_STRONG ? 1 : 0);
 }
 
+void pad_set(const struct board_mcu_pad *p)
+{
+	if (p->flags & (PAD_OUT_HIGH | PAD_OUT_LOW)) {
+		gpio_set(p->pad, (p->flags & PAD_OUT_HIGH) != 0);
+		gpio_config(p->pad, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	} else
+		pad_config(p->pad, p->func, p->flags);
+}
+
 /* A GPIO on any pad; func is ignored, as every pad has the GPIO on 3.
  * Interrupts stay off until gpio_irq_config sets an edge. */
 void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma)

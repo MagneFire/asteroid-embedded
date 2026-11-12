@@ -117,8 +117,13 @@
 /* A chip select pad: which IOM's select it carries is its output
  * mode, 0-3, from the datasheet's table. */
 #define PAD_NCE(outcfg)		(BIT(5) | (outcfg) << 6)
+/* A GPIO driven from boot on, high or low. */
+#define PAD_OUT_HIGH		BIT(8)
+#define PAD_OUT_LOW		BIT(9)
 #define PAD_FUNC_GPIO		3
 void pad_config(unsigned pad, unsigned func, unsigned flags);
+struct board_mcu_pad;
+void pad_set(const struct board_mcu_pad *p);
 void periph_power(uint32_t bits, bool on);
 /* Spins for at least that many core cycles. */
 void delay_cycles(uint32_t n);

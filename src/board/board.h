@@ -201,7 +201,8 @@ struct board_pad {
 /* A microcontroller's pad set at boot: its number, function and the
  * SoC's PAD_* flags; a function of 0xff ends the list. */
 struct board_mcu_pad {
-	uint8_t pad, func, flags;
+	uint8_t pad, func;
+	uint16_t flags;
 };
 
 struct board {

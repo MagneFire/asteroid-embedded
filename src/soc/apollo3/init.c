@@ -58,7 +58,7 @@ void soc_init(void)
 void soc_board_init(void)
 {
 	for (const struct board_mcu_pad *p = board->mcu_pads; p && p->func != 0xff; p++)
-		pad_config(p->pad, p->func, p->flags);
+		pad_set(p);
 	log_printf("boot: %s\n", boot_reason());
 }
 

@@ -6,8 +6,11 @@
 #include "display/display.h"
 
 /* The panel's SPI master, IOM5: MOSI, SCK, MISO, and its chip select 3
- * on pad 45. */
+ * on pad 45. Pads 4 and 14 go high, as the vendor's firmware has them
+ * from its start on; what they switch is not known. */
 static const struct board_mcu_pad pads[] = {
+	{ 4, PAD_FUNC_GPIO, PAD_OUT_HIGH },
+	{ 14, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 47, 5, PAD_STRONG },
 	{ 48, 5, PAD_STRONG },
 	{ 49, 5, PAD_INPUT },
@@ -36,11 +39,11 @@ static const struct dcs_step panel_on_41[] = {
 	{ 0xfe, 1, 0, { 0x05 } },
 	{ 0xa3, 1, 0, { 0x80 } },
 	{ 0xfe, 1, 0, { 0x00 } },
-	{ 0x31, 4, 0, { 0x00, 0x14, 0x01, 0x53 } },
-	{ 0x30, 4, 0, { 0x00, 0x00, 0x01, 0x67 } },
-	{ 0x12, 0, 0, { 0 } },
 	{ 0x35, 1, 0, { 0x00 } },
 	{ 0x53, 1, 0, { 0x20 } },
+	{ 0x30, 4, 0, { 0x00, 0x00, 0x01, 0x67 } },
+	{ 0x31, 4, 0, { 0x00, 0x14, 0x01, 0x53 } },
+	{ 0x12, 0, 0, { 0 } },
 	{ 0x11, 0, 85, { 0 } },
 	{ 0x29, 0, 0, { 0 } },
 	{ 0xc4, 1, 0, { 0x80 } },
@@ -72,7 +75,7 @@ const struct board board_beluga = {
 		.spi_bus = 5, .spi_cs = 3, .spi_mode = 3, .spi_hz = 48000000, .dc_gpio = 46, .enable_gpio = { 7, 12 },
 		.col_offset = 40,
 	},
-	.touch_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x24 }, .irq = 23, .reset = 22, .power_gpio = 36 },
+	.touch_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x24 }, .irq = 23, .reset = 22 },
 };
 
 /* The 41 mm watch: pad 12 switches the touch controller instead of the
