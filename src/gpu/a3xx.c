@@ -308,7 +308,26 @@ bool gpu_init(void)
 	return ready;
 }
 
+static bool selftest(void);
+
+/* If the Adreno 304 cannot reach memory, its SMMU may still need the
+ * secure world's configuration (device 18, bank 1); that is tried once,
+ * from a fresh start. */
 bool gpu_selftest(void)
+{
+	static bool retried;
+	if (selftest())
+		return true;
+	if (!a304() || retried)
+		return false;
+	retried = true;
+	gpu_suspend();
+	int r = scm_restore_sec_cfg(18, 1);
+	log_printf("gpu: smmu secure config %d, starting again\n", r);
+	return gpu_init() && selftest();
+}
+
+static bool selftest(void)
 {
 	if (!ready)
 		return false;

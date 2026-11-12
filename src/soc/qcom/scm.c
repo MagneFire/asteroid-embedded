@@ -52,11 +52,12 @@ static struct {
 
 /* After its power domain collapsed, a device behind a TZ-managed SMMU
  * (the display is device 1) can't be reached until the secure world has
- * restored its configuration, with the SMMU's clocks running. */
-int scm_restore_sec_cfg(uint32_t device)
+ * restored its configuration, with the SMMU's clocks running. The second
+ * word is a context bank, 0 for the display. */
+int scm_restore_sec_cfg(uint32_t device, uint32_t bank)
 {
 	scm_cmd = (typeof(scm_cmd)){ .len = sizeof scm_cmd, .buf_offset = 16, .resp_hdr_offset = 24,
-				     .id = SCM_SVC_MP << 10 | SCM_RESTORE_SEC_CFG, .req = { device, 0 } };
+				     .id = SCM_SVC_MP << 10 | SCM_RESTORE_SEC_CFG, .req = { device, bank } };
 	dcache_clean_invalidate_range(&scm_cmd, sizeof scm_cmd);
 #if defined(TEST_SCM_FAIL)
 	static bool injected;

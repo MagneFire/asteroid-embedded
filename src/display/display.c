@@ -451,7 +451,7 @@ void display_active(void)
 	clock_set(MDSS_AHB_CBCR, true);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
 		clock_set(mdp_clocks[i], true);
-	int r = scm_restore_sec_cfg(1);
+	int r = scm_restore_sec_cfg(1, 0);
 	if (r) {
 		log_printf("display: secure config not restored (%d)\n", r);
 		reboot_fatal("display: no secure config");

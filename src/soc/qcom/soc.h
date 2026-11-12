@@ -208,7 +208,7 @@ void rpm_bus_votes(void);
 void dload_clear(void);
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
 int scm_wdog_debug_disable(void);
-int scm_restore_sec_cfg(uint32_t device);
+int scm_restore_sec_cfg(uint32_t device, uint32_t bank);
 #endif
 
 #endif
