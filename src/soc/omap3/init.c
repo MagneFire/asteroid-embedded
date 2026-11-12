@@ -8,6 +8,8 @@ void soc_memory_map(void)
 	/* L4 core with the display, wake-up and peripheral modules. */
 	mmu_map(0x48000000, 0x48400000, MMU_DEVICE);
 	mmu_map(0x49000000, 0x49100000, MMU_DEVICE);
+	mmu_map(SGX_BASE, SGX_BASE + 0x100000, MMU_DEVICE);
+	mmu_map(SGX_MEM_BASE, SGX_MEM_BASE + SGX_MEM_SIZE, MMU_RAM_UNCACHED);
 }
 
 void soc_init(void)

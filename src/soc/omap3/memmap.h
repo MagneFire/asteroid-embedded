@@ -27,12 +27,15 @@
 #define SCREENSHOT_SIZE		0x00200000
 #define UI_HEAP_BASE		0x8b000000	/* the Slint heap */
 #define UI_HEAP_SIZE		0x04000000
+#define SGX_MEM_BASE		0x8f000000	/* what the GPU reads and writes, uncached */
+#define SGX_MEM_SIZE		0x01000000
 
 #if !defined(LINKER_SCRIPT) && !defined(__ASSEMBLER__)
 _Static_assert(RAMOOPS_BASE + RAMOOPS_SIZE <= IMG_BASE, "ramoops overlaps the image");
 _Static_assert(IMG_END <= FB_BASE && FB_BASE + FB_SIZE <= UI_LAYER_BASE, "framebuffer overlaps");
 _Static_assert(UI_LAYER_BASE + UI_LAYER_SIZE <= SCREENSHOT_BASE, "layers overlap the screenshot");
 _Static_assert(SCREENSHOT_BASE + SCREENSHOT_SIZE <= UI_HEAP_BASE, "screenshot overlaps the UI heap");
-_Static_assert(UI_HEAP_BASE + UI_HEAP_SIZE <= DRAM_END, "UI heap outside DRAM");
+_Static_assert(UI_HEAP_BASE + UI_HEAP_SIZE <= SGX_MEM_BASE, "UI heap overlaps the GPU's memory");
+_Static_assert(SGX_MEM_BASE + SGX_MEM_SIZE <= DRAM_END, "GPU memory outside DRAM");
 #endif
 #endif

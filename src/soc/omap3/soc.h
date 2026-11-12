@@ -30,6 +30,7 @@ void cpu_supply_low(bool low);
 #define CM_WKUP			(CM_BASE + 0xc00)
 #define CM_CCR			(CM_BASE + 0xd00)
 #define CM_DSS			(CM_BASE + 0xe00)
+#define CM_SGX			(CM_BASE + 0xb00)
 #define CM_PER			(CM_BASE + 0x1000)
 #define CM_FCLKEN		0x00
 #define CM_FCLKEN1		0x00
@@ -51,7 +52,10 @@ void cpu_supply_low(bool low);
 #define PRM_CORE		(PRM_BASE + 0xa00)
 #define PRM_WKUP		(PRM_BASE + 0xc00)
 #define PRM_CCR			(PRM_BASE + 0xd00)
+#define PRM_SGX			(PRM_BASE + 0xb00)
 #define PRM_PER			(PRM_BASE + 0x1000)
+#define PM_PWSTCTRL		0xe0
+#define PM_PWSTST		0xe4
 #define PRM_GLBL		(PRM_BASE + 0x1200)
 #define PRM_CLKSEL		(PRM_CCR + 0x40)	/* the crystal's frequency */
 #define PRM_RSTCTRL		(PRM_GLBL + 0x50)
@@ -76,6 +80,7 @@ void cpu_supply_low(bool low);
 #define IRQ_COUNT		96
 #define IRQ_SYS_NIRQ		7	/* the PMIC */
 #define IRQ_PRCM		11
+#define IRQ_SGX			21
 #define IRQ_DSS			25
 #define IRQ_GPIO(bank)		(28 + (bank))	/* 1 to 6 */
 #define IRQ_GPT1		37
@@ -106,6 +111,7 @@ void cpu_supply_low(bool low);
 #define DSS_BASE		0x48050000u
 #define DISPC_BASE		0x48050400u
 #define DSI_BASE		0x4804fc00u
+#define SGX_BASE		0x50000000u
 
 /* The log region as the vendor kernel's ramoops reads it with this
  * watch's tree: the console ring, then the 1 KiB the kernel calls the
