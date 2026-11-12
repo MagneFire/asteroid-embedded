@@ -379,7 +379,7 @@ export component StopwatchApp {
 
     if !(root.paused && pages.index == 0): PageDot {
         x: (100 * Theme.unit - self.width) / 2;
-        y: 96 * Theme.unit;
+        y: 96 * Theme.unit - Face.chin;
         count: 2;
         current: pages.index;
         size: 2 * Theme.unit;

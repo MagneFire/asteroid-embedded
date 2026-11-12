@@ -356,6 +356,15 @@ pub unsafe extern "C" fn ui_set_board(name: *const u8, len: u32, heart_rate: boo
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_chin(px: u32) {
+    with_ui(|ui| {
+        for screen in &ui.screens {
+            screen.global::<Face>().set_chin(px as f32 / screen.window().scale_factor());
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_connected(connected: bool, bonded: bool) {
     each(|face| {
         face.set_bluetooth_connected(connected);

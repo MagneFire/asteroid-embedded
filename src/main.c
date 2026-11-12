@@ -82,6 +82,8 @@ void main(uint32_t machtype, const void *fdt)
 		stack_set_round(board->panel.round);
 		/* Only a square picture can turn; off otherwise. */
 		rotation_init(fb.width == fb.height ? (int)fb.width : 0);
+		stack_set_chin((int)(fb.height - fb.panel_height));
+		ui_set_chin(fb.height - fb.panel_height);
 		for (unsigned p = 0; p < UI_PANELS; p++)
 			dcache_clean_range(layers + p * (UI_LAYER_STRIDE / 4), fb.stride * fb.height * 4);
 	}

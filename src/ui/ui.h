@@ -203,6 +203,8 @@ void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t week
 		  uint32_t year, uint32_t rtc);
 /* The watch's codename and whether it has a heart rate sensor. */
 void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in);
+/* The lines at the bottom of the picture the panel does not show. */
+void ui_set_chin(uint32_t px);
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
 int ui_app_open(void);

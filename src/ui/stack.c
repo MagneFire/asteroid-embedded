@@ -37,7 +37,7 @@
 #define APP_SNAP_MS	200
 #define APP_KEEP_MS	5000
 #define IND_NEAR	4.8f
-static int edge_px = 40;
+static int edge_px = 40, chin;
 static bool round_panel;
 #define BAND		16
 #define BANDS		32
@@ -73,6 +73,11 @@ void stack_set_edge(int px)
 void stack_set_round(bool round)
 {
 	round_panel = round;
+}
+
+void stack_set_chin(int px)
+{
+	chin = px;
 }
 
 void stack_init(uint32_t width, uint32_t height, const uint32_t *layer_base, uint32_t panel_px)
@@ -651,7 +656,7 @@ static void indicators(void)
 			shown[k][1] = a;
 		}
 		int cx = e == 0 ? (int)in : e == 1 ? W - (int)in : W / 2;
-		int cy = e == 2 ? (int)in : e == 3 ? H - (int)in : H / 2;
+		int cy = e == 2 ? (int)in : e == 3 ? H - chin - (int)in : H / 2;
 		gpu_draw_layer_at((uint32_t)(uintptr_t)tex[k], IND_TEX, IND_TEX, IND_TEX * 4, cx - IND_TEX / 2, cy - IND_TEX / 2,
 				  1.0f);
 	}
