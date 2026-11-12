@@ -1,15 +1,20 @@
 // Slint platform on the firmware: every screen (the watchface, the screens beside it and the
 // overlay) is its own Slint window rendered into its own persistent premultiplied RGBA layer, only
 // where it changed and on the GPU while it is on; the caller places and composites the layers on
-// the GPU. All screens get the same state through their Face global.
+// the GPU. All screens get the same state through their Face global. On Cortex-M there is one
+// window, showing the screen on the display with the overlay over it, drawn line by line straight
+// to the panel where it changed; switching screens rebuilds it.
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, UnsafeCell};
 use core::time::Duration;
+#[cfg(not(feature = "mcu"))]
 use crate::paint::{self, GpuLayer};
-use slint::platform::software_renderer::{MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType};
+#[cfg(not(feature = "mcu"))]
+use slint::platform::software_renderer::PremultipliedRgbaColor;
+use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, Model, PhysicalPosition, PhysicalSize, PlatformError, VecModel};
 
@@ -17,10 +22,14 @@ slint::include_modules!();
 
 unsafe extern "C" {
     fn time_ms() -> u32;
+    #[cfg(not(feature = "mcu"))]
     fn dcache_clean_invalidate_range(addr: *const u8, size: u32);
 }
 
+#[cfg(not(feature = "mcu"))]
 const SCREENS: usize = 7;
+#[cfg(feature = "mcu")]
+const SCREENS: usize = 1;
 const NOTES: usize = 1;
 const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
@@ -34,6 +43,7 @@ static UI: Static<Option<Ui>> = Static(UnsafeCell::new(None));
 
 /// The fonts text is drawn with, scaled to whatever size it asks for, registered in the font
 /// context all windows share before any text is laid out.
+#[cfg(not(feature = "mcu"))]
 static FONTS: [&[u8]; 11] = [
     include_bytes!("../fonts/NotoSans-Light.ttf"),
     include_bytes!("../fonts/NotoSans-Bold.ttf"),
@@ -71,6 +81,7 @@ impl Platform for Firmware {
 
 struct Panel {
     window: Rc<MinimalSoftwareWindow>,
+    #[cfg(not(feature = "mcu"))]
     layer: &'static mut [PremultipliedRgbaColor],
 }
 
@@ -186,6 +197,11 @@ fn rgb(c: slint::Color) -> UiRgb {
 struct Ui {
     screens: Vec<Screen>,
     panels: Vec<Panel>,
+    /// The screen the window shows (Cortex-M).
+    #[cfg(feature = "mcu")]
+    shown: usize,
+    #[cfg(feature = "mcu")]
+    line: Vec<slint::platform::software_renderer::Rgb565Pixel>,
     notes: Rc<VecModel<Note>>,
     forecast: Rc<VecModel<Day>>,
     alarms: Rc<VecModel<AlarmItem>>,
@@ -194,9 +210,25 @@ struct Ui {
     today: Rc<VecModel<AgendaItem>>,
     opened: Queue,
     events: Events,
+    #[cfg(not(feature = "mcu"))]
     stride: usize,
+    #[cfg(not(feature = "mcu"))]
     width: usize,
+    #[cfg(not(feature = "mcu"))]
     height: usize,
+}
+
+impl Ui {
+    /// The screen that shows panel.
+    #[cfg(not(feature = "mcu"))]
+    fn screen(&self, panel: usize) -> &Screen {
+        &self.screens[panel]
+    }
+
+    #[cfg(feature = "mcu")]
+    fn screen(&self, _panel: usize) -> &Screen {
+        &self.screens[0]
+    }
 }
 
 static BUSY: Static<Cell<bool>> = Static(UnsafeCell::new(Cell::new(false)));
@@ -225,6 +257,7 @@ fn pop(queue: &Queue) -> Option<i32> {
     if queue.is_empty() { None } else { Some(queue.remove(0)) }
 }
 
+#[cfg(not(feature = "mcu"))]
 fn open(component: &impl ComponentHandle, layer: *mut u32, stride: usize, width: usize, height: usize) -> Option<Panel> {
     let window = unsafe { &*WINDOWS.0.get() }.borrow_mut().pop()?;
     window.set_size(PhysicalSize::new(width as u32, height as u32));
@@ -234,6 +267,16 @@ fn open(component: &impl ComponentHandle, layer: *mut u32, stride: usize, width:
     unsafe { dcache_clean_invalidate_range(layer.as_ptr() as *const u8, (layer.len() * 4) as u32) };
     window.request_redraw();
     Some(Panel { window, layer })
+}
+
+#[cfg(feature = "mcu")]
+fn open(component: &impl ComponentHandle, width: usize, height: usize) -> Option<Panel> {
+    let window = unsafe { &*WINDOWS.0.get() }.borrow_mut().pop()?;
+    window.set_size(PhysicalSize::new(width as u32, height as u32));
+    crate::fonts::register(&window);
+    component.show().ok()?;
+    window.request_redraw();
+    Some(Panel { window })
 }
 
 #[unsafe(no_mangle)]
@@ -246,15 +289,14 @@ pub unsafe extern "C" fn ui_init(
     width: u32,
     height: u32,
 ) -> bool {
-    if with_ui(|_| ()).is_some()
-        || heap.is_null()
-        || heap_size == 0
-        || layers.is_null()
-        || width == 0
-        || height == 0
-        || stride_px < width
-        || panel_px < stride_px * height
-    {
+    #[cfg(not(feature = "mcu"))]
+    let bad = layers.is_null() || width == 0 || height == 0 || stride_px < width || panel_px < stride_px * height;
+    #[cfg(feature = "mcu")]
+    let bad = {
+        let _ = (layers, panel_px);
+        width == 0 || height == 0
+    };
+    if with_ui(|_| ()).is_some() || heap.is_null() || heap_size == 0 || bad {
         return false;
     }
     unsafe { crate::heap_init(heap, heap_size as usize) };
@@ -262,13 +304,17 @@ pub unsafe extern "C" fn ui_init(
     if slint::platform::set_platform(Box::new(platform)).is_err() {
         return false;
     }
-    let fonts = i_slint_core::context::with_global_context(
-        || Err(PlatformError::NoPlatform),
-        |ctx| FONTS.iter().for_each(|font| ctx.font_context().borrow_mut().register_static_font(font)),
-    );
-    if fonts.is_err() {
-        return false;
+    #[cfg(not(feature = "mcu"))]
+    {
+        let fonts = i_slint_core::context::with_global_context(
+            || Err(PlatformError::NoPlatform),
+            |ctx| FONTS.iter().for_each(|font| ctx.font_context().borrow_mut().register_static_font(font)),
+        );
+        if fonts.is_err() {
+            return false;
+        }
     }
+    #[cfg_attr(feature = "mcu", allow(unused_variables))]
     let (stride, width, height) = (stride_px as usize, width as usize, height as usize);
     let notes = Rc::new(VecModel::default());
     let forecast = Rc::new(VecModel::default());
@@ -287,6 +333,8 @@ pub unsafe extern "C" fn ui_init(
         screen.global::<Icons>().on_get(|name, w, h| crate::icons::icon(&name, w, h));
         screen.global::<Theme>().set_width(width as f32);
         screen.global::<Theme>().set_height(height as f32);
+        #[cfg(feature = "mcu")]
+        screen.set_overlay(true);
         let face = screen.global::<Face>();
         face.set_notes(notes.clone().into());
         face.set_weather_forecast(forecast.clone().into());
@@ -350,17 +398,35 @@ pub unsafe extern "C" fn ui_init(
         face.on_workout(move |start| event(&queue, UI_EVENT_WORKOUT, start as i32));
         let queue = events.clone();
         face.on_date_set(move |day, month, year| event(&queue, UI_EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
-        let layer = unsafe { layers.add(kind * panel_px as usize) };
-        let Some(panel) = open(&screen, layer, stride, width, height) else {
+        #[cfg(not(feature = "mcu"))]
+        let Some(panel) = open(&screen, unsafe { layers.add(kind * panel_px as usize) }, stride, width, height) else {
+            return false;
+        };
+        #[cfg(feature = "mcu")]
+        let Some(panel) = open(&screen, width, height) else {
             return false;
         };
         screens.push(screen);
         panels.push(panel);
     }
-    unsafe {
-        *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, alarms, tiles, agenda, today, opened, events, stride, width, height });
-    }
+    #[cfg(not(feature = "mcu"))]
+    let ui = Ui { screens, panels, notes, forecast, alarms, tiles, agenda, today, opened, events, stride, width, height };
+    #[cfg(feature = "mcu")]
+    let ui = Ui {
+        screens,
+        panels,
+        shown: 0,
+        line: alloc::vec![Default::default(); width],
+        notes,
+        forecast,
+        alarms,
+        tiles,
+        agenda,
+        today,
+        opened,
+        events,
+    };
+    unsafe { *UI.0.get() = Some(ui) };
     true
 }
 
@@ -473,14 +539,14 @@ pub unsafe extern "C" fn ui_set_heart_log(x: *const u16, bpm: *const u8, n: u32)
 /// The app on the app panel, -1 for none.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_open() -> i32 {
-    with_ui(|ui| ui.screens[APP].global::<Face>().get_app()).unwrap_or(-1)
+    with_ui(|ui| ui.screen(APP).global::<Face>().get_app()).unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_set_calc(shown: *const u8, shown_len: u32, length: u32) {
     let shown = unsafe { text(shown, shown_len) };
     with_ui(|ui| {
-        let face = ui.screens[APP].global::<Face>();
+        let face = ui.screen(APP).global::<Face>();
         face.set_calc_shown(shown);
         face.set_calc_length(length as i32);
     });
@@ -500,7 +566,7 @@ pub unsafe extern "C" fn ui_set_game(tiles: *const UiTile, score: u32, best: u32
                 ui.tiles.set_row_data(i, tile);
             }
         }
-        let face = ui.screens[APP].global::<Face>();
+        let face = ui.screen(APP).global::<Face>();
         face.set_game_score(score as i32);
         face.set_game_best(best as i32);
         face.set_game_over(over);
@@ -540,7 +606,7 @@ pub unsafe extern "C" fn ui_set_today(events: *const UiAgenda, n: u32) {
 /// Whether the Flashlight app has its light on.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_flashlight_on() -> bool {
-    with_ui(|ui| ui.screens[APP].global::<Face>().get_flashlight_on()).unwrap_or(false)
+    with_ui(|ui| ui.screen(APP).global::<Face>().get_flashlight_on()).unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
@@ -653,12 +719,12 @@ pub extern "C" fn ui_set_launcher(layout: i32) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_notes_edges() -> u32 {
-    with_ui(|ui| ui.screens[NOTES].global::<Face>().get_notes_edges() as u32).unwrap_or(2 | 16)
+    with_ui(|ui| ui.screen(NOTES).global::<Face>().get_notes_edges() as u32).unwrap_or(2 | 16)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_launcher_edges() -> u32 {
-    with_ui(|ui| ui.screens[LAUNCHER].global::<Face>().get_launcher_edges() as u32).unwrap_or(4)
+    with_ui(|ui| ui.screen(LAUNCHER).global::<Face>().get_launcher_edges() as u32).unwrap_or(4)
 }
 
 /// Which panel the stack has on screen, under any app.
@@ -667,12 +733,26 @@ pub extern "C" fn ui_set_screen(panel: u32) {
     each(|face| face.set_screen(panel as i32));
 }
 
+/// Shows panel in the window, rebuilding it for another screen; the overlay is in every one.
+#[cfg(feature = "mcu")]
+fn show(ui: &mut Ui, panel: usize) {
+    if panel == ui.shown || panel == OVERLAY || panel > APP {
+        return;
+    }
+    ui.shown = panel;
+    // The screen on show goes before the next one is made: the heap may not have room for both.
+    ui.screens[0].set_kind(-1);
+    i_slint_core::window::WindowInner::from_pub(ui.panels[0].window.window()).ensure_tree_instantiated();
+    ui.screens[0].set_kind(panel as i32);
+    ui.panels[0].window.request_redraw();
+}
+
 /// The mesh colours of the launcher page on screen, blended between the two pages it is between;
 /// false for the layouts that keep the mesh grey.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_launcher_colors(out: *mut UiColors) -> bool {
     with_ui(|ui| {
-        let screen = &ui.screens[LAUNCHER];
+        let screen = &ui.screen(LAUNCHER);
         let apps = screen.global::<Apps>().get_list();
         let n = apps.row_count();
         let layout = screen.global::<Face>().get_launcher();
@@ -698,7 +778,7 @@ pub unsafe extern "C" fn ui_launcher_colors(out: *mut UiColors) -> bool {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_app_colors(app: i32, out: *mut UiColors) -> bool {
     with_ui(|ui| {
-        let apps = ui.screens[LAUNCHER].global::<Apps>().get_list();
+        let apps = ui.screen(LAUNCHER).global::<Apps>().get_list();
         let Some(a) = apps.iter().find(|a| a.id == app) else { return false };
         if out.is_null() {
             return false;
@@ -835,16 +915,16 @@ pub extern "C" fn ui_set_app(app: i32) {
 /// How many pages deep the open app is.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_depth() -> i32 {
-    with_ui(|ui| ui.screens[APP].global::<Face>().get_app_depth()).unwrap_or(0)
+    with_ui(|ui| ui.screen(APP).global::<Face>().get_app_depth()).unwrap_or(0)
 }
 
 /// Drags the open app's top page px (screen pixels) to the right, showing the page below.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_peek(px: i32) {
     with_ui(|ui| {
-        let face = ui.screens[APP].global::<Face>();
+        let face = ui.screen(APP).global::<Face>();
         face.set_peeking(true);
-        face.set_peek(px as f32 / ui.screens[APP].window().scale_factor());
+        face.set_peek(px as f32 / ui.screen(APP).window().scale_factor());
     });
 }
 
@@ -853,7 +933,7 @@ pub extern "C" fn ui_app_peek(px: i32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_app_peek_end(back: bool) {
     with_ui(|ui| {
-        let face = ui.screens[APP].global::<Face>();
+        let face = ui.screen(APP).global::<Face>();
         if back && face.get_app_depth() > 0 {
             face.set_back_count(face.get_back_count() + 1);
         } else {
@@ -888,7 +968,7 @@ pub unsafe extern "C" fn ui_set_weather(
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_modal() -> bool {
     with_ui(|ui| {
-        let face = ui.screens[OVERLAY].global::<Face>();
+        let face = ui.screen(OVERLAY).global::<Face>();
         face.get_notification_shown() || face.get_passkey() >= 0 || face.get_alarm_ringing()
     }).unwrap_or(false)
 }
@@ -903,6 +983,10 @@ pub extern "C" fn ui_set_touch_ms(ms: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_touch(panel: u32, kind: i32, x: i32, y: i32) {
     with_ui(|ui| {
+        #[cfg(feature = "mcu")]
+        show(ui, panel as usize);
+        #[cfg(feature = "mcu")]
+        let panel = 0;
         let Some(panel) = ui.panels.get(panel as usize) else { return };
         let window = panel.window.window();
         let position = PhysicalPosition::new(x, y).to_logical(window.scale_factor());
@@ -931,7 +1015,7 @@ pub extern "C" fn ui_tick() {
         ui_show_notification(id);
     }
     let hide = with_ui(|ui| {
-        let face = ui.screens[OVERLAY].global::<Face>();
+        let face = ui.screen(OVERLAY).global::<Face>();
         let id = face.get_notification_id();
         if face.get_notification_shown() && !ui.notes.iter().any(|n| n.id == id) {
             face.set_notification_shown(false);
@@ -944,6 +1028,7 @@ pub extern "C" fn ui_tick() {
     slint::platform::update_timers_and_animations();
 }
 
+#[cfg(not(feature = "mcu"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_update(panel: u32, x: *mut u32, y: *mut u32, w: *mut u32, h: *mut u32) -> bool {
     with_ui(|ui| {
@@ -974,12 +1059,14 @@ pub unsafe extern "C" fn ui_update(panel: u32, x: *mut u32, y: *mut u32, w: *mut
     }).unwrap_or(false)
 }
 
+#[cfg(not(feature = "mcu"))]
 #[inline(always)]
 fn over(src: u32, dst: u32, keep: u32) -> u32 {
     let v = dst * keep + 128;
     src + ((v + (v >> 8)) >> 8)
 }
 
+#[cfg(not(feature = "mcu"))]
 /// Blends the watchface layer, moved by (dx, dy), and the overlay over buf.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32, dx: i32, dy: i32) {
@@ -1015,6 +1102,7 @@ pub unsafe extern "C" fn ui_render(buf: *mut u32, stride_px: u32, dx: i32, dy: i
     });
 }
 
+#[cfg(not(feature = "mcu"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_repaint(panel: u32, gpu: bool) {
     with_ui(|ui| {
@@ -1040,4 +1128,79 @@ pub extern "C" fn ui_repaint(panel: u32, gpu: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_glyph_bins(bins: u32, min_px: u32) {
     i_slint_renderer_software::set_subpixel_bins(bins, min_px);
+}
+
+unsafe extern "C" {
+    #[cfg(feature = "mcu")]
+    fn ui_draw_begin(x: u32, y: u32, w: u32, h: u32);
+    #[cfg(feature = "mcu")]
+    fn ui_draw_line(y: u32, x: u32, w: u32, rgb565: *const u16);
+    #[cfg(feature = "mcu")]
+    fn ui_draw_end();
+}
+
+/// The display as Slint's line buffer: each run of a line goes out as it is drawn.
+#[cfg(feature = "mcu")]
+struct Display<'a> {
+    line: &'a mut [slint::platform::software_renderer::Rgb565Pixel],
+    started: bool,
+}
+
+#[cfg(feature = "mcu")]
+impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_> {
+    type TargetPixel = slint::platform::software_renderer::Rgb565Pixel;
+
+    fn begin(&mut self, region: &slint::platform::software_renderer::PhysicalRegion) {
+        let (origin, size) = (region.bounding_box_origin(), region.bounding_box_size());
+        if size.width > 0 && size.height > 0 {
+            self.started = true;
+            unsafe { ui_draw_begin(origin.x as u32, origin.y as u32, size.width, size.height) };
+        }
+    }
+
+    fn process_line(&mut self, line: usize, range: core::ops::Range<usize>, render_fn: impl FnOnce(&mut [Self::TargetPixel])) {
+        let px = &mut self.line[..range.len()];
+        render_fn(px);
+        unsafe { ui_draw_line(line as u32, range.start as u32, px.len() as u32, px.as_ptr() as *const u16) };
+    }
+}
+
+/// Has the next draw of window draw this box again.
+#[cfg(feature = "mcu")]
+fn mark_dirty(window: &MinimalSoftwareWindow, x: u32, y: u32, w: u32, h: u32) {
+    use i_slint_core::lengths::{LogicalPoint, LogicalRect, LogicalSize};
+    let k = window.window().scale_factor();
+    let mut region = i_slint_core::partial_renderer::DirtyRegion::default();
+    region.add_rect(LogicalRect::new(
+        LogicalPoint::new(x as f32 / k, y as f32 / k),
+        LogicalSize::new(w as f32 / k, h as f32 / k),
+    ));
+    window.renderer().mark_dirty_region(region);
+    window.request_redraw();
+}
+
+/// Draws what changed on panel, or all of it if whole, straight to the display, showing panel
+/// first if the window shows another screen; false if nothing changed.
+#[cfg(feature = "mcu")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_draw(panel: u32, whole: bool) -> bool {
+    with_ui(|ui| {
+        show(ui, panel as usize);
+        let mut display = Display { line: &mut ui.line, started: false };
+        let window = &ui.panels[0].window;
+        // Marked rather than drawn as a new buffer: going back to a reused one clears the
+        // renderer's cache, which makes the draw after this one whole too.
+        if whole {
+            let size = window.size();
+            mark_dirty(window, 0, 0, size.width, size.height);
+        }
+        window.draw_if_needed(|renderer| {
+            renderer.render_by_line(&mut display);
+        });
+        if display.started {
+            unsafe { ui_draw_end() };
+        }
+        display.started
+    })
+    .unwrap_or(false)
 }

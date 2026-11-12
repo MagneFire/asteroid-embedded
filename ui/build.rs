@@ -16,6 +16,13 @@ use skrifa::{FontRef, MetadataProvider};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+#[path = "build/glyphs.rs"]
+mod glyphs;
+#[path = "build/icons.rs"]
+mod icons;
+#[path = "build/sdf.rs"]
+mod sdf;
+
 const UI_PX: u32 = 400;
 const ICON_DIR: &str = "../third_party/asteroid-icons-ion/src";
 const ICON_UNIT: i32 = 8192;
@@ -57,8 +64,9 @@ fn polygon_svg(path: &std::path::Path, pts: &[(f64, f64)]) -> (f64, f64, f64, f6
 /// the UI's copy winning where both have one. usvg resolves transforms, shapes and strokes into
 /// filled paths; their points are stored as i16 in 1/ICON_UNIT of the icon's box, each path
 /// starting with its fill rule (ICON_NONZERO, ICON_EVENODD) and its segments after it.
-fn icon_outlines(out: &std::path::Path) {
-    use usvg::tiny_skia_path::PathSegment;
+/// The icons by name: the UI's own and the Ionicons set, the UI's copy winning where both have one,
+/// and the generated shapes under their directory's name.
+fn icon_files(out: &std::path::Path) -> std::collections::BTreeMap<String, String> {
     let mut files = std::collections::BTreeMap::new();
     let generated = |sub: &str| (out.join(sub).display().to_string(), format!("{sub}/"));
     let dirs = [
@@ -77,6 +85,12 @@ fn icon_outlines(out: &std::path::Path) {
             }
         }
     }
+    files
+}
+
+fn icon_outlines(out: &std::path::Path) {
+    use usvg::tiny_skia_path::PathSegment;
+    let files = icon_files(out);
     let mut data: Vec<i16> = Vec::new();
     let mut table = String::from("static ICONS: &[(&str, u32, u32)] = &[\n");
     for (name, path) in &files {
@@ -145,23 +159,106 @@ fn collect_paths(group: &usvg::Group, out: &mut Vec<(usvg::tiny_skia_path::Path,
 fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
+    let mcu = std::env::var_os("CARGO_FEATURE_MCU").is_some();
+    let leave_out = build_parts(&out, mcu);
     ring(&out);
     heart_arc(&out);
     activity_arc(&out);
     game_shapes(&out);
-    icon_outlines(&out);
+    if !mcu {
+        icon_outlines(&out);
+    }
     codes(&out);
 
     let config = slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRendererNoFonts)
-        .with_include_paths(vec![out, std::env::current_dir().unwrap().join("ui")]);
+        .with_include_paths(vec![out.clone(), std::env::current_dir().unwrap().join("ui")]);
     slint_build::compile_with_config("ui/watchface.slint", config).unwrap();
+    if mcu {
+        icons::write(&out, &out.join("watchface.rs"), &leave_out, &icon_files(&out));
+        glyphs::write(&out, MCU_FACES);
+    }
     println!("cargo:rerun-if-changed=fonts");
     println!("cargo:rerun-if-changed=icons");
     println!("cargo:rerun-if-changed={ICON_DIR}");
     println!("cargo:rerun-if-changed=../src/ui/ui.h");
     println!("cargo:rerun-if-changed=../src/asteroid.h");
 }
+
+/// The parts of the UI a build can leave out: screens, apps and launcher layouts.
+const PARTS: &[&str] = &[
+    "classic", "notes", "today", "launcher", "quick", "music", "settings", "alarm", "timer", "stopwatch", "weather",
+    "heart", "flashlight", "calculator", "diamonds", "agenda", "activity", "three-icons", "two-columns", "turbo-list",
+    "three-by-three", "speed-dial",
+];
+
+/// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
+/// empty for none): what does not fit its flash after the watchface, the notifications and the
+/// quick settings.
+const MCU_LEAVE_OUT: &[&str] = &[
+    "classic", "launcher", "settings", "music", "alarm", "timer", "stopwatch", "weather", "heart", "flashlight",
+    "calculator", "diamonds", "agenda", "activity", "three-icons", "two-columns", "turbo-list", "three-by-three",
+    "speed-dial",
+];
+
+/// build.slint: a `Build` global with whether the build has each of PARTS, which the UI checks
+/// where it shows the part; a part left out folds away with its code. Only the Cortex-M build
+/// leaves any out.
+fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
+    println!("cargo:rerun-if-env-changed=UI_LEAVE_OUT");
+    let leave_out: Vec<String> = match std::env::var("UI_LEAVE_OUT") {
+        _ if !mcu => Vec::new(),
+        Ok(list) => list.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect(),
+        Err(_) => MCU_LEAVE_OUT.iter().map(|p| p.to_string()).collect(),
+    };
+    for part in &leave_out {
+        assert!(PARTS.contains(&part.as_str()), "UI_LEAVE_OUT: no part {part}");
+    }
+    let mut slint = String::from("export global Build {\n");
+    for part in PARTS {
+        writeln!(slint, "    out property <bool> {part}: {};", !leave_out.iter().any(|p| p == part)).unwrap();
+    }
+    slint.push_str("}\n");
+    std::fs::write(out.join("build.slint"), slint).unwrap();
+    leave_out
+}
+
+/// The faces the Cortex-M build draws text with. The UI's other families are drawn with the
+/// nearest of these (`also`); a family not listed falls back to the face of the nearest weight.
+/// A light face's field is made at about the size its labels are drawn: from 16 px its stems are
+/// a pixel wide, too thin for a field to keep, and grey out scaled up.
+const MCU_FACES: &[glyphs::Face] = {
+    use glyphs::{Chars::*, Face};
+    const DIGITS: &str = "0123456789:";
+    &[
+        Face {
+            file: "NotoSans-Light.ttf",
+            family: "Noto Sans",
+            weight: 300,
+            px: 24.0,
+            chars: Text,
+            also: &["Noto Sans SemiCondensed Light", "Noto Sans SemiCondensed ExtraLight", "Noto Sans ExtraCondensed ExtraLight"],
+        },
+        Face {
+            file: "NotoSans-Bold.ttf",
+            family: "Noto Sans",
+            weight: 700,
+            px: 16.0,
+            chars: Text,
+            also: &["Noto Sans SemiCondensed SemiBold", "Noto Sans SemiCondensed Bold", "Noto Sans Condensed Medium"],
+        },
+        Face { file: "Roboto-Medium.ttf", family: "Roboto", weight: 500, px: 32.0, chars: Only(DIGITS), also: &[] },
+        Face { file: "Roboto-Light.ttf", family: "Roboto", weight: 300, px: 32.0, chars: Only(DIGITS), also: &[] },
+        Face {
+            file: "Raleway-Light.ttf",
+            family: "Raleway",
+            weight: 300,
+            px: 30.0,
+            chars: Only("0123456789 JanFebMrApyulgSeOctNovDAMP"),
+            also: &[],
+        },
+    ]
+};
 
 /// The enumerators of `enum name { ... }` in a C header: only identifiers, with or without an
 /// integer value, as the firmware's headers write them.

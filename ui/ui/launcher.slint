@@ -8,6 +8,7 @@ import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
+import { Build } from "build.slint";
 
 export struct App {
     id: int,
@@ -1028,11 +1029,11 @@ export component LauncherView {
 
     if root.layout == 0: Pages { size: root.size; preview: root.preview; last: root.last; }
     if root.layout == 1: Pages { size: root.size; vertical: true; preview: root.preview; last: root.last; }
-    if root.layout == 2: ThreeIcons { size: root.size; preview: root.preview; last: root.last; }
-    if root.layout == 3: TwoColumns { size: root.size; preview: root.preview; last: root.last; }
-    if root.layout == 4: TurboList { size: root.size; preview: root.preview; last: root.last; }
-    if root.layout == 5: ThreeByThree { size: root.size; preview: root.preview; last: root.last; }
-    if root.layout == 6: SpeedDial { size: root.size; preview: root.preview; last: root.last; }
+    if Build.three-icons && root.layout == 2: ThreeIcons { size: root.size; preview: root.preview; last: root.last; }
+    if Build.two-columns && root.layout == 3: TwoColumns { size: root.size; preview: root.preview; last: root.last; }
+    if Build.turbo-list && root.layout == 4: TurboList { size: root.size; preview: root.preview; last: root.last; }
+    if Build.three-by-three && root.layout == 5: ThreeByThree { size: root.size; preview: root.preview; last: root.last; }
+    if Build.speed-dial && root.layout == 6: SpeedDial { size: root.size; preview: root.preview; last: root.last; }
 }
 
 export component Launcher {

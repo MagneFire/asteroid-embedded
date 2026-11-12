@@ -11,14 +11,22 @@ path = "src/lib.rs"
 
 [dependencies]
 slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
-i-slint-renderer-software = { version = "=1.18.1", default-features = false, features = ["experimental", "systemfonts"] }
+i-slint-renderer-software = { version = "=1.18.1", default-features = false, features = ["experimental"] }
 i-slint-core = { version = "=1.18.1", default-features = false }
 embedded-alloc = { version = "0.7.0", default-features = false, features = ["tlsf"] }
-zeno = { version = "0.3.3", default-features = false, features = ["eval", "libm"] }
+zeno = { version = "0.3.3", default-features = false, features = ["eval", "libm"], optional = true }
 critical-section = { version = "1.2.0", features = ["restore-state-u32"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(paint_counts)"] }
+
+[features]
+default = ["outlines"]
+# Text and icons drawn from their outlines at run time: the Cortex-A build.
+outlines = ["i-slint-renderer-software/systemfonts", "dep:zeno"]
+# The Cortex-M build: one window drawn line by line, text and icons from distance fields made at
+# build time.
+mcu = []
 
 [build-dependencies]
 slint-build = { version = "1.18.1", default-features = false, features = ["compat-1-18", "renderer-software"] }
@@ -32,6 +40,15 @@ codegen-units = 1
 panic = "abort"
 debug = "line-tables-only"
 incremental = false
+
+# The Cortex-M build: the size of the generated UI code matters more than its speed.
+[profile.mcu]
+inherits = "release"
+opt-level = "z"
+
+# The distance fields take long to make unoptimised.
+[profile.mcu.build-override]
+opt-level = 2
 
 [profile.dev]
 panic = "abort"

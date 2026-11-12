@@ -14,6 +14,7 @@ import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
+import { Build } from "build.slint";
 
 component Toggle {
     in property <string> icon;
@@ -132,7 +133,7 @@ export component QuickSettings {
     }
 
     Toggle {
-        x: root.width / 2 - 4 * Theme.unit - self.width;
+        x: Build.settings ? root.width / 2 - 4 * Theme.unit - self.width : (root.width - self.width) / 2;
         y: 8 * Theme.unit;
         size: 24 * Theme.unit;
         button: true;
@@ -143,7 +144,7 @@ export component QuickSettings {
         }
     }
 
-    Toggle {
+    if Build.settings: Toggle {
         x: root.width / 2 + 4 * Theme.unit;
         y: 8 * Theme.unit;
         size: 24 * Theme.unit;

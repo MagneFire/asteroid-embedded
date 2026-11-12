@@ -17,23 +17,26 @@ import { AppScreen } from "apps.slint";
 import { QuickSettings } from "quick.slint";
 import { Overlay } from "overlay.slint";
 import { Apps } from "launcher.slint";
+import { Build } from "build.slint";
 export { Face, Note, Day, AlarmItem, Apps }
 export { Icons } from "icons.slint";
 export { Theme } from "theme.slint";
 
 export component Screen inherits Window {
     in property <int> kind;
+    // The overlay over the screen, in the one window the Cortex-M build has.
+    in property <bool> overlay;
 
     background: transparent;
     default-font-family: "Noto Sans";
     default-font-weight: 300;
 
     if root.kind == 0 && Face.watchface == 0: DigitalFace { }
-    if root.kind == 0 && Face.watchface == 1: Watchface { }
-    if root.kind == 1: NoteList { }
-    if root.kind == 2: TodayScreen { }
-    if root.kind == 3: Launcher { }
-    if root.kind == 4: Overlay { }
-    if root.kind == 5: QuickSettings { }
+    if Build.classic && root.kind == 0 && Face.watchface == 1: Watchface { }
+    if Build.notes && root.kind == 1: NoteList { }
+    if Build.today && root.kind == 2: TodayScreen { }
+    if Build.launcher && root.kind == 3: Launcher { }
+    if Build.quick && root.kind == 5: QuickSettings { }
     if root.kind == 6: AppScreen { }
+    if root.kind == 4 || root.overlay: Overlay { }
 }

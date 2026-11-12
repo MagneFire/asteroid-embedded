@@ -84,6 +84,11 @@ ISA_apollo3 := -mthumb
 LDS_apollo3 := ld/asteroid-m.ld.in
 RUST_TARGET_apollo3 := thumbv7em-none-eabihf
 UI_FEATURES_apollo3 := mcu
+UI_PROFILE_apollo3 := mcu
+# Only the minnow build sets glyph_bins.
+UI_CFG_apollo3 := --check-cfg cfg(glyph_bins)
+# Panic locations name their files: keep the paths short.
+UI_RUSTFLAGS_apollo3 := --remap-path-prefix=$(CURDIR)/= --remap-path-prefix=$(HOME)/.cargo/registry/src/=
 
 SRCS += $(SRCS_$(SOC))
 NIMBLE_SRCS := $(filter-out %/ble_gatts_lcl.c,$(wildcard $(NIMBLE)/nimble/host/src/*.c)) \
@@ -112,9 +117,10 @@ LIBS    := -lgcc
 # its fused multiply-add.
 CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
 UI_TARGET := ui/target$(if $(filter qcom,$(SOC)),,-$(SOC))
-UI_LIB  := $(UI_TARGET)/$(RUST_TARGET)/release/libasteroid_ui.a
+UI_PROFILE := $(or $(UI_PROFILE_$(SOC)),release)
+UI_LIB  := $(UI_TARGET)/$(RUST_TARGET)/$(UI_PROFILE)/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
-           $(shell find ui/src ui/ui ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
+           $(shell find ui/src ui/ui ui/build ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
 
 ifeq ($(SOC),qcom)
 all: $(BUILD)/asteroid.img
@@ -153,9 +159,9 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS)
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_$(shell echo $(RUST_TARGET) | tr a-z- A-Z_)_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC))$(if $(UI_CFG_$(SOC)), $(UI_CFG_$(SOC)))" \
-		$(CARGO) build --release --target $(RUST_TARGET) --target-dir $(abspath $(UI_TARGET)) \
-		$(if $(UI_FEATURES_$(SOC)),--features $(UI_FEATURES_$(SOC)))
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_$(shell echo $(RUST_TARGET) | tr a-z- A-Z_)_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC)) $(UI_CFG_$(SOC)) $(UI_RUSTFLAGS_$(SOC))" \
+		$(CARGO) build --profile $(UI_PROFILE) --target $(RUST_TARGET) --target-dir $(abspath $(UI_TARGET)) \
+		$(if $(UI_FEATURES_$(SOC)),--no-default-features --features $(UI_FEATURES_$(SOC)))
 	@touch $@
 
 $(BUILD)/asteroid.ld: $(LDS) src/soc/$(SOC)/memmap.h
