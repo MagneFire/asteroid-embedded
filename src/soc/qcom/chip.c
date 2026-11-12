@@ -101,6 +101,7 @@ const struct qcom_chip chip_8009 = {
 	.usb_ahb_cbcr = 0x41008,
 	.usb_system_rcgr = 0x41010,
 	.dsi = IO(0x01ac8000),
+	.mdp3 = IO(0x01a00000),
 	.pon_restart_reason = true,
 };
 

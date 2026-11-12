@@ -10,6 +10,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "display.h"
+#include "mdp3.h"
 
 #define DSI_MDP_DONE		BIT(8)
 
@@ -32,6 +33,11 @@ static uint32_t dsi_clamps;
 
 static void pp_wait(void)
 {
+	if (chip->mdp3) {
+		if (!mdp3_wait(idle_hook, &waits))
+			timeouts++;
+		return;
+	}
 	if (!kicked)
 		return;
 	uint32_t t0 = time_us();
@@ -63,6 +69,10 @@ static void kick(void)
  * the display is off; it is the panel's own size. */
 void display_splash_size(uint32_t *w, uint32_t *h)
 {
+	if (chip->mdp3) {
+		mdp3_splash_size(w, h);
+		return;
+	}
 	*w = *h = 0;
 	if (!(readl(MDP_GDSCR) & BIT(31)) || !readl(PIPE + PIPE_SRC0_ADDR))
 		return;
@@ -103,7 +113,32 @@ static bool panel_switched(void)
 	return board->panel.on_n && main_panel();
 }
 
-bool display_init(void)
+void display_fb_setup(uint32_t width, uint32_t panel_height)
+{
+	fb.width = width;
+	fb.panel_height = panel_height;
+	fb.height = board->panel.round && fb.panel_height < fb.width ? fb.width : fb.panel_height;
+	fb.stride = (fb.width + 31) & ~31u;
+	fb.buf[0] = (uint32_t *)(uintptr_t)FB_BASE;
+	fb.buf[1] = (uint32_t *)(uintptr_t)(FB_BASE + fb.stride * fb.height * 4);
+	fb.back = 0;
+}
+
+void display_fb_clear(void)
+{
+	/* Each clear takes a few milliseconds, but after Linux one has
+	 * stalled into the watchdog: log the time, and feed it in between so
+	 * the second one starts with the full period. */
+	uint32_t t_clear = time_us();
+	memset(fb.buf[0], 0, fb.stride * fb.height * 4);
+	wdt_feed();
+	uint32_t t_half = time_us() - t_clear;
+	memset(fb.buf[1], 0, fb.stride * fb.height * 4);
+	dcache_clean_range(fb.buf[0], fb.stride * fb.height * 8);
+	log_printf("display: framebuffers cleared in %lu + %lu us\n", t_half, time_us() - t_clear - t_half);
+}
+
+static bool mdp5_init(void)
 {
 	if (!(readl(MDP_GDSCR) & BIT(31))) {
 		log_printf("display: MDP power domain is off\n");
@@ -118,13 +153,7 @@ bool display_init(void)
 	uint32_t format = readl(PIPE + PIPE_SRC_FORMAT);
 	uint32_t top = readl(MDP_CTL0 + CTL_TOP);
 	uint32_t ar = readl(MDP_PP0 + PP_AUTOREFRESH_CONFIG);
-	fb.width = img & 0xffff;
-	fb.panel_height = img >> 16;
-	fb.height = board->panel.round && fb.panel_height < fb.width ? fb.width : fb.panel_height;
-	fb.stride = (fb.width + 31) & ~31u;
-	fb.buf[0] = (uint32_t *)(uintptr_t)FB_BASE;
-	fb.buf[1] = (uint32_t *)(uintptr_t)(FB_BASE + fb.stride * fb.height * 4);
-	fb.back = 0;
+	display_fb_setup(img & 0xffff, img >> 16);
 	cmd_mode = top & BIT(17);
 	log_printf("display: mdp rev %08lx fb %08lx %lux%lu format %08lx %s autorefresh %lu op_mode %08lx\n",
 		   readl(MDP_HW_REV), base, fb.width, fb.height, format,
@@ -157,16 +186,7 @@ bool display_init(void)
 	writel(4 | 4 << 16, MDP_PP0 + PP_SYNC_THRESH);
 	writel(0, MDP_PP0 + PP_AUTOREFRESH_CONFIG);
 	writel(1, MDP_PP0 + PP_TEAR_CHECK_EN);
-	/* Each clear takes a few milliseconds, but after Linux one has
-	 * stalled into the watchdog: log the time, and feed it in between so
-	 * the second one starts with the full period. */
-	uint32_t t_clear = time_us();
-	memset(fb.buf[0], 0, fb.stride * fb.height * 4);
-	wdt_feed();
-	uint32_t t_half = time_us() - t_clear;
-	memset(fb.buf[1], 0, fb.stride * fb.height * 4);
-	dcache_clean_range(fb.buf[0], fb.stride * fb.height * 8);
-	log_printf("display: framebuffers cleared in %lu + %lu us\n", t_half, time_us() - t_clear - t_half);
+	display_fb_clear();
 	writel(SRC_FORMAT_XRGB8888, PIPE + PIPE_SRC_FORMAT);
 	writel(UNPACK_XRGB, PIPE + PIPE_SRC_UNPACK);
 	writel(fb.stride * 4, PIPE + PIPE_SRC_YSTRIDE);
@@ -183,6 +203,13 @@ bool display_init(void)
 	unsigned wire = readl(DSI_LANE_SWAP) & 3;
 	dsi_clamps = DSI_CLAMPS_CLOCK | 3u << (6 - 2 * wire);
 	log_printf("display: data lane 0 on wire %u\n", wire);
+	return true;
+}
+
+bool display_init(void)
+{
+	if (!(chip->mdp3 ? mdp3_init() : mdp5_init()))
+		return false;
 	if (panel_switched()) {
 		if (regulator_on(board->panel.io_ldo, board->panel.io_uv))
 			log_printf("display: l%u on not acknowledged\n", board->panel.io_ldo);
@@ -376,9 +403,10 @@ static void pll_power_up(void)
 	log_printf("display: DSI PLL not locked, status %08lx\n", readl(DSI_PLL_STATUS));
 }
 
+/* The APQ8009W's display stays powered for now. */
 bool display_rest(void)
 {
-	if (resting)
+	if (resting || chip->mdp3)
 		return true;
 	pp_wait();
 	uint32_t t0 = time_us();
@@ -459,8 +487,13 @@ void display_flip(void)
 	uint32_t *buf = fb.buf[fb.back];
 	dcache_clean_range(buf, fb.stride * fb.height * 4);
 	pp_wait();
-	writel(dma_addr(buf), PIPE + PIPE_SRC0_ADDR);
-	kick();
+	if (chip->mdp3) {
+		mdp3_kick(buf);
+		frames++;
+	} else {
+		writel(dma_addr(buf), PIPE + PIPE_SRC0_ADDR);
+		kick();
+	}
 	fb.back ^= 1;
 }
 

@@ -27,6 +27,7 @@ struct qcom_chip {
 	struct { uint8_t ldo; uint32_t uv; } emmc_vcc, emmc_vccq;
 	uint32_t usb, usb_bcr, usb_system_cbcr, usb_ahb_cbcr, usb_system_rcgr;
 	uint32_t dsi;
+	uint32_t mdp3;			/* 0 with the MDP5 */
 	bool cnoc;			/* has the RPM's CNOC bus clock */
 	bool imem_dload;		/* download-mode cookies in IMEM */
 	bool pon_restart_reason;	/* the bootloader reads it from the PMIC */
