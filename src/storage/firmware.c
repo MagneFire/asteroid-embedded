@@ -38,17 +38,24 @@ static int open_system(void)
 	return 0;
 }
 
+/* The last file read stays looked up: a caller reads one file in many
+ * pieces, and each lookup reads directory blocks again. */
 int firmware_read(const char *path, uint32_t off, void *buf, uint32_t len)
 {
+	static char last[64];
+	static struct squashfs_inode sq;
+	static struct ext4_inode in;
 	int r = open_system();
 	if (r)
 		return r;
-	if (squashed) {
-		struct squashfs_inode in;
-		return (r = squashfs_lookup(&squash, path, &in)) ? r : squashfs_read(&squash, &in, off, buf, len);
+	if (strcmp(path, last)) {
+		last[0] = 0;
+		if ((r = squashed ? squashfs_lookup(&squash, path, &sq) : ext4_lookup(&fs, path, &in)))
+			return r;
+		if (strlen(path) < sizeof last)
+			strcpy(last, path);
 	}
-	struct ext4_inode in;
-	return (r = ext4_lookup(&fs, path, &in)) ? r : ext4_read(&fs, &in, off, buf, len);
+	return squashed ? squashfs_read(&squash, &sq, off, buf, len) : ext4_read(&fs, &in, off, buf, len);
 }
 
 const void *firmware_get(const char *name, uint32_t *size)
