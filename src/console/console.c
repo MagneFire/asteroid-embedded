@@ -13,6 +13,7 @@
 #include "storage/storage.h"
 #include "prof.h"
 #include "gpu/sgx.h"
+#include "gpu/sgx_draw.h"
 #include "sensors/hub.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
@@ -1064,18 +1065,51 @@ static void cmd_uibench(const char *args)
 }
 
 #ifdef SGX_BASE
+/* A red triangle on a blue-grey ground, drawn by the GPU into the back
+ * buffer: red and blue swapped, or the picture upside down, show at a
+ * glance. */
+static void sgx_tri(void)
+{
+	static const float verts[] = {
+		-0.8f, -0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
+		0.8f, -0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
+		0.0f, 0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
+	};
+	const struct sgx_frame f = { 0xff4080bf, verts, 1, false };
+	const uint32_t bytes = SGX_DRAW_SIZE * SGX_DRAW_SIZE * 4;
+	struct sgx_times t;
+	uint32_t *buf = display_backbuffer(), gpu;
+	if (!sgx_start() || !sgx_draw_setup() || !(gpu = sgx_draw_map((uint32_t)(uintptr_t)buf, bytes))) {
+		say("failed, see the log\n");
+		return;
+	}
+	dcache_clean_invalidate_range(buf, bytes);
+	sgx_draw_target(gpu);
+	bool ok = sgx_draw_frame(&f, &t);
+	dcache_invalidate_range(buf, bytes);
+	if (!ok) {
+		say("no frame, see the log\n");
+		return;
+	}
+	display_flip();
+	log_printf("sgx: frame into %08lx: geometry %lu us, render %lu us\n", gpu, t.ta_us, t.render_us);
+	say("geometry %lu us, render %lu us\n", t.ta_us, t.render_us);
+}
+
 static void cmd_sgx(const char *args)
 {
 	struct sgx_info i;
 	args = skip_spaces(args);
-	if (!strcmp(args, "off")) {
+	if (!strcmp(args, "tri")) {
+		sgx_tri();
+	} else if (!strcmp(args, "off")) {
 		sgx_stop();
 		say("off\n");
 	} else if (!strcmp(args, "state")) {
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state]\n");
+		say("usage: sgx [off | state | tri]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1133,7 +1167,7 @@ static const struct command commands[] = {
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
-	{ "sgx", "[off | state]", cmd_sgx },
+	{ "sgx", "[off | state | tri]", cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };
