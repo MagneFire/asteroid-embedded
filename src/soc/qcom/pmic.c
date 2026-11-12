@@ -1,4 +1,4 @@
-/* PM8226 on SPMI slave 0. The PON block (peripheral 0x08) records why the
+/* PM8226 or PM8916 on SPMI slave 0. The PON block (peripheral 0x08) records why the
  * chip powered on and decides what a PS_HOLD drop does: configured here as
  * a warm reset so DRAM, and with it the persistent log, survives every
  * reboot the firmware or the watchdog causes. */
@@ -65,7 +65,8 @@ void pmic_init(void)
 	snprintf(reason + strlen(reason), sizeof reason - strlen(reason), " ps_hold %02x/%02x",
 		 pmic_read(PON_PS_HOLD_RESET_CTL), pmic_read(PON_PS_HOLD_RESET_CTL2));
 
-	pmic_write(SMPS2_MODE, SMPS_MODE_AUTO);
+	if (chip == &chip_8026)
+		pmic_write(SMPS2_MODE, SMPS_MODE_AUTO);
 
 	/* The system rail and the battery sense pin, both divided by three,
 	 * and USB in, divided by twenty: on smelt the sense pin follows the
