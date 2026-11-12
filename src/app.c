@@ -39,7 +39,7 @@ static struct app_caps caps;
 #define have_haptics caps.haptics
 #define have_hub caps.hub
 
-static bool steps_awake, was_lit, was_diamonds, key_was, wake_touch;
+static bool steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen;
 static uint32_t shown_bpm, key_down_t, down_t;
 static int down_x, down_y;
 static struct orient orient;
@@ -263,7 +263,9 @@ void app_touch(uint32_t now)
 			down_x = t.x;
 			down_y = t.y;
 			down_t = now;
-		} else if (t.event == TOUCH_UP) {
+			down_seen = true;
+		} else if (t.event == TOUCH_UP && down_seen) {
+			down_seen = false;
 			int dx = t.x - down_x, dy = t.y - down_y;
 			const char *g = "tap";
 			if (dx * dx + dy * dy > 40 * 40)
