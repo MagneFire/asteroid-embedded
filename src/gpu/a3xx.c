@@ -15,7 +15,7 @@
  * wakes the CPU out of WFI while it waits for the GPU. */
 #include <string.h>
 #include "asteroid.h"
-#include "a3xx.h"
+#include "adreno.h"
 #include "a3xx_ring.h"
 
 #define GPU_BASE		(chip->gpu)
@@ -107,7 +107,7 @@
 static volatile uint32_t *const ring = (volatile uint32_t *)(uintptr_t)GPU_MEM_BASE;
 static volatile uint32_t *const scratch = (volatile uint32_t *)(uintptr_t)(GPU_MEM_BASE + 0x10000);
 static uint32_t wptr, submitted;
-static bool ready;
+static bool ready, powered, clocked;
 
 static void gpu_write(uint32_t reg, uint32_t v) { writel(v, GPU_BASE + reg * 4); }
 static uint32_t gpu_read(uint32_t reg) { return readl(GPU_BASE + reg * 4); }
@@ -164,7 +164,7 @@ static void gpu_irq(void)
 	gpu_write(REG_RBBM_INT_CLEAR_CMD, gpu_read(REG_RBBM_INT_0_STATUS));
 }
 
-bool gpu_ready(void)
+bool adreno_ready(void)
 {
 	return ready;
 }
@@ -241,7 +241,9 @@ static void load_ucode(uint32_t addr_reg, uint32_t data_reg, const uint32_t *fw,
 		gpu_write(data_reg, *p);
 }
 
-bool gpu_init(void)
+static bool smmu_retry(void);
+
+bool adreno_init(void)
 {
 	uint32_t pm4_len, pfp_len;
 	const uint32_t *pm4 = firmware_get(a304() ? "a300_pm4.fw" : "a330_pm4.fw", &pm4_len);
@@ -250,8 +252,12 @@ bool gpu_init(void)
 		log_printf("gpu: no microcode, not started\n");
 		return false;
 	}
-	if (!power_on())
+	powered = true;
+	clocked = power_on();
+	if (!clocked) {
+		adreno_suspend();
 		return false;
+	}
 	uint32_t ver = gpu_read(REG_RBBM_HW_VERSION);
 	log_printf("gpu: powered, hw version %08lx, gdsc %08lx\n", ver, readl(a304() ? GCC_OXILI_GDSCR : MMSS_OXILICX_GDSCR));
 
@@ -305,26 +311,34 @@ bool gpu_init(void)
 	ready = flush(100);
 	log_printf("gpu: pm4 v%08lx pfp v%08lx, micro engine %s\n", pm4[1], pfp[5],
 		   ready ? "running" : "did not start");
+	if (!ready && !smmu_retry()) {
+		adreno_suspend();
+		return false;
+	}
 	return ready;
+}
+
+/* If the Adreno 304 cannot reach memory, its SMMU may still need the
+ * secure world's configuration (device 18, bank 1). That is asked for
+ * once, with the GPU and its SMMU clocks still on, and the GPU then
+ * starts from scratch. */
+static bool smmu_retry(void)
+{
+	static bool retried;
+	if (!a304() || retried)
+		return false;
+	retried = true;
+	int r = scm_restore_sec_cfg(18, 1);
+	log_printf("gpu: smmu secure config %d, starting again\n", r);
+	adreno_suspend();
+	return adreno_init();
 }
 
 static bool selftest(void);
 
-/* If the Adreno 304 cannot reach memory, its SMMU may still need the
- * secure world's configuration (device 18, bank 1); that is tried once,
- * from a fresh start. */
-bool gpu_selftest(void)
+bool adreno_selftest(void)
 {
-	static bool retried;
-	if (selftest())
-		return true;
-	if (!a304() || retried)
-		return false;
-	retried = true;
-	gpu_suspend();
-	int r = scm_restore_sec_cfg(18, 1);
-	log_printf("gpu: smmu secure config %d, starting again\n", r);
-	return gpu_init() && selftest();
+	return selftest() || (smmu_retry() && selftest());
 }
 
 static bool selftest(void)
@@ -348,21 +362,24 @@ static bool selftest(void)
 	return ok;
 }
 
-/* Power the GPU down while it is not needed: halt the micro engine,
- * gate its clocks, collapse its power domain and drop the core clock
- * vote. gpu_init() brings it back. */
-void gpu_suspend(void)
+/* Power the GPU down while it is not needed, or after a start that
+ * failed part of the way: halt the micro engine if it got its clocks,
+ * gate them, collapse its power domain and drop the core clock vote.
+ * adreno_init() brings it back. */
+void adreno_suspend(void)
 {
-	if (!ready)
+	if (!powered)
 		return;
-	uint32_t t0 = time_ms();
-	while ((gpu_read(REG_RBBM_STATUS) & RBBM_STATUS_GPU_BUSY) && time_ms() - t0 < 50)
-		;
-	gpu_write(REG_RBBM_INT_0_MASK, 0);
-	gpu_write(REG_RBBM_INT_CLEAR_CMD, 0xffffffff);
+	if (clocked) {
+		uint32_t t0 = time_ms();
+		while ((gpu_read(REG_RBBM_STATUS) & RBBM_STATUS_GPU_BUSY) && time_ms() - t0 < 50)
+			;
+		gpu_write(REG_RBBM_INT_0_MASK, 0);
+		gpu_write(REG_RBBM_INT_CLEAR_CMD, 0xffffffff);
+		gpu_write(REG_CP_ME_CNTL, CP_ME_CNTL_HALT);
+	}
 	irq_mask(IRQ_GPU);
-	gpu_write(REG_CP_ME_CNTL, CP_ME_CNTL_HALT);
-	ready = false;
+	ready = clocked = powered = false;
 	if (a304()) {
 		writel(readl(GCC_OXILI_GFX3D_CBCR) & ~CBCR_ENABLE, GCC_OXILI_GFX3D_CBCR);
 		writel(readl(GCC_OXILI_AHB_CBCR) & ~CBCR_ENABLE, GCC_OXILI_AHB_CBCR);

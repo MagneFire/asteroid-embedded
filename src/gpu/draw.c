@@ -12,7 +12,7 @@
  * same submission first waits for the GPU to go idle. */
 #include <string.h>
 #include "asteroid.h"
-#include "a3xx.h"
+#include "adreno.h"
 #include "a3xx_ring.h"
 #include "draw.h"
 #include "shaders.h"
@@ -230,14 +230,12 @@ static void regs(uint32_t r, unsigned n, const uint32_t *v)
 }
 #define reg(r, n, ...)	regs(r, n, (const uint32_t[n]){ __VA_ARGS__ })
 
-void gpu_draw_cpu_sync(void *buf, uint32_t bytes)
+void adreno_draw_cpu_sync(void *buf, uint32_t bytes)
 {
 	dcache_invalidate_range(buf, bytes);
 }
 
-bool gpu_draw_untouched(void) { return false; }
-
-void *gpu_alloc(uint32_t size, uint32_t align)
+void *adreno_alloc(uint32_t size, uint32_t align)
 {
 	static uint32_t top = GPU_HEAP_BASE;
 	uint32_t a = (top + align - 1) & ~(align - 1);
@@ -256,7 +254,7 @@ static bool upload(struct gpu_shader *s)
 	if (s->addr)
 		return true;
 	uint32_t n = s->ndwords > s->instrlen * 8u ? s->ndwords : s->instrlen * 8u;
-	uint32_t *p = gpu_alloc(n * 4, 4096);
+	uint32_t *p = adreno_alloc(n * 4, 4096);
 	if (!p)
 		return false;
 	memset(p, 0, n * 4);
@@ -321,11 +319,11 @@ static void restore(void)
 	cp_wfi();
 }
 
-void gpu_draw_begin(const struct gpu_target *t)
+void adreno_draw_begin(const struct gpu_target *t)
 {
 	if (!pvt_mem) {
-		pvt_mem = dma_addr(gpu_alloc(0x4000, 4096));
-		fence_ptr = gpu_alloc(32, 32);
+		pvt_mem = dma_addr(adreno_alloc(0x4000, 4096));
+		fence_ptr = adreno_alloc(32, 32);
 		fence = dma_addr(fence_ptr);
 	}
 	uint32_t w = t->width, h = t->height, pitch_px = t->pitch_bytes / 4;
@@ -373,7 +371,7 @@ void gpu_draw_begin(const struct gpu_target *t)
 	}
 }
 
-bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs)
+bool adreno_draw_program(struct gpu_shader *vs, struct gpu_shader *fs)
 {
 	if (!upload(vs) || !upload(fs))
 		return false;
@@ -474,7 +472,7 @@ bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs)
 	return true;
 }
 
-void gpu_draw_consts(int stage, unsigned first_vec4, const float *v, unsigned nvec4)
+void adreno_draw_consts(int stage, unsigned first_vec4, const float *v, unsigned nvec4)
 {
 	sync_state();
 	gpu_ring_reserve(4);
@@ -482,7 +480,7 @@ void gpu_draw_consts(int stage, unsigned first_vec4, const float *v, unsigned nv
 	load_consts(stage == GPU_STAGE_VS ? SB_VERT_SHADER : SB_FRAG_SHADER, first_vec4, (const uint32_t *)v, nvec4);
 }
 
-void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts)
+void adreno_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts)
 {
 	const struct gpu_shader *vs = cur_vs;
 	if (!vs) {
@@ -531,13 +529,13 @@ void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, con
 	drawn = true;
 }
 
-void gpu_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+void adreno_draw_texture(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
 {
-	gpu_draw_texture_format(unit, addr, width, height, pitch_bytes, GPU_TEX_RGBA);
+	adreno_draw_texture_format(unit, addr, width, height, pitch_bytes, GPU_TEX_RGBA);
 }
 
-void gpu_draw_texture_format(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes,
-			     enum gpu_tex format)
+void adreno_draw_texture_format(int unit, uint32_t addr, uint32_t width, uint32_t height, uint32_t pitch_bytes,
+				enum gpu_tex format)
 {
 	if (unit < 0 || unit >= FRAG_TEX_UNITS) {
 		log_printf("gpu: no texture unit %d\n", unit);
@@ -572,7 +570,7 @@ void gpu_draw_texture_format(int unit, uint32_t addr, uint32_t width, uint32_t h
 		out(0);
 }
 
-void gpu_draw_invalidate_textures(void)
+void adreno_draw_invalidate_textures(void)
 {
 	sync_state();
 	gpu_ring_reserve(8);
@@ -580,7 +578,7 @@ void gpu_draw_invalidate_textures(void)
 	reg(REG_UCHE_CACHE_INVALIDATE0, 2, 0, UCHE_INVALIDATE_ENTIRE);
 }
 
-void gpu_draw_blend(bool premultiplied_over)
+void adreno_draw_blend(bool premultiplied_over)
 {
 	sync_state();
 	gpu_ring_reserve(4);
@@ -593,7 +591,7 @@ void gpu_draw_blend(bool premultiplied_over)
 static float *quads_get(unsigned n)
 {
 	if (!quads)
-		quads = gpu_alloc(QUADS * QUAD_FLOATS * 4, 64);
+		quads = adreno_alloc(QUADS * QUAD_FLOATS * 4, 64);
 	if (!quads || quad_i + n > QUADS) {
 		if (quads)
 			log_printf("gpu: more than %u quads in a frame\n", QUADS);
@@ -616,18 +614,18 @@ static void quad(float *q, int x, int y, uint32_t width, uint32_t height, float 
 		x1, y1, 0, 1, u1, v1,
 		x0, y1, 0, 1, u0, v1,
 	};
-	gpu_draw_turn_vertices(v, 6, 6);
+	adreno_draw_turn_vertices(v, 6, 6);
 	memcpy(q, v, sizeof v);
 }
 
-void gpu_draw_turn(float c, float s)
+void adreno_draw_turn(float c, float s)
 {
 	turn_c = c;
 	turn_s = s;
 }
 
 /* Clockwise on the screen, in clip space with y up. */
-void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride)
+void adreno_draw_turn_vertices(float *v, unsigned n, unsigned stride)
 {
 	if (turn_s == 0.0f && turn_c == 1.0f)
 		return;
@@ -642,14 +640,14 @@ static void draw_layer(const float *q, unsigned nverts, uint32_t tex_addr, uint3
 		       float alpha)
 {
 	bool faded = alpha < 1.0f;
-	if (!gpu_draw_program(&shader_d_vs, faded ? &shader_e_fs : &shader_d_fs))
+	if (!adreno_draw_program(&shader_d_vs, faded ? &shader_e_fs : &shader_d_fs))
 		return;
 	if (faded)
-		gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ alpha, alpha, alpha, alpha }, 1);
-	gpu_draw_texture(0, tex_addr, width, height, pitch_bytes);
-	gpu_draw_blend(true);
-	gpu_draw_triangles((uint32_t)(uintptr_t)q, 24, 2, (const uint8_t[]){4, 2}, nverts);
-	gpu_draw_blend(false);
+		adreno_draw_consts(GPU_STAGE_FS, 0, (const float[]){ alpha, alpha, alpha, alpha }, 1);
+	adreno_draw_texture(0, tex_addr, width, height, pitch_bytes);
+	adreno_draw_blend(true);
+	adreno_draw_triangles((uint32_t)(uintptr_t)q, 24, 2, (const uint8_t[]){4, 2}, nverts);
+	adreno_draw_blend(false);
 }
 
 /* A point (ex, ey) from the middle of a layer whose corner is at (x, y). */
@@ -664,8 +662,8 @@ static void round_vertex(float *v, float ex, float ey, int x, int y, uint32_t wi
 	v[5] = t;
 }
 
-void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
-			  const struct gpu_rect *parts, unsigned n)
+void adreno_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
+			     const struct gpu_rect *parts, unsigned n)
 {
 	float *q = n ? quads_get(n) : NULL;
 	if (!q)
@@ -678,7 +676,7 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 	draw_layer(q, 6 * n, tex_addr, width, height, pitch_bytes, alpha);
 }
 
-void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+void adreno_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
 {
 	/* A fan from the centre: three vertices a side, half a quad. */
 	float *q = quads_get(FLATMESH_ROUND_SIDES / 2);
@@ -691,24 +689,24 @@ void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 		round_vertex(v, 0.0f, 0.0f, x, y, width, height);
 		round_vertex(v + 6, a[0], a[1], x, y, width, height);
 		round_vertex(v + 12, b[0], b[1], x, y, width, height);
-		gpu_draw_turn_vertices(v, 3, 6);
+		adreno_draw_turn_vertices(v, 3, 6);
 		memcpy(q + k * 3 * 6, v, sizeof v);
 	}
 	draw_layer(q, 3 * FLATMESH_ROUND_SIDES, tex_addr, width, height, pitch_bytes, alpha);
 }
 
-void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+void adreno_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
 {
 	struct gpu_rect all = { 0, 0, width, height };
-	gpu_draw_layer_parts(tex_addr, width, height, pitch_bytes, x, y, alpha, &all, 1);
+	adreno_draw_layer_parts(tex_addr, width, height, pitch_bytes, x, y, alpha, &all, 1);
 }
 
-void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+void adreno_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
 {
-	gpu_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
+	adreno_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
 }
 
-void gpu_draw_submit(void)
+void adreno_draw_submit(void)
 {
 	if (!fence_ptr)
 		return;
@@ -728,9 +726,9 @@ void gpu_draw_submit(void)
 /* Sleeps until the last submission's fence is written; the interrupts
  * stay off between the check and WFI, so the GPU's interrupt still
  * wakes it. */
-bool gpu_draw_wait(void)
+bool adreno_draw_wait(void)
 {
-	if (!fence_ptr || !gpu_ready())
+	if (!fence_ptr || !adreno_ready())
 		return false;
 	uint32_t t0 = time_ms();
 	for (;;) {
@@ -749,8 +747,8 @@ bool gpu_draw_wait(void)
 	return true;
 }
 
-bool gpu_draw_end(void)
+bool adreno_draw_end(void)
 {
-	gpu_draw_submit();
-	return gpu_draw_wait();
+	adreno_draw_submit();
+	return adreno_draw_wait();
 }

@@ -214,11 +214,11 @@ static void textures(void)
 						d[c] = (uint8_t)(v > 255 ? 255 : v);
 					}
 				}
-			check(paint_begin(layer, W, H, W), "the layer is refused");
-			check(paint_texture(tex, TW * bytes, TW, TH, formats[f], dx, dy, TW, TH, clip, tint, colorize),
+			check(soft_paint_begin(layer, W, H, W), "the layer is refused");
+			check(soft_paint_texture(tex, TW * bytes, TW, TH, formats[f], dx, dy, TW, TH, clip, tint, colorize),
 			      "a texture at its own size is refused");
 			check(!memcmp(layer, want, sizeof want), "a texture is not drawn as a pixel at a time would");
-			check(f != 0 || !paint_texture(tex, TW, TW, TH, PAINT_ALPHA, dx, dy, TW * 2, TH, clip, tint, false),
+			check(f != 0 || !soft_paint_texture(tex, TW, TW, TH, PAINT_ALPHA, dx, dy, TW * 2, TH, clip, tint, false),
 			      "scaled coverage is taken");
 		}
 	/* Rectangles: copied, opaque and blended, inside the clip only. */
@@ -235,7 +235,7 @@ static void textures(void)
 					d[k] = (uint8_t)(v > 255 ? 255 : v);
 				}
 			}
-		paint_rect(7.2f, 0.0f, 60.4f, 20.0f, clip, color, round == 0);
+		soft_paint_rect(7.2f, 0.0f, 60.4f, 20.0f, clip, color, round == 0);
 		check(!memcmp(layer, want, sizeof want), "a rectangle is not filled as a pixel at a time would");
 	}
 }
@@ -354,8 +354,8 @@ static void texture_matrix(void)
 										d[c] = (uint8_t)(v > 255 ? 255 : v);
 									}
 								}
-							check(paint_begin(layer, W, H, W), "the layer is refused");
-							check(paint_texture(tex, (uint32_t)tw * bytes, (uint32_t)tw, (uint32_t)th, formats[f], dx, dy, dw,
+							check(soft_paint_begin(layer, W, H, W), "the layer is refused");
+							check(soft_paint_texture(tex, (uint32_t)tw * bytes, (uint32_t)tw, (uint32_t)th, formats[f], dx, dy, dw,
 									    dh, clip, tints[ti], colorize),
 							      "a texture is refused");
 							if (memcmp(layer, want, sizeof want))
@@ -379,8 +379,8 @@ static void scaled_and_rounded(void)
 	}
 	memset(layer, 0, sizeof(uint32_t) * H * W);
 	const int32_t all[4] = { 0, 0, W, H };
-	paint_begin(layer, W, H, W);
-	check(paint_texture(tex, 16, 4, 4, PAINT_RGBA_PREMULTIPLIED, 10, 20, 40, 12, all, 0xffffffffu, false),
+	soft_paint_begin(layer, W, H, W);
+	check(soft_paint_texture(tex, 16, 4, 4, PAINT_RGBA_PREMULTIPLIED, 10, 20, 40, 12, all, 0xffffffffu, false),
 	      "a scaled picture is refused");
 	for (int y = 0; y < 12; y++)
 		for (int x = 0; x < 40; x++) {
@@ -394,8 +394,8 @@ static void scaled_and_rounded(void)
 	enum { D = 60 };
 	memset(layer, 0, sizeof(uint32_t) * H * W);
 	const float radii[4] = { D / 2, D / 2, D / 2, D / 2 };
-	check(paint_rounded(8, 6, 8 + D, 6 + D, radii, 0, all, 0xffffffffu, 0xffffffffu), "a rounded rectangle is refused");
-	check(!paint_rounded(8, 6, 8 + D, 6 + D, radii, 2, all, 0xffffffffu, 0xff0000ffu), "a border is taken");
+	check(soft_paint_rounded(8, 6, 8 + D, 6 + D, radii, 0, all, 0xffffffffu, 0xffffffffu), "a rounded rectangle is refused");
+	check(!soft_paint_rounded(8, 6, 8 + D, 6 + D, radii, 2, all, 0xffffffffu, 0xff0000ffu), "a border is taken");
 	uint32_t area = 0, soft = 0;
 	for (int y = 0; y < H; y++)
 		for (int x = 0; x < W; x++) {
@@ -423,10 +423,10 @@ static void rounded_clip(void)
 	memset(layer, 0, sizeof(uint32_t) * H * W);
 	const int32_t all[4] = { 0, 0, W, H };
 	const float clip[5] = { 10, 8, 10 + D, 8 + D, D / 2 };
-	paint_begin(layer, W, H, W);
-	paint_rounded_clip(clip);
-	paint_rect(0, 0, W, H, all, 0x80808080u, false);
-	paint_rounded_clip(NULL);
+	soft_paint_begin(layer, W, H, W);
+	soft_paint_rounded_clip(clip);
+	soft_paint_rect(0, 0, W, H, all, 0x80808080u, false);
+	soft_paint_rounded_clip(NULL);
 	uint32_t area = 0;
 	for (int y = 0; y < H; y++)
 		for (int x = 0; x < W; x++) {
@@ -493,14 +493,14 @@ static void bench_run(const char *name, const uint8_t *data, unsigned bytes, int
 		      int dw, int dh, uint32_t tint, bool colorize, int count)
 {
 	const int32_t all[4] = { 0, 0, BENCH_SIDE, BENCH_SIDE };
-	paint_begin(bench_layer, BENCH_SIDE, BENCH_SIDE, BENCH_SIDE);
+	soft_paint_begin(bench_layer, BENCH_SIDE, BENCH_SIDE, BENCH_SIDE);
 	double best = 1e18;
 	for (int round = 0; round < 7; round++) {
 		int reps = 0;
 		double t0 = now_ns(), t1;
 		do {
 			for (int i = 0; i < count; i++)
-				paint_texture(data, (uint32_t)tw * bytes, (uint32_t)tw, (uint32_t)th, format, dx + (i % 7) * 3,
+				soft_paint_texture(data, (uint32_t)tw * bytes, (uint32_t)tw, (uint32_t)th, format, dx + (i % 7) * 3,
 					      dy + (i % 5) * 20, dw, dh, all, tint, colorize);
 			reps++;
 			t1 = now_ns();

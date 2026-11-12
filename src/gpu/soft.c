@@ -408,7 +408,7 @@ static struct {
 	float radius;
 } paint;
 
-bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px)
+bool soft_paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px)
 {
 	paint.px = (uint8_t *)layer;
 	paint.width = (int)width;
@@ -423,7 +423,7 @@ static int round_px(float v)
 	return (int)(v < 0.0f ? v - 0.5f : v + 0.5f);
 }
 
-void paint_rounded_clip(const float *clip)
+void soft_paint_rounded_clip(const float *clip)
 {
 	paint.rounded = clip != NULL;
 	if (!clip)
@@ -630,7 +630,7 @@ static void rect_span(int y, int x0, int x1, uint32_t color, bool copy)
 	}
 }
 
-void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4], uint32_t color, bool copy)
+void soft_paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4], uint32_t color, bool copy)
 {
 	int x0 = round_px(fx0), y0 = round_px(fy0), x1 = round_px(fx1), y1 = round_px(fy1);
 	if (!paint_clip(&x0, &y0, &x1, &y1, clip) || (!copy && !color))
@@ -791,8 +791,8 @@ static void texture_span(int y, int x0, int x1, const uint8_t *src, const struct
 /* A texture at another size takes the nearest texel for each pixel, as
  * the UI does itself; a glyph's coverage would want better, and is left
  * to the UI. */
-bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
-		   int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
+bool soft_paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
+			int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
 {
 	bool scaled = dw != (int)width || dh != (int)height;
 	if (scaled && (format == PAINT_ALPHA || dw <= 0 || dh <= 0 || !width || !height || width > 32767 || height > 32767))
@@ -859,8 +859,8 @@ bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_
 /* A filled rectangle with rounded corners and no border: each row is a
  * run of whole pixels with, where a corner's arc passes, the pixels it
  * cuts on either side. One with a border is left to the UI. */
-bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii[4], float border, const int32_t clip[4],
-		   uint32_t fill_color, uint32_t edge)
+bool soft_paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii[4], float border, const int32_t clip[4],
+			uint32_t fill_color, uint32_t edge)
 {
 	if (border > 0.0f)
 		return false;
@@ -908,7 +908,7 @@ bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii
 	}
 	return true;
 }
-void paint_cpu(uint32_t y0, uint32_t y1) {}
-void paint_sync(void) {}
-void paint_end(void) {}
-void paint_finish(void) {}
+void soft_paint_cpu(uint32_t y0, uint32_t y1) {}
+void soft_paint_sync(void) {}
+void soft_paint_end(void) {}
+void soft_paint_finish(void) {}

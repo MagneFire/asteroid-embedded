@@ -16,6 +16,7 @@
 #include "asteroid.h"
 #include "gpu/a3xx.h"
 #include "gpu/soft.h"
+#include "gpu/paint.h"
 #include "gpu/sgx.h"
 #include "gpu/sgx_draw.h"
 #include "gpu/sgx_compose.h"
@@ -605,3 +606,33 @@ bool gpu_draw_end(void)
 	sgx_stop();
 	return false;
 }
+
+/* paint.h: the UI is always painted by the CPU. */
+
+void paint_rounded_clip(const float *clip) { soft_paint_rounded_clip(clip); }
+bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px)
+{
+	return soft_paint_begin(layer, width, height, stride_px);
+}
+
+void paint_rect(float x0, float y0, float x1, float y1, const int32_t clip[4], uint32_t color, bool copy)
+{
+	soft_paint_rect(x0, y0, x1, y1, clip, color, copy);
+}
+
+bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
+		   int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
+{
+	return soft_paint_texture(data, stride, width, height, format, dx, dy, dw, dh, clip, tint, colorize);
+}
+
+bool paint_rounded(float x0, float y0, float x1, float y1, const float radii[4], float border, const int32_t clip[4],
+		   uint32_t fill, uint32_t edge)
+{
+	return soft_paint_rounded(x0, y0, x1, y1, radii, border, clip, fill, edge);
+}
+
+void paint_cpu(uint32_t y0, uint32_t y1) { soft_paint_cpu(y0, y1); }
+void paint_sync(void) { soft_paint_sync(); }
+void paint_end(void) { soft_paint_end(); }
+void paint_finish(void) { soft_paint_finish(); }

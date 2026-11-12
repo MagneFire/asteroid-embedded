@@ -10,14 +10,14 @@
  * coverage masks made once per radius and border, and plain rectangles
  * for the rest. The layer is cached memory: rows the CPU wrote are
  * cleaned before the GPU blends over them, and the rows the GPU drew are
- * invalidated once it is done. paint_end does not wait for that: the
- * rows are noted and invalidated by paint_finish, or by the next wait,
+ * invalidated once it is done. adreno_paint_end does not wait for that: the
+ * rows are noted and invalidated by adreno_paint_finish, or by the next wait,
  * and the vertices of submissions in flight are kept until then. While a
  * rounded clip is set, draws use shader g, which multiplies each pixel by
  * its coverage of the rounded rectangle. */
 #include <string.h>
 #include "asteroid.h"
-#include "a3xx.h"
+#include "adreno.h"
 #include "draw.h"
 #include "paint.h"
 #include "ui/ui.h"
@@ -75,11 +75,11 @@ static bool setup(void)
 		return true;
 	for (int i = 0; i < 2; i++) {
 		struct atlas *a = &atlases[i];
-		a->texels = gpu_alloc(a->width * a->height * a->bpp, 4096);
+		a->texels = adreno_alloc(a->width * a->height * a->bpp, 4096);
 		if (!a->texels)
 			return false;
 	}
-	verts = gpu_alloc(VERTS * VERT_FLOATS * 4, 64);
+	verts = adreno_alloc(VERTS * VERT_FLOATS * 4, 64);
 	if (!verts)
 		return false;
 	ready = true;
@@ -103,7 +103,7 @@ static void flush(void)
 	if (nverts == first)
 		return;
 	if (!begun) {
-		gpu_draw_begin(&target);
+		adreno_draw_begin(&target);
 		have_prog = false;
 		begun = true;
 		drawn = false;
@@ -112,9 +112,9 @@ static void flush(void)
 	}
 	if (!have_prog || rounded != rounded_prog) {
 		if (rounded)
-			gpu_draw_program(&shader_g_vs, &shader_g_fs);
+			adreno_draw_program(&shader_g_vs, &shader_g_fs);
 		else
-			gpu_draw_program(&shader_f_vs, &shader_f_fs);
+			adreno_draw_program(&shader_f_vs, &shader_f_fs);
 		have_prog = true;
 		rounded_prog = rounded;
 	}
@@ -122,19 +122,19 @@ static void flush(void)
 		const float *c = rounded_clip;
 		float w = (float)target.width / 2, h = (float)target.height / 2, cx = (c[0] + c[2]) / 2, cy = (c[1] + c[3]) / 2;
 		float hx = (c[2] - c[0]) / 2 - c[4], hy = (c[3] - c[1]) / 2 - c[4];
-		gpu_draw_consts(GPU_STAGE_VS, 0, (const float[]){ w, -h, w, h, cx, cy, 0, 0 }, 2);
-		gpu_draw_consts(GPU_STAGE_FS, 0, (const float[]){ 0, 0, hx, hy, c[4], 0, 0, 0 }, 2);
+		adreno_draw_consts(GPU_STAGE_VS, 0, (const float[]){ w, -h, w, h, cx, cy, 0, 0 }, 2);
+		adreno_draw_consts(GPU_STAGE_FS, 0, (const float[]){ 0, 0, hx, hy, c[4], 0, 0, 0 }, 2);
 	}
 	int t = kind & ~TEX_LINEAR;
 	struct atlas *a = &atlases[t == TEX_ALPHA ? 0 : 1];
 	if (drawn && a->changed)
-		gpu_draw_invalidate_textures();
+		adreno_draw_invalidate_textures();
 	a->changed = false;
-	gpu_draw_texture_format(0, (uint32_t)(uintptr_t)a->texels, a->width, a->height, a->width * a->bpp,
+	adreno_draw_texture_format(0, (uint32_t)(uintptr_t)a->texels, a->width, a->height, a->width * a->bpp,
 				(t == TEX_ALPHA ? GPU_TEX_ALPHA : t == TEX_IMAGE ? GPU_TEX_RGBA : GPU_TEX_RGBA_ALPHA) |
 				(kind & TEX_LINEAR ? GPU_TEX_LINEAR : 0));
-	gpu_draw_blend(!copy_mode);
-	gpu_draw_triangles((uint32_t)(uintptr_t)(verts + first * VERT_FLOATS), VERT_FLOATS * 4, 3,
+	adreno_draw_blend(!copy_mode);
+	adreno_draw_triangles((uint32_t)(uintptr_t)(verts + first * VERT_FLOATS), VERT_FLOATS * 4, 3,
 			   (const uint8_t[]){ 4, 2, 4 }, nverts - first);
 	drawn = true;
 	first = nverts;
@@ -145,7 +145,7 @@ static void submit(void)
 {
 	flush();
 	if (begun)
-		gpu_draw_submit();
+		adreno_draw_submit();
 	begun = false;
 	if (dirty_y0 < dirty_y1)
 		pending[npending++] = (typeof(pending[0])){ layer, target.pitch_bytes, dirty_y0, dirty_y1 };
@@ -153,7 +153,7 @@ static void submit(void)
 	dirty_y1 = 0;
 }
 
-void paint_rounded_clip(const float *clip)
+void adreno_paint_rounded_clip(const float *clip)
 {
 	bool on = clip != NULL;
 	if (on == rounded && (!on || !memcmp(clip, rounded_clip, sizeof rounded_clip)))
@@ -164,11 +164,11 @@ void paint_rounded_clip(const float *clip)
 		memcpy(rounded_clip, clip, sizeof rounded_clip);
 }
 
-void paint_finish(void)
+void adreno_paint_finish(void)
 {
 	if (!npending && nverts == 0)
 		return;
-	if (!gpu_draw_wait())
+	if (!adreno_draw_wait())
 		log_printf("paint: draw did not complete\n");
 	for (unsigned i = 0; i < npending; i++)
 		dcache_invalidate_range(pending[i].layer + pending[i].y0 * (pending[i].pitch / 4),
@@ -177,19 +177,19 @@ void paint_finish(void)
 	nverts = first = 0;
 }
 
-void paint_sync(void)
+void adreno_paint_sync(void)
 {
 	submit();
-	paint_finish();
+	adreno_paint_finish();
 }
 
-bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride_px)
+bool adreno_paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride_px)
 {
-	if (!gpu_ready() || !setup())
+	if (!adreno_ready() || !setup())
 		return false;
 	rounded = false;
 	if (npending == ARRAY_SIZE(pending))
-		paint_finish();
+		adreno_paint_finish();
 	if (!atlases[0].row_h)
 		reset();
 	pass++;
@@ -201,13 +201,13 @@ bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride
 	return true;
 }
 
-void paint_end(void)
+void adreno_paint_end(void)
 {
 	submit();
 	layer = NULL;
 }
 
-void paint_cpu(uint32_t y0, uint32_t y1)
+void adreno_paint_cpu(uint32_t y0, uint32_t y1)
 {
 	if (layer && y0 < y1)
 		dcache_clean_invalidate_range(layer + y0 * (target.pitch_bytes / 4), (y1 - y0) * target.pitch_bytes);
@@ -220,7 +220,7 @@ static void use(int k, bool copy, unsigned n)
 		return;
 	flush();
 	if (nverts + 6 * n > VERTS)
-		paint_sync();
+		adreno_paint_sync();
 	kind = k;
 	copy_mode = copy;
 }
@@ -272,7 +272,7 @@ static void solid(float x0, float y0, float x1, float y1, const int32_t clip[4],
 	quad(x0, y0, x1, y1, u, v, u, v, clip, color);
 }
 
-void paint_rect(float x0, float y0, float x1, float y1, const int32_t clip[4], uint32_t color, bool copy)
+void adreno_paint_rect(float x0, float y0, float x1, float y1, const int32_t clip[4], uint32_t color, bool copy)
 {
 	if (!layer)
 		return;
@@ -380,7 +380,7 @@ static struct slot *lookup(const uint8_t *key, const uint8_t *data, uint32_t str
 	}
 	uint32_t x, y;
 	if (!s || !place(a, width, height, &x, &y)) {
-		paint_sync();
+		adreno_paint_sync();
 		reset();
 		s = find(key, width, height, n, &found);
 		if (!s || !place(a, width, height, &x, &y))
@@ -397,8 +397,8 @@ static struct slot *lookup(const uint8_t *key, const uint8_t *data, uint32_t str
 	return s;
 }
 
-bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
-		   int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
+bool adreno_paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
+			  int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
 {
 	if (!layer || format < PAINT_RGB || format > PAINT_ALPHA || !width || !height || dw <= 0 || dh <= 0)
 		return false;
@@ -442,8 +442,8 @@ static int max3(int a, int b, int c)
 	return a > b ? (a > c ? a : c) : (b > c ? b : c);
 }
 
-bool paint_rounded(float x0, float y0, float x1, float y1, const float radii[4], float border, const int32_t clip[4],
-		   uint32_t fill, uint32_t edge)
+bool adreno_paint_rounded(float x0, float y0, float x1, float y1, const float radii[4], float border, const int32_t clip[4],
+			  uint32_t fill, uint32_t edge)
 {
 	if (!layer)
 		return false;
