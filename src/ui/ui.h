@@ -20,7 +20,8 @@
  * ui_set_calc gives the calculator its display text and the length of
  * the number it shows, which sets the font size; ui_set_game the
  * UI_TILES tiles of the Diamonds game, its score, best score and whether
- * it is over.
+ * it is over; ui_set_agenda the events of the day the Agenda app shows,
+ * each with its index in the agenda.
  * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
@@ -54,7 +55,12 @@
  * UI_EVENT_TIME_SET the time of day set by hand in minutes and
  * UI_EVENT_DATE_SET a date set by hand as (year - 2000) << 9 | month << 5
  * | day, UI_EVENT_CALC a calculator key (enum ui_calc_key) and
- * UI_EVENT_GAME a move in the Diamonds game (enum ui_game_move).
+ * UI_EVENT_GAME a move in the Diamonds game (enum ui_game_move),
+ * UI_EVENT_AGENDA_DAY the day the Agenda app turned to, as a date set by
+ * hand, UI_EVENT_AGENDA_EDIT an agenda event as edited, its index in
+ * bits 0-7 (0xff for a new one) and its date in bits 8 and up, its start
+ * and end in minutes of the day in the high and low half of arg, and
+ * UI_EVENT_AGENDA_DELETE the agenda event at that index deleted.
  *
  * Every ui_* function is called from the main loop only, never from an
  * interrupt handler, as the UI keeps its state in plain statics. Strings
@@ -84,6 +90,7 @@ enum ui_app {
 	UI_APP_FLASHLIGHT,
 	UI_APP_CALCULATOR,
 	UI_APP_DIAMONDS,
+	UI_APP_AGENDA,
 };
 enum ui_clock_action {
 	UI_TIMER_START = 20,
@@ -158,6 +165,15 @@ struct ui_tile {
 };
 #define UI_TILES 16
 
+/* An event of the Agenda app: its index in the agenda, its start and end
+ * in minutes of the day and its title, NUL-terminated. */
+#define UI_AGENDA_TITLE 24
+struct ui_agenda {
+	int16_t index;
+	uint16_t start, end;
+	char title[UI_AGENDA_TITLE];
+};
+
 /* Brightnesses in per cent, the nightstand delay in seconds, burn_in
  * 0 off, 1 high, 2 medium, 3 low, tilt an enum tilt_mode. */
 struct ui_settings {
@@ -185,6 +201,9 @@ enum ui_event_kind {
 	UI_EVENT_DATE_SET,
 	UI_EVENT_CALC,
 	UI_EVENT_GAME,
+	UI_EVENT_AGENDA_DAY,
+	UI_EVENT_AGENDA_EDIT,
+	UI_EVENT_AGENDA_DELETE,
 };
 
 struct ui_event {
@@ -194,7 +213,7 @@ struct ui_event {
 };
 
 _Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 14 &&
-	       sizeof(struct ui_tile) == 6, "ui types");
+	       sizeof(struct ui_tile) == 6 && sizeof(struct ui_agenda) == 30, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
 bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px, uint32_t stride_px, uint32_t width,
@@ -211,6 +230,7 @@ int ui_app_open(void);
 bool ui_flashlight_on(void);
 void ui_set_calc(const char *shown, uint32_t shown_len, uint32_t length);
 void ui_set_game(const struct ui_tile *tiles, uint32_t score, uint32_t best, bool over);
+void ui_set_agenda(const struct ui_agenda *events, uint32_t n);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);

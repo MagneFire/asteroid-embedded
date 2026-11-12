@@ -29,6 +29,15 @@ export struct Tile {
     anim: bool,
 }
 
+// An event of the Agenda app: its index in the agenda, start and end in minutes of the day, and
+// its title.
+export struct AgendaItem {
+    index: int,
+    start: int,
+    end: int,
+    title: string,
+}
+
 export struct AlarmItem {
     hour: int,
     minute: int,
@@ -92,6 +101,8 @@ export global Face {
     in-out property <int> game-score;
     in-out property <int> game-best;
     in-out property <bool> game-over;
+    // The events of the day the Agenda app shows.
+    in-out property <[AgendaItem]> agenda;
     // RTC seconds, for the age of notifications.
     in-out property <int> now;
     in-out property <bool> vibration-on: true;
@@ -171,6 +182,11 @@ export global Face {
     // A calculator key, and a move in the Diamonds game.
     callback calc-key(int);
     callback game-move(int);
+    // The day the Agenda app turned to; an event as saved (index, -1 for a new one, the day,
+    // month and year, start and end in minutes) and an event deleted.
+    callback agenda-day(int, int, int);
+    callback agenda-saved(int, int, int, int, int, int);
+    callback agenda-deleted(int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

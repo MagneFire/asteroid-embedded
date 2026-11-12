@@ -97,6 +97,17 @@ pub struct UiTile {
     anim: bool,
 }
 
+/// An event of the Agenda app: its index in the agenda, start and end in minutes of the day, and
+/// its title, NUL-terminated.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct UiAgenda {
+    index: i16,
+    start: u16,
+    end: u16,
+    title: [u8; 24],
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct UiRgb {
@@ -153,7 +164,7 @@ mod codes {
 use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
-const _: () = assert!(core::mem::size_of::<UiTile>() == 6);
+const _: () = assert!(core::mem::size_of::<UiTile>() == 6 && core::mem::size_of::<UiAgenda>() == 30);
 const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 14);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
@@ -173,6 +184,7 @@ struct Ui {
     forecast: Rc<VecModel<Day>>,
     alarms: Rc<VecModel<AlarmItem>>,
     tiles: Rc<VecModel<Tile>>,
+    agenda: Rc<VecModel<AgendaItem>>,
     opened: Queue,
     events: Events,
     stride: usize,
@@ -255,6 +267,7 @@ pub unsafe extern "C" fn ui_init(
     let forecast = Rc::new(VecModel::default());
     let alarms = Rc::new(VecModel::default());
     let tiles = Rc::new(VecModel::from(alloc::vec![Tile { x: -1, y: -1, val: 0, pop: false, anim: false }; 16]));
+    let agenda = Rc::new(VecModel::default());
     let (opened, events): (Queue, Events) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
@@ -271,6 +284,7 @@ pub unsafe extern "C" fn ui_init(
         face.set_weather_forecast(forecast.clone().into());
         face.set_alarms(alarms.clone().into());
         face.set_game_tiles(tiles.clone().into());
+        face.set_agenda(agenda.clone().into());
         let queue = events.clone();
         face.on_alarm_saved(move |index, hour, minute, days, on| {
             let alarm = UiAlarm { hour: hour as u8, minute: minute as u8, days: days as u8, on };
@@ -314,6 +328,16 @@ pub unsafe extern "C" fn ui_init(
         let queue = events.clone();
         face.on_game_move(move |dir| event(&queue, UI_EVENT_GAME, dir));
         let queue = events.clone();
+        face.on_agenda_day(move |day, month, year| event(&queue, UI_EVENT_AGENDA_DAY, (year - 2000) << 9 | month << 5 | day));
+        let queue = events.clone();
+        face.on_agenda_saved(move |index, day, month, year, start, end| {
+            let date = (year - 2000) << 9 | month << 5 | day;
+            let value = date << 8 | (index & 0xff);
+            queue.borrow_mut().push_back(UiEvent { kind: UI_EVENT_AGENDA_EDIT, value, arg: start << 16 | end, alarm: UiAlarm::default() });
+        });
+        let queue = events.clone();
+        face.on_agenda_deleted(move |index| event(&queue, UI_EVENT_AGENDA_DELETE, index));
+        let queue = events.clone();
         face.on_date_set(move |day, month, year| event(&queue, UI_EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
@@ -324,7 +348,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, alarms, tiles, opened, events, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, alarms, tiles, agenda, opened, events, stride, width, height });
     }
     true
 }
@@ -412,6 +436,29 @@ pub unsafe extern "C" fn ui_set_game(tiles: *const UiTile, score: u32, best: u32
         face.set_game_best(best as i32);
         face.set_game_over(over);
     });
+}
+
+fn agenda_items(events: *const UiAgenda, n: u32) -> Vec<AgendaItem> {
+    let events = if events.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(events, n as usize) } };
+    events
+        .iter()
+        .map(|e| {
+            let len = e.title.iter().position(|&b| b == 0).unwrap_or(e.title.len());
+            AgendaItem {
+                index: e.index as i32,
+                start: e.start as i32,
+                end: e.end as i32,
+                title: unsafe { text(e.title.as_ptr(), len as u32) },
+            }
+        })
+        .collect()
+}
+
+/// The events of the day the Agenda app shows.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_agenda(events: *const UiAgenda, n: u32) {
+    let items = agenda_items(events, n);
+    with_ui(|ui| ui.agenda.set_vec(items));
 }
 
 /// Whether the Flashlight app has its light on.

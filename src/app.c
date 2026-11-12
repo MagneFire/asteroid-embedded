@@ -20,6 +20,7 @@
 #include "clockapps.h"
 #include "calc.h"
 #include "game.h"
+#include "agenda.h"
 #include "power.h"
 #include "frame.h"
 #include "present.h"
@@ -65,8 +66,34 @@ void app_open(int app)
 		calc_reset();
 		present_calc();
 	}
+	/* It opens on today, as the app does. */
+	if (app == UI_APP_AGENDA) {
+		struct civil c;
+		civil_from_epoch(rtc_read(), &c);
+		present_agenda_day((c.year - 2000) << 9 | c.month << 5 | c.day);
+	}
 	ui_set_app(app);
 	stack_open_app();
+}
+
+/* An event edited in the Agenda app keeps its title, as the watch cannot
+ * type one. */
+static void agenda_edited(const struct ui_event *e)
+{
+	if (e->kind == UI_EVENT_AGENDA_DELETE) {
+		if (e->value >= 0)
+			agenda_delete((unsigned)e->value);
+	} else {
+		uint32_t i = (uint32_t)e->value & 0xff, date = (uint32_t)e->value >> 8, t = (uint32_t)e->arg;
+		struct agenda_event v = { (uint16_t)(2000 + (date >> 9)), (uint8_t)(date >> 5 & 15), (uint8_t)(date & 31),
+					  (uint16_t)(t >> 16), (uint16_t)t, "" };
+		const struct agenda_event *old = agenda_get(i);
+		if (old)
+			memcpy(v.title, old->title, AGENDA_TITLE);
+		if (agenda_set(old ? i : AGENDA_EVENTS, &v) < 0)
+			log_printf("agenda: not added, full or not a date\n");
+	}
+	present_agenda();
 }
 
 static bool console_settings;
@@ -363,6 +390,13 @@ void app_ui_events(uint32_t now)
 			break;
 		case UI_EVENT_GAME:
 			game_move(a, now);
+			break;
+		case UI_EVENT_AGENDA_DAY:
+			present_agenda_day((uint32_t)a);
+			break;
+		case UI_EVENT_AGENDA_EDIT:
+		case UI_EVENT_AGENDA_DELETE:
+			agenda_edited(&e);
 			break;
 		case UI_EVENT_SNOOZE:
 			notify_snooze(a, rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);

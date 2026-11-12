@@ -1,0 +1,781 @@
+// The Agenda app, laid out as AsteroidOS's asteroid-calendar: the month and year over a strip of
+// days to pick one from, and below it the day's events, which scroll up into the day view with
+// the date and an add button. A tap on the month picks another month and year, a tap on an
+// event or on the add button opens it in the event pages. The watch cannot type, so the title
+// field only shows the title, and as the original has no date or end on its event page, those
+// get pages of their own after the start time. Face.agenda is the picked day's events; changes
+// go out through agenda-day, agenda-saved and agenda-deleted.
+import { Face, AgendaItem } from "face.slint";
+import { Pager } from "launcher.slint";
+import { PageHeader, IconButton, Spinner, Scroller } from "controls.slint";
+import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
+
+global Cal {
+    out property <[string]> months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    out property <[string]> short-months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    out property <[string]> weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    out property <[string]> short-days: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    out property <[int]> offsets: [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+
+    public pure function days(year: int, month: int) -> int {
+        return month == 2 ? (Math.mod(year, 4) == 0 && (Math.mod(year, 100) != 0 || Math.mod(year, 400) == 0) ? 29 : 28) : month == 4 || month == 6 || month == 9 || month == 11 ? 30 : 31;
+    }
+
+    // 0 for Sunday.
+    public pure function weekday(year: int, month: int, day: int) -> int {
+        let y = month < 3 ? year - 1 : year;
+        return Math.mod(y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) + self.offsets[month - 1] + day, 7);
+    }
+
+    public pure function hours(minutes: int) -> string {
+        let h = Math.floor(minutes / 60);
+        return Face.two-digits(Face.clock12 ? Math.mod(h + 11, 12) + 1 : h) + ":" + Face.two-digits(Math.mod(minutes, 60));
+    }
+}
+
+// A page pushed over another, sliding in from the right like LayerStack and following the back
+// gesture (Face.peek); while a page is on top of it, it is moved out to the left beside it.
+component Layer {
+    in property <bool> top;
+    property <length> offset: 100 * Theme.unit;
+
+    x: self.top ? self.offset + Face.peek : Face.peek - 100 * Theme.unit;
+    y: 0;
+    width: 100 * Theme.unit;
+    height: 100 * Theme.unit;
+    animate x {
+        duration: Face.peeking ? 0ms : 200ms;
+        easing: ease-out-quint;
+    }
+
+    init => {
+        self.offset = 0;
+    }
+
+    @children
+}
+
+// Text with the original's drop shadow, 1.5 px down and to the right.
+component Shadowed {
+    in property <string> text;
+    in property <length> font-size;
+    in property <string> font-family;
+    in property <TextHorizontalAlignment> horizontal-alignment;
+    in property <float> shade: 1;
+
+    Text {
+        x: 1.5px;
+        y: 1.5px;
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: #00000077;
+        opacity: root.shade;
+        font-size: root.font-size;
+        font-family: root.font-family;
+        horizontal-alignment: root.horizontal-alignment;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: white;
+        opacity: root.shade;
+        font-size: root.font-size;
+        font-family: root.font-family;
+        horizontal-alignment: root.horizontal-alignment;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// Hours and minutes spinners, with AM/PM in 12 hour mode, as the event and alarm pages pick a
+// time; minutes is the time picked.
+component TimeRow {
+    in property <int> initial;
+    in property <bool> separators;
+    out property <int> minutes: (hours.value + (Face.clock12 ? ampm.value * 12 : 0)) * 60 + mins.value;
+    property <length> w: Face.clock12 ? self.width / 3 : self.width / 2;
+
+    hours := Spinner {
+        x: 0;
+        width: root.w;
+        height: root.height;
+        count: Face.clock12 ? 12 : 24;
+        twelve: Face.clock12;
+        value: Face.clock12 ? Math.mod(Math.floor(root.initial / 60), 12) : Math.floor(root.initial / 60);
+    }
+
+    Rectangle {
+        x: root.w - 0.25 * Theme.unit;
+        y: root.height * 0.1;
+        width: 0.25 * Theme.unit;
+        height: root.height * 0.8;
+        background: #ffffff88;
+    }
+
+    mins := Spinner {
+        x: root.w;
+        width: root.w;
+        height: root.height;
+        count: 60;
+        value: Math.mod(root.initial, 60);
+    }
+
+    if Face.clock12: Rectangle {
+        x: 2 * root.w - 0.25 * Theme.unit;
+        y: root.height * 0.1;
+        width: 0.25 * Theme.unit;
+        height: root.height * 0.8;
+        background: #ffffff88;
+    }
+
+    ampm := Spinner {
+        x: 2 * root.w;
+        width: root.w;
+        height: root.height;
+        visible: Face.clock12;
+        count: 2;
+        wrap: false;
+        labels: ["AM", "PM"];
+        value: root.initial >= 720 ? 1 : 0;
+    }
+}
+
+export component AgendaApp {
+    // 0 the day, 1 an event's start, 2 its end, 3 its date, 4 the month picker.
+    property <int> page;
+    property <bool> popping;
+    property <int> under: self.popping || self.page == 4 ? 0 : self.page - 1;
+    property <int> back: Face.back-count;
+    // The day picked.
+    property <int> year: Face.year;
+    property <int> month: Face.month;
+    property <int> day: Face.day;
+    // The event on the event pages: its index (-1 for a new one), start, how long it takes and
+    // end in minutes, date and title.
+    property <int> index;
+    property <int> start;
+    property <int> duration;
+    property <int> end;
+    property <string> title;
+
+    changed page => {
+        Face.app-depth = self.page == 0 ? 0 : self.page == 4 ? 1 : self.page;
+    }
+    changed back => {
+        self.page = self.page == 4 ? 0 : self.page - 1;
+        Face.peek = 0;
+        Face.peeking = false;
+    }
+    init => {
+        Face.agenda-day(self.day, self.month, self.year);
+    }
+
+    function pick(d: int, m: int, y: int) {
+        self.year = y;
+        self.month = m;
+        self.day = Math.min(d, Cal.days(y, m));
+        days.jump(self.day - 1);
+        Face.agenda-day(self.day, self.month, self.year);
+    }
+
+    function open(i: int, s: int, e: int, t: string) {
+        self.index = i;
+        self.start = s;
+        self.duration = Math.mod(e - s + 1440, 1440);
+        self.end = e;
+        self.title = t;
+        self.page = 1;
+    }
+
+    // Slides the page on top out to the right and the day back in, as LayerStack's pop does.
+    function pop() {
+        self.popping = true;
+        Face.peeking = false;
+        Face.peek = 100 * Theme.unit;
+        popped.running = true;
+    }
+    popped := Timer {
+        interval: 200ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.page = 0;
+            root.popping = false;
+            Face.peek = 0;
+        }
+    }
+
+    width: 100%;
+    height: 100%;
+
+    // The day: dih is the height of the "N Events" band, dsh that of the month and days above
+    // the events. A scroll of 0 shows the days, day-scroll the day view.
+    property <length> dih: 100 * Theme.unit / 7;
+    property <length> dsh: 500 * Theme.unit / 7;
+    property <length> day-scroll: Face.round-screen ? self.dsh - self.dih : self.dsh;
+    property <bool> day-view: list.scroll >= self.day-scroll - 0.5px;
+    property <length> h: self.day-view ? 0 : Math.max(0, Math.min(self.dsh, self.dsh - list.scroll));
+    property <length> row-h: list.scroll > self.dsh / 2 ? self.dih * 1.186 : Face.round-screen ? self.dih * 0.94 : self.dih;
+    animate row-h { duration: 200ms; }
+    property <int> count: Face.agenda.length;
+    property <length> footer: Math.max(2 * self.dih, 100 * Theme.unit - self.dih - self.count * self.dih * 1.186) - (Face.round-screen ? self.dih / 2 : 0);
+
+    function to-day-view() {
+        list.scroll-to(self.day-scroll, 200ms);
+    }
+    function toggle-view() {
+        list.scroll-to(self.day-view ? 0 : self.day-scroll, 200ms);
+    }
+
+    Rectangle {
+        x: root.page == 0 ? 0 : Face.peek - 100 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 100 * Theme.unit;
+        visible: root.page == 0 || root.under == 0;
+        // The days off its sides stay out of a page pushed over it.
+        clip: true;
+        animate x {
+            duration: Face.peeking ? 0ms : 200ms;
+            easing: ease-out-quint;
+        }
+
+        list := Scroller {
+            y: 0;
+            width: 100 * Theme.unit;
+            height: 100 * Theme.unit;
+            content-height: root.dih + root.dsh + root.count * root.row-h + root.footer;
+            released(to) => {
+                if to < root.day-scroll - 0.5px {
+                    list.scroll-to(to > root.dsh / 2 ? root.day-scroll : 0, 200ms);
+                }
+            }
+
+            // The events, cut off at the top of the band as the original's list starts below
+            // it.
+            Rectangle {
+                y: list.scroll + root.dih;
+                width: 100 * Theme.unit;
+                height: 100 * Theme.unit - root.dih;
+                clip: true;
+
+                for ev[i] in Face.agenda: Rectangle {
+                    property <length> mid: self.height * 0.48;
+
+                    y: root.dsh + i * root.row-h - list.scroll;
+                    width: 100 * Theme.unit;
+                    height: root.row-h;
+
+                    Shadowed {
+                        x: 23 * Theme.unit;
+                        y: parent.mid - parent.height / 2;
+                        width: 25 * Theme.unit;
+                        height: parent.height;
+                        text: Cal.hours(ev.start);
+                        font-size: parent.height / 2;
+                        font-family: "Noto Sans SemiCondensed SemiBold";
+                        horizontal-alignment: right;
+                    }
+
+                    if Face.clock12: Shadowed {
+                        x: 24.5 * Theme.unit;
+                        y: parent.mid - parent.height * 0.44;
+                        width: 25 * Theme.unit;
+                        height: parent.height * 0.33;
+                        text: ev.start >= 720 ? "PM" : "AM";
+                        font-size: parent.height * 0.24;
+                        font-family: "Noto Sans Condensed Medium";
+                        horizontal-alignment: right;
+                        shade: 0.8;
+                    }
+
+                    Shadowed {
+                        x: 52 * Theme.unit;
+                        y: parent.mid - parent.height / 2;
+                        width: 48 * Theme.unit;
+                        height: parent.height;
+                        text: ev.title;
+                        font-size: parent.height / 2;
+                        font-family: "Noto Sans SemiCondensed Light";
+                        horizontal-alignment: left;
+                    }
+
+                    Rectangle {
+                        y: parent.height * 0.96;
+                        height: parent.height * 0.04;
+                        background: @linear-gradient(90deg, #00000000 7.5%, #00000044 37.5%, #00000000 67.5%);
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.open(ev.index, ev.start, ev.end, ev.title);
+                        }
+                    }
+                }
+            }
+
+            // The rest stays in place while the events scroll, and being inside the scroller,
+            // a vertical drag that starts on it scrolls them too.
+            Rectangle {
+                y: list.scroll;
+                width: 100 * Theme.unit;
+                height: 100 * Theme.unit;
+
+                // The add button, in the day view.
+                Rectangle {
+                    property <float> k: root.count > 0 ? 1 : 1.4;
+
+                    x: 50 * Theme.unit - self.width / 2;
+                    y: 86.6 * Theme.unit - self.height / 2;
+                    width: 18 * Theme.unit * self.k;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: #00000077;
+                    opacity: root.day-view ? 1 : 0;
+                    animate opacity { duration: 100ms; }
+
+                    Image {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 20 * Theme.unit * parent.k;
+                        height: self.width;
+                        source: Icons.get("ios-add", 28 * Theme.unit, 28 * Theme.unit);
+                        colorize: white;
+                        opacity: add.pressed ? 0.7 : 1;
+                    }
+
+                    add := TouchArea {
+                        enabled: parent.opacity == 1;
+                        clicked => {
+                            root.open(-1, Face.hour * 60 + Face.minute, Math.mod(Face.hour * 60 + Face.minute + 60, 1440), "");
+                        }
+                    }
+                }
+
+                // The month and the days, as tall as the events leave room for.
+                Rectangle {
+                    visible: root.h > 0;
+                    property <length> mh: self.height * 0.4;
+                    property <length> item: 84 * Theme.unit / 2.5;
+                    property <length> dh: self.height - self.mh;
+                    property <length> scroll: days.index * self.item - days.drag;
+                    animate scroll {
+                        duration: days.dragging ? 0ms : days.anim;
+                        easing: ease-out;
+                    }
+
+                    y: 0;
+                    width: 100 * Theme.unit;
+                    height: root.h;
+
+                    Rectangle {
+                        y: 0;
+                        height: parent.mh;
+                        background: #00000077;
+
+                        Text {
+                            y: 0;
+                            width: parent.width;
+                            height: parent.height - 10 * Theme.unit;
+                            text: root.year;
+                            color: white;
+                            font-size: parent.height / 5;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            y: 7 * Theme.unit;
+                            width: parent.width;
+                            height: parent.height - 7 * Theme.unit;
+                            text: Cal.months[root.month - 1];
+                            color: white;
+                            font-size: parent.height / 3.2;
+                            font-family: "Noto Sans Condensed Medium";
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        TouchArea {
+                            clicked => {
+                                root.page = 4;
+                            }
+                        }
+                    }
+
+                    for i in 31: Rectangle {
+                        property <float> near: Math.max(0, 1 - Math.abs(i * parent.item - parent.scroll) / parent.item);
+                        property <length> cx: 50 * Theme.unit + i * parent.item - parent.scroll;
+
+                        x: self.cx - parent.item / 2;
+                        y: parent.mh;
+                        width: parent.item;
+                        height: parent.dh;
+                        visible: i < Cal.days(root.year, root.month) && self.cx > -parent.item && self.cx < 100 * Theme.unit + parent.item;
+
+                        // day-background.svg, in its colours, the arrows left and right only where
+                        // there are days that way.
+                        Rectangle {
+                            x: (parent.width - self.width) / 2;
+                            width: parent.height;
+                            height: parent.height;
+                            opacity: parent.near;
+
+                            Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: Icons.get("agenda-day-mark", 43 * Theme.unit, 43 * Theme.unit);
+                                colorize: #ffb147;
+                            }
+
+                            if i > 0: Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: Icons.get("agenda-day-left", 43 * Theme.unit, 43 * Theme.unit);
+                                colorize: white;
+                                opacity: 0.267;
+                            }
+
+                            if i + 1 < Cal.days(root.year, root.month): Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: Icons.get("agenda-day-right", 43 * Theme.unit, 43 * Theme.unit);
+                                colorize: white;
+                                opacity: 0.267;
+                            }
+
+                            Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: Icons.get("agenda-day-notches", 43 * Theme.unit, 43 * Theme.unit);
+                                colorize: black;
+                                opacity: 0.467;
+                            }
+                        }
+
+                        Shadowed {
+                            y: (-0.6 - 3.9 * parent.near) * Theme.unit;
+                            width: parent.width;
+                            height: parent.height;
+                            text: i + 1;
+                            font-size: parent.height / 2.4 * (1 + 0.5 * parent.near);
+                            font-family: parent.near > 0.5 ? "Noto Sans SemiCondensed Bold" : "Noto Sans Condensed Medium";
+                            horizontal-alignment: center;
+                            shade: 0.6 + 0.4 * parent.near;
+                        }
+
+                        Shadowed {
+                            y: (10 + parent.near) * Theme.unit;
+                            width: parent.width;
+                            height: parent.height;
+                            text: Cal.weekdays[Cal.weekday(root.year, root.month, i + 1)];
+                            font-size: parent.height / 9 * (1 + 0.5 * parent.near);
+                            font-family: "Noto Sans SemiCondensed Light";
+                            horizontal-alignment: center;
+                            shade: 0.7 + 0.3 * parent.near;
+                        }
+
+                        // The number of events, on the picked day.
+                        if i == days.index && Face.agenda.length > 0: Rectangle {
+                            property <length> size: parent.height * 0.23;
+
+                            x: parent.width / 2 + parent.height * (i > 8 ? 0.35 : 0.2) - self.size / 2;
+                            y: parent.height * 0.2 - self.size / 2;
+                            width: self.size;
+                            height: self.size;
+                            border-radius: self.size / 2;
+                            background: #CC5800aa;
+                            opacity: parent.near;
+
+                            Text {
+                                width: parent.width;
+                                height: parent.height * 0.97;
+                                text: Face.agenda.length;
+                                color: white;
+                                font-size: parent.height / 1.6;
+                                font-family: "Noto Sans SemiCondensed Bold";
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    days := Pager {
+                        x: 8 * Theme.unit;
+                        y: parent.mh;
+                        width: 84 * Theme.unit;
+                        height: parent.dh;
+                        item: parent.item;
+                        count: Cal.days(root.year, root.month);
+                        index: root.day - 1;
+                        changed index => {
+                            if self.index + 1 != root.day {
+                                root.day = self.index + 1;
+                                Face.agenda-day(root.day, root.month, root.year);
+                            }
+                        }
+                        tapped(x) => {
+                            if Math.abs(x - self.width / 2) < parent.item / 2 {
+                                root.to-day-view();
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    y: (root.day-view && Face.round-screen ? root.dih : root.h) - 1 * Theme.unit - 8 * Theme.unit;
+                    width: 100 * Theme.unit;
+                    height: 8 * Theme.unit;
+                    text: root.year + "/" + Face.two-digits(root.month) + "/" + Face.two-digits(root.day);
+                    color: white;
+                    font-size: 6.25 * Theme.unit;
+                    font-family: "Noto Sans SemiCondensed Light";
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    opacity: root.day-view ? 1 : 0;
+                    animate opacity { duration: 100ms; }
+
+                    TouchArea {
+                        clicked => {
+                            root.toggle-view();
+                        }
+                    }
+                }
+
+                Rectangle {
+                    y: root.day-view && Face.round-screen ? root.dih : root.h;
+                    height: root.dih;
+                    background: #00000077;
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: root.count + " Events on " + Cal.short-days[Cal.weekday(root.year, root.month, root.day)];
+                        color: white;
+                        font-size: parent.height / 2.2;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.toggle-view();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // EventDialog: the start time, the title and, for an event that is there, a delete button.
+    if root.page >= 1 && root.page <= 3: Layer {
+        top: root.page == 1;
+        visible: root.page == 1 || root.under == 1;
+
+        start-time := TimeRow {
+            x: Face.round-screen ? 10 * Theme.unit : 0;
+            y: 20 * Theme.unit;
+            width: Face.round-screen ? 80 * Theme.unit : 100 * Theme.unit;
+            height: 38 * Theme.unit;
+            initial: root.start;
+        }
+
+        Rectangle {
+            x: 10 * Theme.unit;
+            y: 58 * Theme.unit;
+            width: 80 * Theme.unit;
+            height: 14 * Theme.unit;
+            border-radius: 5px;
+            border-width: 1px;
+            border-color: #BDBEBF;
+            background: white;
+
+            Text {
+                x: 3 * Theme.unit;
+                width: parent.width - 6 * Theme.unit;
+                height: parent.height;
+                text: root.title != "" ? root.title : "Title";
+                color: root.title != "" ? #2B2C2E : #a0a1a2;
+                font-size: root.title != "" ? 8 * Theme.unit : 7 * Theme.unit;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        if root.index >= 0: IconButton {
+            x: 28 * Theme.unit;
+            y: 77 * Theme.unit;
+            icon: "ios-trash-circle";
+            clicked => {
+                Face.agenda-deleted(root.index);
+                root.pop();
+            }
+        }
+
+        IconButton {
+            x: root.index >= 0 ? 52 * Theme.unit : 40 * Theme.unit;
+            y: 77 * Theme.unit;
+            icon: "ios-arrow-dropright";
+            clicked => {
+                root.start = start-time.minutes;
+                root.end = Math.mod(root.start + root.duration, 1440);
+                root.page = 2;
+            }
+        }
+
+        PageHeader {
+            text: root.index < 0 ? "New Event" : "Edit Event";
+        }
+    }
+
+    if root.page >= 2 && root.page <= 3: Layer {
+        top: root.page == 2;
+        visible: root.page == 2 || root.under == 2;
+
+        end-time := TimeRow {
+            x: 5 * Theme.unit;
+            y: 20 * Theme.unit;
+            width: 90 * Theme.unit;
+            height: 60 * Theme.unit;
+            initial: root.end;
+        }
+
+        IconButton {
+            x: 40 * Theme.unit;
+            y: 77 * Theme.unit;
+            icon: "ios-arrow-dropright";
+            clicked => {
+                root.end = end-time.minutes;
+                root.page = 3;
+            }
+        }
+
+        PageHeader {
+            text: "End";
+        }
+    }
+
+    // The date, the picked day to start with.
+    if root.page == 3: Layer {
+        top: true;
+
+        date-day := Spinner {
+            x: 5 * Theme.unit;
+            y: 20 * Theme.unit;
+            width: 30 * Theme.unit;
+            height: 60 * Theme.unit;
+            count: 31;
+            first: 1;
+            plain: true;
+            value: root.day - 1;
+        }
+
+        Rectangle {
+            x: 34.75 * Theme.unit;
+            y: 26 * Theme.unit;
+            width: 0.25 * Theme.unit;
+            height: 48 * Theme.unit;
+            background: #ffffff88;
+        }
+
+        date-month := Spinner {
+            x: 35 * Theme.unit;
+            y: 20 * Theme.unit;
+            width: 30 * Theme.unit;
+            height: 60 * Theme.unit;
+            count: 12;
+            labels: Cal.short-months;
+            value: root.month - 1;
+        }
+
+        Rectangle {
+            x: 64.75 * Theme.unit;
+            y: 26 * Theme.unit;
+            width: 0.25 * Theme.unit;
+            height: 48 * Theme.unit;
+            background: #ffffff88;
+        }
+
+        date-year := Spinner {
+            x: 65 * Theme.unit;
+            y: 20 * Theme.unit;
+            width: 30 * Theme.unit;
+            height: 60 * Theme.unit;
+            count: 100;
+            first: 2000;
+            plain: true;
+            wrap: false;
+            value: root.year - 2000;
+        }
+
+        IconButton {
+            x: 40 * Theme.unit;
+            y: 77 * Theme.unit;
+            icon: root.index < 0 ? "ios-add-circle-outline" : "ios-checkmark-circle-outline";
+            clicked => {
+                let y = date-year.value + 2000;
+                let m = date-month.value + 1;
+                Face.agenda-saved(root.index, Math.min(date-day.value + 1, Cal.days(y, m)), m, y, root.start, root.end);
+                root.pop();
+            }
+        }
+
+        PageHeader {
+            text: "Date";
+        }
+    }
+
+    // MonthSelector: the month on a circular spinner and the year beside it.
+    if root.page == 4: Layer {
+        top: true;
+
+        pick-month := Spinner {
+            x: Face.round-screen ? 10 * Theme.unit : 0;
+            y: 20 * Theme.unit;
+            width: Face.round-screen ? 40 * Theme.unit : 50 * Theme.unit;
+            height: 60 * Theme.unit;
+            count: 12;
+            labels: Cal.short-months;
+            value: root.month - 1;
+        }
+
+        Rectangle {
+            x: pick-month.x + pick-month.width - 0.25 * Theme.unit;
+            y: 26 * Theme.unit;
+            width: 0.25 * Theme.unit;
+            height: 48 * Theme.unit;
+            background: #ffffff88;
+        }
+
+        pick-year := Spinner {
+            x: pick-month.x + pick-month.width;
+            y: 20 * Theme.unit;
+            width: pick-month.width;
+            height: 60 * Theme.unit;
+            count: 100;
+            first: 2000;
+            plain: true;
+            wrap: false;
+            value: root.year - 2000;
+        }
+
+        IconButton {
+            x: 40 * Theme.unit;
+            y: 77 * Theme.unit;
+            icon: "ios-checkmark-circle-outline";
+            clicked => {
+                root.pick(root.day, pick-month.value + 1, pick-year.value + 2000);
+                root.pop();
+            }
+        }
+
+        PageHeader {
+            text: "Month";
+        }
+    }
+}

@@ -63,12 +63,14 @@ export component IconButton {
 // does (the same speeds and deceleration) to any position. A drag past either end follows the
 // finger less and less, up to give, and a flick that reaches an end with speed left goes past it
 // by up to 0.6 give and comes back. The children are the content, content-height tall, and
-// scroll is how far down it is.
+// scroll is how far down it is. released says where a drag let go is heading, and scroll-to
+// moves the content over d.
 export component Scroller inherits SwipeGestureHandler {
     in property <length> content-height;
     in-out property <length> scroll;
+    in property <length> give: 15 * Theme.unit;
+    callback released(length);
     property <length> max: Math.max(0, self.content-height - self.height);
-    property <length> give: 15 * Theme.unit;
     property <duration> anim: 0ms;
     // Where the content was when the drag took it, and where it comes back to after going past an end.
     property <length> grab;
@@ -89,7 +91,13 @@ export component Scroller inherits SwipeGestureHandler {
     handle-swipe-down: true;
 
     function resist(e: length) -> length {
-        return self.give * (e / (e + 2 * self.give));
+        return self.give > 0 ? self.give * (e / (e + 2 * self.give)) : 0;
+    }
+    public function scroll-to(to: length, d: duration) {
+        back.running = false;
+        self.anim = d;
+        self.rest = to;
+        self.scroll = to;
     }
     function release(moving: bool) {
         let avg = self.samples == 3 ? (self.v0 + self.v1) / 2 : self.samples == 2 ? self.v1 : 0;
@@ -109,6 +117,7 @@ export component Scroller inherits SwipeGestureHandler {
             back.running = true;
         }
         self.tracking = false;
+        self.released(to);
     }
 
     back := Timer {
@@ -124,10 +133,13 @@ export component Scroller inherits SwipeGestureHandler {
     changed pressed-position => {
         self.tracking = false;
     }
+    // Content that changes height while it moves (rows that grow as they scroll up) must not
+    // stop the move, so it is only cut short when where it goes is past the new end.
     changed max => {
-        if !self.swiping && !back.running {
+        if !self.swiping && !back.running && (self.rest > self.max || self.scroll > self.max) {
             self.anim = 0ms;
-            self.scroll = Math.clamp(self.scroll, 0, self.max);
+            self.scroll = self.rest > self.max ? self.max : Math.min(self.scroll, self.max);
+            self.rest = Math.min(self.rest, self.max);
         }
     }
 

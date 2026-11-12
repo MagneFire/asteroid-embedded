@@ -12,12 +12,13 @@
 #include "sensors/steps.h"
 #include "calc.h"
 #include "game.h"
+#include "agenda.h"
 #include "power.h"
 #include "present.h"
 
 static bool have_ui, have_haptics, have_hub;
 static int32_t passkey = -1;
-static uint32_t notify_seen, shown_seq, newest_seq, media_seen, weather_seen, weather_day, last_clock;
+static uint32_t agenda_seen, agenda_date, notify_seen, shown_seq, newest_seq, media_seen, weather_seen, weather_day, last_clock;
 
 void present_init(bool ui, bool haptics, bool hub)
 {
@@ -34,6 +35,35 @@ void present_calc(void)
 void present_game(void)
 {
 	ui_set_game(game_tiles(), game_score(), game_best(), game_over());
+}
+
+static unsigned agenda_rows(struct ui_agenda *out, uint32_t date)
+{
+	unsigned first, n = agenda_day(2000 + (date >> 9), date >> 5 & 15, date & 31, &first);
+	for (unsigned i = 0; i < n; i++) {
+		const struct agenda_event *e = agenda_get(first + i);
+		out[i] = (struct ui_agenda){ (int16_t)(first + i), e->start, e->end, "" };
+		memcpy(out[i].title, e->title, UI_AGENDA_TITLE);
+	}
+	return n;
+}
+
+/* After a change: the events of the day the app shows. */
+void present_agenda(void)
+{
+	_Static_assert(AGENDA_TITLE == UI_AGENDA_TITLE, "agenda title");
+	struct ui_agenda rows[AGENDA_EVENTS];
+	agenda_seen = agenda_serial();
+	if (!have_ui)
+		return;
+	ui_set_agenda(rows, agenda_rows(rows, agenda_date));
+}
+
+/* The day as (year - 2000) << 9 | month << 5 | day. */
+void present_agenda_day(uint32_t date)
+{
+	agenda_date = date;
+	present_agenda();
 }
 
 void present_settings(void)
@@ -127,6 +157,8 @@ void present_events(uint32_t now)
 		}
 		shown_seq = top ? top->seq : 0;
 	}
+	if (agenda_serial() != agenda_seen)
+		present_agenda();
 	if (have_ui && media_serial() != media_seen) {
 		media_seen = media_serial();
 		const struct media *m = media_get();
