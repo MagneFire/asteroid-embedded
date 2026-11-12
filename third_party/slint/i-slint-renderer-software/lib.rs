@@ -202,6 +202,9 @@ pub trait LineBufferProvider {
         range: core::ops::Range<usize>,
         render_fn: impl FnOnce(&mut [Self::TargetPixel]),
     );
+
+    /// Called once per frame before any line, with the region the lines will cover.
+    fn begin(&mut self, _region: &PhysicalRegion) {}
 }
 
 #[cfg(not(cbindgen))]
@@ -1361,6 +1364,7 @@ fn render_window_frame_by_line(
     mut line_buffer: impl LineBufferProvider,
 ) -> PhysicalRegion {
     let mut scene = prepare_scene(window, size, renderer);
+    line_buffer.begin(&scene.dirty_region);
 
     let to_draw_tr = scene.dirty_region.bounding_rect();
 
