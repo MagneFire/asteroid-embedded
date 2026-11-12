@@ -20,6 +20,7 @@
 #include "screenshot/screenshot.h"
 #include "notify/notify.h"
 #include "media/media.h"
+#include "agenda.h"
 #include "audio/speaker.h"
 #include "ui/ui.h"
 #include "ui/rotation.h"
@@ -1049,6 +1050,49 @@ static void cmd_notify(const char *args)
 	say("test %lu\n", (unsigned long)i);
 }
 
+#define AGENDA_USAGE "[add <yyyy-mm-dd> <hh:mm> <hh:mm> [title] | del <n>]"
+
+/* The agenda's events numbered from 1, or one added or deleted: the
+ * watch cannot type, so this is where an event gets its title. */
+static void cmd_agenda(const char *args)
+{
+	struct agenda_event e;
+	uint32_t n;
+	if (!strncmp(args, "add ", 4)) {
+		if (!agenda_parse(skip_spaces(args + 4), &e)) {
+			say("usage: agenda " AGENDA_USAGE "\n");
+			return;
+		}
+		int i = agenda_set(AGENDA_EVENTS, &e);
+		if (i < 0)
+			say("agenda: full\n");
+		else
+			say("added %d\n", i + 1);
+		return;
+	}
+	if (!strncmp(args, "del", 3)) {
+		args += 3;
+		if (!parse_num(&args, 10, &n) || !n || n > agenda_count()) {
+			say("usage: agenda " AGENDA_USAGE "\n");
+			return;
+		}
+		agenda_delete(n - 1);
+		say("deleted %u\n", (unsigned)n);
+		return;
+	}
+	if (*args) {
+		say("usage: agenda " AGENDA_USAGE "\n");
+		return;
+	}
+	for (unsigned i = 0; i < agenda_count(); i++) {
+		const struct agenda_event *a = agenda_get(i);
+		say("%u %04u-%02u-%02u %02u:%02u-%02u:%02u %s\n", i + 1, a->year, a->month, a->day, a->start / 60, a->start % 60,
+		    a->end / 60, a->end % 60, a->title);
+	}
+	if (!agenda_count())
+		say("no events\n");
+}
+
 static void cmd_uibench(const char *args)
 {
 	uint32_t p = 0, gpu = 0, n = 10;
@@ -1309,6 +1353,7 @@ static const struct command commands[] = {
 	{ "prof", "[samples]", cmd_prof },
 	{ "shot", "[layer [n]]", cmd_shot },
 	{ "notify", "[text] | remove <n>", cmd_notify },
+	{ "agenda", AGENDA_USAGE, cmd_agenda },
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE

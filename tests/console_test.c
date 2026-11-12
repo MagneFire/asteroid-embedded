@@ -51,6 +51,16 @@ int main(void)
 	CHECK(!strcmp(stub_notify, "<removed><id>-2</id></removed>"));
 	CHECK(!strcmp(run("notify remove"), "usage: notify remove <n>\n"));
 
+	CHECK(!strcmp(run("agenda"), "no events\n"));
+	CHECK(!strcmp(run("agenda add 2026-11-12 09:30 10:15 Dentist at noon"), "added 1\n"));
+	CHECK(!strcmp(run("agenda add 2026-11-12 08:00 08:30"), "added 1\n"));
+	CHECK(!strcmp(run("agenda"), "1 2026-11-12 08:00-08:30 Untitled event\n2 2026-11-12 09:30-10:15 Dentist at noon\n"));
+	CHECK(!strncmp(run("agenda add 2026-02-30 09:30 10:15 x"), "usage: agenda [add", 18));
+	CHECK(!strncmp(run("agenda del 3"), "usage: agenda [add", 18));
+	CHECK(!strcmp(run("agenda del 1"), "deleted 1\n"));
+	CHECK(!strcmp(run("agenda"), "1 2026-11-12 09:30-10:15 Dentist at noon\n"));
+	CHECK(!strncmp(run("agenda list"), "usage: agenda [add", 18));
+
 	CHECK(!strncmp(run("uibench 1 1 3"), "panel 1: ", 9) && stub_repaints == 3);
 	CHECK(!strncmp(run("uibench 2 0"), "panel 2: ", 9) && stub_repaints == 13);
 	CHECK(!strcmp(run("uibench 9 1"), "usage: uibench <0-6> <0 cpu | 1 gpu> [times]\n"));
