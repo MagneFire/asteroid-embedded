@@ -12,6 +12,7 @@
 #include "bt/bt.h"
 #include "storage/storage.h"
 #include "prof.h"
+#include "gpu/sgx.h"
 #include "sensors/hub.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
@@ -1062,6 +1063,29 @@ static void cmd_uibench(const char *args)
 	say("panel %lu: %lu us per repaint\n", p, (time_us() - t0) / n);
 }
 
+#ifdef SGX_BASE
+static void cmd_sgx(const char *args)
+{
+	struct sgx_info i;
+	args = skip_spaces(args);
+	if (!strcmp(args, "off")) {
+		sgx_stop();
+		say("off\n");
+	} else if (!strcmp(args, "state")) {
+		sgx_log_state();
+		say("in the log\n");
+	} else if (*args)
+		say("usage: sgx [off | state]\n");
+	else if (!sgx_start() || !sgx_query(&i))
+		say("failed, see the log\n");
+	else
+		say("core %08lx revision %08lx, software %08lx build %lu for core %lu revision %lu, options %08lx, structs %s, "
+		    "up in %lu us\n",
+		    i.core_id, i.core_revision, i.ddk_version, i.ddk_build, i.software_core, i.software_revision,
+		    i.build_options, i.structs_match ? "match" : "differ", i.start_us);
+}
+#endif
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -1108,6 +1132,9 @@ static const struct command commands[] = {
 	{ "notify", "[text] | remove <n>", cmd_notify },
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
+#ifdef SGX_BASE
+	{ "sgx", "[off | state]", cmd_sgx },
+#endif
 	{ "echo", "<text>", cmd_echo },
 };
 
