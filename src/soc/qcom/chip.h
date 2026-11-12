@@ -22,6 +22,7 @@ struct qcom_chip {
 	uint32_t uart1;
 	unsigned uarts;
 	uint16_t uart_cbcr[6], uart_rcgr[6];
+	uint8_t uart2_pins[4], uart2_funcs[4];	/* TX, RX, CTS, RFR when not in a row */
 	uint32_t sdcc1;
 	uint32_t sdcc1_apps_cbcr, sdcc1_ahb_cbcr, sdcc1_rcgr;
 	struct { uint8_t ldo; uint32_t uv; } emmc_vcc, emmc_vccq;

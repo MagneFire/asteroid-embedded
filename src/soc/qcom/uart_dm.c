@@ -85,6 +85,18 @@ struct baud {
 	uint8_t csr;
 };
 
+/* From GPLL0 at 600 MHz on the APQ8026 and 800 MHz on the APQ8009W. */
+static const struct baud bauds_8009[] = {
+	{ 115200, RCG_SRC_GPLL0 | 1, 144, 15625, 0xcc },
+	{ 230400, RCG_SRC_GPLL0 | 1, 144, 15625, 0xee },
+	{ 460800, RCG_SRC_GPLL0 | 1, 144, 15625, 0xff },
+	{ 921600, RCG_SRC_GPLL0 | 1, 288, 15625, 0xff },
+	{ 1000000, RCG_SRC_GPLL0 | 19, 1, 5, 0xff },
+	{ 1500000, RCG_SRC_GPLL0 | 1, 3, 100, 0xff },
+	{ 2000000, RCG_SRC_GPLL0 | 1, 1, 25, 0xff },
+	{ 3000000, RCG_SRC_GPLL0 | 1, 3, 50, 0xff },
+};
+
 static const struct baud bauds[] = {
 	{ 115200, RCG_SRC_GPLL0 | 1, 192, 15625, 0xcc },
 	{ 230400, RCG_SRC_GPLL0 | 1, 192, 15625, 0xee },
@@ -166,11 +178,19 @@ static void irq5(void) { uart_irq(&uarts[4]); }
 static void irq6(void) { uart_irq(&uarts[5]); }
 static void (*const irqs[])(void) = { irq1, irq2, irq3, irq4, irq5, irq6 };
 
+/* The four lines are in a row, apart from the APQ8009W's UART2. */
+static unsigned pin(const struct uart *u, unsigned i)
+{
+	return chip->uart2_pins[0] && u->port == 2 ? chip->uart2_pins[i] : u->pins + i;
+}
+
 static const struct baud *find_baud(uint32_t baud)
 {
-	for (unsigned i = 0; i < ARRAY_SIZE(bauds); i++)
-		if (bauds[i].baud == baud)
-			return &bauds[i];
+	const struct baud *t = chip == &chip_8009 ? bauds_8009 : bauds;
+	unsigned n = chip == &chip_8009 ? ARRAY_SIZE(bauds_8009) : ARRAY_SIZE(bauds);
+	for (unsigned i = 0; i < n; i++)
+		if (t[i].baud == baud)
+			return &t[i];
 	return NULL;
 }
 
@@ -251,7 +271,8 @@ int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, 
 		return -1;
 	}
 	for (unsigned i = 0; i < 4; i++)
-		gpio_config(first_gpio + i, func, GPIO_INPUT, GPIO_PULL_NONE, 8);
+		gpio_config(pin(u, i), chip->uart2_pins[0] && uart == 2 ? chip->uart2_funcs[i] : func, GPIO_INPUT,
+			    GPIO_PULL_NONE, 8);
 	u->ring_head = u->ring_tail = 0;
 	u->rx_bytes = u->tx_bytes = u->dropped = u->overruns = 0;
 	u->base = chip->uart1 + (uart - 1) * 0x1000;
@@ -333,7 +354,7 @@ void uart_stop(unsigned uart)
 	writel(CR_RX_DISABLE | CR_TX_DISABLE, u->base + UART_DM_CR);
 	writel(readl(GCC_UART_APPS_CBCR(u->port)) & ~CBCR_ENABLE, GCC_UART_APPS_CBCR(u->port));
 	for (unsigned i = 0; i < 4; i++)
-		gpio_config(u->pins + i, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
+		gpio_config(pin(u, i), 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
 	u->base = 0;
 }
 
