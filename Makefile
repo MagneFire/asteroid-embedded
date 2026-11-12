@@ -38,7 +38,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/sett
         $(TUSB)/class/cdc/cdc_device.c
 
 SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
-               suspend.S i2c_qup.c uart_dm.c rpm.c) \
+               suspend.S i2c_qup.c spi_qup.c uart_dm.c rpm.c) \
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/light_tsl2584.c \
         src/input/touch.c src/input/touch_it7260.c src/input/fts.c src/input/touch_fts.c src/input/haptics_drv2605.c src/input/haptics_pmic.c \

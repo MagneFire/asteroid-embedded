@@ -139,6 +139,12 @@ void haptics_play(const uint16_t *on_off_ms, unsigned n);
 void haptics_poll(void);
 bool haptics_busy(void);
 void i2c_poll(unsigned bus);
+/* SPI master on a QUP block, mode 0-3 (bit 1 CPOL, bit 0 CPHA), the clock the
+ * nearest rate not above hz; pins are mosi, miso, clk. Chip select is the
+ * caller's pin. spi_xfer clocks n bytes full duplex: tx NULL sends 0xff, rx
+ * NULL drops the input. */
+int spi_init(unsigned qup, const uint8_t pins[3], unsigned func, unsigned mode, uint32_t hz);
+int spi_xfer(unsigned qup, const uint8_t *tx, uint8_t *rx, unsigned n);
 int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, bool flow);
 int uart_set_baud(unsigned uart, uint32_t baud);
 int uart_write(unsigned uart, const uint8_t *p, unsigned n);
