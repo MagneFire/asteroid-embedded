@@ -6,7 +6,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* The heaps the microkernel and its clients were built for. */
+/* The heaps the microkernel and its clients were built for. Shared 3D
+ * starts where the parameter buffer does and is never allocated from. */
 enum {
 	SGX_HEAP_GENERAL,
 	SGX_HEAP_TA_DATA,
@@ -75,6 +76,7 @@ enum { SGX_CMD_TA, SGX_CMD_TRANSFER, SGX_CMD_2D, SGX_CMD_POWER, SGX_CMD_SUSPEND,
        SGX_CMD_PROCESS_QUEUES, SGX_CMDS };
 #define SGX_CACHE_INVAL_PT	1u
 #define SGX_CACHE_INVAL_PD	2u
+#define SGX_CACHE_INVAL_DATA	8u
 void sgx_command_words(uint32_t c[8], unsigned type, uint32_t cache_control, uint32_t arg);
 
 /* Puts v into the 32-bit constant of the GPU instruction at off. */

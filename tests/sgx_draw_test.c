@@ -38,7 +38,8 @@ static uint8_t *pool, *lib;
 static long lib_size;
 static int failures;
 static const char *recordings;
-static bool running = true;
+static bool running = true, hang;
+static uint32_t generation = 1, caches[8];
 
 #define CHECK(cond, ...) \
 	do { \
@@ -58,6 +59,7 @@ uint32_t time_us(void)
 void wdt_feed(void) {}
 void sgx_log_state(void) { printf("  log: microkernel state\n"); }
 bool sgx_running(void) { return running; }
+uint32_t sgx_generation(void) { return generation; }
 struct sgx_mem *sgx_memory(void) { return &mem; }
 
 void log_printf(const char *fmt, ...)
@@ -133,8 +135,9 @@ bool sgx_submit_ta(uint32_t context, uint32_t cache)
 	sgx_command_words(c, SGX_CMD_TA, cache, context);
 	if (on_kick)
 		on_kick(kick_no, c);
-	complete();
-	kick_no++;
+	if (!hang)
+		complete();
+	caches[kick_no++ % 8] = cache;
 	return true;
 }
 
@@ -755,7 +758,7 @@ static void own_frames(void)
 	const struct tdraw odd[] = { FLAT(vgpu, 4) };
 	const struct tdraw many[] = { FLAT(vgpu, SGX_DRAW_MAX_VERTS + 3) };
 	CHECK(!frame(first_tex, 1, 0) && !frame(flat_flat, 2, 0) && !frame(two_blends, 3, 0) && !frame(odd, 1, 0) &&
-	      !frame(many, 1, 0) && !frame(tri_d, 0, 0), "refusals");
+	      !frame(many, 1, 0) && !frame(tri_d, 0, 0) && sgx_draw_refused() && !kick_no, "refusals");
 	struct sgx_draw bad = { .verts = vgpu, .count = 6, .kind = SGX_DRAW_TEXTURED, .blend = true, .tex = TA,
 				.width = 320, .height = 320, .alpha = 9 };
 	struct sgx_draw fl = { .verts = vgpu, .count = 3 };
@@ -807,6 +810,45 @@ static void own_frames(void)
 	      *P(SGX_SCENE_BG_TEXTURE) == gpu + 409600, "target words");
 	CHECK(P(SGX_SCENE_TILE_STORE0)[0] >> 21 == 3, "tile-store register kept");
 	CHECK(frame(tri_d, 1, 0), "frame into a mapped buffer");
+	CHECK(caches[(kick_no - 2) % 8] == (SGX_CACHE_INVAL_PT | SGX_CACHE_INVAL_PD) && !caches[(kick_no - 1) % 8],
+	      "page tables invalidated after a mapping, once");
+	sgx_draw_inval_data(true);
+	CHECK(frame(tri_d, 1, 0) && caches[(kick_no - 2) % 8] == SGX_CACHE_INVAL_DATA && !caches[(kick_no - 1) % 8],
+	      "data caches invalidated by the first kick: %x %x", caches[(kick_no - 2) % 8], caches[(kick_no - 1) % 8]);
+	sgx_draw_inval_data(false);
+	CHECK(frame(tri_d, 1, 0) && !caches[(kick_no - 2) % 8], "data caches no longer invalidated");
+}
+
+/* A frame that times out leaves the scene stuck, and every frame after
+ * it is refused; once the GPU was built again the scene starts over. */
+static void rebuilt(void)
+{
+	CHECK(sgx_draw_setup(), "setup");
+	uint32_t vgpu, gpu = sgx_draw_map(0x8a000000u, 0x100000);
+	float *v = sgx_draw_vertices(3 * 24, &vgpu);
+	memset(v, 0, 3 * 24);
+	const struct tdraw tri[] = { FLAT(vgpu, 3) };
+	CHECK(gpu && frame(tri, 1, 0) && frame(tri, 1, 0), "two frames");
+	hang = true;
+	printf("  (a timeout is expected here)\n");
+	CHECK(!frame(tri, 1, 0) && !sgx_draw_refused(), "a frame that does not complete");
+	hang = false;
+	unsigned k = kick_no;
+	CHECK(!frame(tri, 1, 0) && sgx_draw_refused() && kick_no == k, "a frame after it");
+	CHECK(!sgx_draw_setup() || !frame(tri, 1, 0), "setup again before the rebuild");
+	if (!fresh())
+		CHECK(0, "image");
+	generation++;
+	CHECK(sgx_draw_setup() && sgx_draw_get_target() == SGX_SCENE_PBUFFER, "setup after the rebuild");
+	CHECK(sgx_draw_map(0x8a000000u, 0x100000) == gpu, "the same mapping again");
+	v = sgx_draw_vertices(3 * 24, &vgpu);
+	memset(v, 0, 3 * 24);
+	const struct tdraw tri2[] = { FLAT(vgpu, 3) };
+	k = kick_no;
+	CHECK(frame(tri2, 1, 0) && kick_no == k + 2, "a frame after the rebuild");
+	CHECK(*P(SGX_SCENE_CCB_CTL) == 2 * CMD_SIZE && P(SGX_SCENE_CCB)[1] == SGX_SCENE_A_FIRST_EVER &&
+	      P(SGX_SCENE_SURFACE_SYNC)[0] == 1 && P(SGX_SCENE_TA3D_SYNC)[0] == 1 && *P(SGX_SCENE_RT_PENDING) == 2,
+	      "the scene from scratch: queue %x, flags %x", *P(SGX_SCENE_CCB_CTL), P(SGX_SCENE_CCB)[1]);
 }
 
 static void wrong_place(void)
@@ -826,13 +868,17 @@ int main(void)
 	tables();
 	run("own frames", own_frames);
 	run("refusal", wrong_place);
+	run("rebuilt after a failure", rebuilt);
 	char flat[512];
 	snprintf(flat, sizeof flat, "%s/mix/flat.txt", recordings);
 	FILE *f = fopen(flat, "r");
 	if (f)
 		fclose(f);
 	if (!lib || !f) {
-		printf("sgx_draw_test: %s, recordings not compared\n", !lib ? "no vendor library" : "no recordings");
+		printf("sgx_draw_test: SKIP: recordings not compared, %s\n",
+		       !lib ? "no vendor library (SGX_LIBSRV_INIT)" : "no recordings (SGX_RECORDINGS)");
+		if (getenv("SGX_REQUIRE_REFERENCE"))
+			failures++;
 	} else {
 		CHECK(sgx_crc32(0, lib + SGX_FILE_FIRST, SGX_FILE_END - SGX_FILE_FIRST) == SGX_FILE_CRC, "library");
 		run("tri_tq", tri_tq);

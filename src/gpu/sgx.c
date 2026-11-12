@@ -78,21 +78,32 @@ enum {
 #define BUILD_OPTIONS		0x0016801cu
 
 #define HW_WAIT_US		1000000u
+#define RESET_US		200000u
+#define DRAIN_US		10000u
+
+#ifdef HOST_TEST
+extern uint8_t *sgx_host_pool;
+#define POOL			sgx_host_pool
+#else
+#define POOL			((uint8_t *)SGX_MEM_BASE)
+#endif
 
 static struct sgx_mem mem;
 static struct sgx_image img;
-static bool built, running, reset_once;
+static bool built, powered, running, reset_once, failed;
 static volatile uint32_t *host, *ccb, *ccb_ctl, *kicker;
-static uint32_t reset_pd, reset_pt, reset_page;
-static uint32_t cache_control, core_id, core_revision, start_us;
+static uint32_t reset_pd, reset_pt, reset_page, generation;
+static uint32_t cache_control, held, core_id, core_revision, start_us;
 static volatile uint32_t events, stray;
 
 static bool wait_reg(uint32_t addr, uint32_t mask, uint32_t want, uint32_t us)
 {
 	uint32_t t0 = time_us();
-	while ((readl(addr) & mask) != want)
+	while ((readl(addr) & mask) != want) {
 		if (time_us() - t0 > us)
 			return false;
+		wdt_feed();
+	}
 	return true;
 }
 
@@ -109,6 +120,7 @@ static bool wait_word(volatile uint32_t *word, uint32_t mask, uint32_t us)
 
 static void power_off(void)
 {
+	powered = false;
 	writel(0, CM_SGX + CM_FCLKEN);
 	writel(0, CM_SGX + CM_ICLKEN);
 	writel(readl(PRM_SGX + PM_PWSTCTRL) & ~3u, PRM_SGX + PM_PWSTCTRL);
@@ -130,6 +142,7 @@ static bool power_on(void)
 		log_printf("sgx: no power, pwstst %08lx\n", readl(PRM_SGX + PM_PWSTST));
 		return false;
 	}
+	powered = true;
 	writel(OCP_SMART_IDLE_STANDBY, OCP_SYSCONFIG);
 	return true;
 }
@@ -156,7 +169,8 @@ static bool build(void)
 		log_printf("sgx: %s is another build, crc %08lx\n", LIBRARY, crc);
 		return false;
 	}
-	sgx_mem_init(&mem, (void *)SGX_MEM_BASE, SGX_MEM_BASE, SGX_MEM_SIZE);
+	sgx_mem_init(&mem, POOL, SGX_MEM_BASE, SGX_MEM_SIZE);
+	generation++;
 	if (!sgx_image_build(&mem, &img, read_library, NULL) || !(reset_pd = sgx_pages(&mem, 3))) {
 		log_printf("sgx: image not built\n");
 		return false;
@@ -168,6 +182,8 @@ static bool build(void)
 	ccb_ctl = sgx_ptr(&mem, img.ccb_ctl);
 	kicker = sgx_ptr(&mem, img.kicker);
 	cache_control = SGX_CACHE_INVAL_PD;
+	held = 0;
+	events = stray = 0;
 	log_printf("sgx: image of %lu KiB built in %lu us\n", mem.used >> 10, time_us() - t0);
 	return true;
 }
@@ -183,18 +199,29 @@ static void run_script(unsigned which)
 /* A hundred of the GPU's clocks, which each reset step is given. */
 static void settle(void) { delay_us(2); }
 
-static void invalidate_directory_cache(void)
+static uint32_t *pool_word(uint32_t phys) { return (uint32_t *)(void *)(mem.base + (phys - mem.phys)); }
+
+static uint32_t left(uint32_t t0)
+{
+	uint32_t spent = time_us() - t0;
+	return spent < RESET_US ? RESET_US - spent : 0;
+}
+
+static bool invalidate_directory_cache(uint32_t us)
 {
 	writel(BIF_CTRL_INVALDC, BIF_CTRL);
 	settle();
 	writel(0, BIF_CTRL);
 	settle();
-	if (!wait_reg(BIF_MEM_REQ_STAT, 0xff, 0, HW_WAIT_US))
-		log_printf("sgx: memory requests still out, %08lx\n", readl(BIF_MEM_REQ_STAT));
+	if (wait_reg(BIF_MEM_REQ_STAT, 0xff, 0, us))
+		return true;
+	log_printf("sgx: memory requests still out, %08lx\n", readl(BIF_MEM_REQ_STAT));
+	return false;
 }
 
-static void reset(void)
+static bool reset(void)
 {
+	uint32_t t0 = time_us();
 	writel(SOFT_RESET_ALL, SOFT_RESET);
 	settle();
 	writel(0, BIF_CTRL);
@@ -204,25 +231,33 @@ static void reset(void)
 		 * system that ran before left them asking for is let out
 		 * first: against a directory that maps nothing every request
 		 * faults, and each fault is given a page until none is left. */
-		uint32_t *pd = (uint32_t *)reset_pd, *pt = (uint32_t *)reset_pt;
+		uint32_t *pd = pool_word(reset_pd), *pt = pool_word(reset_pt);
+		unsigned n = 0;
 		writel(reset_pd, BIF_DIR_LIST_BASE0);
 		writel(SOFT_RESET_ALL & ~SOFT_RESET_BIF, SOFT_RESET);
 		settle();
-		invalidate_directory_cache();
-		for (unsigned i = 0; i < 64 && (readl(BIF_INT_STAT) & BIF_FAULT_MASK); i++) {
+		bool ok = invalidate_directory_cache(left(t0));
+		for (; ok && n < 64 && (readl(BIF_INT_STAT) & BIF_FAULT_MASK); n++) {
 			uint32_t fault = readl(BIF_FAULT);
 			log_printf("sgx: reset let out a request for %08lx\n", fault);
 			writel(SOFT_RESET_ALL, SOFT_RESET);
 			pd[fault >> 22] = reset_pt | 1;
 			pt[fault >> 12 & 0x3ff] = reset_page | 1;
+			dsb();
 			writel(readl(EVENT_STATUS), EVENT_HOST_CLEAR);
 			writel(readl(EVENT_STATUS2), EVENT_HOST_CLEAR2);
 			settle();
 			writel(SOFT_RESET_ALL & ~SOFT_RESET_BIF, SOFT_RESET);
 			settle();
-			invalidate_directory_cache();
+			ok = invalidate_directory_cache(left(t0));
 			pd[fault >> 22] = 0;
 			pt[fault >> 12 & 0x3ff] = 0;
+			dsb();
+		}
+		if (!ok || readl(BIF_INT_STAT) & BIF_FAULT_MASK) {
+			log_printf("sgx: reset not done after %u requests, bif %08lx, in %lu us\n", n, readl(BIF_INT_STAT),
+				   time_us() - t0);
+			return false;
 		}
 		reset_once = true;
 	} else {
@@ -230,9 +265,36 @@ static void reset(void)
 		settle();
 	}
 	writel(mem.phys, BIF_DIR_LIST_BASE0);
-	invalidate_directory_cache();
+	if (!invalidate_directory_cache(left(t0)))
+		return false;
 	writel(0, SOFT_RESET);
 	settle();
+	return true;
+}
+
+/* Off whatever state the GPU was left in, after anything failed: no
+ * interrupt, everything held in reset while it still has its clocks,
+ * then no clocks and no power. The next start builds everything again. */
+static void quiesce(void)
+{
+	running = false;
+	irq_mask(IRQ_SGX);
+	if (powered) {
+		writel(1, OCP_IRQENABLE_CLR_2);
+		/* A reset or a cut clock in the middle of a bus transfer can
+		 * hang the interconnect, so what is out is let finish first. */
+		if (!wait_reg(BIF_MEM_REQ_STAT, 0xff, 0, DRAIN_US))
+			log_printf("sgx: memory requests still out at the halt, %08lx\n", readl(BIF_MEM_REQ_STAT));
+		writel(SOFT_RESET_ALL, SOFT_RESET);
+		settle();
+		if (built)
+			run_script(SGX_SCRIPT_OFF);
+	}
+	power_off();
+	reset_once = false;
+	if (!failed)
+		log_printf("sgx: off after a failure; sgx ui on starts it again from scratch\n");
+	failed = true;
 }
 
 static void sgx_irq(void)
@@ -262,15 +324,26 @@ static void kick(void)
 static bool command(unsigned type, uint32_t arg, uint32_t cache)
 {
 	uint32_t t0 = time_us(), at, words[8];
-	while ((((at = ccb_ctl[0]) + 1) & 0xff) == ccb_ctl[1])
+	while ((((at = ccb_ctl[0]) + 1) & 0xff) == ccb_ctl[1]) {
 		if (time_us() - t0 > HW_WAIT_US) {
 			log_printf("sgx: command queue full\n");
 			return false;
 		}
-	sgx_command_words(words, type, cache_control | cache, arg);
+		wdt_feed();
+	}
+	uint32_t cc = cache_control | cache | held;
+	held = 0;
+	/* BRN 28889: a data invalidate with a page-table one needs a round
+	 * trip of its own, so it goes with the next command instead. */
+	if (cc & SGX_CACHE_INVAL_DATA && cc & (SGX_CACHE_INVAL_PT | SGX_CACHE_INVAL_PD)) {
+		held = SGX_CACHE_INVAL_DATA;
+		cc &= ~SGX_CACHE_INVAL_DATA;
+	}
+	sgx_command_words(words, type, cc, arg);
 	for (unsigned i = 0; i < 8; i++)
 		ccb[at * 8 + i] = words[i];
 	cache_control = 0;
+	dmb();
 	ccb_ctl[0] = (at + 1) & 0xff;
 	uint32_t flags = irq_save();
 	host[HOST_INTERRUPT_CLEAR_FLAGS] |= INTERRUPT_IDLE | INTERRUPT_ACTIVE_POWER;
@@ -283,7 +356,8 @@ void sgx_log_state(void)
 {
 	static const uint16_t regs[] = { 0x000, 0x004, 0x118, 0x12c, 0x4e0, 0x4e4, 0x658, 0xa74, 0xc04, 0xc08, 0x624, 0x628,
 					 0x630, 0x734, 0xaa4, 0xaa8, 0xb08, 0xb14, 0xb0c, 0xb18, 0xb10, 0xb1c };
-	if (!(readl(PRM_SGX + PM_PWSTST) & 3) || !(readl(CM_SGX + CM_FCLKEN) & SGX_FCLK)) {
+	if (!powered || (readl(PRM_SGX + PM_PWSTST) & 3) != 3 || !(readl(CM_SGX + CM_FCLKEN) & SGX_FCLK) ||
+	    !(readl(CM_SGX + CM_ICLKEN) & SGX_ICLK)) {
 		log_printf("sgx: off\n");
 		return;
 	}
@@ -309,6 +383,10 @@ void sgx_log_state(void)
 
 bool sgx_running(void) { return running; }
 
+bool sgx_failed(void) { return failed; }
+
+uint32_t sgx_generation(void) { return generation; }
+
 struct sgx_mem *sgx_memory(void) { return built ? &mem : NULL; }
 
 bool sgx_submit_ta(uint32_t context, uint32_t cache)
@@ -321,14 +399,16 @@ bool sgx_start(void)
 	if (running)
 		return true;
 	uint32_t t0 = time_us();
+	if (failed)
+		built = false;
 	if (!power_on()) {
-		power_off();
+		quiesce();
 		return false;
 	}
 	core_id = readl(CORE_ID);
 	core_revision = readl(CORE_REVISION);
 	if (!built && !(built = build())) {
-		power_off();
+		quiesce();
 		return false;
 	}
 	host[HOST_POWER_STATUS] = 0;
@@ -339,56 +419,54 @@ bool sgx_start(void)
 	host[HOST_ACTIVE_POWER_RATE] = 0;
 	writel(CLKGATE_AUTO, CLKGATECTL);
 	run_script(SGX_SCRIPT_BEFORE_RESET);
-	reset();
+	if (!reset()) {
+		sgx_log_state();
+		quiesce();
+		return false;
+	}
 	*kicker = 0;
 	run_script(SGX_SCRIPT_AFTER_RESET);
 	host[HOST_CLOCK] = time_us();
 	host[HOST_INIT_STATUS] = 0;
+	held = 0;
 	kick();
 	if (!wait_word(&host[HOST_INIT_STATUS], INIT_COMPLETE, HW_WAIT_US)) {
 		log_printf("sgx: microkernel did not start, core %08lx revision %08lx\n", core_id, core_revision);
 		sgx_log_state();
-		power_off();
+		quiesce();
 		return false;
 	}
 	writel(1, OCP_IRQSTATUS_2);
 	writel(1, OCP_IRQENABLE_SET_2);
 	irq_attach(IRQ_SGX, sgx_irq);
+	failed = false;
 	running = true;
 	start_us = time_us() - t0;
 	log_printf("sgx: core %08lx revision %08lx, microkernel up in %lu us\n", core_id, core_revision, start_us);
 	return true;
 }
 
-void sgx_stop(void)
+bool sgx_stop(void)
 {
 	if (!running)
-		return;
+		return true;
 	running = false;
 	host[HOST_POWER_STATUS] = 0;
 	if (!command(SGX_CMD_POWER, POWER_OFF, 0) || !wait_word(&host[HOST_POWER_STATUS], POWER_OFF_COMPLETE, HW_WAIT_US) ||
 	    !wait_reg(CLKGATESTATUS, 0xffffffff, 0, HW_WAIT_US)) {
 		log_printf("sgx: microkernel did not stop\n");
 		sgx_log_state();
+		quiesce();
+		return false;
 	}
 	irq_mask(IRQ_SGX);
 	writel(1, OCP_IRQENABLE_CLR_2);
 	run_script(SGX_SCRIPT_OFF);
 	power_off();
+	return true;
 }
 
-void sgx_halt(void)
-{
-	if (!running)
-		return;
-	running = false;
-	irq_mask(IRQ_SGX);
-	writel(1, OCP_IRQENABLE_CLR_2);
-	writel(SOFT_RESET_ALL, SOFT_RESET);
-	settle();
-	run_script(SGX_SCRIPT_OFF);
-	power_off();
-}
+void sgx_halt(void) { quiesce(); }
 
 bool sgx_query(struct sgx_info *info)
 {
@@ -402,6 +480,7 @@ bool sgx_query(struct sgx_info *info)
 	if (!command(SGX_CMD_GETMISCINFO, img.misc, 0) || !wait_word(&misc[0], MISC_READY, HW_WAIT_US)) {
 		log_printf("sgx: no answer to the query\n");
 		sgx_log_state();
+		quiesce();
 		return false;
 	}
 	info->core_id = core_id;

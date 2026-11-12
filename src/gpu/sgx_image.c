@@ -87,6 +87,8 @@ static uint32_t place(struct sgx_mem *m, unsigned heap, uint32_t size, uint32_t 
 uint32_t sgx_alloc(struct sgx_mem *m, unsigned heap, uint32_t size, uint32_t align, uint32_t flags)
 {
 	uint32_t pages = round_up(size, SGX_PAGE) / SGX_PAGE, phys;
+	if (heap == SGX_HEAP_SHARED_3D)
+		return 0;
 	if (flags & SGX_MEM_DUMMY) {
 		if (!m->dummy && !(m->dummy = sgx_pages(m, 1)))
 			return 0;
@@ -105,6 +107,8 @@ uint32_t sgx_alloc(struct sgx_mem *m, unsigned heap, uint32_t size, uint32_t ali
 
 uint32_t sgx_map(struct sgx_mem *m, unsigned heap, uint32_t phys, uint32_t size, uint32_t flags)
 {
+	if (heap == SGX_HEAP_SHARED_3D || (phys | size) & (SGX_PAGE - 1))
+		return 0;
 	uint32_t addr = place(m, heap, size, SGX_PAGE);
 	for (uint32_t off = 0; off < size; off += SGX_PAGE) {
 		uint32_t *e = pte(m, addr + off, true);

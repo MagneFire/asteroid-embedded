@@ -53,20 +53,30 @@ struct sgx_times {
 	uint32_t ta_us, render_us;	/* from each kick to its completion */
 };
 
-/* Once, after sgx_start. The target is then the scene's own buffer. The
- * scene stays in memory while the GPU is off; after sgx_start again
- * frames go on from where they were. */
+/* After sgx_start. The target is then the scene's own buffer. The scene
+ * stays in memory while the GPU is off; after sgx_start again frames go
+ * on from where they were, unless the GPU failed meanwhile: then this
+ * sets the scene up again from scratch, and what was mapped or
+ * allocated is gone. */
 bool sgx_draw_setup(void);
 /* A GPU address for page-aligned memory outside the GPU's pool, or 0. */
 uint32_t sgx_draw_map(uint32_t phys, uint32_t size);
 /* Memory of the GPU's own, zeroed, uncached for the CPU, or 0. */
 uint32_t sgx_draw_alloc(uint32_t size, void **cpu);
 /* Room for vertices in the scene's vertex buffer, for the next frame
- * only, or NULL. */
+ * only, or NULL. A frame given up before sgx_draw_frame gives its room
+ * back with sgx_draw_discard. */
 void *sgx_draw_vertices(uint32_t bytes, uint32_t *gpu);
+void sgx_draw_discard(void);
 void sgx_draw_target(uint32_t gpu_addr);
 uint32_t sgx_draw_get_target(void);
 bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t);
-/* After a frame that failed: why, as a line for the log. */
+/* After a frame that failed: why, as a line for the log, and whether it
+ * was refused before anything reached the GPU. Otherwise the GPU must be
+ * halted before its target is touched. */
 const char *sgx_draw_failure(void);
+bool sgx_draw_refused(void);
+/* Every frame's first kick also invalidates the GPU's data caches. */
+void sgx_draw_inval_data(bool on);
+bool sgx_draw_inval_data_on(void);
 #endif

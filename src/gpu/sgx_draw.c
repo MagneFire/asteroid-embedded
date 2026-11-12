@@ -51,8 +51,8 @@ static const uint32_t rtdata[2] = { SGX_SCENE_RTDATA0, SGX_SCENE_RTDATA1 };
 static const uint32_t regions[2] = { SGX_SCENE_REGIONS0, SGX_SCENE_REGIONS1 };
 
 static struct sgx_mem *mem;
-static bool ready, stuck;
-static uint32_t ccb_at, kicks, scenes, rt, target, cache, launches, verts_used;
+static bool ready, stuck, refused, inval;
+static uint32_t gen, ccb_at, kicks, scenes, rt, target, cache, launches, verts_used;
 static struct { uint32_t phys, size, gpu; } maps[4];
 static unsigned nmaps;
 static char failure[160];
@@ -92,11 +92,27 @@ static void put_tables(void)
 		ix[i / 2] = i | (i + 1) << 16;
 }
 
+/* Ready for frames, and on the GPU memory as it is now. */
+static bool current(void) { return ready && gen == sgx_generation(); }
+
+static void forget(void)
+{
+	ready = stuck = false;
+	ccb_at = kicks = scenes = rt = target = cache = launches = verts_used = 0;
+	nmaps = 0;
+	failure[0] = 0;
+	gen = sgx_generation();
+}
+
 bool sgx_draw_setup(void)
 {
-	if (ready)
+	if (current())
 		return true;
-	if (stuck || !sgx_running() || !(mem = sgx_memory()))
+	if (!sgx_running() || !(mem = sgx_memory()))
+		return false;
+	if (gen != sgx_generation())
+		forget();
+	if (stuck)
 		return false;
 	/* What is allocated stays: a failed setup is not tried again. */
 	stuck = true;
@@ -120,7 +136,7 @@ bool sgx_draw_setup(void)
 
 uint32_t sgx_draw_map(uint32_t phys, uint32_t size)
 {
-	if (!ready || !size || (phys | size) & (SGX_PAGE - 1))
+	if (!current() || !size || (phys | size) & (SGX_PAGE - 1))
 		return 0;
 	for (unsigned i = 0; i < nmaps; i++)
 		if (phys >= maps[i].phys && phys - maps[i].phys + size <= maps[i].size)
@@ -139,7 +155,7 @@ uint32_t sgx_draw_map(uint32_t phys, uint32_t size)
 
 uint32_t sgx_draw_alloc(uint32_t size, void **cpu)
 {
-	if (!ready)
+	if (!current())
 		return 0;
 	uint32_t gpu = sgx_alloc(mem, SGX_HEAP_GENERAL, size, SGX_PAGE, SGX_MEM_READ | SGX_MEM_WRITE | SGX_MEM_NO_SYNC);
 	if (gpu) {
@@ -152,16 +168,22 @@ uint32_t sgx_draw_alloc(uint32_t size, void **cpu)
 void *sgx_draw_vertices(uint32_t bytes, uint32_t *gpu)
 {
 	bytes = (bytes + 15) & ~15u;
-	if (!ready || bytes > SGX_SCENE_VERTICES_SIZE - verts_used)
+	if (!current() || bytes > SGX_SCENE_VERTICES_SIZE - verts_used)
 		return NULL;
 	*gpu = SGX_SCENE_VERTICES + verts_used;
 	verts_used += bytes;
 	return sgx_ptr(mem, *gpu);
 }
 
+void sgx_draw_discard(void) { verts_used = 0; }
+
+void sgx_draw_inval_data(bool on) { inval = on; }
+
+bool sgx_draw_inval_data_on(void) { return inval; }
+
 void sgx_draw_target(uint32_t gpu_addr)
 {
-	if (!ready)
+	if (!current())
 		return;
 	target = gpu_addr;
 	sgx_set_constant(sgx_ptr(mem, SGX_SCENE_TILE_STORE0), 0, gpu_addr);
@@ -172,6 +194,8 @@ void sgx_draw_target(uint32_t gpu_addr)
 uint32_t sgx_draw_get_target(void) { return target; }
 
 const char *sgx_draw_failure(void) { return failure; }
+
+bool sgx_draw_refused(void) { return refused; }
 
 /* The end of each ring the kick's status entries report. */
 static uint32_t ring_end(unsigned list, unsigned i, bool last)
@@ -202,8 +226,6 @@ static bool kick(bool last)
 	c[CMD_STREAM / 4] = last ? vd : SGX_SCENE_STREAM_FIRST;
 	c[CMD_RTDATA / 4] = rtdata[rt];
 	c[CMD_REGIONS / 4] = regions[rt];
-	ccb_at = (ccb_at + CMD_SIZE) % CCB_SIZE;
-	*word(SGX_SCENE_CCB_CTL) = ccb_at;
 	*word(SGX_SCENE_RT_PENDING) += 1;
 	kicks++;
 
@@ -234,8 +256,12 @@ static bool kick(bool last)
 		l[6] = s[READ2_PENDING];
 		l[7] = SGX_SCENE_SURFACE_SYNC + 4 * READ2_DONE;
 	}
+	dmb();
 	sh[SH_FLAGS / 4] |= SH_READY;
-	uint32_t cc = cache;
+	dmb();
+	ccb_at = (ccb_at + CMD_SIZE) % CCB_SIZE;
+	*word(SGX_SCENE_CCB_CTL) = ccb_at;
+	uint32_t cc = cache | (inval && !last ? SGX_CACHE_INVAL_DATA : 0);
 	cache = 0;
 	return sgx_submit_ta(SGX_SCENE_HW_CONTEXT, cc);
 }
@@ -482,7 +508,8 @@ static void put_frame(const struct sgx_frame *f)
 
 static bool frame(const struct sgx_frame *f, struct sgx_times *t)
 {
-	if (!ready || stuck || !sgx_running()) {
+	refused = true;
+	if (!current() || stuck || !sgx_running()) {
 		snprintf(failure, sizeof failure, "no scene, or the GPU is off");
 		return false;
 	}
@@ -494,6 +521,7 @@ static bool frame(const struct sgx_frame *f, struct sgx_times *t)
 		snprintf(failure, sizeof failure, "the last scene still holds its render details");
 		return false;
 	}
+	refused = false;
 	scenes++;
 	rt ^= 1;
 	put_frame(f);

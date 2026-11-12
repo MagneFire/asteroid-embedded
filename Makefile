@@ -260,6 +260,17 @@ $(BUILD)/test/sgx_draw_test: tests/sgx_draw_test.c src/gpu/sgx_draw.c src/gpu/sg
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/gpu/sgx_draw.c src/gpu/sgx_scene_data.c src/gpu/sgx_image.c -o $@
 
+# sgx.c drives registers, which the test fakes, and needs the OMAP3 map.
+SGX_HOST_CFLAGS := $(subst -I src/soc/qcom,-I src/soc/omap3,$(subst tests/host.h,tests/host_mmio.h,$(HOST_CFLAGS)))
+$(BUILD)/test/sgx_test: tests/sgx_test.c src/gpu/sgx.c src/gpu/sgx_image.c $(wildcard tests/*.h src/*.h src/gpu/sgx*.h src/soc/omap3/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(SGX_HOST_CFLAGS) $< src/gpu/sgx.c src/gpu/sgx_image.c -o $@
+
+SGX_STACK := src/gpu/sgx_compose.c src/gpu/soft.c src/gpu/sgx_draw.c src/gpu/sgx_scene_data.c src/gpu/sgx_image.c
+$(BUILD)/test/sgx_stack_test: tests/sgx_stack_test.c $(SGX_STACK) $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< $(SGX_STACK) -o $@
+
 $(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
@@ -272,7 +283,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/m4_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/m4_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -295,6 +306,8 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/squashfs_test
 	$(BUILD)/test/sgx_image_test
 	$(BUILD)/test/sgx_draw_test
+	$(BUILD)/test/sgx_test
+	$(BUILD)/test/sgx_stack_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb
 	python3 tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test

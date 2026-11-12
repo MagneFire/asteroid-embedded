@@ -55,7 +55,8 @@ static int failures;
 
 static struct { uint32_t phys, size; } maps[4];
 static unsigned nmaps, map_fail, starts, stops, halts, frame_calls, nlogs, cleans;
-static bool running, start_ok = true, frame_ok = true;
+static bool running, failed, start_ok = true, stop_ok = true, frame_ok = true, refuse, refused;
+static uint32_t generation = 1, setup_gen = 1;
 static uint32_t now_ms, clean_size;
 static const void *clean_buf;
 static char lastlog[256];
@@ -110,24 +111,43 @@ const float (*flatmesh_round_edge(void))[2]
 	return edge;
 }
 
+/* As sgx.c: a failure leaves the GPU off, and the start after it builds
+ * everything again. */
 bool sgx_start(void)
 {
 	starts++;
+	if (failed)
+		generation++;
 	running = start_ok;
+	failed = !start_ok;
 	return start_ok;
 }
-void sgx_stop(void)
+bool sgx_stop(void)
 {
 	stops++;
+	if (running && !stop_ok)
+		failed = true;
 	running = false;
+	return !failed;
 }
 void sgx_halt(void)
 {
 	halts++;
 	running = false;
+	failed = true;
 }
 bool sgx_running(void) { return running; }
-bool sgx_draw_setup(void) { return running; }
+bool sgx_failed(void) { return failed; }
+uint32_t sgx_generation(void) { return generation; }
+bool sgx_draw_setup(void)
+{
+	if (setup_gen != generation) {
+		nmaps = 0;
+		aux_given = false;
+		setup_gen = generation;
+	}
+	return running;
+}
 
 uint32_t sgx_draw_map(uint32_t phys, uint32_t size)
 {
@@ -157,8 +177,10 @@ void *sgx_draw_vertices(uint32_t bytes, uint32_t *gpu)
 	return p;
 }
 
+void sgx_draw_discard(void) { vused = 0; }
 void sgx_draw_target(uint32_t gpu_addr) { target_gpu = gpu_addr; }
-const char *sgx_draw_failure(void) { return "fake failure"; }
+const char *sgx_draw_failure(void) { return refused ? "fake refusal" : "fake failure"; }
+bool sgx_draw_refused(void) { return refused; }
 
 /* The rules of sgx_draw.h, noted for the test to look at. */
 static void validate(const struct sgx_frame *f)
@@ -196,7 +218,8 @@ bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
 	memcpy(cap.aux, aux_mem, sizeof aux_mem);
 	vused = 0;
 	t->ta_us = t->render_us = 100;
-	return frame_ok;
+	refused = refuse;
+	return frame_ok && !refuse;
 }
 
 /* --- what the calls are given */
@@ -480,10 +503,16 @@ static void check_gpu(const char *what)
 
 /* --- cases */
 
+/* The GPU is off at boot until it is turned on. */
+static bool boot(void)
+{
+	return gpu_init() && !starts && !gpu_ready() && sgx_compose(true) && gpu_ready() && sgx_compose_on();
+}
+
 static void gpu_frame(void)
 {
 	setup();
-	CHECK(gpu_init() && gpu_ready() && sgx_compose_on(), "gpu_init did not start the GPU");
+	CHECK(boot(), "boot, then on");
 	struct gpu_target t = frame_target();
 	CHECK(full(&gpu_api, &t), "gpu_draw_end");
 	CHECK(frame_calls == 1 && !nlogs && !halts, "%u frames, %u log lines", frame_calls, nlogs);
@@ -493,7 +522,7 @@ static void gpu_frame(void)
 static void turned(void)
 {
 	setup();
-	CHECK(gpu_init(), "gpu_init");
+	CHECK(boot(), "boot, then on");
 	struct gpu_target t = frame_target();
 	static float before[sizeof mem.mesh / 4 + sizeof mem.bg / 4];
 	memcpy(before, mem.mesh, sizeof mem.mesh);
@@ -523,7 +552,7 @@ static void turned(void)
 static void failing(void)
 {
 	setup();
-	CHECK(gpu_init(), "gpu_init");
+	CHECK(boot(), "boot, then on");
 	struct gpu_target t = frame_target();
 	frame_ok = false;
 	bool ret;
@@ -541,9 +570,39 @@ static void failing(void)
 	CHECK(gpu_init() && starts == s && !gpu_ready(), "gpu_init started the GPU again");
 	gpu_suspend();
 	CHECK(gpu_init() && starts == s && !gpu_ready(), "gpu_init after sleep started the GPU again");
-	CHECK(!sgx_compose(true), "sgx_compose(true) after a failure");
-	same = same_as_soft(full, &t, &ret);
-	CHECK(ret && same && frame_calls == 1, "frame after sgx_compose(true)");
+	CHECK(nlogs == 1, "%u log lines", nlogs);
+	/* By hand it is tried again, from scratch. */
+	CHECK(sgx_compose(true) && gpu_ready() && generation == 2 && nmaps == 3 && aux_given, "sgx_compose(true) after a failure");
+	CHECK(full(&gpu_api, &t) && frame_calls == 2, "a GPU frame after the retry");
+	check_gpu("after the retry");
+}
+
+static void start_failing(void)
+{
+	setup();
+	struct gpu_target t = frame_target();
+	bool ret;
+	start_ok = false;
+	CHECK(gpu_init() && !sgx_compose(true) && !gpu_ready() && halts == 1, "a start that fails: %u halts", halts);
+	CHECK(same_as_soft(full, &t, &ret) && ret && !frame_calls, "a frame after it");
+	start_ok = true;
+	gpu_suspend();
+	unsigned s = starts;
+	CHECK(gpu_init() && starts == s && !gpu_ready(), "wake tried again");
+	/* A map that fails halts the GPU as well. */
+	map_fail = 2;
+	CHECK(!sgx_compose(true) && halts == 2 && !running, "a map that fails: %u halts", halts);
+	map_fail = 0;
+	CHECK(sgx_compose(true) && gpu_ready() && nmaps == 3, "on again: %u maps", nmaps);
+	CHECK(full(&gpu_api, &t) && frame_calls == 1, "a GPU frame");
+	check_gpu("after the start failures");
+	/* A stop that fails at sleep keeps the GPU off after waking. */
+	stop_ok = false;
+	gpu_suspend();
+	stop_ok = true;
+	s = starts;
+	CHECK(gpu_init() && starts == s && !gpu_ready() && !sgx_compose_on(), "wake after a failed stop");
+	CHECK(same_as_soft(full, &t, &ret) && ret && frame_calls == 1, "a frame after it");
 }
 
 static void switching(void)
@@ -551,7 +610,7 @@ static void switching(void)
 	setup();
 	struct gpu_target t = frame_target();
 	bool ret;
-	CHECK(gpu_init() && !sgx_compose(false) && !sgx_compose_on() && !gpu_ready() && stops == 1, "off: stops %u", stops);
+	CHECK(boot() && !sgx_compose(false) && !sgx_compose_on() && !gpu_ready() && stops == 1, "off: stops %u", stops);
 	CHECK(same_as_soft(full, &t, &ret) && ret && !frame_calls, "a frame with the GPU off: %u on the GPU", frame_calls);
 	CHECK(sgx_compose(true) && sgx_compose_on() && gpu_ready(), "back on");
 	CHECK(full(&gpu_api, &t) && frame_calls == 1, "a frame back on the GPU");
@@ -572,18 +631,32 @@ static void switching(void)
 static void odd(void)
 {
 	setup();
-	CHECK(gpu_init(), "gpu_init");
+	CHECK(boot(), "boot, then on");
 	bool ret;
 	struct gpu_target t = frame_target(), small = { ADDR(mem.frame), 96, 80, 384, false };
 	CHECK(same_as_soft(full, &small, &ret) && ret, "a 96x80 target");
 	CHECK(!frame_calls && nlogs == 1, "%u GPU frames, %u log lines after a small target", frame_calls, nlogs);
 	CHECK(same_as_soft(big_layer, &t, &ret) && ret, "a layer of 64x64");
-	CHECK(!frame_calls && nlogs == 1 && !halts, "%u GPU frames, %u log lines after a big layer", frame_calls, nlogs);
+	CHECK(!frame_calls && nlogs == 2 && !halts, "%u GPU frames, %u log lines after a big layer", frame_calls, nlogs);
 	CHECK(same_as_soft(no_mesh, &t, &ret) && ret, "a frame without a mesh");
 	CHECK(same_as_soft(empty, &t, &ret) && ret, "an empty frame");
-	CHECK(!frame_calls && nlogs == 1 && !halts && gpu_ready(), "%u GPU frames, %u log lines, %u halts", frame_calls, nlogs, halts);
+	CHECK(!frame_calls && nlogs == 3 && !halts && gpu_ready(), "%u GPU frames, %u log lines, %u halts", frame_calls, nlogs, halts);
+	/* Each refused frame gives its vertices back. */
+	for (int i = 0; i < 200; i++)
+		CHECK(big_layer(&gpu_api, &t), "a layer of 64x64, %d", i);
+	CHECK(!frame_calls && nlogs == 3 && !halts, "%u GPU frames, %u log lines after the big layers", frame_calls, nlogs);
 	CHECK(full(&gpu_api, &t) && frame_calls == 1 && gpu_ready(), "a normal frame afterwards");
 	check_gpu("after the CPU's frames");
+	/* A frame the driver refuses before the GPU sees it: the CPU draws
+	 * it, and the GPU stays. */
+	refuse = true;
+	for (int i = 0; i < 50; i++)
+		CHECK(same_as_soft(full, &t, &ret) && ret, "a refused frame, %d", i);
+	refuse = false;
+	CHECK(frame_calls == 51 && nlogs == 4 && !halts && gpu_ready() && strstr(lastlog, "fake refusal"),
+	      "%u GPU frames, %u log lines, %u halts", frame_calls, nlogs, halts);
+	CHECK(full(&gpu_api, &t) && frame_calls == 52, "a GPU frame after the refusals");
+	check_gpu("after the refusals");
 	/* Not a failure: sleep and wake keep the GPU. */
 	gpu_suspend();
 	CHECK(gpu_init() && gpu_ready(), "wake after frames the GPU did not take");
@@ -605,7 +678,7 @@ static bool many(const struct api *a, const struct gpu_target *t)
 static void unkept(void)
 {
 	setup();
-	CHECK(gpu_init(), "gpu_init");
+	CHECK(boot(), "boot, then on");
 	struct gpu_target t = frame_target();
 	CHECK(many(&gpu_api, &t) && frame_calls == 1 && !cap.bad[0], "a frame of 63 calls: %s", cap.bad);
 	CHECK(cap.n == 2 && cap.d[0].kind == SGX_DRAW_FLAT && cap.d[1].kind == SGX_DRAW_TEXTURED,
@@ -614,10 +687,13 @@ static void unkept(void)
 	fill_frame(mem.frame);
 	fill_frame(mem.ref);
 	CHECK(!many(&gpu_api, &t), "gpu_draw_end after a failure of a frame the CPU cannot draw");
-	CHECK(halts == 1 && nlogs == 1 && !gpu_ready(), "%u halts, %u log lines", halts, nlogs);
+	CHECK(halts == 1 && nlogs == 2 && !gpu_ready(), "%u halts, %u log lines", halts, nlogs);
 	CHECK(!memcmp(mem.frame, mem.ref, sizeof mem.frame), "the frame buffer was changed");
 	bool ret;
 	CHECK(same_as_soft(full, &t, &ret) && ret && frame_calls == 2, "the next frame");
+	/* frame.c no longer uses the compositor, so it is not turned on. */
+	unsigned s = starts;
+	CHECK(!sgx_compose(true) && starts == s && gpu_init() && starts == s, "on after a lost frame");
 }
 
 static void sync(void)
@@ -626,7 +702,7 @@ static void sync(void)
 	char buf[64];
 	gpu_draw_cpu_sync(buf, sizeof buf);
 	CHECK(!cleans, "a sync before the GPU was started");
-	CHECK(gpu_init(), "gpu_init");
+	CHECK(boot(), "boot, then on");
 	gpu_draw_cpu_sync(buf, sizeof buf);
 	CHECK(cleans == 1 && clean_buf == buf && clean_size == sizeof buf, "sync with the GPU on: %u cleans", cleans);
 	sgx_compose(false);
@@ -671,6 +747,7 @@ int main(void)
 	run("GPU frame", gpu_frame);
 	run("turning", turned);
 	run("GPU failure", failing);
+	run("start and stop failures", start_failing);
 	run("switching", switching);
 	run("what the GPU does not take", odd);
 	run("calls too many to keep", unkept);

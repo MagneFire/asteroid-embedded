@@ -1066,11 +1066,13 @@ static void cmd_uibench(const char *args)
 }
 
 #ifdef SGX_BASE
-/* A red triangle on a blue-grey ground, drawn by the GPU into the back
- * buffer, apex up: its y is flipped for GL's origin in the bottom row, as
- * every vertex of a frame is. Red and blue swapped, or the picture upside
- * down, show at a glance. */
-static void sgx_tri(void)
+/* A red triangle on a ground of the given colour (blue-grey if none),
+ * drawn by the GPU into the back buffer, apex up: its y is flipped for
+ * GL's origin in the bottom row, as every vertex of a frame is. Red and
+ * blue swapped, or the picture upside down, show at a glance. Both
+ * buffers are read back into the log, so two runs in other colours show
+ * whether each buffer holds its own frame. */
+static void sgx_tri(const char *arg)
 {
 	static const float verts[] = {
 		-0.8f, -0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
@@ -1078,31 +1080,61 @@ static void sgx_tri(void)
 		0.0f, 0.8f, 1.0f, 0.0f, 0.0f, 1.0f,
 	};
 	const uint32_t bytes = SGX_DRAW_SIZE * SGX_DRAW_SIZE * 4;
+	uint32_t clear = 0xff4080bf;
+	if (*arg) {
+		char *end;
+		clear = 0xff000000 | (uint32_t)strtoul(arg, &end, 16);
+		if (*end) {
+			say("usage: sgx tri [rrggbb]\n");
+			return;
+		}
+	}
 	struct sgx_times t;
-	uint32_t *buf = display_backbuffer(), gpu, vgpu;
+	uint32_t *buf = display_backbuffer(), fb_gpu, vgpu;
 	float *v;
-	if (!sgx_start() || !sgx_draw_setup() || !(gpu = sgx_draw_map((uint32_t)(uintptr_t)buf, bytes)) ||
-	    !(v = sgx_draw_vertices(sizeof verts, &vgpu))) {
+	bool was = sgx_running();
+	if (!sgx_start()) {
+		say("failed, see the log\n");
+		return;
+	}
+	if (!sgx_draw_setup() || !(fb_gpu = sgx_draw_map(FB_BASE, FB_SIZE)) || !(v = sgx_draw_vertices(sizeof verts, &vgpu))) {
+		if (!was)
+			sgx_stop();
 		say("failed, see the log\n");
 		return;
 	}
 	for (unsigned i = 0; i < ARRAY_SIZE(verts); i++)
 		v[i] = i % 6 == 1 ? -verts[i] : verts[i];
 	const struct sgx_draw d = { .verts = vgpu, .count = 3, .kind = SGX_DRAW_FLAT };
-	const struct sgx_frame f = { 0xff4080bf, &d, 1 };
+	const struct sgx_frame f = { clear, &d, 1 };
+	uint32_t gpu = fb_gpu + ((uint32_t)(uintptr_t)buf - FB_BASE);
 	dcache_clean_invalidate_range(buf, bytes);
 	sgx_draw_target(gpu);
 	bool ok = sgx_draw_frame(&f, &t);
-	dcache_invalidate_range(buf, bytes);
 	if (!ok) {
 		log_printf("sgx: %s\n", sgx_draw_failure());
-		sgx_log_state();
+		if (sgx_draw_refused()) {
+			if (!was)
+				sgx_stop();
+		} else {
+			sgx_log_state();
+			sgx_halt();
+		}
+	}
+	dcache_invalidate_range(buf, bytes);
+	if (!ok) {
 		say("no frame, see the log\n");
 		return;
 	}
 	display_flip();
 	frame_hold(10000);
 	log_printf("sgx: frame into %08lx: geometry %lu us, render %lu us\n", gpu, t.ta_us, t.render_us);
+	for (unsigned i = 0; i < 2; i++) {
+		const uint32_t *b = fb.buf[i];
+		dcache_clean_invalidate_range(b, bytes);
+		log_printf("sgx: buffer %u%s: ground %08lx, triangle %08lx\n", i, b == buf ? " (this frame)" : "",
+			   b[160 * fb.stride + 4], b[200 * fb.stride + 160]);
+	}
 	say("geometry %lu us, render %lu us\n", t.ta_us, t.render_us);
 }
 
@@ -1110,8 +1142,8 @@ static void cmd_sgx(const char *args)
 {
 	struct sgx_info i;
 	args = skip_spaces(args);
-	if (!strcmp(args, "tri")) {
-		sgx_tri();
+	if (!strncmp(args, "tri", 3) && (!args[3] || args[3] == ' ')) {
+		sgx_tri(skip_spaces(args + 3));
 	} else if (!strcmp(args, "off")) {
 		sgx_compose(false);
 		say("off\n");
@@ -1120,11 +1152,16 @@ static void cmd_sgx(const char *args)
 		say("%s\n", sgx_compose(on) == on ? (on ? "frames on the GPU" : "frames on the CPU") : "failed, see the log");
 	} else if (!strcmp(args, "ui")) {
 		say("frames on the %s\n", sgx_compose_on() ? "GPU" : "CPU");
+	} else if (!strcmp(args, "inval on") || !strcmp(args, "inval off")) {
+		sgx_draw_inval_data(args[7] == 'n');
+		say("data caches %sinvalidated every frame\n", args[7] == 'n' ? "" : "not ");
+	} else if (!strcmp(args, "inval")) {
+		say("data caches %sinvalidated every frame\n", sgx_draw_inval_data_on() ? "" : "not ");
 	} else if (!strcmp(args, "state")) {
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri | ui [on | off]]\n");
+		say("usage: sgx [off | state | tri [rrggbb] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1182,7 +1219,7 @@ static const struct command commands[] = {
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
-	{ "sgx", "[off | state | tri | ui [on | off]]", cmd_sgx },
+	{ "sgx", "[off | state | tri [rrggbb] | ui [on | off] | inval [on | off]]", cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };

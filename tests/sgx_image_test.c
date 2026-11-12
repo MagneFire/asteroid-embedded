@@ -136,8 +136,11 @@ int main(void)
 	const char *path = getenv("SGX_LIBSRV_INIT"), *dir = getenv("SGX_REFERENCE");
 	if (path && (lib = slurp(path, &lib_size)))
 		reference(dir ? dir : "build/sgx/init");
-	else
-		printf("sgx_image_test: no vendor library, reference not compared\n");
+	else {
+		printf("sgx_image_test: SKIP: reference not compared, no vendor library (SGX_LIBSRV_INIT)\n");
+		if (getenv("SGX_REQUIRE_REFERENCE"))
+			failures++;
+	}
 	if (failures)
 		return 1;
 	printf("sgx_image_test: ok\n");

@@ -368,8 +368,6 @@ What the lab does, for scenarios named `quad_*`, `mesh*`, `mix*` and `*_tq` (`gl
   the transfer context needs; the module's remaining initialisation (PVR2D, framebuffer) is not done.
 - The allocation call sites in the manifest are the services return address (exact) and the nearest
   plausible library return address on the stack (heuristic).
-- `check_init.py` reports one FAIL (alloc #6, microkernel trace buffer: it expects alignment 0x1000,
-  `init-facts.md` and the emulation give 16). This is independent of the GLES tools.
 
 # Native scene data (minnow)
 
@@ -394,5 +392,8 @@ python3 tools/sgx/mkreplay.py
 python3 tools/sgx/flatten.py draw          # flat.txt per recording, for tests/sgx_draw_test.c
 SGX_LIBSRV_INIT=minnow/dump/extracted_data/system/lib/libsrv_init.so make test
 ```
+
+Without the library or the recordings the SGX tests still pass but print a `SKIP:` line for what
+they did not compare; `SGX_REQUIRE_REFERENCE=1` makes those skips fail instead.
 
 The notes are `asteroid-embedded-notes/hw/minnow/sgx/native-scene.md`.

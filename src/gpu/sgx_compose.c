@@ -9,8 +9,9 @@
  * a slot of a texture of the layers' size, and triangles after the mesh
  * are drawn from a palette in it, a texel per triangle, which gives them
  * blending without a second flat program. The calls of a GPU frame are
- * kept, so that when the GPU fails the CPU draws the frame from them;
- * after a failure the CPU draws every frame. */
+ * kept, so that when the GPU fails or refuses a frame the CPU draws the
+ * frame from them; after a failure the CPU draws every frame until
+ * sgx_compose(true). */
 #include <string.h>
 #include "asteroid.h"
 #include "gpu/a3xx.h"
@@ -36,19 +37,25 @@ extern uintptr_t gpu_host_base;
 #define MAX_OPS		48
 #define MAX_RECTS	128
 #define LOG_MS		1000
+/* Whether the GPU composites from boot, or only from sgx_compose(true). */
+#define AT_BOOT		false
 
 static struct sgx_region regions[3];
 static unsigned nregions;
 static struct { uint32_t addr, size, gpu; } maps[3];
 static unsigned nmaps;
-static bool wanted, failed, on_gpu, by_hand, told;
-static uint32_t aux_gpu, *aux;
+static bool wanted, on_gpu, by_hand = !AT_BOOT, lost;
+static uint32_t aux_gpu, *aux, gen;
+static char told[8][64];
+static unsigned ntold;
 
 static struct sgx_draw draws[SGX_DRAW_MAX_DRAWS];
 static unsigned ndraws, slots, palette;
 static struct gpu_target target;
 static uint32_t target_gpu;
-static bool blend, drawable;
+static bool blend;
+/* Why the GPU cannot take the frame, or NULL. */
+static const char *refusal;
 static float turn_c = 1.0f, turn_s;
 static struct { uintptr_t from, to; } turned[4];
 static unsigned nturned;
@@ -94,8 +101,13 @@ static bool start(void)
 		sgx_compose_regions(r, ARRAY_SIZE(r));
 	}
 #endif
-	if (failed || !sgx_start() || !sgx_draw_setup())
+	if (!sgx_start() || !sgx_draw_setup())
 		return false;
+	if (gen != sgx_generation()) {
+		aux = NULL;
+		nmaps = 0;
+		gen = sgx_generation();
+	}
 	if (!aux && !(aux_gpu = sgx_draw_alloc(SIZE * PITCH, (void **)&aux)))
 		return false;
 	if (!nmaps)
@@ -114,16 +126,27 @@ static bool start(void)
 	return true;
 }
 
+/* Any failure to start leaves the GPU halted. */
+static bool turn_on(void)
+{
+	if (start())
+		return true;
+	sgx_halt();
+	return false;
+}
+
 bool sgx_compose(bool on)
 {
 	by_hand = !on;
-	wanted = on && start();
-	if (!wanted)
+	if (on && lost)
+		log_printf("sgx: frames are drawn without the compositor since a lost frame\n");
+	wanted = on && !lost && turn_on();
+	if (!on)
 		sgx_stop();
 	return wanted;
 }
 
-bool sgx_compose_on(void) { return wanted; }
+bool sgx_compose_on(void) { return wanted && !sgx_failed(); }
 
 /* --- the frame on the GPU */
 
@@ -131,18 +154,27 @@ static void begin(const struct gpu_target *t)
 {
 	target = *t;
 	target_gpu = gpu_of(t->base, t->pitch_bytes * t->height);
-	drawable = target_gpu && !t->rgba && t->width == SIZE && t->height == SIZE && t->pitch_bytes == PITCH;
+	refusal = target_gpu && !t->rgba && t->width == SIZE && t->height == SIZE && t->pitch_bytes == PITCH
+			  ? NULL
+			  : "a target it does not draw into";
 	ndraws = slots = palette = nturned = nops = nrects = 0;
+	sgx_draw_discard();
 	kept = true;
 	blend = false;
 	turn_c = 1.0f;
 	turn_s = 0.0f;
 }
 
+static void refuse(const char *why)
+{
+	if (!refusal)
+		refusal = why;
+}
+
 static struct sgx_draw *next_draw(void)
 {
 	if (ndraws == SGX_DRAW_MAX_DRAWS) {
-		drawable = false;
+		refuse("more draws than a frame takes");
 		return NULL;
 	}
 	return &draws[ndraws++];
@@ -192,18 +224,18 @@ static void textured(uint32_t verts, unsigned count, uint32_t tex, uint8_t alpha
 static void triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *ncomp, unsigned nverts)
 {
 	if (nattrs != 2 || ncomp[0] != 4 || ncomp[1] != 4 || stride < 32) {
-		drawable = false;
+		refuse("triangles of another vertex layout");
 		return;
 	}
 	const uint8_t *src = PTR(vbo_addr);
 	nverts -= nverts % 3;
 	bool flat = !ndraws && !blend;
-	for (unsigned at = 0; at < nverts && drawable;) {
+	for (unsigned at = 0; at < nverts && !refusal;) {
 		unsigned n = nverts - at > SGX_DRAW_MAX_VERTS ? SGX_DRAW_MAX_VERTS - SGX_DRAW_MAX_VERTS % 3 : nverts - at;
 		uint32_t gpu;
 		float *v = sgx_draw_vertices(n * (flat ? 24 : 16), &gpu);
 		if (!v || (!flat && palette + n / 3 > SIZE * (SIZE - PALETTE_Y))) {
-			drawable = false;
+			refuse("no room for the triangles");
 			return;
 		}
 		for (unsigned i = 0; i < n; i++) {
@@ -227,6 +259,8 @@ static void triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const
 		}
 		if (flat) {
 			struct sgx_draw *d = next_draw();
+			if (!d)
+				return;
 			*d = (struct sgx_draw){ .verts = gpu, .count = (uint16_t)n, .kind = SGX_DRAW_FLAT };
 			flat = false;
 		} else {
@@ -270,9 +304,9 @@ static void parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t p
 		return;
 	float u0, v0, su = (float)width / SIZE, sv = (float)height / SIZE;
 	uint32_t tex = texture(tex_addr, width, height, pitch, &u0, &v0), gpu;
-	float *v = tex ? sgx_draw_vertices(n * 6 * 16, &gpu) : NULL;
-	if (!v || n * 6 > SGX_DRAW_MAX_VERTS) {
-		drawable = false;
+	float *v = tex && n * 6 <= SGX_DRAW_MAX_VERTS ? sgx_draw_vertices(n * 6 * 16, &gpu) : NULL;
+	if (!v) {
+		refuse(tex ? "no room for a layer's rectangles" : "a texture it cannot place");
 		return;
 	}
 	for (unsigned i = 0; i < n; i++, v += 24) {
@@ -299,7 +333,7 @@ static void round_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint
 	uint32_t tex = texture(tex_addr, width, height, pitch, &u0, &v0), gpu;
 	float *v = tex ? sgx_draw_vertices(FLATMESH_ROUND_SIDES * 3 * 16, &gpu) : NULL;
 	if (!v) {
-		drawable = false;
+		refuse(tex ? "no room for a round layer" : "a texture it cannot place");
 		return;
 	}
 	const float (*edge)[2] = flatmesh_round_edge();
@@ -313,20 +347,35 @@ static void round_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint
 	textured(gpu, FLATMESH_ROUND_SIDES * 3, tex, fade);
 }
 
+/* Once for each kind of frame. */
+static void tell(const char *why)
+{
+	for (unsigned i = 0; i < ntold; i++)
+		if (!strcmp(told[i], why))
+			return;
+	if (ntold == ARRAY_SIZE(told))
+		return;
+	snprintf(told[ntold++], sizeof told[0], "%s", why);
+	log_printf("sgx: a frame the GPU does not take, drawn by the CPU: %s\n", why);
+}
+
 static bool end(void)
 {
-	if (!drawable || !ndraws || draws[0].kind != SGX_DRAW_FLAT) {
-		if (!told)
-			log_printf("sgx: a frame of what the GPU does not draw, drawn by the CPU\n");
-		told = true;
+	if (!refusal && (!ndraws || draws[0].kind != SGX_DRAW_FLAT))
+		refusal = "no mesh first";
+	if (refusal) {
+		tell(refusal);
 		return false;
 	}
 	struct sgx_frame f = { 0xff000000u, draws, ndraws };
 	struct sgx_times t;
 	sgx_draw_target(target_gpu);
 	if (!sgx_draw_frame(&f, &t)) {
-		log_printf("sgx: %s; the CPU draws from now on\n", sgx_draw_failure());
-		failed = true;
+		if (sgx_draw_refused()) {
+			tell(sgx_draw_failure());
+			return false;
+		}
+		log_printf("sgx: %s; the CPU draws until sgx ui on\n", sgx_draw_failure());
 		wanted = false;
 		sgx_halt();
 		return false;
@@ -398,15 +447,11 @@ static bool replay(void)
 
 /* --- draw.h and a3xx.h */
 
-/* At start and after sleep: on the GPU unless it failed or was turned
- * off by hand. */
+/* At start and after sleep: on the GPU if it was turned on and has not
+ * failed since. */
 bool gpu_init(void)
 {
-	if (!failed && !by_hand) {
-		wanted = start();
-		if (!wanted)
-			sgx_stop();
-	}
+	wanted = !by_hand && !lost && !sgx_failed() && turn_on();
 	return soft_init();
 }
 
@@ -474,7 +519,7 @@ void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride)
 	if (!on_gpu)
 		return;
 	if (nturned == ARRAY_SIZE(turned)) {
-		drawable = false;
+		refuse("more turned vertices than kept");
 		return;
 	}
 	turned[nturned].from = (uintptr_t)v;
@@ -495,7 +540,7 @@ void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, con
 		o->n = nverts;
 		memcpy(o->ncomp, attr_ncomp, nattrs < 2 ? nattrs : 2);
 	}
-	if (drawable)
+	if (!refusal)
 		triangles(vbo_addr, stride, nattrs, attr_ncomp, nverts);
 }
 
@@ -507,7 +552,7 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 		return;
 	}
 	keep_layer(OP_PARTS, tex_addr, width, height, pitch_bytes, x, y, alpha, r, n);
-	if (drawable)
+	if (!refusal)
 		parts(tex_addr, width, height, pitch_bytes, x, y, alpha, r, n);
 }
 
@@ -529,7 +574,7 @@ void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 		return;
 	}
 	keep_layer(OP_ROUND, tex_addr, width, height, pitch_bytes, x, y, alpha, NULL, 0);
-	if (drawable)
+	if (!refusal)
 		round_layer(tex_addr, width, height, pitch_bytes, x, y, alpha);
 }
 
@@ -550,8 +595,13 @@ bool gpu_draw_end(void)
 	if (!on_gpu)
 		return soft_draw_end();
 	on_gpu = false;
-	if (end())
+	if (end() || (kept && replay()))
 		return true;
-	/* What the CPU cannot draw again is lost. */
-	return kept && replay();
+	/* What the CPU cannot draw again is lost, and frame.c draws without
+	 * the compositor from now on. */
+	log_printf("sgx: a frame lost; the GPU stays off\n");
+	lost = true;
+	wanted = false;
+	sgx_stop();
+	return false;
 }

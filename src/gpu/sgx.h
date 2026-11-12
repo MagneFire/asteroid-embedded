@@ -12,19 +12,26 @@ struct sgx_info {
 };
 
 /* Powers the GPU and starts its microkernel, which is read from the
- * watch's system partition the first time. */
+ * watch's system partition the first time. A failure leaves the GPU off,
+ * and the start after it builds everything again: the image here, and
+ * the scene of sgx_draw.c, which sgx_generation tells. A stop keeps
+ * both; when it fails the GPU is halted as after any failure. */
 bool sgx_start(void);
-void sgx_stop(void);
-/* Off at once, without asking the microkernel: after it stopped working. */
+bool sgx_stop(void);
+/* Off at once, without asking the microkernel: after it stopped working.
+ * Safe in any state. */
 void sgx_halt(void);
 bool sgx_running(void);
+/* Since the last failure, until a start works again. */
+bool sgx_failed(void);
+uint32_t sgx_generation(void);
 bool sgx_query(struct sgx_info *info);
 /* The microkernel's trace of its last steps, for the log. */
 void sgx_log_state(void);
 
 /* For the drawing on top (sgx_draw.c): the GPU's memory, and a TA
  * command for a render context, with the cache-control bits of
- * SGX_CACHE_INVAL_* the context's page tables need. */
+ * SGX_CACHE_INVAL_* it needs. */
 struct sgx_mem;
 struct sgx_mem *sgx_memory(void);
 bool sgx_submit_ta(uint32_t context, uint32_t cache);
