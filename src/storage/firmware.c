@@ -38,6 +38,19 @@ static int open_system(void)
 	return 0;
 }
 
+int firmware_read(const char *path, uint32_t off, void *buf, uint32_t len)
+{
+	int r = open_system();
+	if (r)
+		return r;
+	if (squashed) {
+		struct squashfs_inode in;
+		return (r = squashfs_lookup(&squash, path, &in)) ? r : squashfs_read(&squash, &in, off, buf, len);
+	}
+	struct ext4_inode in;
+	return (r = ext4_lookup(&fs, path, &in)) ? r : ext4_read(&fs, &in, off, buf, len);
+}
+
 const void *firmware_get(const char *name, uint32_t *size)
 {
 	for (unsigned i = 0; i < nfiles; i++)

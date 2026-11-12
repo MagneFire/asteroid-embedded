@@ -254,6 +254,9 @@ uint32_t epoch_from_civil(const struct civil *c);
 
 /* vendor firmware from the system partition */
 const void *firmware_get(const char *name, uint32_t *size);
+/* Part of a file of that partition by its path: the bytes read, or
+ * negative. */
+int firmware_read(const char *path, uint32_t off, void *buf, uint32_t len);
 
 extern const char build_id[];
 #endif
