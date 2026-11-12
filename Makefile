@@ -21,7 +21,7 @@ MBEDTLS := third_party/mbedtls
 GITREV := $(shell git rev-parse --short=10 HEAD 2>/dev/null || echo nogit)
 DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 
-SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c \
+SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/agenda.c \
         src/power.c src/power_policy.c src/sched.c src/frame.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
         src/civil.c src/log.c src/soc/mmu.c src/soc/exceptions.c src/board/drivers.c \
         src/sensors/steps.c src/sensors/hub_m4.c src/sensors/m4_proto.c src/sensors/auto_brightness.c src/sensors/orient.c \
@@ -189,7 +189,7 @@ HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
                -U_FORTIFY_SOURCE -I src -I src/soc/qcom -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
-HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/sensors/orient.c src/ui/rotation.c
+HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/agenda.c src/sensors/orient.c src/ui/rotation.c
 PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c
 
 $(BUILD)/test/parser_test: tests/parser_test.c $(PARSER_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
@@ -283,11 +283,12 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/m4_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/small.ext4 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/m4_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
 	$(BUILD)/test/game_test
+	$(BUILD)/test/agenda_test
 	$(BUILD)/test/orient_test
 	$(BUILD)/test/rotation_test
 	$(BUILD)/test/actions_test
