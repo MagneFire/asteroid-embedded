@@ -161,6 +161,11 @@ static void test_swipes(void)
 	drag(350, 200, 150, 200, 4);
 	settle();
 	CHECK(stack_screen() == UI_PANEL_RIGHT);
+	/* A vertical drag on Today scrolls its events. */
+	touches[UI_PANEL_RIGHT] = 0;
+	drag(200, 300, 200, 100, 4);
+	CHECK(stack_screen() == UI_PANEL_RIGHT && touches[UI_PANEL_RIGHT] == 6 && last_kind == UI_TOUCH_UP);
+	settle();
 	drag(50, 200, 250, 200, 4);
 	settle();
 	CHECK(stack_screen() == UI_PANEL_FACE);

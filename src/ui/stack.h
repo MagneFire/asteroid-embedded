@@ -9,7 +9,8 @@
  * layer (ui.h); the stack owns where the layers are on the display
  * and draws them on the GPU: a touch that moves past the swipe
  * threshold drags the screens along (the press is cancelled so no
- * click fires), except vertical drags on a screen that scrolls, and
+ * click fires), except vertical drags on a screen that scrolls (the
+ * notifications, Today and the apps), and
  * letting go slides to the nearest screen over 100 ms. stack_dim is
  * how much to darken the background, in proportion to how far the
  * watchface is off centre, and stack_launcher how far the launcher is

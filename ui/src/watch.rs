@@ -185,6 +185,7 @@ struct Ui {
     alarms: Rc<VecModel<AlarmItem>>,
     tiles: Rc<VecModel<Tile>>,
     agenda: Rc<VecModel<AgendaItem>>,
+    today: Rc<VecModel<AgendaItem>>,
     opened: Queue,
     events: Events,
     stride: usize,
@@ -268,6 +269,7 @@ pub unsafe extern "C" fn ui_init(
     let alarms = Rc::new(VecModel::default());
     let tiles = Rc::new(VecModel::from(alloc::vec![Tile { x: -1, y: -1, val: 0, pop: false, anim: false }; 16]));
     let agenda = Rc::new(VecModel::default());
+    let today = Rc::new(VecModel::default());
     let (opened, events): (Queue, Events) = Default::default();
     let mut screens = Vec::new();
     let mut panels = Vec::new();
@@ -285,6 +287,7 @@ pub unsafe extern "C" fn ui_init(
         face.set_alarms(alarms.clone().into());
         face.set_game_tiles(tiles.clone().into());
         face.set_agenda(agenda.clone().into());
+        face.set_agenda_today(today.clone().into());
         let queue = events.clone();
         face.on_alarm_saved(move |index, hour, minute, days, on| {
             let alarm = UiAlarm { hour: hour as u8, minute: minute as u8, days: days as u8, on };
@@ -348,7 +351,7 @@ pub unsafe extern "C" fn ui_init(
     }
     unsafe {
         *UI.0.get() =
-            Some(Ui { screens, panels, notes, forecast, alarms, tiles, agenda, opened, events, stride, width, height });
+            Some(Ui { screens, panels, notes, forecast, alarms, tiles, agenda, today, opened, events, stride, width, height });
     }
     true
 }
@@ -459,6 +462,13 @@ fn agenda_items(events: *const UiAgenda, n: u32) -> Vec<AgendaItem> {
 pub unsafe extern "C" fn ui_set_agenda(events: *const UiAgenda, n: u32) {
     let items = agenda_items(events, n);
     with_ui(|ui| ui.agenda.set_vec(items));
+}
+
+/// Today's events, for Today.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_set_today(events: *const UiAgenda, n: u32) {
+    let items = agenda_items(events, n);
+    with_ui(|ui| ui.today.set_vec(items));
 }
 
 /// Whether the Flashlight app has its light on.

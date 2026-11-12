@@ -101,8 +101,9 @@ export global Face {
     in-out property <int> game-score;
     in-out property <int> game-best;
     in-out property <bool> game-over;
-    // The events of the day the Agenda app shows.
+    // The events of the day the Agenda app shows, and today's.
     in-out property <[AgendaItem]> agenda;
+    in-out property <[AgendaItem]> agenda-today;
     // RTC seconds, for the age of notifications.
     in-out property <int> now;
     in-out property <bool> vibration-on: true;

@@ -1,37 +1,107 @@
 // The Today screen, right of the watchface, as AsteroidOS's: today's weather on top (icon left
-// of the middle, lowest and highest temperature to its right) and today's agenda, which is
-// always empty here as nothing provides one.
+// of the middle, lowest and highest temperature to its right), then a small-caps "Today" over
+// today's events from the agenda, a row each with the time right-aligned left of the title,
+// scrolling under the weather when there are more than fit.
 import { Face } from "face.slint";
+import { Scroller } from "controls.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
 
 export component TodayScreen {
+    property <int> count: Face.agenda-today.length;
+
     width: 100%;
     height: 100%;
 
-    if Face.weather-valid: Image {
-        x: root.width / 2 - 15 * Theme.unit;
-        y: 17.5 * Theme.unit - 7.5 * Theme.unit;
-        width: 15 * Theme.unit;
-        height: 15 * Theme.unit;
-        source: Icons.get(Face.weather-icon(Face.weather-today.id), self.width, self.height);
-        colorize: white;
-        opacity: 0.8;
+    // The original's ListView stops at its ends.
+    Scroller {
+        width: root.width;
+        height: root.height;
+        give: 0;
+        content-height: (35 + 15 * root.count + 25) * Theme.unit;
+
+        if Face.weather-valid: Image {
+            x: root.width / 2 - 15 * Theme.unit;
+            y: 17.5 * Theme.unit - 7.5 * Theme.unit;
+            width: 15 * Theme.unit;
+            height: 15 * Theme.unit;
+            source: Icons.get(Face.weather-icon(Face.weather-today.id), self.width, self.height);
+            colorize: white;
+            opacity: 0.8;
+        }
+
+        if Face.weather-valid: Text {
+            x: root.width * 0.55;
+            y: 0;
+            width: root.width * 0.45;
+            height: 35 * Theme.unit;
+            text: Face.temperature(Face.weather-today.min) + "\n" + Face.temperature(Face.weather-today.max);
+            color: white;
+            opacity: 0.8;
+            font-size: 5 * Theme.unit;
+            vertical-alignment: center;
+        }
+
+        // Qt's small caps: the capital, then the rest as smaller capitals on the same baseline.
+        if root.count > 0: HorizontalLayout {
+            x: 25 * Theme.unit;
+            y: 25 * Theme.unit;
+            width: 50 * Theme.unit;
+            height: 10 * Theme.unit;
+            alignment: center;
+
+            Text {
+                text: "T";
+                color: white;
+                font-size: 6 * Theme.unit;
+                vertical-alignment: bottom;
+            }
+
+            VerticalLayout {
+                padding-bottom: 0.4 * Theme.unit;
+
+                Text {
+                    text: "ODAY";
+                    color: white;
+                    font-size: 4.5 * Theme.unit;
+                    vertical-alignment: bottom;
+                }
+            }
+        }
+
+        for ev[i] in Face.agenda-today: Rectangle {
+            property <int> h: Math.floor(ev.start / 60);
+
+            y: (35 + 15 * i) * Theme.unit;
+            width: 100 * Theme.unit;
+            height: 15 * Theme.unit;
+
+            Text {
+                x: 0;
+                width: 30 * Theme.unit;
+                height: parent.height;
+                text: Face.clock12 ? Face.two-digits(Math.mod(parent.h + 11, 12) + 1) + ":" + Face.two-digits(Math.mod(ev.start, 60)) + (parent.h >= 12 ? " PM" : " AM") : Face.two-digits(parent.h) + ":" + Face.two-digits(Math.mod(ev.start, 60));
+                color: white;
+                opacity: 0.8;
+                font-size: 5 * Theme.unit;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+
+            Text {
+                x: 34 * Theme.unit;
+                width: 66 * Theme.unit;
+                height: parent.height;
+                text: ev.title;
+                color: white;
+                font-size: 7 * Theme.unit;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
     }
 
-    if Face.weather-valid: Text {
-        x: root.width * 0.55;
-        y: 0;
-        width: root.width * 0.45;
-        height: 35 * Theme.unit;
-        text: Face.temperature(Face.weather-today.min) + "\n" + Face.temperature(Face.weather-today.max);
-        color: white;
-        opacity: 0.8;
-        font-size: 5 * Theme.unit;
-        vertical-alignment: center;
-    }
-
-    Image {
+    if root.count == 0: Image {
         x: (root.width - 27 * Theme.unit) / 2;
         y: (root.height - 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit);
         width: 27 * Theme.unit;
@@ -41,7 +111,7 @@ export component TodayScreen {
         opacity: 0.8;
     }
 
-    Text {
+    if root.count == 0: Text {
         x: 0;
         y: (root.height + 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit) + 4 * Theme.unit;
         width: root.width;

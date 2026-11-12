@@ -45,7 +45,7 @@ static bool round_panel;
 enum { IDLE, PENDING, SCROLL, SWIPE };
 enum { LEFT, RIGHT, UP, DOWN };
 
-static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_APP] = true };
+static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_RIGHT] = true, [UI_PANEL_APP] = true };
 static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
 static unsigned launcher;

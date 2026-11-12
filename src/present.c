@@ -18,7 +18,7 @@
 
 static bool have_ui, have_haptics, have_hub;
 static int32_t passkey = -1;
-static uint32_t agenda_seen, agenda_date, notify_seen, shown_seq, newest_seq, media_seen, weather_seen, weather_day, last_clock;
+static uint32_t agenda_seen, agenda_date, agenda_today, notify_seen, shown_seq, newest_seq, media_seen, weather_seen, weather_day, last_clock;
 
 void present_init(bool ui, bool haptics, bool hub)
 {
@@ -48,7 +48,14 @@ static unsigned agenda_rows(struct ui_agenda *out, uint32_t date)
 	return n;
 }
 
-/* After a change: the events of the day the app shows. */
+static uint32_t today_date(void)
+{
+	struct civil c;
+	civil_from_epoch(rtc_read(), &c);
+	return (c.year - 2000) << 9 | c.month << 5 | c.day;
+}
+
+/* After a change: the events of the day the app shows and today's. */
 void present_agenda(void)
 {
 	_Static_assert(AGENDA_TITLE == UI_AGENDA_TITLE, "agenda title");
@@ -57,6 +64,8 @@ void present_agenda(void)
 	if (!have_ui)
 		return;
 	ui_set_agenda(rows, agenda_rows(rows, agenda_date));
+	agenda_today = today_date();
+	ui_set_today(rows, agenda_rows(rows, agenda_today));
 }
 
 /* The day as (year - 2000) << 9 | month << 5 | day. */
@@ -188,6 +197,10 @@ void present_clock(uint32_t now)
 			weather_day = rtc / 86400;
 			show_weather();
 		}
+		/* Only once shown, as the first frames do not wait for the
+		 * store. */
+		if (agenda_today && ((c.year - 2000) << 9 | c.month << 5 | c.day) != agenda_today)
+			present_agenda();
 		ui_set_battery(batt_percent(), batt_charging());
 		ui_set_connected(bt_host_connected(), bt_store_bonded());
 		static char addr_text[18];

@@ -21,7 +21,8 @@
  * the number it shows, which sets the font size; ui_set_game the
  * UI_TILES tiles of the Diamonds game, its score, best score and whether
  * it is over; ui_set_agenda the events of the day the Agenda app shows,
- * each with its index in the agenda.
+ * each with its index in the agenda, and ui_set_today today's events for
+ * Today.
  * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
@@ -231,6 +232,7 @@ bool ui_flashlight_on(void);
 void ui_set_calc(const char *shown, uint32_t shown_len, uint32_t length);
 void ui_set_game(const struct ui_tile *tiles, uint32_t score, uint32_t best, bool over);
 void ui_set_agenda(const struct ui_agenda *events, uint32_t n);
+void ui_set_today(const struct ui_agenda *events, uint32_t n);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
 void ui_set_passkey(int32_t passkey);

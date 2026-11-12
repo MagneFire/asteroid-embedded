@@ -117,6 +117,7 @@ static bool start_run(uint32_t now)
 		present_settings();
 		ui_set_build(build_id);
 		clockapps_show_alarms();
+		present_agenda();
 	}
 	return false;
 }
