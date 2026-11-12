@@ -136,6 +136,11 @@ $PY tools/sgx/check_draw.py quad_tex quad_tex320 quad_alpha
 $PY tools/sgx/diffrec.py build/sgx/draw/quad_tex build/sgx/draw/quad_tex320 --hide-tq   # GL context only
 $PY tools/sgx/diffrec.py build/sgx/draw/quad_tex build/sgx/draw/quad_tex100 --xfer 0   # transfer 0 instead of kick 0
 $PY tools/sgx/texprobe.py                                                          # texture size/layout table
+# firmware-shaped scenes (the mesh, then textured quads and a round panel; they also use the transfer context)
+$PY tools/sgx/glrec.py mesh mesh_vbo2 mesh_n mix mix_minus mix_plus mix_swap mix_alpha mix_tex mix_tex3 mix_same mix_back mix2
+$PY tools/sgx/check_draw.py mesh mesh_vbo2 mesh_n mix mix_minus mix_plus mix_swap mix_alpha mix_tex mix_tex3 mix_same mix_back mix2
+$PY tools/sgx/drawmap.py build/sgx/draw/mix [--kick N]                             # the draws of a kick, every pointer followed
+$PY tools/sgx/diffrec.py build/sgx/draw/mix build/sgx/draw/mix_plus --hide-tq
 ```
 
 Paths are relative to `~/Downloads/AsteroidOS`. Options of `glrec.py`: `--out DIR`, `--shift N`
@@ -173,6 +178,30 @@ with the gralloc transfer context, see "Transfer path"). The vertex shader is
 | `quad_linear` | 320x320, GL_LINEAR min and mag | `texture2D(s,u)` |
 
 All of them end with glGetError 0 and eglGetError 0x3000 (EGL_SUCCESS).
+
+Firmware-shaped scenarios (320x320 pbuffer, clear, the draws, `glFinish`, `glReadPixels` 1x1 = a whole scene of two kicks;
+transfer context as for `quad_*`). Mesh: 172 flat triangles (516 vertices `{x, y, r, g, b, a}`, `mesh_vertices()`), program of
+`tri`, blending off. Textured draws: program `VS_TEX` + `FS_ALPHA` (`texture2D(s,u)*a`), blending GL_ONE / GL_ONE_MINUS_SRC_ALPHA,
+vertices `{x, y, u, v}` from one VBO (A, B, B2: one quad each = 6 vertices, bands of rows 0..80, 80..160, 160..240 of a
+320x320 layer; P: 64-segment fan as a triangle list = 192 vertices, centre (160,160), radius 150). Every `mix*` scene creates
+three 320x320 RGBA textures TA, TB, TC, but the driver allocates a texture's memory when it is first drawn, so unused ones cost
+nothing (TB in `mix_minus`, TC in all but `mix_tex3`). `glUniform1f(a)` is called before every textured draw unless noted.
+
+| Scenario | Draws (alpha) |
+|---|---|
+| `mesh` | mesh (all 172 triangles) |
+| `mesh_vbo2` | as `mesh`, but a 64 KiB buffer object is created and filled first, so the VBO lands 0x11000 higher |
+| `mesh_n` | as `mesh`, `glDrawArrays(0, 300)`: the first 100 triangles of the same 516-vertex VBO |
+| `mix` | mesh; A (TA, 1.0); B (TB, 0.5); P (TA, 0.75) |
+| `mix_minus` | mesh; A; P |
+| `mix_plus` | mesh; A; B; B2 (TB, 0.5, band 160..240); P |
+| `mix_swap` | mesh; B; A; P |
+| `mix_alpha` | `mix` with B's alpha 0.25 |
+| `mix_tex` | `mix` with B drawn from TC (TC takes the place TB had: no word changes) |
+| `mix_tex3` | `mix_plus` with B2 drawn from TC (a third texture live) |
+| `mix_same` | as `mix_plus`, but `glUniform1f` is not called again for B2 (nothing at all changes between B and B2) |
+| `mix_back` | mesh; A; M2 (the first 60 mesh triangles again, flat program); B; P: a switch back to the flat program |
+| `mix2` | `mix` twice in one context, each frame ended by `glReadPixels` (4 kicks) |
 
 ## Output of one scenario (`build/sgx/draw/<name>`)
 

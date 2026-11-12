@@ -277,6 +277,181 @@ def quad_scene(s, size=32, fmt=GL_RGBA, fs=FS_TEX, filt=0x2600, uniforms=(), mov
         s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
 
 
+# --- firmware-shaped scenes: many triangles, several draws per frame (mesh_*, mix_*)
+def mesh_vertices(ntri=172):
+    """The background: ntri flat-coloured triangles on a jittered grid, 3 vertices each {x, y, r, g, b, a}."""
+    seed = [12345]
+
+    def rnd():
+        seed[0] = (seed[0] * 1103515245 + 12345) & 0x7FFFFFFF
+        return (seed[0] >> 8) / float(1 << 23)       # 0 .. 1
+    cols, rows = 10, 9
+    pts = [[(-1.0 + 2.0 * (i + 0.5 * (rnd() - 0.5) * (0 < i < cols)) / cols,
+             -1.0 + 2.0 * (j + 0.5 * (rnd() - 0.5) * (0 < j < rows)) / rows) for i in range(cols + 1)] for j in range(rows + 1)]
+    tris = []
+    for j in range(rows):
+        for i in range(cols):
+            a, b, c, d = pts[j][i], pts[j][i + 1], pts[j + 1][i], pts[j + 1][i + 1]
+            tris += [(a, b, c), (b, d, c)]
+    out = []
+    for t in tris[:ntri]:
+        col = (round(rnd() * 255) / 255.0, round(rnd() * 255) / 255.0, round(rnd() * 255) / 255.0, 1.0)
+        out += [(x, y) + col for x, y in t]
+    return out
+
+
+def px_clip(x, y):
+    return (-1.0 + 2.0 * x / 320.0, 1.0 - 2.0 * y / 320.0)
+
+
+def band_quad(y0, y1):
+    """Textured quad covering rows y0..y1 of the 320x320 target, sampling the same rows of a layer texture."""
+    def v(x, y):
+        return px_clip(x, y) + (x / 320.0, y / 320.0)
+    a, b, c, d = v(0, y0), v(320, y0), v(0, y1), v(320, y1)
+    return [a, b, c, c, b, d]
+
+
+def round_panel(segments=64, cx=160.0, cy=160.0, r=150.0):
+    """A triangle fan as a triangle list: segments x (centre, edge i, edge i+1)."""
+    import math
+
+    def v(x, y):
+        return px_clip(x, y) + (x / 320.0, y / 320.0)
+    out = []
+    for i in range(segments):
+        a0, a1 = 2 * math.pi * i / segments, 2 * math.pi * (i + 1) / segments
+        out += [v(cx, cy), v(cx + r * math.cos(a0), cy + r * math.sin(a0)), v(cx + r * math.cos(a1), cy + r * math.sin(a1))]
+    return out
+
+
+def mesh_scene(s, ntri=172, draw_tri=None, extra_buffer=False, readback=True):
+    """The background alone: one draw of `draw_tri` (default all) of `ntri` flat triangles from one VBO."""
+    setup_egl(s)
+    build_program(s, VS, FS, ["p", "c"])
+    if extra_buffer:
+        eb = s.out32()
+        s.g("glGenBuffers", 1, eb)
+        s.g("glBindBuffer", 0x8892, s.u32(eb))
+        s.g("glBufferData", 0x8892, 65536, s.put_big(bytes((i * 7) & 255 for i in range(65536))), 0x88E4)
+    vbo = s.out32()
+    s.g("glGenBuffers", 1, vbo)
+    s.g("glBindBuffer", 0x8892, s.u32(vbo))
+    verts = mesh_vertices(ntri)
+    flat = [x for v in verts for x in v]
+    s.g("glBufferData", 0x8892, 4 * len(flat), s.put_big(struct.pack("<%df" % len(flat), *flat)), 0x88E4)
+    s.g("glEnableVertexAttribArray", 0)
+    s.g("glEnableVertexAttribArray", 1)
+    s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 24, 0)
+    s.g("glVertexAttribPointer", 1, 4, 0x1406, 0, 24, 8)
+    s.g("glViewport", 0, 0, 320, 320)
+    s.g("glClearColor", f32(0.25), f32(0.5), f32(0.75), f32(1.0))
+    s.g("glClear", 0x4000)
+    s.g("glDrawArrays", 4, 0, 3 * (draw_tri if draw_tri is not None else ntri))
+    s.g("glFinish")
+    if readback:
+        s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
+
+
+def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=None, frames=1, reuse_uniform=False):
+    """The firmware's frame: the mesh (flat program, blending off), then textured draws with the alpha
+    program and premultiplied blending: A = band 0..80 with texture TA, alpha 1.0; B = band 80..160 with tex_b,
+    alpha_b; B2 = band 160..240 like B; P = 64-segment round panel with TA, alpha 0.75.  Every variant creates
+    the same objects (three textures, one VBO each for the mesh and for all textured geometry) so only the
+    draws differ.  Each frame ends with glFinish + glReadPixels (a whole scene)."""
+    setup_egl(s)
+    flat = build_program(s, VS, FS, ["p", "c"])
+    tex = build_program(s, VS_TEX, FS_ALPHA, ["p", "t"])
+    s.g("glUniform1i", s.g("glGetUniformLocation", tex, s.cstr("s")), 0)
+    loc_a = s.g("glGetUniformLocation", tex, s.cstr("a"))
+    mv = [x for v in mesh_vertices(172) for x in v]
+    mbo = s.out32()
+    s.g("glGenBuffers", 1, mbo)
+    s.g("glBindBuffer", 0x8892, s.u32(mbo))
+    s.g("glBufferData", 0x8892, 4 * len(mv), s.put_big(struct.pack("<%df" % len(mv), *mv)), 0x88E4)
+    geoms = {"A": band_quad(0, 80), "B": band_quad(80, 160), "B2": band_quad(160, 240), "P": round_panel()}
+    first, tv = {}, []
+    for k in ("A", "B", "B2", "P"):
+        first[k] = (len(tv), len(geoms[k]))
+        tv += geoms[k]
+    tf = [x for v in tv for x in v]
+    qbo = s.out32()
+    s.g("glGenBuffers", 1, qbo)
+    s.g("glBindBuffer", 0x8892, s.u32(qbo))
+    s.g("glBufferData", 0x8892, 4 * len(tf), s.put_big(struct.pack("<%df" % len(tf), *tf)), 0x88E4)
+    s.g("glEnableVertexAttribArray", 0)
+    s.g("glEnableVertexAttribArray", 1)
+    s.g("glPixelStorei", 0x0CF5, 1)
+    s.g("glActiveTexture", 0x84C0)
+    texs = {}
+    for k, variant in (("TA", 0), ("TB", 1), ("TC", 2)):
+        t = s.out32()
+        s.g("glGenTextures", 1, t)
+        s.g("glBindTexture", 0x0DE1, s.u32(t))
+        s.g("glTexImage2D", 0x0DE1, 0, GL_RGBA, 320, 320, 0, GL_RGBA, 0x1401, s.put_big(tex_pixels(320, GL_RGBA, variant)))
+        s.g("glTexParameteri", 0x0DE1, 0x2801, 0x2600)
+        s.g("glTexParameteri", 0x0DE1, 0x2800, 0x2600)
+        s.g("glTexParameteri", 0x0DE1, 0x2802, 0x812F)
+        s.g("glTexParameteri", 0x0DE1, 0x2803, 0x812F)
+        texs[k] = s.u32(t)
+    s.g("glViewport", 0, 0, 320, 320)
+    s.g("glBlendFunc", 1, 0x0303)
+    cur = [None]
+
+    def use(kind):
+        if cur[0] == kind:
+            return
+        cur[0] = kind
+        if kind == "flat":
+            s.g("glDisable", 0x0BE2)
+            s.g("glUseProgram", flat)
+            s.g("glBindBuffer", 0x8892, s.u32(mbo))
+            s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 24, 0)
+            s.g("glVertexAttribPointer", 1, 4, 0x1406, 0, 24, 8)
+        else:
+            s.g("glEnable", 0x0BE2)
+            s.g("glUseProgram", tex)
+            s.g("glBindBuffer", 0x8892, s.u32(qbo))
+            s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 16, 0)
+            s.g("glVertexAttribPointer", 1, 2, 0x1406, 0, 16, 8)
+
+    bound = [None]
+
+    last_alpha = [None]
+
+    def textured(name, texname, alpha):
+        use("tex")
+        if bound[0] != texname:
+            s.g("glBindTexture", 0x0DE1, texs[texname])
+            bound[0] = texname
+        if not (reuse_uniform and last_alpha[0] == alpha):     # reuse_uniform: no glUniform1f when the value is unchanged
+            s.g("glUniform1f", loc_a, f32(alpha))
+            last_alpha[0] = alpha
+        f, n = first[name]
+        s.g("glDrawArrays", 4, f, n)
+
+    for _ in range(frames):
+        s.g("glClearColor", f32(0.25), f32(0.5), f32(0.75), f32(1.0))
+        s.g("glClear", 0x4000)
+        for d in draws:
+            if d == "mesh":
+                use("flat")
+                s.g("glDrawArrays", 4, 0, 516)
+            elif d == "M2":
+                use("flat")
+                s.g("glDrawArrays", 4, 0, 180)
+            elif d == "A":
+                textured("A", "TA", 1.0)
+            elif d == "B":
+                textured("B", tex_b, alpha_b)
+            elif d == "B2":
+                textured("B2", tex_b2 or tex_b, alpha_b)
+            elif d == "P":
+                textured("P", "TA", 0.75)
+        s.g("glFinish")
+        s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
+
+
 SCENARIOS = {
     "tri": lambda s: tri_scene(s),
     "tri2": lambda s: tri_scene(s, frames=2),
@@ -304,8 +479,23 @@ SCENARIOS = {
     "quad_a8_z": lambda s: quad_scene(s, 32, GL_ALPHA, FS_A8, uniforms=[("c", (1.0, 1.0, 1.0, 1.0))]),
     "quad_linear": lambda s: quad_scene(s, 320, filt=0x2601),
 }
+SCENARIOS.update({
+    "mesh": lambda s: mesh_scene(s),
+    "mesh_vbo2": lambda s: mesh_scene(s, extra_buffer=True),
+    "mesh_n": lambda s: mesh_scene(s, draw_tri=100),
+    "mix": lambda s: mix_scene(s),
+    "mix_minus": lambda s: mix_scene(s, draws=("mesh", "A", "P")),
+    "mix_plus": lambda s: mix_scene(s, draws=("mesh", "A", "B", "B2", "P")),
+    "mix_swap": lambda s: mix_scene(s, draws=("mesh", "B", "A", "P")),
+    "mix_alpha": lambda s: mix_scene(s, alpha_b=0.25),
+    "mix_tex": lambda s: mix_scene(s, tex_b="TC"),
+    "mix_tex3": lambda s: mix_scene(s, draws=("mesh", "A", "B", "B2", "P"), tex_b2="TC"),
+    "mix_same": lambda s: mix_scene(s, draws=("mesh", "A", "B", "B2", "P"), reuse_uniform=True),
+    "mix_back": lambda s: mix_scene(s, draws=("mesh", "A", "M2", "B", "P")),
+    "mix2": lambda s: mix_scene(s, frames=2),
+})
 SCENARIOS["tri_tq"] = lambda s: tri_scene(s)        # `tri` with the gralloc transfer context created: the baseline for quad_*
-TRANSFER_SCENARIOS = {n for n in SCENARIOS if n.startswith("quad_")} | {"tri_tq"}
+TRANSFER_SCENARIOS = {n for n in SCENARIOS if n.startswith(("quad_", "mesh", "mix"))} | {"tri_tq"}
 
 
 def sha256(path):
