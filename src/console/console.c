@@ -1092,6 +1092,7 @@ static void sgx_tri(void)
 		return;
 	}
 	display_flip();
+	frame_hold(10000);
 	log_printf("sgx: frame into %08lx: geometry %lu us, render %lu us\n", gpu, t.ta_us, t.render_us);
 	say("geometry %lu us, render %lu us\n", t.ta_us, t.render_us);
 }

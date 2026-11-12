@@ -12,6 +12,8 @@ void frame_touch_dot(int x, int y);
 void frame_app_colors(const struct ui_colors *c);
 void frame_sleep(void);
 void frame_wake(void);
+/* Leaves what is on the panel there for a while, for a test picture. */
+void frame_hold(uint32_t ms);
 void frame_draw(uint32_t now);
 void frame_log(void);
 #endif

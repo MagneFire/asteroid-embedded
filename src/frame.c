@@ -24,7 +24,7 @@ static uint32_t mesh_us, layer_us, end_us, flip_us;
 #define BUSY_MS	300
 static uint32_t busy_t, idle_passes;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
-static uint32_t start_ms, shown_step = UINT32_MAX;
+static uint32_t start_ms, shown_step = UINT32_MAX, hold_t;
 static uint32_t ui_frames, ui_us, ui_repaints, ui_repaint_us;
 
 static uint32_t mesh_t, app_center = 0x888888, app_outer;
@@ -169,12 +169,23 @@ void frame_wake(void)
 	woke = true;
 }
 
+void frame_hold(uint32_t ms)
+{
+	hold_t = (time_ms() + ms) | 1;
+}
+
 /* Awake, a frame is drawn when the UI repainted, the stack moves
  * or animates, or the FlatMesh takes its next step: every 90 ms,
  * as qml-asteroid's FlatMesh timer. In between the CPU waits for
  * an interrupt, at the latest the next 1 ms tick. */
 void frame_draw(uint32_t now)
 {
+	if (hold_t) {
+		if ((int32_t)(hold_t - now) > 0)
+			return;
+		hold_t = 0;
+		shown_step = UINT32_MAX;
+	}
 	uint32_t *buf = display_backbuffer(), step = (now - start_ms) / MESH_STEP_MS;
 	bool frame = !have_ui || woke || step != shown_step;
 	if (have_ui) {
