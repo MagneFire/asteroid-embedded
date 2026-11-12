@@ -239,6 +239,13 @@ static bool park_secondaries(void)
 
 bool cpu_idle_init(void)
 {
+	/* The APQ8009W resumes from a collapse, and starts the other cores,
+	 * with the MMU off at the physical address, which this code is not
+	 * written for yet: it only waits for interrupts. */
+	if (chip == &chip_8009) {
+		log_printf("spm: power collapse not used on %s\n", chip->name);
+		return false;
+	}
 	uint32_t ver = readl(SAW_CPU0 + SAW_VERSION);
 	if ((ver >> 28) != 2 || ((ver >> 16) & 0xfff) != 1) {
 		log_printf("spm: unexpected SAW version %08lx\n", ver);
