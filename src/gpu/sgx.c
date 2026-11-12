@@ -124,9 +124,10 @@ static bool power_on(void)
 	writel(2, CM_SGX + CM_CLKSTCTRL);
 	writel(SGX_FCLK, CM_SGX + CM_FCLKEN);
 	writel(SGX_ICLK, CM_SGX + CM_ICLKEN);
-	if (!wait_reg(PRM_SGX + PM_PWSTST, 3, 3, 100000) || !wait_reg(CM_SGX + CM_IDLEST, SGX_ICLK, 0, 100000)) {
-		log_printf("sgx: no power or clock, pwstst %08lx idlest %08lx\n", readl(PRM_SGX + PM_PWSTST),
-			   readl(CM_SGX + CM_IDLEST));
+	/* IDLEST says whether the GPU is in standby, which it is for as
+	 * long as it has nothing to do, so only the domain is waited for. */
+	if (!wait_reg(PRM_SGX + PM_PWSTST, 3, 3, 100000)) {
+		log_printf("sgx: no power, pwstst %08lx\n", readl(PRM_SGX + PM_PWSTST));
 		return false;
 	}
 	writel(OCP_SMART_IDLE_STANDBY, OCP_SYSCONFIG);
