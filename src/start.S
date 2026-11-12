@@ -1,7 +1,8 @@
 /* Entry from the bootloader: non-secure SVC, MMU and caches off, IRQs
  * masked, r0 = 0, r1 = machine type, r2 = device tree. The image
  * starts with the exception vectors so VBAR can point at the load
- * address. */
+ * address. soc_entry sets r7 when it leaves the MMU on for the image
+ * to run at its link address. */
         .syntax unified
         .arm
 #include "start.inc"
@@ -27,11 +28,14 @@ reset:
         cpsid   if
         mov     r6, r1                          /* machine type and device tree */
         mov     r8, r2                          /* for main, past the cache code */
+        mov     r7, #0
         soc_entry
         ldr     sp, =__stack_svc_top
         bl      dcache_clean_invalidate_all
         mrc     p15, 0, r0, c1, c0, 0
-        bic     r0, r0, #(1 << 0) | (1 << 2)               /* M, C */
+        cmp     r7, #0
+        biceq   r0, r0, #(1 << 0)                          /* M */
+        bic     r0, r0, #(1 << 2)                          /* C */
         bic     r0, r0, #(1 << 11) | (1 << 12) | (1 << 13) /* Z, I, V */
         mcr     p15, 0, r0, c1, c0, 0
         isb

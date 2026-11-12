@@ -37,6 +37,11 @@ SECTIONS
         . += 4096;  __stack_irq_top = .;
         . += 131072; __stack_svc_top = .;
     } > IMG
+    .mmu_boot (NOLOAD) : {
+        . = ALIGN(16384);
+        __mmu_boot = .;
+        . += 16384;
+    } > IMG
     __ram_end = .;
     /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
 }

@@ -1,5 +1,5 @@
 /* ARMv7 set/way D-cache clean+invalidate over every level in CLIDR.
- * Clobbers r0-r11; call before or after C code only. */
+ * Clobbers r0-r3, saves r4-r11; call before or after C code only. */
         .syntax unified
         .arm
         .text
