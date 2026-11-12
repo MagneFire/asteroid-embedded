@@ -700,17 +700,17 @@ static void sync(void)
 {
 	setup();
 	char buf[64];
+	CHECK(boot(), "boot");
 	gpu_draw_cpu_sync(buf, sizeof buf);
-	CHECK(!cleans, "a sync before the GPU was started");
-	CHECK(boot(), "boot, then on");
-	gpu_draw_cpu_sync(buf, sizeof buf);
-	CHECK(cleans == 1 && clean_buf == buf && clean_size == sizeof buf, "sync with the GPU on: %u cleans", cleans);
+	CHECK(!cleans, "a sync with the GPU on: %u cleans", cleans);
+	struct gpu_target t = frame_target();
+	CHECK(full(&gpu_api, &t) && gpu_draw_untouched(), "a GPU frame leaves no lines");
+	refuse = true;
+	bool ret;
+	CHECK(same_as_soft(full, &t, &ret) && ret && !gpu_draw_untouched(), "a refused frame");
+	refuse = false;
 	sgx_compose(false);
-	gpu_draw_cpu_sync(buf, sizeof buf);
-	CHECK(cleans == 1, "sync with the GPU off: %u cleans", cleans);
-	sgx_compose(true);
-	gpu_draw_cpu_sync(buf, sizeof buf);
-	CHECK(cleans == 2, "sync with the GPU on again: %u cleans", cleans);
+	CHECK(same_as_soft(full, &t, &ret) && ret && !gpu_draw_untouched(), "a frame with the GPU off");
 }
 
 /* Each in a process of its own: the compositor's state is static. */

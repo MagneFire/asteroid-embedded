@@ -446,13 +446,16 @@ void display_active(void)
 	resting = false;
 }
 
-void display_flip(void)
+/* The CPU's lines of a frame it drew are dropped as well as written
+ * back, so a frame buffer the GPU draws into next holds none. */
+static void flip(bool clean)
 {
 	if (!panel_on)
 		return;
 	display_active();
 	uint32_t *buf = fb.buf[fb.back];
-	dcache_clean_range(buf, fb.stride * fb.panel_height * 4);
+	if (clean)
+		dcache_clean_invalidate_range(buf, fb.stride * fb.height * 4);
 	frame_wait();
 	if (window(0, PANEL_HEIGHT - 1) || !dss_frame_start(buf, use_te)) {
 		timeouts++;
@@ -462,6 +465,9 @@ void display_flip(void)
 	frames++;
 	fb.back ^= 1;
 }
+
+void display_flip(void) { flip(true); }
+void display_flip_untouched(void) { flip(false); }
 
 void display_wait_idle(void) { frame_wait(); }
 

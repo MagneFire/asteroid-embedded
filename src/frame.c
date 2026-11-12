@@ -239,8 +239,10 @@ void frame_draw(uint32_t now)
 	}
 	if (frame) {
 		shown_step = step;
+		bool untouched = false;
 		if (have_gpu) {
 			gpu_flatmesh(buf, step * MESH_STEP_MS, have_ui);
+			untouched = gpu_draw_untouched();
 		} else {
 			flatmesh_render(buf, step * MESH_STEP_MS);
 			if (have_ui) {
@@ -251,9 +253,13 @@ void frame_draw(uint32_t now)
 		if (!have_ui) {
 			draw_dot(buf);
 			fbcon_draw(buf);
+			untouched = false;
 		}
 		uint32_t f0 = time_us();
-		display_flip();
+		if (untouched)
+			display_flip_untouched();
+		else
+			display_flip();
 		flip_us += time_us() - f0;
 		/* The indicators pop out once the first frame is on the panel. */
 		if (woke && have_ui)

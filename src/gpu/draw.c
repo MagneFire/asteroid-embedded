@@ -235,6 +235,8 @@ void gpu_draw_cpu_sync(void *buf, uint32_t bytes)
 	dcache_invalidate_range(buf, bytes);
 }
 
+bool gpu_draw_untouched(void) { return false; }
+
 void *gpu_alloc(uint32_t size, uint32_t align)
 {
 	static uint32_t top = GPU_HEAP_BASE;

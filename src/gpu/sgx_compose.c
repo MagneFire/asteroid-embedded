@@ -44,7 +44,7 @@ static struct sgx_region regions[3];
 static unsigned nregions;
 static struct { uint32_t addr, size, gpu; } maps[3];
 static unsigned nmaps;
-static bool wanted, on_gpu, by_hand = !AT_BOOT, lost;
+static bool wanted, on_gpu, by_hand = !AT_BOOT, lost, untouched;
 static uint32_t aux_gpu, *aux, gen;
 static char told[8][64];
 static unsigned ntold;
@@ -578,24 +578,24 @@ void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 		round_layer(tex_addr, width, height, pitch_bytes, x, y, alpha);
 }
 
-/* Before the GPU draws into a buffer the CPU's dirty lines of it are
- * written back, and afterwards nothing stale of it stays cached; written
- * back again, as the CPU may have drawn the frame itself instead. */
-void gpu_draw_cpu_sync(void *buf, uint32_t bytes)
-{
-	if (wanted)
-		dcache_clean_invalidate_range(buf, bytes);
-}
+/* Nothing to do: the display's flip drops the CPU's lines of every
+ * frame the CPU drew, and screenshots drop theirs before reading. */
+void gpu_draw_cpu_sync(void *buf, uint32_t bytes) {}
+
+bool gpu_draw_untouched(void) { return untouched; }
 
 void gpu_draw_submit(void) {}
 bool gpu_draw_wait(void) { return true; }
 
 bool gpu_draw_end(void)
 {
+	untouched = false;
 	if (!on_gpu)
 		return soft_draw_end();
 	on_gpu = false;
-	if (end() || (kept && replay()))
+	if (end())
+		return untouched = true;
+	if (kept && replay())
 		return true;
 	/* What the CPU cannot draw again is lost, and frame.c draws without
 	 * the compositor from now on. */

@@ -16,6 +16,9 @@ void display_splash_size(uint32_t *w, uint32_t *h);
 bool display_init(void);
 uint32_t *display_backbuffer(void);
 void display_flip(void);
+/* As display_flip, for a back buffer of which the CPU holds no cache
+ * lines. */
+void display_flip_untouched(void);
 void display_wait_idle(void);
 void display_set_idle_hook(void (*fn)(void));
 uint32_t display_frames(void);

@@ -451,6 +451,8 @@ void display_active(void)
 	resting = false;
 }
 
+void display_flip_untouched(void) { display_flip(); }
+
 void display_flip(void)
 {
 	display_active();

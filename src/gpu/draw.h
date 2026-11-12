@@ -106,4 +106,7 @@ void gpu_draw_cpu_sync(void *buf, uint32_t bytes);
 void gpu_draw_submit(void);
 bool gpu_draw_wait(void);
 bool gpu_draw_end(void);
+/* The last frame was drawn by the GPU alone into a buffer of which the
+ * CPU holds no cache lines. */
+bool gpu_draw_untouched(void);
 #endif

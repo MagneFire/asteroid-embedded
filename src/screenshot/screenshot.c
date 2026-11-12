@@ -44,8 +44,11 @@ void screenshot_poll(void)
 			if (file && from_layer >= 0)
 				for (uint32_t i = 0; i < bytes / 4; i++)
 					copy[i] = (layer[i] & 0xff) << 16 | (layer[i] & 0xff00) | (layer[i] >> 16 & 0xff);
-			else
+			else {
+				/* The GPU may have drawn it behind the cache. */
+				dcache_invalidate_range(fb.buf[fb.back ^ 1], bytes);
 				memcpy(copy, fb.buf[fb.back ^ 1], bytes);
+			}
 			jpeg_begin(&enc, copy, fb.width, fb.height, fb.stride, (uint8_t *)(uintptr_t)(SCREENSHOT_BASE + bytes),
 				   SCREENSHOT_SIZE - bytes, QUALITY);
 			encoding = true;
