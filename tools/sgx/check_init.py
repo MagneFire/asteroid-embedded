@@ -26,7 +26,7 @@ EXPECTED_ALLOCS = [
     ("TA/3D control", KERNEL_DATA, 0x120, 32, F_FULL_MP),
     ("HOST_CTL", KERNEL_DATA, 0x4C, 32, F_FULL_MP),
     ("Misc info", KERNEL_DATA, 0x54, 32, F_FULL_MP),
-    ("Microkernel trace buffer", KERNEL_DATA, 0x2008, 0x1000, F_FULL),
+    ("Microkernel trace buffer", KERNEL_DATA, 0x2008, 0x10, F_FULL),
     ("HWPerf buffer", KERNEL_DATA, 0x640C, 32, F_FULL),
     ("TA signature buffer", KERNEL_DATA, 0x314, 32, F_FULL),
     ("3D signature buffer", KERNEL_DATA, 0x724, 32, F_FULL),
