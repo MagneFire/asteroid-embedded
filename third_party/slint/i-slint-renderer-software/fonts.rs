@@ -297,6 +297,7 @@ where
 }
 
 /// Without a bitmap font every request resolves to a vector font.
+#[cfg(feature = "systemfonts")]
 pub fn has_bitmap_fonts() -> bool {
     BITMAP_FONTS.with(|fonts| !fonts.borrow().is_empty())
 }
