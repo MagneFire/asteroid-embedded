@@ -70,6 +70,19 @@ TUSB_PORT_omap3 := mentor/musb
 # The Mentor driver keeps its endpoint interrupts in 8 bits.
 TUSB_DEFS_omap3 := -DTUP_USBIP_MUSB -DTUP_USBIP_MUSB_TI -DTUP_DCD_ENDPOINT_MAX=8
 
+# The OPPO Watch's Apollo3 Blue microcontroller: no USB, eMMC or frame
+# buffer; the store is in its flash and the console goes over SWD.
+SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer.c wdt.c gpio.c iom.c sleep.c reboot.c \
+               flash.c adc.c detect.c swdbox.c power_mcu.c absent.c) \
+        src/frame_mcu.c src/board/beluga.c src/display/display_rm69090.c src/input/touch_tma525.c \
+        src/input/haptics_aw8624.c src/storage/store_flash.c src/storage/none.c src/bt/bleif.c
+CPU_apollo3 := cortex-m4
+FPU_apollo3 := fpv4-sp-d16
+ISA_apollo3 := -mthumb
+LDS_apollo3 := ld/asteroid-m.ld.in
+RUST_TARGET_apollo3 := thumbv7em-none-eabihf
+UI_FEATURES_apollo3 := mcu
+
 SRCS += $(SRCS_$(SOC))
 NIMBLE_SRCS := $(filter-out %/ble_gatts_lcl.c,$(wildcard $(NIMBLE)/nimble/host/src/*.c)) \
         $(NIMBLE)/nimble/host/services/gap/src/ble_svc_gap.c $(NIMBLE)/nimble/host/services/gatt/src/ble_svc_gatt.c \
@@ -104,6 +117,8 @@ UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
 ifeq ($(SOC),qcom)
 all: $(BUILD)/asteroid.img
 	$(MAKE) SOC=omap3 build/omap3/asteroid.img
+else ifeq ($(SOC),apollo3)
+all: $(BUILD)/asteroid.bin
 else
 all: $(BUILD)/asteroid.img
 endif
