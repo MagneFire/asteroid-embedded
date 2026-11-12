@@ -1,3 +1,4 @@
 build/
 ui/target/
 ui/target-*/
+__pycache__/
