@@ -36,6 +36,14 @@ static void cpu_clock_select(uint32_t cfg)
 		;
 }
 
+/* The A7 PLL undivided on the APQ8026. The APQ8009W stays on GPLL0 / 2,
+ * 400 MHz, which works at the lowest CPU voltage, until the firmware sets
+ * the voltage itself. */
+static uint32_t fast_cfg(void)
+{
+	return chip == &chip_8009 ? SRC_GPLL0 | DIV_2 : SRC_A7_PLL | DIV_1;
+}
+
 /* What the previous owner left, for the log once it is up. */
 static uint32_t boot_cfg, boot_mode, boot_l, boot_status;
 
@@ -45,7 +53,7 @@ void cpu_clock_init(void)
 	boot_mode = readl(A7_PLL_MODE);
 	boot_l = readl(A7_PLL_L_VAL);
 	boot_status = readl(A7_PLL_STATUS);
-	cpu_clock_select(SRC_A7_PLL | DIV_1);
+	cpu_clock_select(fast_cfg());
 }
 
 void cpu_clock_log(void)
@@ -61,7 +69,7 @@ void cpu_clock_idle(bool idle) {}
 void cpu_clock_slow(bool slow)
 {
 	slow_now = slow;
-	cpu_clock_select((slow ? SRC_XO : SRC_A7_PLL) | DIV_1);
+	cpu_clock_select(slow ? SRC_XO | DIV_1 : fast_cfg());
 }
 
 bool cpu_clock_is_slow(void)
@@ -69,8 +77,12 @@ bool cpu_clock_is_slow(void)
 	return slow_now;
 }
 
+/* Without power collapse (the APQ8009W for now) the cluster is not
+ * parked, so the CPU stays on the crystal while it waits. */
 void cpu_clock_park(void)
 {
+	if (fast_cfg() != (SRC_A7_PLL | DIV_1))
+		return;
 	writel(readl(GCC_GPLL_ENA_VOTE) | BIT(0), GCC_GPLL_ENA_VOTE);
 	for (int i = 0; i < 100000 && !(readl(GCC_GPLL0_STATUS) & chip->gpll0_ready); i++)
 		;
@@ -80,6 +92,8 @@ void cpu_clock_park(void)
 
 void cpu_clock_unpark(void)
 {
+	if (fast_cfg() != (SRC_A7_PLL | DIV_1))
+		return;
 	uint32_t mode = readl(A7_PLL_MODE) | PLL_BYPASSNL;
 	writel(mode, A7_PLL_MODE);
 	dsb();
