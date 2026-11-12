@@ -48,6 +48,7 @@ const struct qcom_chip chip_8026 = {
 	.usb_system_rcgr = 0x0490,
 	.dsi = 0xfd922800,
 	.cnoc = true,
+	.imem_dload = true,
 };
 
 #define IO(pa)	(IO_8009_BASE + (pa))
@@ -100,6 +101,7 @@ const struct qcom_chip chip_8009 = {
 	.usb_ahb_cbcr = 0x41008,
 	.usb_system_rcgr = 0x41010,
 	.dsi = IO(0x01ac8000),
+	.pon_restart_reason = true,
 };
 
 const struct qcom_chip *chip = &chip_8026;

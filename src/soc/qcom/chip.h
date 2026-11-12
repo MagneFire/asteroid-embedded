@@ -28,6 +28,8 @@ struct qcom_chip {
 	uint32_t usb, usb_bcr, usb_system_cbcr, usb_ahb_cbcr, usb_system_rcgr;
 	uint32_t dsi;
 	bool cnoc;			/* has the RPM's CNOC bus clock */
+	bool imem_dload;		/* download-mode cookies in IMEM */
+	bool pon_restart_reason;	/* the bootloader reads it from the PMIC */
 };
 
 extern const struct qcom_chip chip_8026, chip_8009;
