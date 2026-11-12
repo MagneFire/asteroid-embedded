@@ -51,6 +51,15 @@ void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 	round_x = x;
 	round_y = y;
 }
+static uint32_t pool[4][32 * 32];
+static unsigned pool_n;
+void *gpu_alloc(uint32_t size, uint32_t align) { return pool_n < 4 ? pool[pool_n++] : NULL; }
+static int bottom_y;
+void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+{
+	if (x == W / 2 - (int)width / 2 && y > H / 2)
+		bottom_y = y + (int)height / 2;
+}
 static int app_x = -1;
 static void background(int x, int y, float alpha) { app_x = x; }
 
@@ -278,12 +287,26 @@ static void test_app_round(void)
 	stack_home();
 }
 
+static void test_chin(void)
+{
+	/* The bottom indicator sits on the last line the panel shows. */
+	stack_home();
+	stub_ms += 1000;
+	stack_compose(background);
+	CHECK(bottom_y == H);
+	stack_set_chin(30);
+	stack_compose(background);
+	CHECK(bottom_y == H - 30);
+	stack_set_chin(0);
+}
+
 int main(void)
 {
 	test_swipes();
 	test_app();
 	test_app_round();
 	test_damage();
+	test_chin();
 	printf("stack_test: %s\n", stub_failures ? "FAILED" : "ok");
 	return stub_failures != 0;
 }
