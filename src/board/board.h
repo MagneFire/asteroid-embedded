@@ -286,6 +286,7 @@ struct board {
 	struct {
 		struct board_i2c i2c;	/* DRV2605 */
 		uint8_t trigger, enable;
+		uint8_t rated, clamp;	/* DRV2605, 0 for sturgeon's */
 		uint16_t vib_mv;	/* PMIC vibrator drive */
 		/* A motor fed by an LDO of its own, and that LDO's voltage. */
 		uint8_t ldo;

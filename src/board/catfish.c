@@ -28,5 +28,8 @@ const struct board board_catfish = {
 	.touch_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x38 }, .irq = 65, .reset = 23, .mpm = 3,
 			.ldo = 17, .ldo_uv = 2850000 },
 	.hub_pins = { .irq = 97, .wake_mcu = 71, .reset = 72, .boot0 = 70, .mpm = 37 },
-	.motor_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x5a }, .enable = 26 },
+	/* DRV2605 on BLSP1 QUP6, no trigger line. */
+	.motor = &motor_drv2605,
+	.motor_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x5a }, .enable = 26,
+			.rated = 0x4b, .clamp = 0x54 },
 };

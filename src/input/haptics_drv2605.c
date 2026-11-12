@@ -1,13 +1,17 @@
-/* DRV2605 haptic driver on BLSP1 QUP2, enabled by gpio 60, with these
- * ERM motor settings: closed loop, library D, rated 0x7e, overdrive
- * clamp 0xa0 during the auto-calibration at init and 0x96 afterwards,
- * signed real-time playback. The motor runs in real-time playback mode
- * and stands by when off. */
+/* DRV2605 haptic driver, enabled by a gpio, with these ERM motor
+ * settings: closed loop, library D, the board's rated voltage and
+ * overdrive clamp (sturgeon's: rated 0x7e, clamp 0xa0 during the
+ * auto-calibration at init and 0x96 afterwards), signed real-time
+ * playback. The motor runs in real-time playback mode and stands by when
+ * off. A board without a trigger line gives trigger 0. */
 #include "asteroid.h"
 #include "storage/storage.h"
 
 #define BUS			(board->motor_pins.i2c.bus)
 #define ADDR			(board->motor_pins.i2c.addr)
+#define RATED			(board->motor_pins.rated ? board->motor_pins.rated : 0x7e)
+#define CLAMP_CAL		(board->motor_pins.clamp ? board->motor_pins.clamp : 0xa0)
+#define CLAMP_RUN		(board->motor_pins.clamp ? board->motor_pins.clamp : 0x96)
 #define GPIO_TRIGGER		(board->motor_pins.trigger)
 #define GPIO_ENABLE		(board->motor_pins.enable)
 #define KV_CALIBRATION		"haptics.cal"
@@ -74,8 +78,10 @@ static int calibrate(uint8_t *status)
 
 static bool drv2605_init(void)
 {
-	gpio_config(GPIO_TRIGGER, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
-	gpio_set(GPIO_TRIGGER, 0);
+	if (GPIO_TRIGGER) {
+		gpio_config(GPIO_TRIGGER, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+		gpio_set(GPIO_TRIGGER, 0);
+	}
 	gpio_config(GPIO_ENABLE, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
 	gpio_set(GPIO_ENABLE, 1);
 	delay_ms(10);
@@ -94,7 +100,7 @@ static bool drv2605_init(void)
 		write_reg(REG_FEEDBACK, 0x36);
 		write_reg(REG_CAL_BEMF, 0x6d);
 	}
-	if ((r = write_reg(REG_LIBRARY, 0x04)) || (r = write_reg(REG_RATED, 0x7e)) || (r = write_reg(REG_CLAMP, 0xa0)) ||
+	if ((r = write_reg(REG_LIBRARY, 0x04)) || (r = write_reg(REG_RATED, RATED)) || (r = write_reg(REG_CLAMP, CLAMP_CAL)) ||
 	    (r = update_reg(REG_FEEDBACK, FEEDBACK_LRA, 0)) || (r = update_reg(REG_CONTROL2, CONTROL2_BIDIR, CONTROL2_BIDIR)) ||
 	    (r = update_reg(REG_CONTROL3, CONTROL3_ERM_OPEN | CONTROL3_LRA_OPEN | CONTROL3_UNSIGNED, 0)) ||
 	    (r = write_reg(REG_RTP, 0x7f))) {
@@ -116,7 +122,7 @@ static bool drv2605_init(void)
 			kv_set(KV_CALIBRATION, saved, sizeof saved);
 	}
 	write_reg(REG_MODE, MODE_STANDBY);
-	write_reg(REG_CLAMP, 0x96);
+	write_reg(REG_CLAMP, CLAMP_RUN);
 	log_printf("haptics: drv2605 status %02x, %s %d, status %02x comp %02x bemf %02x feedback %02x\n", status,
 		   restored ? "restored calibration" : "calibration", r, cal, saved[0], saved[1], saved[2]);
 	return !r && !(cal & STATUS_DIAG);
