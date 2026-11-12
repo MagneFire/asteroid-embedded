@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "asteroid.h"
-#include "gpu/draw.h"
+#include "gpu/soft.h"
 #include "gpu/paint.h"
 
 void rotation_buffer(uint32_t *buf, uint32_t stride) {}
@@ -76,15 +76,15 @@ static void triangles(void)
 	for (int i = 0; i < H * W; i++)
 		frame[i] = 0x808080;
 	struct gpu_target t = { ADDR(frame), W, H, W * 4, false };
-	gpu_draw_begin(&t);
-	gpu_draw_blend(true);
-	gpu_draw_triangles(ADDR(vbo), 32, 2, (const uint8_t[]){ 4, 4 }, n);
+	soft_draw_begin(&t);
+	soft_draw_blend(true);
+	soft_draw_triangles(ADDR(vbo), 32, 2, (const uint8_t[]){ 4, 4 }, n);
 	uint32_t once = 64 + div255(0x80 * 127);
 	for (int i = 0; i < H * W; i++)
 		check((frame[i] & 0xff) == once && (frame[i] >> 8 & 0xff) == once && (frame[i] >> 16 & 0xff) == once,
 		      "a pixel of the mesh was not drawn exactly once");
-	gpu_draw_blend(false);
-	gpu_draw_triangles(ADDR(vbo), 32, 2, (const uint8_t[]){ 4, 4 }, n);
+	soft_draw_blend(false);
+	soft_draw_triangles(ADDR(vbo), 32, 2, (const uint8_t[]){ 4, 4 }, n);
 	for (int i = 0; i < H * W; i++)
 		check(frame[i] == 0x404040, "an opaque mesh left a pixel");
 }
@@ -124,8 +124,8 @@ static void layers(void)
 		float alpha = round % 3 == 0 ? 1.0f : (float)(rnd() % 256) / 255.0f;
 		uint32_t fade = alpha >= 1.0f ? 256 : (uint32_t)(alpha * 255.0f + 0.5f);
 		struct gpu_rect part = { (int)(rnd() % 20), (int)(rnd() % 20), 30 + rnd() % 40, 20 + rnd() % 30 };
-		gpu_draw_begin(&t);
-		gpu_draw_layer_parts(ADDR(layer), W, H, W * 4, x, y, alpha, &part, 1);
+		soft_draw_begin(&t);
+		soft_draw_layer_parts(ADDR(layer), W, H, W * 4, x, y, alpha, &part, 1);
 		for (int ty = 0; ty < H; ty++)
 			for (int tx = 0; tx < W; tx++) {
 				int lx = tx - x, ly = ty - y;
@@ -146,8 +146,8 @@ static void round_window(void)
 		layer[i] = 0xffffffff;
 		frame[i] = 0;
 	}
-	gpu_draw_begin(&t);
-	gpu_draw_layer_round(ADDR(layer), H, H, W * 4, 0, 0, 1.0f);
+	soft_draw_begin(&t);
+	soft_draw_layer_round(ADDR(layer), H, H, W * 4, 0, 0, 1.0f);
 	for (int y = 0; y < H; y++) {
 		int n = 0, m = 0;
 		for (int x = 0; x < H; x++) {
@@ -324,10 +324,10 @@ static void turned(void)
 			frame[y * W + x] = 0xffffff;
 	frame[(S / 2) * W + S / 2] = 0x00ff00;
 	struct gpu_target t = { ADDR(frame), S, S, W * 4, false };
-	gpu_draw_begin(&t);
-	gpu_draw_turn(0.70710678f, 0.70710678f);
-	gpu_draw_end();
-	gpu_draw_turn(1.0f, 0.0f);
+	soft_draw_begin(&t);
+	soft_draw_turn(0.70710678f, 0.70710678f);
+	soft_draw_end();
+	soft_draw_turn(1.0f, 0.0f);
 	int found = 0, fx = 0, fy = 0;
 	for (int y = 0; y < S; y++)
 		for (int x = 0; x < S; x++)

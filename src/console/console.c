@@ -14,6 +14,7 @@
 #include "prof.h"
 #include "gpu/sgx.h"
 #include "gpu/sgx_draw.h"
+#include "gpu/sgx_compose.h"
 #include "sensors/hub.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
@@ -1112,13 +1113,18 @@ static void cmd_sgx(const char *args)
 	if (!strcmp(args, "tri")) {
 		sgx_tri();
 	} else if (!strcmp(args, "off")) {
-		sgx_stop();
+		sgx_compose(false);
 		say("off\n");
+	} else if (!strcmp(args, "ui on") || !strcmp(args, "ui off")) {
+		bool on = args[4] == 'n';
+		say("%s\n", sgx_compose(on) == on ? (on ? "frames on the GPU" : "frames on the CPU") : "failed, see the log");
+	} else if (!strcmp(args, "ui")) {
+		say("frames on the %s\n", sgx_compose_on() ? "GPU" : "CPU");
 	} else if (!strcmp(args, "state")) {
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri]\n");
+		say("usage: sgx [off | state | tri | ui [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1176,7 +1182,7 @@ static const struct command commands[] = {
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
-	{ "sgx", "[off | state | tri]", cmd_sgx },
+	{ "sgx", "[off | state | tri | ui [on | off]]", cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };

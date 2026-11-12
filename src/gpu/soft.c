@@ -1,5 +1,5 @@
-/* The drawing calls of draw.h on the CPU, for a watch whose GPU the
- * firmware does not drive: the frame is put together from the mesh's
+/* The drawing calls of draw.h on the CPU (soft.h), for when the GPU does
+ * not draw the frame: the frame is put together from the mesh's
  * triangles and the UI's layers with NEON. Only what the frame needs is
  * here. The triangles are the mesh's, one colour each, taken from the
  * first vertex. A pixel belongs to a triangle if its centre is inside,
@@ -12,8 +12,7 @@
 #include <arm_neon.h>
 #endif
 #include "asteroid.h"
-#include "gpu/a3xx.h"
-#include "gpu/draw.h"
+#include "gpu/soft.h"
 #include "gpu/paint.h"
 #include "ui/rotation.h"
 
@@ -28,17 +27,18 @@ extern uintptr_t gpu_host_base;
 #define PTR(addr)	((void *)(uintptr_t)(addr))
 #endif
 
-static uint8_t pool[POOL_SIZE] __attribute__((aligned(64)));
+/* Page aligned, so that the GPU can map it. */
+static uint8_t pool[POOL_SIZE] __attribute__((aligned(4096)));
 static uint32_t pool_used;
 static struct gpu_target target;
 static bool blend;
 
-bool gpu_init(void) { return true; }
-bool gpu_selftest(void) { return true; }
-void gpu_suspend(void) {}
-bool gpu_ready(void) { return false; }
+bool soft_init(void) { return true; }
+bool soft_selftest(void) { return true; }
+void soft_suspend(void) {}
+bool soft_ready(void) { return false; }
 
-void *gpu_alloc(uint32_t size, uint32_t align)
+void *soft_alloc(uint32_t size, uint32_t align)
 {
 	uint32_t at = (pool_used + align - 1) & ~(align - 1);
 	if (at + size > POOL_SIZE)
@@ -47,28 +47,34 @@ void *gpu_alloc(uint32_t size, uint32_t align)
 	return pool + at;
 }
 
-void gpu_draw_begin(const struct gpu_target *t)
+void *soft_pool(uint32_t *size)
+{
+	*size = POOL_SIZE;
+	return pool;
+}
+
+void soft_draw_begin(const struct gpu_target *t)
 {
 	target = *t;
 	blend = false;
 }
 
-bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs) { return true; }
-void gpu_draw_blend(bool premultiplied_over) { blend = premultiplied_over; }
+bool soft_draw_program(struct gpu_shader *vs, struct gpu_shader *fs) { return true; }
+void soft_draw_blend(bool premultiplied_over) { blend = premultiplied_over; }
 /* How far the picture is turned, as the 65536ths of its cosine and
  * sine. */
 static int32_t turn_c = 65536, turn_s;
 
-void gpu_draw_turn(float c, float s)
+void soft_draw_turn(float c, float s)
 {
 	turn_c = (int32_t)(c * 65536.0f + (c < 0.0f ? -0.5f : 0.5f));
 	turn_s = (int32_t)(s * 65536.0f + (s < 0.0f ? -0.5f : 0.5f));
 }
-void gpu_draw_turn_vertices(float *v, unsigned n, unsigned stride) {}
-void gpu_draw_submit(void) {}
-bool gpu_draw_wait(void) { return true; }
-void gpu_draw_invalidate_textures(void) {}
-void gpu_draw_cpu_sync(void *buf, uint32_t bytes) {}
+void soft_draw_turn_vertices(float *v, unsigned n, unsigned stride) {}
+void soft_draw_submit(void) {}
+bool soft_draw_wait(void) { return true; }
+void soft_draw_invalidate_textures(void) {}
+void soft_draw_cpu_sync(void *buf, uint32_t bytes) {}
 
 #define TURN_MAX	320
 
@@ -97,7 +103,7 @@ static void turn_frame(void)
 	}
 }
 
-bool gpu_draw_end(void)
+bool soft_draw_end(void)
 {
 	if (target.width != target.height)
 		return true;
@@ -246,7 +252,7 @@ static uint32_t channel(float v)
 
 /* Vertices are position (x, y, z, w) in clip space, row 0 at the top,
  * then colour (r, g, b, a). */
-void gpu_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts)
+void soft_draw_triangles(uint32_t vbo_addr, unsigned stride, unsigned nattrs, const uint8_t *attr_ncomp, unsigned nverts)
 {
 	if (nattrs != 2 || stride < 32)
 		return;
@@ -328,7 +334,7 @@ static void layer_span(const uint32_t *tex, uint32_t pitch_bytes, int x, int y, 
 		     x1 - x0, fade);
 }
 
-void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
+void soft_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
 			  const struct gpu_rect *parts, unsigned n)
 {
 	const uint32_t *tex = PTR(tex_addr);
@@ -347,15 +353,15 @@ void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, ui
 	}
 }
 
-void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+void soft_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
 {
 	struct gpu_rect whole = { 0, 0, width, height };
-	gpu_draw_layer_parts(tex_addr, width, height, pitch_bytes, x, y, alpha, &whole, 1);
+	soft_draw_layer_parts(tex_addr, width, height, pitch_bytes, x, y, alpha, &whole, 1);
 }
 
-void gpu_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
+void soft_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes)
 {
-	gpu_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
+	soft_draw_layer_at(tex_addr, width, height, pitch_bytes, 0, 0, 1.0f);
 }
 
 /* The square root of v, rounded down. */
@@ -370,7 +376,7 @@ static int isqrt(int v)
 
 /* What is inside the circle the layer's width across, around the
  * layer's centre. */
-void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
+void soft_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha)
 {
 	const uint32_t *tex = PTR(tex_addr);
 	uint32_t fade = fade_of(alpha);
