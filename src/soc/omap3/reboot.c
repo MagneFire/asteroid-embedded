@@ -19,6 +19,7 @@ static void __attribute__((noreturn)) reset_now(void)
 {
 	irq_disable();
 	dcache_clean_invalidate_all();
+	cpu_supply_reset();
 	if (power_off) {
 		gpio_set(GPIO_WDI, 0);
 		gpio_config(GPIO_WDI, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);

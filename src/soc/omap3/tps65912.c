@@ -27,6 +27,7 @@
 #define DCDC1_OP	0x04
 #define DCDC1_AVS	0x05
 #define DCDC1_LIMIT	0x06
+#define I2C_SPI_CFG	0x26
 /* 0.5 V and 12.5 mV a step in the lowest range: 0.975 V, the vendor's
  * for 300 MHz. */
 #define DCDC1_SEL_LOW	38
@@ -52,7 +53,7 @@
 #define GPIO_PMIC_IRQ	0
 
 static bool ready, supply_scales;
-static uint8_t supply_fast;
+static uint8_t supply_fast, bus_cfg;
 static volatile bool key_irq;
 
 static bool spi_wait(uint32_t bit)
@@ -212,6 +213,18 @@ void cpu_supply_low(bool low)
 	}
 }
 
+/* Before a reset, which leaves the chip as it is: the processor's supply
+ * back at the bootloader's voltage and on the bus it left it on, as the
+ * bootloader starts the CPU fast and sets its voltage over that bus. */
+void cpu_supply_reset(void)
+{
+	if (!supply_scales)
+		return;
+	pmic_write(DCDC1_OP, supply_fast);
+	delay_us(2 * DCDC1_RAMP_US);
+	pmic_write(I2C_SPI_CFG, bus_cfg);
+}
+
 bool tps65912_init(void)
 {
 	clock_enable(CM_CORE, CORE_MCSPI1, true);
@@ -229,6 +242,7 @@ bool tps65912_init(void)
 		return false;
 	}
 	uint8_t op = pmic_read(DCDC1_OP);
+	bus_cfg = pmic_read(I2C_SPI_CFG);
 	for (unsigned i = 0; i < ARRAY_SIZE(setup); i++)
 		pmic_write(setup[i][0], setup[i][1]);
 	/* Only a setting that is understood is touched: the lowest range,
