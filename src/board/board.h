@@ -131,7 +131,7 @@ struct battery_driver {
 };
 
 extern const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
-extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt;
+extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo;
 extern const struct backlight_driver backlight_lm3535;
@@ -259,6 +259,9 @@ struct board {
 		/* The LDO a driver switches on for it and its voltage, 0 for none. */
 		uint8_t ldo;
 		uint32_t ldo_uv;
+		/* A second LDO, for the controller's I/O, and a line held high while it is in use. */
+		uint8_t ldo_io, power;
+		uint32_t ldo_io_uv;
 		/* The controller holds this watch's settings for awake
 		 * after its reset, instead of the driver's. */
 		bool own_settings;
