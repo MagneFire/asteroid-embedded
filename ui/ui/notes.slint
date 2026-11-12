@@ -329,21 +329,25 @@ export component NoteList {
         }
     }
 
-    for note[i] in Face.notes: NotificationView {
-        property <bool> shown: i == root.current;
-        x: (root.count - 1 - i) * 100 * Theme.unit - root.scroll;
-        y: root.lift;
-        visible: self.x > -100 * Theme.unit && self.x < 100 * Theme.unit;
-        note: note;
-        offset: self.shown ? Math.clamp(root.offset + (root.axis == 2 ? root.vdrag : 0), Math.min(0, 100 * Theme.unit - self.content-height), 0) : 0;
-        init => {
-            if self.shown {
-                root.page-height = self.content-height;
+    // Only the page on screen and the two beside it, which a drag can bring in, exist: a page
+    // costs some kilobytes of heap.
+    for note[i] in Face.notes: Rectangle {
+        if Math.abs(i - root.current) <= 1: NotificationView {
+            property <bool> shown: i == root.current;
+            x: (root.count - 1 - i) * 100 * Theme.unit - root.scroll;
+            y: root.lift;
+            visible: self.x > -100 * Theme.unit && self.x < 100 * Theme.unit;
+            note: note;
+            offset: self.shown ? Math.clamp(root.offset + (root.axis == 2 ? root.vdrag : 0), Math.min(0, 100 * Theme.unit - self.content-height), 0) : 0;
+            init => {
+                if self.shown {
+                    root.page-height = self.content-height;
+                }
             }
-        }
-        changed shown => {
-            if self.shown {
-                root.page-height = self.content-height;
+            changed shown => {
+                if self.shown {
+                    root.page-height = self.content-height;
+                }
             }
         }
     }
