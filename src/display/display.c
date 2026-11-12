@@ -172,7 +172,7 @@ bool display_init(void)
 	writel(fb.stride * 4, PIPE + PIPE_SRC_YSTRIDE);
 	writel((readl(PIPE + PIPE_SRC_OP_MODE) & ~(PIPE_FLIP_LR | PIPE_FLIP_UD)) | (board->panel.flip_ud ? PIPE_FLIP_UD : 0),
 	       PIPE + PIPE_SRC_OP_MODE);
-	writel((uint32_t)(uintptr_t)fb.buf[1], PIPE + PIPE_SRC0_ADDR);
+	writel(dma_addr(fb.buf[1]), PIPE + PIPE_SRC0_ADDR);
 	uint32_t layer = readl(MDP_CTL0 + CTL_LAYER0);
 	log_printf("display: ctl top %08lx layer %08lx intf %08lx\n", top, layer, readl(MDP_INTF_SEL));
 	if (!layer)
@@ -459,7 +459,7 @@ void display_flip(void)
 	uint32_t *buf = fb.buf[fb.back];
 	dcache_clean_range(buf, fb.stride * fb.height * 4);
 	pp_wait();
-	writel((uint32_t)(uintptr_t)buf, PIPE + PIPE_SRC0_ADDR);
+	writel(dma_addr(buf), PIPE + PIPE_SRC0_ADDR);
 	kick();
 	fb.back ^= 1;
 }

@@ -36,7 +36,7 @@ int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n)
 		len = (4 + n + 1 + 3) & ~3u;
 	}
 	dcache_clean_range(packet, sizeof packet);
-	writel((uint32_t)(uintptr_t)packet, DSI_DMA_CMD_OFFSET);
+	writel(dma_addr(packet), DSI_DMA_CMD_OFFSET);
 	writel(len, DSI_DMA_CMD_LENGTH);
 	writel(0x03030203, DSI_INT_CTRL);
 	writel(1, DSI_CMD_MODE_DMA_SW_TRIGGER);

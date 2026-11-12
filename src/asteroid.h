@@ -35,6 +35,12 @@ void mmu_init(void);
 /* Adds a range to the map, in whole megabytes; soc_memory_map lists the
  * SoC's ranges with it. */
 void mmu_map(uint32_t from, uint32_t to, uint32_t attr);
+void mmu_map_to(uint32_t from, uint32_t to, uint32_t phys, uint32_t attr);
+/* How far above the firmware's addresses DRAM really is. Whatever hands
+ * a buffer to hardware gives it dma_addr. */
+extern uint32_t phys_offset;
+static inline uint32_t dma_addr(const volatile void *p) { return (uint32_t)(uintptr_t)p + phys_offset; }
+static inline void *dma_ptr(uint32_t a) { return (void *)(uintptr_t)(a - phys_offset); }
 void soc_memory_map(void);
 #define MMU_RAM		0x1c0eu	/* cached */
 #define MMU_RAM_UNCACHED	0x1c02u

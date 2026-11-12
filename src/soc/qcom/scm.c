@@ -69,7 +69,7 @@ int scm_restore_sec_cfg(uint32_t device)
 	register uint32_t r0 __asm__("r0");
 	do {
 		register uint32_t r1 __asm__("r1") = (uint32_t)(uintptr_t)&context;
-		register uint32_t r2 __asm__("r2") = (uint32_t)(uintptr_t)&scm_cmd;
+		register uint32_t r2 __asm__("r2") = dma_addr(&scm_cmd);
 		r0 = SCM_INTERRUPTED;
 		__asm__ volatile("smc #0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "memory");
 		if (r0 == SCM_INTERRUPTED && time_ms() - t0 > SCM_WAIT_MS)

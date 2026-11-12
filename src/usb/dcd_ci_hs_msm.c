@@ -285,7 +285,7 @@ bool dcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
 
   dcd_dcache_clean_invalidate(&_dcd_data, sizeof(dcd_data_t));
 
-  dcd_reg->ENDPTLISTADDR = (uint32_t)_dcd_data.qhd; // Endpoint List Address has to be 2K alignment
+  dcd_reg->ENDPTLISTADDR = dma_addr(_dcd_data.qhd); // Endpoint List Address has to be 2K alignment
   dcd_reg->USBSTS        = dcd_reg->USBSTS;
   dcd_reg->USBINTR       = INTR_USB | INTR_ERROR | INTR_PORT_CHANGE | INTR_SUSPEND;
 
@@ -372,7 +372,7 @@ static void qtd_init(dcd_qtd_t *p_qtd, void *data_ptr, uint16_t total_bytes) {
   p_qtd->int_on_complete                     = true;
 
   if (data_ptr != NULL) {
-    p_qtd->buffer[0] = (uint32_t)data_ptr;
+    p_qtd->buffer[0] = dma_addr(data_ptr);
 
     const uint32_t bufend = p_qtd->buffer[0] + total_bytes;
     for (uint8_t i = 1; i < 5; i++) {
@@ -531,7 +531,7 @@ static void qhd_start_xfer(uint8_t rhport, uint8_t epnum, uint8_t dir) {
   dcd_qtd_t    *p_qtd   = &_dcd_data.qtd[epnum][dir];
 
   p_qhd->qtd_overlay.halted = false;           // clear any previous error
-  p_qhd->qtd_overlay.next   = (uint32_t)p_qtd; // link qtd to qhd
+  p_qhd->qtd_overlay.next   = dma_addr(p_qtd); // link qtd to qhd
 
   // flush cache
   dcd_dcache_clean_invalidate(&_dcd_data, sizeof(dcd_data_t));
@@ -609,7 +609,7 @@ bool dcd_edpt_xfer_fifo(uint8_t rhport, uint8_t ep_addr, tu_fifo_t *ff, uint16_t
       for (uint8_t i = 1, page = 0; i < 5; i++) {
         // pick up buffer array where linear ends
         if (p_qtd->buffer[i] == 0) {
-          p_qtd->buffer[i] = (uint32_t)fifo_info.wrapped.ptr + 4096 * page;
+          p_qtd->buffer[i] = dma_addr(fifo_info.wrapped.ptr) + 4096 * page;
           page++;
         }
       }

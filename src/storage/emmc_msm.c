@@ -236,7 +236,7 @@ int emmc_host_send(struct emmc_cmd *c)
 	uint32_t flags = c->flags;
 	if (c->blocks) {
 		uint32_t bytes = c->blocks * c->blksz;
-		adma[0].addr = (uint32_t)(uintptr_t)emmc_bounce;
+		adma[0].addr = dma_addr(emmc_bounce);
 		adma[0].len = (uint16_t)bytes;
 		adma[0].attr = ADMA_VALID | ADMA_END | ADMA_TRAN;
 		dcache_clean_range(adma, sizeof adma);
@@ -244,7 +244,7 @@ int emmc_host_send(struct emmc_cmd *c)
 			dcache_invalidate_range(emmc_bounce, bytes);
 		else
 			dcache_clean_range(emmc_bounce, bytes);
-		hc_wl((uint32_t)(uintptr_t)adma, HC_ADMA_ADDR);
+		hc_wl(dma_addr(adma), HC_ADMA_ADDR);
 		hc_ww((uint16_t)c->blksz, HC_BLKSZ);
 		hc_ww((uint16_t)c->blocks, HC_BLKCNT);
 		mode = XFER_DMA | (c->read ? XFER_READ : 0);
