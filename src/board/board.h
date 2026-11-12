@@ -183,6 +183,7 @@ struct board {
 	uint8_t part_count;
 	/* Where firmware files are on the system partition, NULL-ended. */
 	const char *const *firmware_dirs;
+	const char *firmware_part;	/* where they are, "system" if not set */
 
 	struct {
 		uint8_t uart, gpio, func, dev_wake, host_wake, reg_on, mpm;

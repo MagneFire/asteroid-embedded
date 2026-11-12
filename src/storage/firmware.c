@@ -1,5 +1,5 @@
 /* Vendor firmware: the GPU microcode, the Bluetooth patch and the like
- * are read from the watch's Android system partition, where its own
+ * are read from the watch's Android system or vendor partition, where its own
  * software keeps them, so none of it is part of this image. The
  * partition is ext4 on some watches and squashfs on others. The board
  * lists the directories to look in. Each file is read once into a fixed
@@ -25,12 +25,13 @@ static int open_system(void)
 	if (opened)
 		return 0;
 	uint32_t first, count;
+	const char *part = board->firmware_part ? board->firmware_part : "system";
 	int r;
 	if ((!emmc_card()->ready && (r = emmc_init(true))) || (!emmc_part_count() && (r = emmc_part_scan())) ||
-	    (r = emmc_part_find("system", &first, &count)))
+	    (r = emmc_part_find(part, &first, &count)))
 		return r;
-	if ((r = ext4_open_lba(&fs, "system", first, count))) {
-		if ((r = squashfs_open_lba(&squash, "system", first, count)))
+	if ((r = ext4_open_lba(&fs, part, first, count))) {
+		if ((r = squashfs_open_lba(&squash, part, first, count)))
 			return r;
 		squashed = true;
 	}
