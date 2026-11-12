@@ -343,6 +343,8 @@ pub unsafe extern "C" fn ui_init(
         let queue = events.clone();
         face.on_agenda_deleted(move |index| event(&queue, UI_EVENT_AGENDA_DELETE, index));
         let queue = events.clone();
+        face.on_workout(move |start| event(&queue, UI_EVENT_WORKOUT, start as i32));
+        let queue = events.clone();
         face.on_date_set(move |day, month, year| event(&queue, UI_EVENT_DATE_SET, (year - 2000) << 9 | month << 5 | day));
         let layer = unsafe { layers.add(kind * panel_px as usize) };
         let Some(panel) = open(&screen, layer, stride, width, height) else {
@@ -417,6 +419,21 @@ pub unsafe extern "C" fn ui_set_activity(today: u32, goal: u32, distance_m: u32,
         face.set_activity_distance(distance_m as i32);
         face.set_activity_kcal(kcal as i32);
         face.set_activity_days(Rc::new(VecModel::from(days)).into());
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_workout(running: bool, start: u32, seconds: u32, steps: u32, distance_m: u32, kcal: u32, avg_bpm: u32, max_bpm: u32) {
+    with_ui(|ui| {
+        let face = ui.screens[APP].global::<Face>();
+        face.set_workout_running(running);
+        face.set_workout_start(start as i32);
+        face.set_workout_seconds(seconds as i32);
+        face.set_workout_steps(steps as i32);
+        face.set_workout_distance(distance_m as i32);
+        face.set_workout_kcal(kcal as i32);
+        face.set_workout_avg_bpm(avg_bpm as i32);
+        face.set_workout_max_bpm(max_bpm as i32);
     });
 }
 

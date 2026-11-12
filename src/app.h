@@ -5,7 +5,7 @@
 #include "power.h"
 
 struct app_caps {
-	bool display, ui, touch, haptics, hub;
+	bool display, ui, touch, haptics, hub, heart_rate;
 };
 
 void app_init(const struct app_caps *caps);

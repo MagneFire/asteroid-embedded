@@ -21,6 +21,7 @@
 #include "calc.h"
 #include "game.h"
 #include "agenda.h"
+#include "workout.h"
 #include "power.h"
 #include "frame.h"
 #include "present.h"
@@ -39,9 +40,11 @@ static struct app_caps caps;
 #define have_touch caps.touch
 #define have_haptics caps.haptics
 #define have_hub caps.hub
+#define have_heart_rate caps.heart_rate
 
 static bool steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen;
 static uint32_t shown_bpm, key_down_t, down_t;
+static unsigned seen_readings;
 static int down_x, down_y;
 static struct orient orient;
 
@@ -76,6 +79,7 @@ void app_open(int app)
 		if (have_hub)
 			steps_poll();
 		present_activity();
+		present_workout();
 	}
 	ui_set_app(app);
 	stack_open_app();
@@ -114,6 +118,7 @@ static bool start_run(uint32_t now)
 	weather_load();
 	if (have_hub)
 		steps_init();
+	workout_init();
 	if (setting_get(SETTING_BLUETOOTH))
 		action_bluetooth_start();
 	if (have_display)
@@ -231,12 +236,18 @@ void app_sensors(uint32_t now)
 		 * asteroid-hrm keeps the display from blanking until it has
 		 * a previous rate. */
 		bool measure = have_ui && power_awake() && ui_app_open() == UI_APP_HEART_RATE;
-		hub_heart_rate_on(measure);
+		hub_heart_rate_on(measure || (have_heart_rate && workout_running()));
 		unsigned readings;
 		uint32_t bpm = hub_heart_rate(NULL, &readings);
 		bpm = bpm == HUB_NONE ? 0 : bpm;
-		if (bpm != shown_bpm)
+		if (readings > seen_readings && bpm)
+			workout_heart_rate(bpm);
+		seen_readings = readings;
+		if (bpm != shown_bpm) {
 			ui_set_heart_rate(shown_bpm = bpm);
+			if (workout_running())
+				present_workout();
+		}
 		if (measure && readings < 2)
 			power_activity(now);
 		/* In nightstand mode the screen turns with the watch, as
@@ -417,6 +428,15 @@ void app_ui_events(uint32_t now)
 		case UI_EVENT_AGENDA_EDIT:
 		case UI_EVENT_AGENDA_DELETE:
 			agenda_edited(&e);
+			break;
+		case UI_EVENT_WORKOUT:
+			if (have_hub)
+				steps_poll();
+			if (a)
+				workout_start(rtc_read(), steps_total());
+			else
+				workout_stop(rtc_read(), steps_total());
+			present_workout();
 			break;
 		case UI_EVENT_SNOOZE:
 			notify_snooze(a, rtc_read() + (e.alarm.hour * 60 + e.alarm.minute) * 60);

@@ -9,6 +9,7 @@ void present_game(void);
 void present_agenda(void);
 void present_agenda_day(uint32_t date);
 void present_activity(void);
+void present_workout(void);
 void present_settings(void);
 void present_events(uint32_t now);
 void present_weather(void);

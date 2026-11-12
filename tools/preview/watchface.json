@@ -85,5 +85,11 @@
         5234
     ],
     "activity-distance": 3693,
-    "activity-kcal": 183
+    "activity-kcal": 183,
+    "workout-seconds": 1930,
+    "workout-steps": 4120,
+    "workout-distance": 2907,
+    "workout-kcal": 144,
+    "workout-avg-bpm": 112,
+    "workout-max-bpm": 141
 }

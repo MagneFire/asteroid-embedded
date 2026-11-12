@@ -10,6 +10,8 @@ void steps_init(void);
 bool steps_poll(void);
 void steps_save(void);
 uint32_t steps_today(void);
+/* Steps since the first boot, for counting from a moment on. */
+uint32_t steps_total(void);
 /* The steps `ago` days before today, 0 for today. */
 uint32_t steps_day(unsigned ago);
 /* Until just after the next midnight, at most an hour, so a clock set

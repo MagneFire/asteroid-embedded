@@ -111,7 +111,7 @@ void main(uint32_t machtype, const void *fdt)
 	clockapps_init(have_ui, have_haptics);
 	game_init();
 	present_init(have_ui, have_haptics, have_hub);
-	app_init(&(struct app_caps){ have_display, have_ui, have_touch, have_haptics, have_hub });
+	app_init(&(struct app_caps){ have_display, have_ui, have_touch, have_haptics, have_hub, have_hub && board->heart_rate });
 	if (have_display)
 		fbcon_set_overlay(true);
 	for (;;) {

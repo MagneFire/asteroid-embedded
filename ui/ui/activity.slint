@@ -1,10 +1,11 @@
 // The Activity app: pages scrolled up and down. Today's steps in the middle of an arc that fills
-// towards the daily goal, the steps of the last seven days as bars with the goal as a line, and
-// the daily goal, height and weight to set. The arc is the Heart Rate app's: its pieces do not
+// towards the daily goal, the steps of the last seven days as bars with the goal as a line, a
+// workout to start and stop with the last one below it, and the daily goal, height and weight to
+// set. The arc is the Heart Rate app's: its pieces do not
 // overlap, so the part still to go can be drawn see-through.
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
-import { PageDot, IntSelector, RowLabel } from "controls.slint";
+import { PageDot, IntSelector, RowLabel, Pill } from "controls.slint";
 import { Pager } from "launcher.slint";
 import { HeartArc } from "heart_arc.slint";
 import { Icons } from "icons.slint";
@@ -15,6 +16,9 @@ global Activity {
 
     public pure function grouped(n: int) -> string {
         return n < 1000 ? n : Math.floor(n / 1000) + "," + (Math.mod(n, 1000) < 100 ? "0" : "") + (Math.mod(n, 1000) < 10 ? "0" : "") + Math.mod(n, 1000);
+    }
+    public pure function duration(s: int) -> string {
+        return (s >= 3600 ? Math.floor(s / 3600) + ":" + Face.two-digits(Math.mod(Math.floor(s / 60), 60)) : Math.floor(s / 60)) + ":" + Face.two-digits(Math.mod(s, 60));
     }
     // Miles where temperatures are in Fahrenheit, kilometres elsewhere, to a tenth.
     public pure function distance(m: int) -> string {
@@ -168,6 +172,66 @@ component WeekPage {
     }
 }
 
+// While it runs: the time since the start, the steps and what they come to, the heart rate where
+// the watch has the sensor, and Stop. Otherwise Start, with the last workout under it.
+component WorkoutPage {
+    property <bool> running: Face.workout-running;
+    property <int> seconds: self.running ? Math.max(0, Face.now - Face.workout-start) : Face.workout-seconds;
+    property <bool> any: self.running || Face.workout-seconds > 0;
+
+    PageTitle {
+        y: 12 * Theme.unit;
+        text: "Workout";
+        visible: !root.running;
+    }
+
+    if root.running: Text {
+        y: 14 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 18 * Theme.unit;
+        text: Activity.duration(root.seconds);
+        color: white;
+        font-size: 14 * Theme.unit;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.any: Caption {
+        y: root.running ? 33 * Theme.unit : 54 * Theme.unit;
+        text: root.running ? Activity.grouped(Face.workout-steps) + " steps" : "Last: " + Activity.duration(root.seconds) + "  ·  " + Activity.grouped(Face.workout-steps) + " steps";
+        font-size: root.running ? 6 * Theme.unit : 4.5 * Theme.unit;
+    }
+
+    if root.any: Caption {
+        y: root.running ? 41 * Theme.unit : 61 * Theme.unit;
+        text: Activity.distance(Face.workout-distance) + "  ·  " + Face.workout-kcal + " kcal";
+        font-size: 4.5 * Theme.unit;
+    }
+
+    if Face.has-heart-rate && root.running: Caption {
+        y: 49 * Theme.unit;
+        text: Face.heart-rate > 0 ? Face.heart-rate + " bpm" : "– bpm";
+        color: #e23b4e;
+        font-size: 6 * Theme.unit;
+        font-weight: 700;
+    }
+
+    if Face.has-heart-rate && !root.running && Face.workout-avg-bpm > 0: Caption {
+        y: 68 * Theme.unit;
+        text: "Heart rate " + Face.workout-avg-bpm + " avg, " + Face.workout-max-bpm + " max";
+        font-size: 4.5 * Theme.unit;
+    }
+
+    Pill {
+        x: 22.5 * Theme.unit;
+        y: root.running ? 64 * Theme.unit : 28 * Theme.unit;
+        text: root.running ? "Stop" : "Start";
+        clicked => {
+            Face.workout(!root.running);
+        }
+    }
+}
+
 component GoalPage {
     property <int> goal: Math.max(1, Face.activity-goal);
 
@@ -255,8 +319,8 @@ component BodyPage {
 }
 
 export component ActivityScreen {
-    // Page kinds: 0 today, 1 week, 4 goal, 5 body.
-    property <[int]> pages: [0, 1, 4, 5];
+    // Page kinds: 0 today, 1 week, 3 workout, 4 goal, 5 body.
+    property <[int]> pages: [0, 1, 3, 4, 5];
     property <length> scroll: pager.index * 100 * Theme.unit - pager.drag;
     animate scroll {
         duration: pager.dragging ? 0ms : pager.anim;
@@ -284,6 +348,10 @@ export component ActivityScreen {
             height: 100%;
         }
         if kind == 1: WeekPage {
+            width: 100%;
+            height: 100%;
+        }
+        if kind == 3: WorkoutPage {
             width: 100%;
             height: 100%;
         }

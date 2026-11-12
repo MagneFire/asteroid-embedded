@@ -97,6 +97,15 @@ export global Face {
     // In metres and kcal, from the height and weight in cm and kg.
     in-out property <int> activity-distance;
     in-out property <int> activity-kcal;
+    // The running workout, or the last one when not running, its start as RTC seconds.
+    in-out property <bool> workout-running;
+    in-out property <int> workout-start;
+    in-out property <int> workout-seconds;
+    in-out property <int> workout-steps;
+    in-out property <int> workout-distance;
+    in-out property <int> workout-kcal;
+    in-out property <int> workout-avg-bpm;
+    in-out property <int> workout-max-bpm;
     in-out property <int> height-cm: 170;
     in-out property <int> weight-kg: 70;
     in-out property <[int]> activity-days: [0, 0, 0, 0, 0, 0, 0];
@@ -197,6 +206,8 @@ export global Face {
     callback agenda-day(int, int, int);
     callback agenda-saved(int, int, int, int, int, int);
     callback agenda-deleted(int);
+    // Starts a workout, or stops the running one.
+    callback workout(bool);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

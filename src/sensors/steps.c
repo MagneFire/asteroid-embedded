@@ -91,6 +91,11 @@ uint32_t steps_today(void)
 	return now_state.total - now_state.day_start;
 }
 
+uint32_t steps_total(void)
+{
+	return now_state.total;
+}
+
 uint32_t steps_day(unsigned ago)
 {
 	if (!ago)

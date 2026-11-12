@@ -14,6 +14,7 @@
 #include "game.h"
 #include "agenda.h"
 #include "fitness.h"
+#include "workout.h"
 #include "power.h"
 #include "present.h"
 
@@ -84,6 +85,17 @@ void present_activity(void)
 	ui_set_activity(days[6], setting_get(SETTING_STEP_GOAL) * STEP_GOAL_UNIT,
 			fitness_distance_m(days[6], setting_get(SETTING_HEIGHT)), fitness_kcal(days[6], setting_get(SETTING_WEIGHT)),
 			days, ARRAY_SIZE(days));
+}
+
+void present_workout(void)
+{
+	struct workout none = { 0 }, now;
+	bool running = workout_running();
+	if (running)
+		now = workout_now(rtc_read(), have_hub ? steps_total() : 0);
+	const struct workout *w = running ? &now : workout_past(0) ? workout_past(0) : &none;
+	ui_set_workout(running, w->start, w->seconds, w->steps, fitness_distance_m(w->steps, setting_get(SETTING_HEIGHT)),
+		       fitness_kcal(w->steps, setting_get(SETTING_WEIGHT)), w->avg_bpm, w->max_bpm);
 }
 
 void present_settings(void)
@@ -223,8 +235,11 @@ void present_clock(uint32_t now)
 			snprintf(addr_text, sizeof addr_text, "%02X:%02X:%02X:%02X:%02X:%02X", addr[5], addr[4], addr[3],
 				 addr[2], addr[1], addr[0]);
 		ui_set_info(addr_text, now / 1000);
-		if (have_hub && steps_poll())
+		if (have_hub && steps_poll()) {
 			present_activity();
+			if (workout_running())
+				present_workout();
+		}
 		power_tick();
 		ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 	}

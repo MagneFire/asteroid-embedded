@@ -207,6 +207,7 @@ enum ui_event_kind {
 	UI_EVENT_AGENDA_DAY,
 	UI_EVENT_AGENDA_EDIT,
 	UI_EVENT_AGENDA_DELETE,
+	UI_EVENT_WORKOUT,
 };
 
 struct ui_event {
@@ -231,6 +232,10 @@ void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
 /* Steps today, the goal, what today's steps come to, and the steps of the last n days, oldest
  * first and today last. */
+/* The running workout, or with running false the last one, all 0 for none: its start (RTC) and
+ * length, its steps and what they come to, and its average and highest heart rate. */
+void ui_set_workout(bool running, uint32_t start, uint32_t seconds, uint32_t steps, uint32_t distance_m, uint32_t kcal,
+		    uint32_t avg_bpm, uint32_t max_bpm);
 void ui_set_activity(uint32_t today, uint32_t goal, uint32_t distance_m, uint32_t kcal, const uint32_t *days, uint32_t n);
 int ui_app_open(void);
 bool ui_flashlight_on(void);
