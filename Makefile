@@ -75,7 +75,7 @@ TUSB_DEFS_omap3 := -DTUP_USBIP_MUSB -DTUP_USBIP_MUSB_TI -DTUP_DCD_ENDPOINT_MAX=8
 SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer.c wdt.c gpio.c iom.c sleep.c reboot.c \
                flash.c adc.c detect.c swdbox.c power_mcu.c absent.c) \
         src/frame_mcu.c src/board/beluga.c src/display/display_rm69090.c src/input/touch_tma525.c \
-        src/input/haptics_aw8624.c src/storage/store_flash.c src/storage/none.c src/bt/bleif.c
+        src/input/haptics_aw8624.c src/sensors/hub_lsm6dso.c src/storage/store_flash.c src/storage/none.c src/bt/bleif.c
 CPU_apollo3 := cortex-m4
 FPU_apollo3 := fpv4-sp-d16
 ISA_apollo3 := -mthumb

@@ -51,12 +51,15 @@ static const struct dcs_step panel_on_41[] = {
  * reset on pad 10, tearing on pad 11. The touch controller and the
  * haptics driver share IOM0's I2C (SCL pad 5, SDA pad 6). The battery is
  * on ADC channel 7 (pad 35) behind a divider that makes the 2.0 V
- * reference 7.2 V. Keys on pads 38 (power) and 15. */
+ * reference 7.2 V. Keys on pads 38 (power) and 15. The LSM6DSO
+ * accelerometer is alone on IOM3's I2C (SCL pad 42, SDA pad 43), its
+ * INT1 on pad 13. */
 #define BELUGA_COMMON                                                                                                  \
 	.mcu_pads = pads, .heart_rate = false,                                                                         \
 	.battery_driver = &battery_adc, .battery_adc = { .pad = 35, .func = 0, .channel = 7, .mv_full = 7200 },        \
 	.key_gpio = { 38, 15 },                                                                                        \
 	.touch = &touch_tma525,                                                                                        \
+	.hub = &hub_lsm6dso, .hub_pins = { .i2c = { .bus = 3, .sda = 43, .scl = 42, .func = 4, .addr = 0x6a }, .irq = 13 }, \
 	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x5a }, .enable = 26 }
 
 const struct board board_beluga = {
