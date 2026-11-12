@@ -125,7 +125,7 @@ static bool start_run(uint32_t now)
 /* Work that only has to happen now and then, lazily so it adds no
  * wakeups: asleep it runs when something else wakes the watch. The
  * charger keeps its own 1 s, so it is asked more often than that. */
-static struct sched_task start_task, charger_task, notify_task, cable_task, settings_task, weather_task;
+static struct sched_task start_task, charger_task, notify_task, cable_task, settings_task, weather_task, steps_task;
 
 static bool charger_run(uint32_t now)
 {
@@ -163,6 +163,16 @@ static bool weather_run(uint32_t now)
 	return false;
 }
 
+/* Not lazy: a day that ends while the watch sleeps gets its own steps,
+ * not the next morning's. */
+static bool steps_run(uint32_t now)
+{
+	if (have_hub)
+		steps_poll();
+	sched_after(&steps_task, now, steps_next_ms());
+	return false;
+}
+
 static void tasks_init(uint32_t now)
 {
 	static const struct { struct sched_task *t; const char *name; bool (*run)(uint32_t); } list[] = {
@@ -181,6 +191,10 @@ static void tasks_init(uint32_t now)
 	start_task.run = start_run;
 	sched_add(&start_task);
 	sched_after(&start_task, now, BT_START_MS);
+	steps_task.name = "steps";
+	steps_task.run = steps_run;
+	sched_add(&steps_task);
+	sched_after(&steps_task, now, steps_next_ms());
 }
 
 /* The hub's tilt wake is on only while the screen sleeps. */
