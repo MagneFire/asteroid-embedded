@@ -4,6 +4,11 @@ for the pbuffer-only case.  Every callback that is not expected to be reached
 aborts with its name."""
 import struct
 
+from unicorn.arm_const import (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4,
+                               UC_ARM_REG_R5, UC_ARM_REG_R6, UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9,
+                               UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR,
+                               UC_ARM_REG_PC, UC_ARM_REG_CPSR)
+
 from armproc import ProcError, PAGE
 
 LIBHARDWARE = "/system/lib/libhardware.so"
@@ -12,17 +17,18 @@ LIBHARDWARE = "/system/lib/libhardware.so"
 class Arena:
     """Harness-owned guest memory for the synthetic structures."""
 
-    def __init__(self, proc):
+    def __init__(self, proc, size=0x10000):
         self.proc = proc
-        self.base = proc.mmap_alloc(0x10000)
-        proc.map(self.base, 0x10000)
+        self.size = size
+        self.base = proc.mmap_alloc(size)
+        proc.map(self.base, size)
         self.next = self.base
 
     def alloc(self, size, align=16):
         self.next = (self.next + align - 1) & ~(align - 1)
         a = self.next
         self.next += size
-        if self.next > self.base + 0x10000:
+        if self.next > self.base + self.size:
             raise ProcError("harness arena exhausted")
         return a
 
@@ -32,13 +38,42 @@ class Arena:
         return a
 
 
+SRV = "/system/lib/libsrv_um.so"
+_SAVED = (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
+          UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12,
+          UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_CPSR)
+
+
+def call_nested(proc, addr, args):
+    """Call a guest function from inside a Python stub (the stub itself runs in a code hook of
+    a guest call).  All registers are saved and restored, the callee gets a fresh stack area
+    below the caller's stack pointer."""
+    uc = proc.uc
+    saved = [uc.reg_read(r) for r in _SAVED]
+    sp = (uc.reg_read(UC_ARM_REG_SP) - 0x800) & ~0x7
+    try:
+        return proc.call(addr, args, sp=sp)
+    finally:
+        for r, v in zip(_SAVED, saved):
+            uc.reg_write(r, v)
+
+
 class Gralloc:
     """gralloc_module_t as the EGL services init uses it: the module with its
     methods->open, and the PowerVR extension slot at +0x10c that returns the
-    transfer-queue context."""
+    transfer-queue context.
 
-    def __init__(self, proc, arena):
+    With transfer=False the slot stores NULL.  With transfer=True the first call does what the
+    vendor module does when it is loaded: a second services connection (the kernel gives a
+    process one memory context, so it is the same one), SGXGetClientInfo, the global event
+    object, and libsrv_um's own SGXCreateTransferContext(devdata, 0x20000, {memctx, event},
+    &context); the pointer it returns is what the slot stores."""
+
+    def __init__(self, proc, arena, transfer=False):
         self.proc, self.arena = proc, arena
+        self.transfer = transfer
+        self.tq_created = None
+        self.kernel = None            # set by the session; allocations made while creating the context are tagged
         a = arena
         self.module = a.alloc(0x140)
         self.methods = a.alloc(8)
@@ -72,13 +107,55 @@ class Gralloc:
         return 0
 
     def get_transfer_context(self):
-        self.proc.w32(self.proc.arg(1), 0)
-        self.proc.log("   gralloc transfer context -> NULL")
+        if not self.transfer:
+            self.proc.w32(self.proc.arg(1), 0)
+            self.proc.log("   gralloc transfer context -> NULL")
+            return 0
+        out = self.proc.arg(1)
+        if self.tq_created is None:
+            self.kernel.phase = "transfer-context"
+            try:
+                self.tq_created = self.create_transfer_context()
+            finally:
+                self.kernel.phase = None
+        self.proc.w32(out, self.tq_created)
+        self.proc.log("   gralloc transfer context -> 0x%08x" % self.tq_created)
         return 0
 
+    def create_transfer_context(self):
+        p, a = self.proc, self.arena
 
-def install_hardware(proc, arena):
-    g = Gralloc(proc, arena)
+        def fn(name):
+            return p.sym(SRV, name)
+
+        def call(name, *args):
+            r = call_nested(p, fn(name), list(args))
+            if r:
+                raise ProcError("gralloc side: %s returned error %d" % (name, r))
+            return r
+        conn, num = a.alloc(4, 4), a.alloc(4, 4)
+        idents = a.alloc(20 * 16, 4)
+        devdata, hctx = a.alloc(0x40, 4), a.alloc(4, 4)
+        nheaps, heaps = a.alloc(4, 4), a.alloc(24 * 16, 4)
+        cinfo, misc = a.alloc(0x200, 4), a.alloc(0x100, 4)
+        qin, ctx = a.alloc(8, 4), a.alloc(4, 4)
+        call("PVRSRVConnect", conn, 0)
+        call("PVRSRVEnumerateDevices", p.u32(conn), num, idents)
+        if p.u32(num) < 1 or p.u32(idents + 4) != 0:
+            raise ProcError("gralloc side: no 3D device enumerated")
+        call("PVRSRVAcquireDeviceData", p.u32(conn), p.u32(idents + 8), devdata, 0)
+        call("PVRSRVCreateDeviceMemContext", devdata, hctx, nheaps, heaps)
+        call("SGXGetClientInfo", devdata, cinfo)
+        p.w32(misc, 8)
+        call("PVRSRVGetMiscInfo", p.u32(conn), misc)
+        event = p.u32(misc + 0x60) if p.u32(misc + 4) & 8 else 0
+        p.write(qin, struct.pack("<II", p.u32(hctx), event))
+        call("SGXCreateTransferContext", devdata, 0x20000, qin, ctx)
+        return p.u32(ctx)
+
+
+def install_hardware(proc, arena, transfer=False):
+    g = Gralloc(proc, arena, transfer)
 
     def hw_get_module():
         mid = proc.cstr(proc.arg(0))

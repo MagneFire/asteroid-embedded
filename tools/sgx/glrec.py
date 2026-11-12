@@ -3,7 +3,7 @@
 fake pvrsrvkm, and record the GPU memory and commands it produces.
 
 Usage: glrec.py [--out DIR] [--shift N] SCENARIO...
-Scenarios: tri tri2 tri_moved tri_color tri_blend tri_indexed quad_tex
+Scenarios: see SCENARIOS below
 See README.md.
 """
 import argparse
@@ -29,7 +29,10 @@ NEEDED = ["libc.so", EGL, GLES, "libhardware.so", "libpvrANDROID_WSEGL.so"]
 VS = "attribute vec2 p; attribute vec4 c; varying lowp vec4 v; void main(){ v=c; gl_Position=vec4(p,0.,1.); }"
 FS = "varying lowp vec4 v; void main(){ gl_FragColor=v; }"
 VS_TEX = "attribute vec2 p; attribute vec2 t; varying mediump vec2 u; void main(){ u=t; gl_Position=vec4(p,0.,1.); }"
-FS_TEX = "uniform sampler2D t; varying mediump vec2 u; void main(){ gl_FragColor=texture2D(t,u); }"
+FS_TEX = "uniform sampler2D s; varying mediump vec2 u; void main(){ gl_FragColor=texture2D(s,u); }"
+FS_ALPHA = "uniform sampler2D s; uniform lowp float a; varying mediump vec2 u; void main(){ gl_FragColor=texture2D(s,u)*a; }"
+FS_A8 = ("uniform sampler2D s; uniform lowp vec4 c; varying mediump vec2 u; "
+         "void main(){ gl_FragColor=c*texture2D(s,u).a; }")
 
 
 def f32(x):
@@ -39,7 +42,7 @@ def f32(x):
 class Session:
     """One emulated process with the fake kernel, and helpers to call the GL stack."""
 
-    def __init__(self, outdir, shift=0, verbose=False, fill=0, general_gap=0):
+    def __init__(self, outdir, shift=0, verbose=False, fill=0, general_gap=0, transfer=False):
         self.outdir = outdir
         self.lay = armproc.Layout(shift)
         self.proc = armproc.Proc(SYSTEM, self.lay, logfn=(lambda t: print(t[:300], file=sys.stderr)) if verbose else None)
@@ -47,7 +50,8 @@ class Session:
         self.proc.add_device("/dev/pvrsrvkm", self.kernel)
         self.proc.start(NEEDED)
         self.arena = glenv.Arena(self.proc)
-        self.hal = glenv.install_hardware(self.proc, self.arena)
+        self.hal = glenv.install_hardware(self.proc, self.arena, transfer)
+        self.hal.kernel = self.kernel
         self.wsegl = glenv.install_wsegl(self.proc, self.arena, [1, 2, 0, 0, 0, 0, 0, 0, 0])
         self.kernel.snapshot_hook = self.snapshot
         self.snapdirs = []
@@ -55,9 +59,9 @@ class Session:
         self.gl_errors = []
 
     # --- snapshots
-    def snapshot(self, tag, kernel):
-        n = len(kernel.kicks) - 1
-        d = os.path.join(self.outdir, "kick%02d_%s" % (n, tag))
+    def snapshot(self, tag, kernel, name=None):
+        name = name or "kick%02d" % (len(kernel.kicks) - 1)
+        d = os.path.join(self.outdir, "%s_%s" % (name, tag))
         os.makedirs(d, exist_ok=True)
         files = {}
         for a in kernel.live:
@@ -76,6 +80,15 @@ class Session:
 
     def put(self, data, align=16):
         a = self.arena.alloc(len(data), align)
+        self.proc.write(a, data)
+        return a
+
+    def put_big(self, data):
+        """Large host data (texture images) in a separate harness arena, made on first use so the
+        small arena (and every guest address in the older scenarios) is unchanged."""
+        if getattr(self, "big_arena", None) is None:
+            self.big_arena = glenv.Arena(self.proc, 0x400000)
+        a = self.big_arena.alloc(len(data), 16)
         self.proc.write(a, data)
         return a
 
@@ -189,41 +202,79 @@ def tri_scene(s, verts=TRI_VERTS, clear=(0.25, 0.5, 0.75, 1.0), blend=False, ind
         assert r == 1, "eglSwapBuffers failed: error 0x%x" % s.e("eglGetError")
 
 
-def quad_tex_scene(s):
+QUAD_VERTS = [(-0.8, -0.8, 0.0, 0.0), (0.8, -0.8, 1.0, 0.0), (-0.8, 0.8, 0.0, 1.0),
+              (-0.8, 0.8, 0.0, 1.0), (0.8, -0.8, 1.0, 0.0), (0.8, 0.8, 1.0, 1.0)]
+GL_RGBA, GL_ALPHA = 0x1908, 0x1906
+
+
+def tex_pixels(size, fmt, variant=0):
+    """Texture contents: a gradient with a coarse checker in alpha.  `variant` changes every pixel.
+    `size` is N or (width, height)."""
+    w, h = size if isinstance(size, tuple) else (size, size)
+    if fmt == GL_ALPHA:
+        return bytes(((x * 7 + y * 3 + variant * 90) & 255) for y in range(h) for x in range(w))
+    rows = []
+    for y in range(h):
+        row = bytearray()
+        for x in range(w):
+            row += bytes([(x * 8 + variant * 64) & 255, (y * 8) & 255, ((x + y) * 4) & 255,
+                          255 if (x // 4 + y // 4) % 2 else 128])
+        rows.append(bytes(row))
+    return b"".join(rows)
+
+
+def quad_scene(s, size=32, fmt=GL_RGBA, fs=FS_TEX, filt=0x2600, uniforms=(), moved=None, readback=False):
+    """Textured quad (two triangles) on the cleared 320x320 pbuffer.  `uniforms` is a list of
+    (name, floats) set with glUniform1f / glUniform4f.  `moved` draws the quad a second time with other
+    texture contents: "reupload" uploads them into the same texture object (glTexImage2D again),
+    "object" into a second texture object that is bound for the second draw, "none" draws again without
+    changing anything."""
     setup_egl(s)
-    build_program(s, VS_TEX, FS_TEX, ["p", "t"])
-    verts = [(-0.8, -0.8, 0.0, 0.0), (0.8, -0.8, 1.0, 0.0), (-0.8, 0.8, 0.0, 1.0),
-             (-0.8, 0.8, 0.0, 1.0), (0.8, -0.8, 1.0, 0.0), (0.8, 0.8, 1.0, 1.0)]
+    prog = build_program(s, VS_TEX, fs, ["p", "t"])
     vbo = s.out32()
     s.g("glGenBuffers", 1, vbo)
     s.g("glBindBuffer", 0x8892, s.u32(vbo))
-    flat = [x for v in verts for x in v]
+    flat = [x for v in QUAD_VERTS for x in v]
     s.g("glBufferData", 0x8892, 4 * len(flat), s.floats(*flat), 0x88E4)
     s.g("glEnableVertexAttribArray", 0)
     s.g("glEnableVertexAttribArray", 1)
     s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 16, 0)
     s.g("glVertexAttribPointer", 1, 2, 0x1406, 0, 16, 8)
-    tex = s.out32()
-    s.g("glGenTextures", 1, tex)
-    s.g("glActiveTexture", 0x84C0)
-    s.g("glBindTexture", 0x0DE1, s.u32(tex))
-    pix = bytearray()
-    for y in range(32):
-        for x in range(32):
-            pix += bytes([(x * 8) & 255, (y * 8) & 255, ((x + y) * 4) & 255, 255 if (x // 4 + y // 4) % 2 else 128])
     s.g("glPixelStorei", 0x0CF5, 1)
-    s.g("glTexImage2D", 0x0DE1, 0, 0x1908, 32, 32, 0, 0x1908, 0x1401, s.put(bytes(pix)))
-    s.g("glTexParameteri", 0x0DE1, 0x2801, 0x2600)
-    s.g("glTexParameteri", 0x0DE1, 0x2800, 0x2600)
-    s.g("glTexParameteri", 0x0DE1, 0x2802, 0x812F)
-    s.g("glTexParameteri", 0x0DE1, 0x2803, 0x812F)
+    s.g("glActiveTexture", 0x84C0)
+    def upload(variant, new_object):
+        if new_object:
+            tex = s.out32()
+            s.g("glGenTextures", 1, tex)
+            s.g("glBindTexture", 0x0DE1, s.u32(tex))
+        w, h = size if isinstance(size, tuple) else (size, size)
+        s.g("glTexImage2D", 0x0DE1, 0, fmt, w, h, 0, fmt, 0x1401, s.put_big(tex_pixels(size, fmt, variant)))
+        if new_object:
+            s.g("glTexParameteri", 0x0DE1, 0x2801, filt)
+            s.g("glTexParameteri", 0x0DE1, 0x2800, filt)
+            s.g("glTexParameteri", 0x0DE1, 0x2802, 0x812F)
+            s.g("glTexParameteri", 0x0DE1, 0x2803, 0x812F)
+    upload(0, True)
+    s.g("glUniform1i", s.g("glGetUniformLocation", prog, s.cstr("s")), 0)
+    for name, vals in uniforms:
+        loc = s.g("glGetUniformLocation", prog, s.cstr(name))
+        if len(vals) == 1:
+            s.g("glUniform1f", loc, f32(vals[0]))
+        else:
+            s.g("glUniform4f", loc, *[f32(v) for v in vals])
     s.g("glViewport", 0, 0, 320, 320)
     s.g("glEnable", 0x0BE2)
     s.g("glBlendFunc", 1, 0x0303)
     s.g("glClearColor", f32(0.25), f32(0.5), f32(0.75), f32(1.0))
     s.g("glClear", 0x4000)
     s.g("glDrawArrays", 4, 0, 6)
+    if moved:
+        if moved != "none":
+            upload(1, moved == "object")
+        s.g("glDrawArrays", 4, 0, 6)
     s.g("glFinish")
+    if readback:
+        s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
 
 
 SCENARIOS = {
@@ -237,8 +288,24 @@ SCENARIOS = {
     "tri_read": lambda s: tri_scene(s, readback=True),
     "tri_read2": lambda s: tri_scene(s, frames=2, read_each=True),
     "tri_two": lambda s: tri_scene(s, verts=TRI_TWO, readback=True),
-    "quad_tex": quad_tex_scene,
+    "quad_tex": lambda s: quad_scene(s),
+    "quad_tex_read": lambda s: quad_scene(s, readback=True),
+    "quad_tex100": lambda s: quad_scene(s, 100),
+    "quad_tex320": lambda s: quad_scene(s, 320),
+    "quad_tex320_read": lambda s: quad_scene(s, 320, readback=True),
+    "quad_tex_moved": lambda s: quad_scene(s, 320, moved="reupload"),
+    "quad_tex_obj": lambda s: quad_scene(s, 320, moved="object"),
+    "quad_tex_draw2": lambda s: quad_scene(s, 320, moved="none"),
+    "quad_alpha": lambda s: quad_scene(s, 320, fs=FS_ALPHA, uniforms=[("a", (0.5,))]),
+    "quad_alpha2": lambda s: quad_scene(s, 320, fs=FS_ALPHA, uniforms=[("a", (0.25,))]),
+    "quad_a8": lambda s: quad_scene(s, 32, GL_ALPHA, FS_A8, uniforms=[("c", (0.25, 0.5, 0.75, 1.0))]),
+    "quad_a8_x": lambda s: quad_scene(s, 32, GL_ALPHA, FS_A8, uniforms=[("c", (0.75, 0.5, 0.25, 1.0))]),
+    "quad_a8_y": lambda s: quad_scene(s, 32, GL_ALPHA, FS_A8, uniforms=[("c", (0.25, 0.5, 0.75, 0.5))]),
+    "quad_a8_z": lambda s: quad_scene(s, 32, GL_ALPHA, FS_A8, uniforms=[("c", (1.0, 1.0, 1.0, 1.0))]),
+    "quad_linear": lambda s: quad_scene(s, 320, filt=0x2601),
 }
+SCENARIOS["tri_tq"] = lambda s: tri_scene(s)        # `tri` with the gralloc transfer context created: the baseline for quad_*
+TRANSFER_SCENARIOS = {n for n in SCENARIOS if n.startswith("quad_")} | {"tri_tq"}
 
 
 def sha256(path):
@@ -264,6 +331,22 @@ FAKES = [
     "other entry points abort; the transfer-context query returns a zeroed block.",
     "Unicorn 2.1.4 crashes on 64-bit D-register VSHL/VQADD/VQSUB; those instructions are executed in Python "
     "(armproc.NeonFix).",
+]
+TRANSFER_FAKES = [
+    "gralloc (transfer scenarios): the transfer-context query at +0x10c does what the vendor module does when "
+    "it is loaded, with libsrv_um's own functions: PVRSRVConnect (second connection), enumerate/acquire, "
+    "PVRSRVCreateDeviceMemContext, SGXGetClientInfo, PVRSRVGetMiscInfo (global event object) and "
+    "SGXCreateTransferContext(devdata, 0x20000, {memctx, event}, &ctx); the pointer it returns is stored. "
+    "The module's other work (PVR2D device context, display/framebuffer device) is not done.",
+    "Memory context: the kernel gives a process one memory context (BM_CreateContext finds the process's "
+    "existing one), so the second connection's CreateDeviceMemContext returns the same context and heaps; the "
+    "transfer context's allocations share the lab's single address space with the GL context's. The page-"
+    "directory word patched into the HW transfer context is the same fake as the render context's.",
+    "Transfers: SUBMITTRANSFER is modelled as SGXSubmitTransferKM writes the shared header (sync snapshots, "
+    "counts), snapshots pre/post (xferNN_pre/post), then completes: the status values the library put in the "
+    "command are stored, every sync object's complete counters are set to its pending counters. The blit is "
+    "not executed (no pixels are written into the destination surface), the transfer CCB read offset is not "
+    "advanced (its location is in the HW transfer context, whose layout the kernel does not define).",
 ]
 
 
@@ -341,6 +424,7 @@ def extract_shaders(outdir, allocs, kicks):
 
 def finish(s, name, outdir, unwritten=None):
     k = s.kernel
+    transfer = name in TRANSFER_SCENARIOS
     gl_err = s.g("glGetError")
     egl_err = s.e("eglGetError")
     lib_hashes = {}
@@ -360,6 +444,8 @@ def finish(s, name, outdir, unwritten=None):
             "tag": a.tag, "sync_alloc": a.sync.index if a.sync else None,
             "freed_at_bridge_call": a.freed_at, "file": "alloc_%03d.bin" % a.index,
             "never_written_by_user_space_at_last_kick": (unwritten or {}).get(a.index)})
+        if a.group:
+            allocs[-1]["group"] = a.group
     manifest = {
         "scenario": name,
         "result": {"returned_from_glFinish": True, "glGetError": gl_err, "eglGetError": egl_err},
@@ -374,8 +460,11 @@ def finish(s, name, outdir, unwritten=None):
         "allocations": allocs,
         "bridge_calls": k.bridge_log,
         "kicks": k.kicks,
-        "faked": FAKES,
+        "faked": FAKES + (TRANSFER_FAKES if transfer else []),
     }
+    if transfer:
+        manifest["transfers"] = k.transfers
+        manifest["hw_transfer_contexts"] = [a.index for a in k.hw_transfer_ctx]
     manifest["shader_artifacts"] = "shaders/index.json (%d regions)" % len(extract_shaders(outdir, allocs, len(k.kicks)))
     with open(os.path.join(outdir, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1)
@@ -392,12 +481,12 @@ def run(name, outdir, shift=0, verbose=False, general_gap=0):
     import shutil
     shutil.rmtree(outdir, ignore_errors=True)
     os.makedirs(outdir, exist_ok=True)
-    s = Session(outdir, shift, verbose, general_gap=general_gap)
+    s = Session(outdir, shift, verbose, general_gap=general_gap, transfer=name in TRANSFER_SCENARIOS)
     SCENARIOS[name](s)
     import tempfile
     filldir = tempfile.mkdtemp(prefix="sgxfill")
     try:
-        sf = Session(filldir, shift, False, fill=0xA5, general_gap=general_gap)
+        sf = Session(filldir, shift, False, fill=0xA5, general_gap=general_gap, transfer=name in TRANSFER_SCENARIOS)
         SCENARIOS[name](sf)
         unwritten = never_written(outdir, filldir, len(s.kernel.kicks))
     finally:

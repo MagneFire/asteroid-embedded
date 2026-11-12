@@ -3,6 +3,8 @@
 
   diffrec.py RECA RECB [--kick N] [--phase pre|post]   same kick of two recordings
   diffrec.py REC --kick N                              pre against post of one kick
+  diffrec.py RECA RECB --xfer N [--xfer-b M]           transfer N instead of kick N (xferNN_pre/post)
+  --hide-tq                                            leave out what the transfer context's creation allocated
 
 RECx are directories such as build/sgx/draw/tri.  Allocations are matched by
 (heap, GPU address, size).  Differences are listed per allocation as 32-bit words with their GPU
@@ -36,10 +38,19 @@ def load(rec):
     return m
 
 
+SITE_ROLES = {"libGLESv2_POWERVR_SGX530_125.so+0x3263a": "texture memory",
+              "libGLESv2_POWERVR_SGX530_125.so+0x39c62": "index table"}
+
+
 def label(a, m):
     r = ROLES.get((a["heap_id"], a["size"]))
+    site = a["allocator"].get("client_site_heuristic") if isinstance(a["allocator"], dict) else None
+    if site in SITE_ROLES:
+        r = SITE_ROLES[site]
+    if a.get("group"):
+        r = "TQ ctx" + (": " + r if r else "")
     if a["tag"] == "sync":
-        r = "sync data"
+        r = "sync data" if not a.get("group") else "TQ ctx: sync data"
     if r is None and a["heap_id"] == 8:
         r = "status / access word" if a["size"] <= 8 else "cache-coherent data"
     if r is None and a["tag"]:
@@ -48,7 +59,8 @@ def label(a, m):
 
 
 def read_alloc(rec, kick, phase, a):
-    p = os.path.join(rec, "kick%02d_%s" % (kick, phase), a["file"])
+    name = kick if isinstance(kick, str) else "kick%02d" % kick
+    p = os.path.join(rec, "%s_%s" % (name, phase), a["file"])
     with open(p, "rb") as f:
         return f.read()
 
@@ -79,10 +91,14 @@ def key(a):
     return (a["heap_id"], a["devva"], a["size"])
 
 
-def compare(recA, recB, kickA, phaseA, kickB, phaseB):
+def compare(recA, recB, kickA, phaseA, kickB, phaseB, hide_tq=False):
     ma, mb = load(recA), load(recB)
-    A = {key(a): a for a in ma["allocations"] if a["freed_at_bridge_call"] is None}
-    B = {key(a): a for a in mb["allocations"] if a["freed_at_bridge_call"] is None}
+    def present(rec, kick, phase, a):
+        name = kick if isinstance(kick, str) else "kick%02d" % kick
+        return os.path.exists(os.path.join(rec, "%s_%s" % (name, phase), a["file"]))
+    keep = lambda a: a["freed_at_bridge_call"] is None and not (hide_tq and a.get("group"))
+    A = {key(a): a for a in ma["allocations"] if keep(a) and present(recA, kickA, phaseA, a)}
+    B = {key(a): a for a in mb["allocations"] if keep(a) and present(recB, kickB, phaseB, a)}
     result = {"only_a": [], "only_b": [], "changed": []}
     pairs = []
     ra = {k: v for k, v in A.items() if k not in B}
@@ -144,17 +160,25 @@ def main():
     ap.add_argument("--limit", type=int, default=48)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--xfer", type=int, default=None, help="use transfer N (xferNN_pre/post) instead of kick N")
+    ap.add_argument("--xfer-b", type=int, default=None)
+    ap.add_argument("--hide-tq", action="store_true")
     a = ap.parse_args()
     limit = None if a.all else a.limit
+    ka, kb = a.kick, (a.kick if a.kick_b is None else a.kick_b)
+    what = "kick"
+    if a.xfer is not None:
+        ka = "xfer%02d" % a.xfer
+        kb = "xfer%02d" % (a.xfer if a.xfer_b is None else a.xfer_b)
+        what = "transfer"
     if len(a.recs) == 1:
-        res, ma, mb = compare(a.recs[0], a.recs[0], a.kick, "pre", a.kick, "post")
+        res, ma, mb = compare(a.recs[0], a.recs[0], ka, "pre", ka, "post", a.hide_tq)
         names = ("pre", "post")
-        print("%s kick %d: pre -> post" % (a.recs[0], a.kick))
+        print("%s %s %s: pre -> post" % (a.recs[0], what, ka))
     elif len(a.recs) == 2:
-        kb = a.kick if a.kick_b is None else a.kick_b
-        res, ma, mb = compare(a.recs[0], a.recs[1], a.kick, a.phase, kb, a.phase)
+        res, ma, mb = compare(a.recs[0], a.recs[1], ka, a.phase, kb, a.phase, a.hide_tq)
         names = tuple(os.path.basename(r.rstrip("/")) for r in a.recs)
-        print("%s kick %d %s -> %s kick %d %s" % (names[0], a.kick, a.phase, names[1], kb, a.phase))
+        print("%s %s %s %s -> %s %s %s %s" % (names[0], what, ka, a.phase, names[1], what, kb, a.phase))
     else:
         ap.error("one or two recordings")
     report(res, ma, limit, a.summary, names)

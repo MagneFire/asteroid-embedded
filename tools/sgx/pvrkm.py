@@ -35,8 +35,10 @@ BRIDGE_NAMES = {
     26: "RELEASE_MMAP_DATA", 37: "GET_MISC_INFO", 38: "RELEASE_MISC_INFO",
     71: "EVENT_OBJECT_WAIT", 72: "EVENT_OBJECT_OPEN", 73: "EVENT_OBJECT_CLOSE",
     85: "SGX_GETCLIENTINFO", 86: "SGX_RELEASECLIENTINFO", 87: "SGX_GETINTERNALDEVINFO", 88: "SGX_DOKICK",
+    98: "SGX_SUBMITTRANSFER",
     99: "SGX_GETMISCINFO", 105: "SGX_REGISTER_HW_RENDER_CONTEXT", 106: "SGX_FLUSH_HW_RENDER_TARGET",
-    107: "SGX_UNREGISTER_HW_RENDER_CONTEXT", 111: "SGX_SCHEDULE_PROCESS_QUEUES",
+    107: "SGX_UNREGISTER_HW_RENDER_CONTEXT", 111: "SGX_REGISTER_HW_TRANSFER_CONTEXT",
+    112: "SGX_UNREGISTER_HW_TRANSFER_CONTEXT", 113: "SGX_SCHEDULE_PROCESS_QUEUES",
 }
 SGX_BUILD_OPTIONS = 0x0016801C
 
@@ -56,6 +58,7 @@ class Alloc:
         self.client_meminfo_flags = 0
         self.tag = None
         self.owner = None
+        self.group = None          # "transfer-context" for what the gralloc side's SGXCreateTransferContext allocates
 
 
 class FakeKernel:
@@ -81,6 +84,9 @@ class FakeKernel:
         self.live = []
         self.bridge_log = []
         self.kicks = []
+        self.transfers = []
+        self.hw_transfer_ctx = []
+        self.phase = None
         self.pid = 1000
         self.next_handle = 0x1000 + (shift >> 12) * 4
         self.handles = {}
@@ -177,6 +183,7 @@ class FakeKernel:
         a.map_handle = self.new_handle("osmem", a)
         a.mmap_key = len(self.allocs) + 1 + (self.shift >> 20)
         a.tag = tag
+        a.group = self.phase
         self.mmap_keys[a.mmap_key] = a
         self.allocs.append(a)
         self.live.append(a)
@@ -467,6 +474,138 @@ class FakeKernel:
     def br_sgx_flush_hw_render_target(self, inb, out):
         struct.pack_into("<I", out, 0, PVRSRV_OK)
 
+    def br_sgx_register_hw_transfer_context(self, inb, out):
+        # IN: flags, hDevCookie, pHWTransferContextCpuVAddr, ui32HWTransferContextSize, ui32OffsetToPDDevPAddr,
+        #     hDevMemContext.  The kernel allocates the context in KernelData (read|write|no sync|EDM|cache
+        #     consistent, alignment 32), copies the user image and patches the page-directory address
+        #     (shifted down by the PTE alignment) at the given offset, as SGXRegisterHWTransferContextKM does.
+        _, hcookie, ptr, size, patch_off, hmemctx = struct.unpack_from("<6I", inb, 0)
+        self.get(hmemctx, "memctx")
+        caller = self.proc.reg(14) & ~1
+        flags = 1 | 2 | MEM_NO_SYNCOBJ | (1 << 6) | MEM_CACHE_CONSISTENT
+        a = self.alloc(3, size, 32, flags, True, caller, tag="HW transfer context")
+        if a is None:
+            struct.pack_into("<I", out, 0, PVRSRV_ERROR_OUT_OF_MEMORY)
+            return
+        a.flags = flags
+        img = bytearray(self.proc.read(ptr, size))
+        struct.pack_into("<I", img, patch_off, self.APP_PD_DEV_PADDR >> self.PD_ALIGN_SHIFT)
+        self.write(a, 0, bytes(img))
+        self.hw_transfer_ctx.append(a)
+        h = self.new_handle("hwtransfercontext", a)
+        self.current_call["decoded"] = {"alloc_index": a.index, "devva": a.devva, "image_size": size,
+                                        "pd_patch_offset": patch_off, "pd_dev_paddr_fake": self.APP_PD_DEV_PADDR,
+                                        "image_hex": img.hex()}
+        struct.pack_into("<III", out, 0, PVRSRV_OK, h, a.devva)
+
+    def br_sgx_unregister_hw_transfer_context(self, inb, out):
+        struct.pack_into("<I", out, 0, PVRSRV_OK)
+
+    # --- SUBMITTRANSFER --------------------------------------------------------------------
+    TQ_SHARED_SIZE = 0x10C            # sizeof(SGXMKIF_TRANSFERCMD_SHARED), init-facts: ui32Sizeof_TRANSFERCMD_SHARED
+    TQ_MAX_SYNC = 5                   # SGX_MAX_TRANSFER_SYNC_OPS: entries in the kick's handle arrays
+    TQFLAGS_NOSYNCUPDATE, TQFLAGS_KEEPPENDING = 1, 2
+
+    def decode_transfer_kick(self, kb):
+        u = lambda o: struct.unpack_from("<I", kb, o)[0]
+        n = self.TQ_MAX_SYNC
+        k = {"hCCBMemInfo": u(0), "ui32SharedCmdCCBOffset": u(4), "sHWTransferContextDevVAddr": u(8),
+             "hTASyncInfo": u(0xC), "h3DSyncInfo": u(0x10), "ui32NumSrcSync": u(0x14)}
+        k["ahSrcSyncInfo"] = [u(0x18 + 4 * i) for i in range(n)]
+        o = 0x18 + 4 * n
+        k["ui32NumDstSync"] = u(o)
+        k["ahDstSyncInfo"] = [u(o + 4 + 4 * i) for i in range(n)]
+        o += 4 + 4 * n
+        k["ui32Flags"], k["ui32PDumpFlags"] = u(o), u(o + 4)
+        k["trailing_words"] = [u(x) for x in range(o + 8, len(kb), 4)]
+        return k
+
+    def br_sgx_submittransfer(self, inb, out):
+        # IN: flags, hDevCookie, PVRSRV_TRANSFER_SGX_KICK; the kernel (SGXSubmitTransferKM) fills the
+        # shared part of the transfer command in the CCB: sync snapshot, then the command is queued.
+        kb = inb[8:]
+        k = self.decode_transfer_kick(kb)
+        ccb = self.get(k["hCCBMemInfo"], "meminfo")
+        off = k["ui32SharedCmdCCBOffset"]
+        if off + self.TQ_SHARED_SIZE > ccb.size:
+            raise ProcError("invalid transfer CCB offset 0x%x" % off)
+        if k["ui32NumSrcSync"] > self.TQ_MAX_SYNC or k["ui32NumDstSync"] > self.TQ_MAX_SYNC:
+            raise ProcError("transfer kick with %d/%d sync objects" % (k["ui32NumSrcSync"], k["ui32NumDstSync"]))
+        entry = self.current_call
+        xfer = {"index": len(self.transfers), "bridge_call": entry["seq"], "fields": k, "ccb_alloc": ccb.index,
+                "ccb_offset": off, "raw_hex": kb.hex()}
+        self.transfers.append(xfer)
+        shared = bytearray(self.read(ccb)[off:off + self.TQ_SHARED_SIZE])
+        p32 = lambda o, v: struct.pack_into("<I", shared, o, v & 0xFFFFFFFF)
+        sy = {}
+        for key, base, nm in (("hTASyncInfo", 0xC8, "ta"), ("h3DSyncInfo", 0xD8, "3d")):
+            if k[key]:
+                s = self.sync_alloc(k[key])
+                p32(base, self.take_write(s))
+                p32(base + 4, s.devva + self.SYNC_WRITE_COMPLETE)
+                p32(base + 8, self.sget(s, self.SYNC_READ_PENDING))
+                p32(base + 12, s.devva + self.SYNC_READ_COMPLETE)
+                sy[nm] = s.index
+            else:
+                p32(base + 4, 0)
+                p32(base + 12, 0)
+        # the same sync object (same write-complete address) is used once per direction
+        def unique(handles, n):
+            seen, res = set(), []
+            for h in handles[:n]:
+                s = self.sync_alloc(h)
+                if s.devva not in seen:
+                    seen.add(s.devva)
+                    res.append(s)
+            return res
+        srcs = unique(k["ahSrcSyncInfo"], k["ui32NumSrcSync"])
+        dsts = unique(k["ahDstSyncInfo"], k["ui32NumDstSync"])
+        if not k["ui32Flags"] & self.TQFLAGS_KEEPPENDING:
+            for i, s in enumerate(srcs):
+                b = 0x04 + 24 * i
+                p32(b + 0, self.sget(s, self.SYNC_READ_PENDING))
+                p32(b + 4, s.devva + self.SYNC_READ_COMPLETE)
+                p32(b + 8, self.sget(s, self.SYNC_WRITE_PENDING))
+                p32(b + 12, s.devva + self.SYNC_WRITE_COMPLETE)
+            for i, s in enumerate(dsts):
+                b = 0x98 + 24 * i
+                p32(b + 0, self.sget(s, self.SYNC_READ_PENDING))
+                p32(b + 4, s.devva + self.SYNC_READ_COMPLETE)
+                p32(b + 8, self.sget(s, self.SYNC_WRITE_PENDING))
+                p32(b + 12, s.devva + self.SYNC_WRITE_COMPLETE)
+                p32(b + 16, self.sget(s, self.SYNC_READ2_PENDING))
+                p32(b + 20, s.devva + self.SYNC_READ2_COMPLETE)
+            for s in srcs:
+                self.take_read(s)
+            for s in dsts:
+                self.take_write(s)
+        p32(0x00, len(srcs))
+        p32(0x94, len(dsts))
+        self.write(ccb, off, bytes(shared))
+        xfer["sync_objects"] = {"named": sy, "src": [s.index for s in srcs], "dst": [s.index for s in dsts]}
+        xfer["command"] = {"ui32ServiceAddress": self.init["devinitpart2"]["aui32HostKickAddr"]["TRANSFER"],
+                           "ui32Data": [0, k["sHWTransferContextDevVAddr"]]}
+        self.current_call["decoded"] = {"transfer": xfer["index"]}
+        xfer["pre"] = self.snapshot("pre", "xfer%02d" % xfer["index"])
+        self.complete_transfer(xfer, bytes(shared))
+        xfer["post"] = self.snapshot("post", "xfer%02d" % xfer["index"])
+        self.event_waits = 0
+        struct.pack_into("<I", out, 0, PVRSRV_OK)
+
+    def complete_transfer(self, xfer, shared):
+        """What the microkernel does when the blit has run: the status values the library put in the
+        command are stored, and every sync object is brought up to date.  The pixels are not written."""
+        done = {"status_writes": [], "sync_completions": []}
+        n = struct.unpack_from("<I", shared, 0xE8)[0]
+        if n > 4:
+            raise ProcError("transfer command with %d status values" % n)
+        for i in range(n):
+            addr, val = struct.unpack_from("<2I", shared, 0xEC + 8 * i)
+            self.w32gpu(addr, val)
+            done["status_writes"].append([addr, val])
+        self.complete_syncs(done)
+        xfer["completion"] = done
+
     # --- DOKICK -------------------------------------------------------------------------
     KICK_SIZE = 0x298
     SHARED_SIZE = 0x468
@@ -613,15 +752,7 @@ class FakeKernel:
         for st in k["TAStatus"] + k["3DStatus"]:
             self.w32gpu(st["addr"], st["value"])
             done["status_writes"].append([st["addr"], st["value"]])
-        for a in self.live:
-            if a.tag == "sync":
-                for p, c in ((self.SYNC_WRITE_PENDING, self.SYNC_WRITE_COMPLETE),
-                             (self.SYNC_READ_PENDING, self.SYNC_READ_COMPLETE),
-                             (self.SYNC_READ2_PENDING, self.SYNC_READ2_COMPLETE)):
-                    v = self.sget(a, p)
-                    if self.sget(a, c) != v:
-                        self.sput(a, c, v)
-                        done["sync_completions"].append([a.index, c, v])
+        self.complete_syncs(done)
         if k["bLastInScene"]:
             cmd = bytes.fromhex(kick["cmdta_command_hex"])
             details, synclist = struct.unpack_from("<2I", cmd, 0x4C)
@@ -641,6 +772,17 @@ class FakeKernel:
         done["ccb_read"] = [ctl_addr + 4, wr]
         kick["completion"] = done
 
+    def complete_syncs(self, done):
+        for a in self.live:
+            if a.tag == "sync":
+                for p, c in ((self.SYNC_WRITE_PENDING, self.SYNC_WRITE_COMPLETE),
+                             (self.SYNC_READ_PENDING, self.SYNC_READ_COMPLETE),
+                             (self.SYNC_READ2_PENDING, self.SYNC_READ2_COMPLETE)):
+                    v = self.sget(a, p)
+                    if self.sget(a, c) != v:
+                        self.sput(a, c, v)
+                        done["sync_completions"].append([a.index, c, v])
+
     def read_gpu(self, devva, n):
         a = self.find(devva)
         if a is None:
@@ -649,7 +791,7 @@ class FakeKernel:
         return self.read(a)[o:o + n]
 
     # --- snapshots ----------------------------------------------------------------------
-    def snapshot(self, tag):
+    def snapshot(self, tag, name=None):
         if self.snapshot_hook is None:
             return None
-        return self.snapshot_hook(tag, self)
+        return self.snapshot_hook(tag, self, name)

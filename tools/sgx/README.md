@@ -129,6 +129,13 @@ $PY tools/sgx/check_draw.py tri tri2 tri_moved tri_color tri_blend tri_indexed t
 $PY tools/sgx/diffrec.py build/sgx/draw/tri build/sgx/draw/tri_moved                # same kick, two recordings
 $PY tools/sgx/diffrec.py build/sgx/draw/tri2 build/sgx/draw/tri2 --kick 0 --kick-b 1
 $PY tools/sgx/diffrec.py build/sgx/draw/tri --kick 0                                # pre against post
+# textured scenes (they create the gralloc transfer context, see "Transfer path")
+$PY tools/sgx/glrec.py tri_tq quad_tex quad_tex_read quad_tex100 quad_tex320 quad_tex320_read quad_tex_moved \
+    quad_tex_draw2 quad_alpha quad_alpha2 quad_a8 quad_a8_x quad_a8_y quad_a8_z quad_linear
+$PY tools/sgx/check_draw.py quad_tex quad_tex320 quad_alpha
+$PY tools/sgx/diffrec.py build/sgx/draw/quad_tex build/sgx/draw/quad_tex320 --hide-tq   # GL context only
+$PY tools/sgx/diffrec.py build/sgx/draw/quad_tex build/sgx/draw/quad_tex100 --xfer 0   # transfer 0 instead of kick 0
+$PY tools/sgx/texprobe.py                                                          # texture size/layout table
 ```
 
 Paths are relative to `~/Downloads/AsteroidOS`. Options of `glrec.py`: `--out DIR`, `--shift N`
@@ -140,9 +147,32 @@ vertex positions), `tri_color` (other clear colour), `tri_blend` (GL_ONE, GL_ONE
 `tri_indexed` (glDrawElements, 3 unsigned shorts), `tri_read` (`tri` plus glReadPixels, which makes
 the end-of-scene kick), `tri_swap` (`tri` plus eglSwapBuffers; produces no extra kick on a
 pbuffer), `tri_read2` (two frames, each ended by glReadPixels: two whole scenes, four kicks),
-`tri_two` (`tri_read` with two triangles in one draw). `quad_tex` does not run; see Known gaps.
+`tri_two` (`tri_read` with two triangles in one draw).
 `--general-gap N` starts the General heap N bytes later, which moves the render target (its first
 allocation) and every other General buffer; the output directory gets `_gap` appended.
+
+Textured scenarios (320x320 pbuffer, clear, one quad of two triangles from a VBO with `p` and `t`
+attributes, GL_ONE / GL_ONE_MINUS_SRC_ALPHA blending, nearest filtering, CLAMP_TO_EDGE, `glFinish`; they run
+with the gralloc transfer context, see "Transfer path"). The vertex shader is
+`u=t; gl_Position=vec4(p,0.,1.);`.
+
+| Scenario | Texture | Fragment shader |
+|---|---|---|
+| `tri_tq` | none; `tri` with the transfer context created, the baseline for the rest | `tri`'s |
+| `quad_tex` | 32x32 RGBA | `texture2D(s,u)` |
+| `quad_tex_read` | as `quad_tex`, plus glReadPixels (end-of-scene kick) | |
+| `quad_tex100` | 100x100 RGBA (not in the request: an NPOT size that is not a multiple of 32) | |
+| `quad_tex320` | 320x320 RGBA (NPOT, the firmware's layer size) | |
+| `quad_tex320_read` | as `quad_tex320`, plus glReadPixels | |
+| `quad_tex_moved` | 320x320; after the first draw glTexImage2D uploads other contents into the same texture object and the quad is drawn again (the texture gets a new address) | |
+| `quad_tex_obj` | as `quad_tex_moved`, but the second contents go into a second texture object (same result; not recorded by default) | |
+| `quad_tex_draw2` | 320x320, second draw without any change (baseline for `quad_tex_moved`) | |
+| `quad_alpha`, `quad_alpha2` | 320x320 | `texture2D(s,u)*a`, `uniform lowp float a` = 0.5 / 0.25 |
+| `quad_a8` | 32x32 GL_ALPHA | `c*texture2D(s,u).a`, `uniform lowp vec4 c` = (0.25, 0.5, 0.75, 1) |
+| `quad_a8_x`, `_y`, `_z` | as `quad_a8` | c = (0.75, 0.5, 0.25, 1), (0.25, 0.5, 0.75, 0.5), (1, 1, 1, 1): they show where c lives |
+| `quad_linear` | 320x320, GL_LINEAR min and mag | `texture2D(s,u)` |
+
+All of them end with glGetError 0 and eglGetError 0x3000 (EGL_SUCCESS).
 
 ## Output of one scenario (`build/sgx/draw/<name>`)
 
@@ -160,6 +190,13 @@ allocation) and every other General buffer; the output directory gets `_gap` app
   does it, READY last) and before completion; "post" after the harness's completion step. Init
   allocations are not copied; `manifest.json` points at `../../init`. Kernel allocations in
   KernelData and CacheCoherent continue after the last init allocation of those heaps.
+- Textured scenarios only: `xferNN_pre/`, `xferNN_post/` (the same snapshot as for a kick, taken at each
+  SUBMITTRANSFER: "pre" after the kernel wrote the shared header, "post" after the fake completion),
+  `manifest.json` keys `transfers` (all fields of the 84-byte `PVRSRV_TRANSFER_SGX_KICK`, the CCB offset,
+  sync objects, the command words `{service address, 0, HW transfer context address}`, completion writes)
+  and `hw_transfer_contexts`, and a `group: "transfer-context"` entry on every allocation that the
+  transfer context's creation made (`diffrec.py --hide-tq` leaves them out). Transfers are not in `kicks`:
+  kick numbers keep their meaning.
 - `calls.txt`: every system call (with the call site), every bridge ioctl, every call into a harness
   function (`hw_get_module`, gralloc, WSEGL) in order.
 - `shaders/`: runs of non-zero data in the USSE and PDS heaps after the last kick (one file per run)
@@ -222,7 +259,8 @@ mem info are the requested sizes.
   +0xec preferred format). The capability list is copied from the vendor library; one configuration
   with pixel-format value 2 is returned, which gives the RGBA8888 GLES2 configurations.
 - gralloc: `hw_get_module` is intercepted and returns a harness module whose `open("gpu0")`
-  succeeds; the transfer-context query (+0x10c) stores NULL. Every other slot aborts.
+  succeeds; the transfer-context query (+0x10c) stores NULL (untextured scenarios) or a real transfer
+  context (textured ones, see "Transfer path"). Every other slot aborts.
 - Unicorn 2.1.4 on Apple silicon crashes on three NEON forms (64-bit D-register `vshl`, `vqadd`,
   `vqsub`). `armproc.NeonFix` finds them by pattern in executable file mappings and executes them
   in Python through a code hook on each address. No guest instruction is changed.
@@ -232,23 +270,72 @@ mem info are the requested sizes.
   Fresh device memory is zero; `never_written_by_user_space_at_last_kick` in the manifest lists the
   ranges that differ when it is filled with 0xA5 instead.
 
+## Transfer path (textures)
+
+glTexImage2D does not write the texture with the CPU. The GLES driver copies the pixels (tightly packed
+rows) into a staging buffer that belongs to a *transfer context* and queues one blit per 0x20000 staging
+bytes with `SGXQueueTransfer`; the blit (a 3D-core job that samples the staging buffer as a strided texture and
+renders into the texture in its final layout) copies them into the texture's memory. The transfer context is
+not the GL driver's: EGL gets it from the Android gralloc module (`gralloc_module+0x10c`, called from EGL's
+services init), and `gralloc.omap3.so` creates it at load with libsrv_um's `SGXCreateTransferContext`.
+A NULL context makes `SGXQueueTransfer` abort ("invalid parameters"), a zeroed block makes it use a null mutex.
+
+What the lab does, for scenarios named `quad_*` and `tri_tq` (`glrec.TRANSFER_SCENARIOS`):
+
+- The synthetic gralloc's +0x10c callback does, on first call and with libsrv_um's own functions called from
+  the callback (`glenv.call_nested`: a nested emulator call with registers and stack saved), what
+  `gralloc.omap3.so` does around its call (read from the watch's module): `PVRSRVConnect` (a second
+  connection), `PVRSRVEnumerateDevices`, `PVRSRVAcquireDeviceData`, `PVRSRVCreateDeviceMemContext`,
+  `SGXGetClientInfo`, `PVRSRVGetMiscInfo` (state request 8, the global event object), then
+  `SGXCreateTransferContext(&devdata, 0x20000, {hDevMemContext, hOSEvent}, &context)`. The returned pointer
+  is stored for EGL. The module's other work (PVR2D device context, framebuffer device) is not done.
+  It builds, in the lab: the transfer CCB (66740 bytes, KernelData), the 128 KiB staging buffer plus
+  4 bytes (General, 0x1000), a 124 KiB ISP/vertex area (General), the blit USSE programs (about 60 small
+  allocations and one 16 KiB block in PixelShaderUSSE), the blit PDS programs, status words and sync
+  objects: 67 allocations, 352,900 bytes, and one `SGX_REGISTER_HW_TRANSFER_CONTEXT`. They are created
+  before the GL context, so the GL context's allocations start later in General (+0x40000), PixelShaderUSSE
+  (+0x3a000) and PDSPixelCodeData (+0x8000) than in `tri`; `tri_tq` is `tri` under the same conditions.
+- The kernel gives a process one memory context (`BM_CreateContext` finds the process's existing one and
+  takes a reference), so the second connection's `CreateDeviceMemContext` returns the same context; the
+  fake does the same and the transfer context's page-directory word is the render context's fake.
+- Fake kernel, `pvrkm.py`: `REGISTER_HW_TRANSFER_CONTEXT` (111) allocates the 228-byte context in KernelData
+  (alignment 32, read|write|no sync|EDM|cache consistent), copies the user image and patches the page-directory
+  address at the given offset as `SGXRegisterHWTransferContextKM` does; `UNREGISTER` (112) succeeds;
+  `SUBMITTRANSFER` (98) writes the shared header as `SGXSubmitTransferKM` does (TA/3D sync snapshot, source
+  and destination sync snapshots with duplicates removed unless KEEPPENDING, take read/write ops, counts), snapshots
+  `xferNN_pre`, completes and snapshots `xferNN_post`. The bridge numbering in `BRIDGE_NAMES` had 111 as
+  `SCHEDULE_PROCESS_QUEUES`; the kernel header has it at 113 (nothing called it).
+- Completion of a transfer stores the status values the library placed in the command (`ui32NumStatusVals`
+  at shared header +0xe8, entries at +0xec) and sets every sync object's complete counters to its pending
+  counters. It ignores `NOSYNCUPDATE`, does not execute the blit (texture memory stays zero; the pixels are
+  visible only in the staging buffer) and does not advance the transfer CCB's read offset (its place in the HW
+  transfer context is not defined by the kernel headers; one transfer uses 0x1c0 bytes of the 66740-byte CCB
+  and no scenario comes near filling it). What the GL driver reads back is only the sync counters: an upload
+  of more than 0x20000 bytes is sent in chunks through the one staging buffer, and the driver waits (event
+  waits) for a chunk to complete before it refills the buffer; with completion deferred, `quad_tex320` stops at
+  that wait (100 event waits, then the driver's timeout diagnostics call gralloc +0xd8), while a single-chunk
+  upload (`quad_tex`) draws and kicks unchanged. Texture pixels are never read, so the missing blit changes no
+  recorded word. The TA kick has no source sync for the texture and no TQ sync in either case.
+- `check_draw.py` also compares transfers. For the textured scenarios it notes (does not fail on) words
+  in the PDS programs that differ between the normal and the shifted run by exactly the shift: CPU
+  pointers (a heap address at PDS vertex ring +0x144 in `quad_tex*`, +0x134 in the PDS fragment ring in `quad_alpha*`, a
+  library address at +0x120/+0x124 in `quad_a8`) the driver copied into the programs; they are
+  not GPU addresses and differ on a real device from run to run.
+
 ## Known gaps
 
-- `quad_tex` does not run. glTexImage2D/draw queues a texture upload through `SGXQueueTransfer`
-  (libsrv_um, `sgxtransfer_queue.c`), which needs the transfer context the gralloc module returns at
-  +0x10c. The real module creates it on its own services connection (own memory context) when
-  EGL opens it. A NULL context makes the library abort ("SGXQueueTransfer: invalid parameters"); a
-  zeroed block makes it dereference a null mutex. A real one needs the gralloc side of the stack
-  (a second connection and memory context, `REGISTER_HW_TRANSFER_CONTEXT`, `SUBMITTRANSFER`
-  completion), which is not implemented.
 - `glFinish` on a pbuffer submits the TA work but does not end the scene (`bLastInScene` 0); the
   3D-start kick appears only with glReadPixels (`tri_read`). No eglSwapBuffers kick exists for
   pbuffers. Scene termination with preserved background, PB growth and out-of-space are not
   recorded.
 - The fake completion does not model the microkernel. Values written by it are listed under
   `completion` in each kick; do not treat them as device behaviour.
-- Texture and FBO paths, instanced draws, uniform-only changes and a target-address-only change
-  are not recorded.
+- FBO paths, instanced draws, mipmaps, texture formats other than RGBA8888 and ALPHA8, wrap modes
+  other than CLAMP_TO_EDGE and a target-address-only change are not recorded. Texture memory is never
+  filled (the blit is not executed): the layout of the pixels in memory is read from the allocation
+  size, the texture state and the transfer's destination description, not from data.
+- The transfer context is created through the CPU-side library calls of `gralloc.omap3.so` only as far as
+  the transfer context needs; the module's remaining initialisation (PVR2D, framebuffer) is not done.
 - The allocation call sites in the manifest are the services return address (exact) and the nearest
   plausible library return address on the stack (heuristic).
 - `check_init.py` reports one FAIL (alloc #6, microkernel trace buffer: it expects alignment 0x1000,
