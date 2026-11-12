@@ -6,8 +6,12 @@
  * day changes; nothing is counted or saved before steps_init has loaded
  * them. Each day that ends goes into a ring of the last STEPS_DAYS, and
  * the days the watch missed, off or with the clock set ahead, count as
- * none. */
+ * none. A hub that measures the distance and calories from the wearer's
+ * profile has them kept the same way, today's alone; otherwise they are
+ * worked out from the steps. */
+#include <string.h>
 #include "asteroid.h"
+#include "fitness.h"
 #include "hub.h"
 #include "steps.h"
 #include "storage/storage.h"
@@ -15,26 +19,34 @@
 #define KV_STEPS	"steps"
 #define KV_DAYS		"steps.days"
 
+/* As the steps were first saved, then the hub's distance and calories. */
+#define SAVED_V1	12
+
 static struct saved {
 	uint32_t total, day, day_start;
+	uint32_t measured[2], measured_start[2];
 } saved, now_state;
 /* steps[d % STEPS_DAYS] is day d, for the STEPS_DAYS days up to last. */
 static struct days {
 	uint32_t last;
 	uint32_t steps[STEPS_DAYS];
 } days;
-static uint32_t base = HUB_NONE;
+static uint32_t base = HUB_NONE, measured_base[2];
+static bool measured_based;
 static bool ready, changed;
 
 void steps_init(void)
 {
-	if (kv_get(KV_STEPS, &saved, sizeof saved) != (int)sizeof saved)
-		saved = (struct saved){ 0, rtc_read() / 86400, 0 };
+	int n = kv_get(KV_STEPS, &saved, sizeof saved);
+	if (n == SAVED_V1)
+		memset(saved.measured, 0, sizeof saved - SAVED_V1);
+	else if (n != (int)sizeof saved)
+		saved = (struct saved){ .day = rtc_read() / 86400 };
 	now_state = saved;
 	if (kv_get(KV_DAYS, &days, sizeof days) != (int)sizeof days)
 		days = (struct days){ .last = saved.day - 1 };
 	base = HUB_NONE;
-	changed = false;
+	measured_based = changed = false;
 	ready = true;
 	log_printf("steps: %lu today, %lu in total\n", saved.total - saved.day_start, saved.total);
 }
@@ -53,6 +65,8 @@ static void end_day(uint32_t day)
 	}
 	now_state.day = day;
 	now_state.day_start = now_state.total;
+	for (unsigned i = 0; i < 2; i++)
+		now_state.measured_start[i] = now_state.measured[i];
 	steps_save();
 }
 
@@ -60,7 +74,22 @@ bool steps_poll(void)
 {
 	if (!ready)
 		return false;
-	uint32_t count = hub_steps(), day = rtc_read() / 86400, today = steps_today();
+	uint32_t count = hub_steps(), day = rtc_read() / 86400, today = steps_today(), m[2];
+	struct activity before = steps_activity_today();
+	hub_profile(&(struct hub_profile){ (uint8_t)setting_get(SETTING_AGE), (uint8_t)setting_get(SETTING_HEIGHT),
+					    (uint8_t)setting_get(SETTING_WEIGHT), setting_get(SETTING_MALE) });
+	if (hub_activity(m)) {
+		if (!measured_based) {
+			for (unsigned i = 0; i < 2; i++)
+				measured_base[i] = saved.measured[i];
+			measured_based = true;
+		}
+		for (unsigned i = 0; i < 2; i++)
+			if (measured_base[i] + m[i] != now_state.measured[i]) {
+				now_state.measured[i] = measured_base[i] + m[i];
+				changed = true;
+			}
+	}
 	if (count != HUB_NONE) {
 		if (base == HUB_NONE)
 			base = saved.total;
@@ -73,7 +102,8 @@ bool steps_poll(void)
 		end_day(day);
 		return true;
 	}
-	return steps_today() != today;
+	struct activity after = steps_activity_today();
+	return steps_today() != today || after.distance_m != before.distance_m || after.kcal != before.kcal;
 }
 
 void steps_save(void)
@@ -91,9 +121,28 @@ uint32_t steps_today(void)
 	return now_state.total - now_state.day_start;
 }
 
-uint32_t steps_total(void)
+struct activity steps_activity(void)
 {
-	return now_state.total;
+	return (struct activity){ now_state.total, now_state.measured[0], now_state.measured[1] };
+}
+
+struct activity steps_since(const struct activity *from)
+{
+	struct activity a = steps_activity();
+	a.steps = a.steps > from->steps ? a.steps - from->steps : 0;
+	if (hub_measures_activity()) {
+		a.distance_m = a.distance_m > from->distance_m ? a.distance_m - from->distance_m : 0;
+		a.kcal = a.kcal > from->kcal ? a.kcal - from->kcal : 0;
+	} else {
+		a.distance_m = fitness_distance_m(a.steps, setting_get(SETTING_HEIGHT));
+		a.kcal = fitness_kcal(a.steps, setting_get(SETTING_WEIGHT));
+	}
+	return a;
+}
+
+struct activity steps_activity_today(void)
+{
+	return steps_since(&(struct activity){ now_state.day_start, now_state.measured_start[0], now_state.measured_start[1] });
 }
 
 uint32_t steps_day(unsigned ago)

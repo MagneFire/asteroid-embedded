@@ -183,7 +183,8 @@ struct ui_settings {
 	bool bluetooth, vibration, aod, clock12;
 	uint8_t tilt;
 	bool tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
-	uint8_t height_cm, weight_kg, hr_interval;
+	uint8_t height_cm, weight_kg, hr_interval, age;
+	bool male;
 };
 
 enum ui_event_kind {
@@ -216,7 +217,7 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 17 &&
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 19 &&
 	       sizeof(struct ui_tile) == 6 && sizeof(struct ui_agenda) == 30, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 
@@ -224,8 +225,10 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 	     uint32_t height);
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
 		  uint32_t year, uint32_t rtc);
-/* The watch's codename and whether it has a heart rate sensor. */
-void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in);
+/* The watch's codename and whether it has a heart rate sensor, and a hub that works out the
+ * distance and calories from the wearer's age and sex as well. */
+void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in,
+		  bool profile);
 /* The lines at the bottom of the picture the panel does not show. */
 void ui_set_chin(uint32_t px);
 void ui_set_connected(bool connected, bool bonded);

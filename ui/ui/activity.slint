@@ -382,9 +382,47 @@ component BodyPage {
     }
 }
 
+// Age and sex, for a hub that works the distance and calories out with them; it knows only these
+// two sexes.
+component ProfilePage {
+    RowLabel {
+        y: 6 * Theme.unit;
+        text: "Age";
+    }
+
+    IntSelector {
+        y: 18 * Theme.unit;
+        value: Face.age;
+        min: 10;
+        max: 99;
+        step: 1;
+        unit: " years";
+        down => {
+            Face.setting-set(Codes.setting-age, Face.age - 1);
+        }
+        up => {
+            Face.setting-set(Codes.setting-age, Face.age + 1);
+        }
+        set(v) => {
+            Face.setting-set(Codes.setting-age, v);
+        }
+    }
+
+    LabeledSwitch {
+        y: 50 * Theme.unit;
+        text: "Sex";
+        value: Face.male ? "Male" : "Female";
+        clicked => {
+            Face.setting-toggled(Codes.setting-male);
+        }
+    }
+}
+
 export component ActivityScreen {
-    // Page kinds: 0 today, 1 week, 2 heart rate, 3 workout, 4 goal, 5 body.
-    property <[int]> pages: Face.has-heart-rate ? [0, 1, 2, 3, 4, 5] : [0, 1, 3, 4, 5];
+    // Page kinds: 0 today, 1 week, 2 heart rate, 3 workout, 4 goal, 5 body, 6 age and sex.
+    property <[int]> pages: Face.has-heart-rate
+        ? (Face.has-profile ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5])
+        : (Face.has-profile ? [0, 1, 3, 4, 5, 6] : [0, 1, 3, 4, 5]);
     property <length> scroll: pager.index * 100 * Theme.unit - pager.drag;
     animate scroll {
         duration: pager.dragging ? 0ms : pager.anim;
@@ -428,6 +466,10 @@ export component ActivityScreen {
             height: 100%;
         }
         if kind == 5: BodyPage {
+            width: 100%;
+            height: 100%;
+        }
+        if kind == 6: ProfilePage {
             width: 100%;
             height: 100%;
         }

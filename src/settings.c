@@ -32,6 +32,8 @@ static const struct {
 	[SETTING_HEIGHT] = { "body.height", 170 },
 	[SETTING_WEIGHT] = { "body.weight", 70 },
 	[SETTING_HR_INTERVAL] = { "hr.interval", 0 },
+	[SETTING_AGE] = { "body.age", 30 },
+	[SETTING_MALE] = { "body.male", 0 },
 };
 
 #define FLUSH_MS 2000

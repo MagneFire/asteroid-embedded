@@ -218,9 +218,9 @@ $(BUILD)/test/events_test: tests/events_test.c src/events.c $(wildcard tests/*.h
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/events.c -o $@
 
-$(BUILD)/test/steps_test: tests/steps_test.c src/sensors/steps.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/steps_test: tests/steps_test.c src/sensors/steps.c src/fitness.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/steps.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/steps.c src/fitness.c -o $@
 
 $(BUILD)/test/fitness_test: tests/fitness_test.c src/fitness.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)

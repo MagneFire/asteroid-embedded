@@ -117,6 +117,8 @@ export global Face {
     in-out property <int> hr-interval;
     in-out property <int> height-cm: 170;
     in-out property <int> weight-kg: 70;
+    in-out property <int> age: 30;
+    in-out property <bool> male;
     in-out property <[int]> activity-days: [0, 0, 0, 0, 0, 0, 0];
     // Whether the Flashlight app's light is on, read by the firmware for the brightness.
     in-out property <bool> flashlight-on: true;
@@ -163,12 +165,14 @@ export global Face {
     in-out property <int> notification-id;
     in-out property <string> notification-icon;
     // The watch's codename, whether it has a heart rate sensor, whether its screen is round,
-    // whether it has a light sensor and whether its panel can burn in, from the firmware.
+    // whether it has a light sensor, whether its panel can burn in, and whether its hub works out
+    // the distance and calories from the wearer's age and sex as well, from the firmware.
     in property <string> board;
     in property <bool> has-heart-rate: true;
     in property <bool> round-screen: true;
     in property <bool> has-light-sensor;
     in property <bool> has-burn-in: true;
+    in property <bool> has-profile: true;
     // The lines at the bottom the panel cuts off, AsteroidOS's flat tire.
     in property <length> chin;
     in-out property <string> notification-app;

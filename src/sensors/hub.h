@@ -9,6 +9,15 @@ int hub_send(const uint8_t *p, unsigned n);
 #define HUB_NONE	0xffffffffu
 void hub_set_time(void);
 uint32_t hub_steps(void);
+/* What the hub makes of the steps, where it measures that itself from
+ * the wearer's profile: distance in m and kcal since boot. */
+struct hub_profile {
+	uint8_t age, height_cm, weight_kg;
+	bool male;
+};
+bool hub_measures_activity(void);
+bool hub_activity(uint32_t v[2]);
+void hub_profile(const struct hub_profile *p);
 void hub_heart_rate_on(bool on);
 uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);
 bool hub_tilted(void);

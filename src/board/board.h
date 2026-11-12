@@ -51,12 +51,16 @@ struct touch_driver {
 	uint32_t (*next_ms)(void);
 };
 
+struct hub_profile;
+
 struct hub_driver {
 	bool (*init)(void);
 	void (*poll)(void);
 	int (*send)(const uint8_t *p, unsigned n);
 	void (*set_time)(void);
 	uint32_t (*steps)(void);
+	bool (*activity)(uint32_t v[2]);
+	void (*profile)(const struct hub_profile *p);
 	void (*heart_rate_on)(bool on);
 	uint32_t (*heart_rate)(uint8_t *status, unsigned *readings);
 	bool (*tilted)(void);

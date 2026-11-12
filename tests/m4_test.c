@@ -53,8 +53,9 @@ int main(void)
 	CHECK(m4_u32(le) == 0x12345678 && le[0] == 0x78);
 
 	/* The pedometer block starts at activity; the count sits two bytes in. */
-	uint8_t block[M4_PEDOMETER_BLOCK_SIZE] = { 1, 0, 0x78, 0x56, 0x34, 0x12 };
+	uint8_t block[M4_PEDOMETER_BLOCK_SIZE] = { 1, 0, 0x78, 0x56, 0x34, 0x12, [14] = 0x21, 0x43, 0x65, 0x07 };
 	CHECK(m4_block_steps(block) == 0x12345678);
+	CHECK(m4_block_distance(block) == 0x07654321);
 
 	uint8_t magic[4] = { 0xef, 0xbe, 0xad, 0xde }, healthy[4] = { 0xff, 0xff, 0xff, 0xff }, zeros[4] = { 0 };
 	CHECK(m4_panicked(magic));

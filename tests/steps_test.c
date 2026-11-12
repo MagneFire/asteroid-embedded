@@ -1,6 +1,7 @@
 /* The step history on the host: the hub's count since boot on top of the
  * saved total, the day's end into the ring, days missed, the ring
- * wrapping, a reboot, and the clock set back. */
+ * wrapping, a reboot, and the clock set back; then the distance and
+ * calories, worked out from the steps or measured by the hub. */
 #include <stdio.h>
 #include <string.h>
 #include "asteroid.h"
@@ -18,7 +19,9 @@ static struct {
 	bool used;
 } kvs[4];
 static unsigned kv_writes;
-static uint32_t fake_rtc, fake_steps = HUB_NONE;
+static uint32_t fake_rtc, fake_steps = HUB_NONE, fake_measured[2];
+static bool measures, measured_now;
+static struct hub_profile profile;
 
 int kv_get(const char *key, void *buf, unsigned size)
 {
@@ -44,6 +47,20 @@ int kv_set(const char *key, const void *val, unsigned len)
 }
 uint32_t rtc_read(void) { return fake_rtc; }
 uint32_t hub_steps(void) { return fake_steps; }
+bool hub_measures_activity(void) { return measures; }
+bool hub_activity(uint32_t v[2])
+{
+	if (!measured_now)
+		return false;
+	v[0] = fake_measured[0];
+	v[1] = fake_measured[1];
+	return true;
+}
+void hub_profile(const struct hub_profile *p) { profile = *p; }
+int setting_get(enum setting s)
+{
+	return s == SETTING_HEIGHT ? 180 : s == SETTING_WEIGHT ? 80 : s == SETTING_AGE ? 41 : s == SETTING_MALE ? 1 : 0;
+}
 void log_printf(const char *fmt, ...) {}
 
 #define DAY(d)	((uint32_t)(d) * 86400)
@@ -138,6 +155,46 @@ int main(void)
 	CHECK(steps_next_ms() == 31000);
 	fake_rtc = DAY(20000) + 3600;
 	CHECK(steps_next_ms() == 3600000);
+
+	/* Worked out from the steps: 180 cm, 80 kg. */
+	at(today + 1, 400, count + 1095);
+	struct activity a = steps_activity_today();
+	CHECK(a.steps == 1000 && a.distance_m == 747 && a.kcal == 40);
+	CHECK(profile.age == 41 && profile.male && profile.height_cm == 180 && profile.weight_kg == 80);
+
+	/* Measured by the hub: from its first reading on, across a reboot
+	 * and into the next day. */
+	measures = true;
+	struct activity from = steps_activity();
+	measured_now = true;
+	fake_measured[0] = 300;
+	fake_measured[1] = 20;
+	CHECK(steps_poll());
+	a = steps_since(&from);
+	CHECK(a.distance_m == 300 && a.kcal == 20);
+	CHECK(steps_activity_today().distance_m == 300);
+	fake_measured[0] = 500;
+	CHECK(steps_poll());
+	CHECK(!steps_poll());
+	steps_save();
+	steps_init();
+	fake_measured[0] = 0;
+	fake_measured[1] = 0;
+	at(today + 1, 500, 0);
+	CHECK(steps_activity_today().distance_m == 500 && steps_activity_today().kcal == 20);
+	fake_measured[0] = 50;
+	at(today + 2, 10, 5);
+	a = steps_activity_today();
+	CHECK(a.steps == 0 && a.distance_m == 0 && a.kcal == 0);
+	CHECK(steps_since(&from).distance_m == 550);
+
+	/* What the first version saved: the steps alone. */
+	measured_now = false;
+	memset(kvs, 0, sizeof kvs);
+	uint32_t v1[3] = { 777, today + 2, 700 };
+	kv_set("steps", v1, sizeof v1);
+	steps_init();
+	CHECK(steps_today() == 77 && steps_activity_today().distance_m == 0);
 
 	printf(failures ? "steps_test: %d failures\n" : "steps_test: ok\n", failures);
 	return failures != 0;

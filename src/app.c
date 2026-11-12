@@ -443,9 +443,9 @@ void app_ui_events(uint32_t now)
 			if (have_hub)
 				steps_poll();
 			if (a)
-				workout_start(rtc_read(), steps_total());
+				workout_start(rtc_read());
 			else
-				workout_stop(rtc_read(), steps_total());
+				workout_stop(rtc_read());
 			present_workout();
 			break;
 		case UI_EVENT_SNOOZE:

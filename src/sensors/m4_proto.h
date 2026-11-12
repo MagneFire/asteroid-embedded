@@ -29,6 +29,7 @@ struct m4_variant {
 	uint8_t mark[M4_MARK_MAX], mark_size;
 	uint8_t general, pedometer, mets, power, gesture;
 	uint8_t settings, light;	/* 0 for a hub without */
+	uint8_t profile;	/* the user settings bank, as settings without the screen */
 	uint8_t accel_x, version_size;
 	bool byte_irqs, drives_reset, keeps_time;
 };
@@ -51,12 +52,18 @@ extern const struct m4_variant m4_smelt, m4_minnow;
 #define M4_LIGHT_RATE		0x02
 #define M4_LIGHT_VALUE		0x04
 #define M4_PEDOMETER_ENABLE	0x00
-/* Activity, equipment type, then the step count: read as one block, so
- * the hub never sees a request for the count itself (see m4_steps). */
+/* Activity, equipment type, the step count, then the distances: read as
+ * one block, so the hub never sees a request for the count itself (see
+ * m4_steps). */
 #define M4_PEDOMETER_BLOCK	0x02
-#define M4_PEDOMETER_BLOCK_SIZE	6
+#define M4_PEDOMETER_BLOCK_SIZE	18
 #define M4_PEDOMETER_STEPS	0x04
+#define M4_PEDOMETER_DISTANCE	0x10
 #define M4_METS_ENABLE		0x00
+#define M4_METS_CALORIES	0x14
+/* Age, gender (1 male), height in cm, weight in kg: one byte each, as the
+ * vendor writes them. */
+#define M4_PROFILE_AGE		0x01
 #define M4_POWER_ENABLE		0x01
 #define M4_POWER_STILL_TIMEOUT	0x02
 #define M4_POWER_STATE		0x08
@@ -91,8 +98,10 @@ uint32_t m4_wake_mask(bool tilt);
  * first up. */
 uint32_t m4_irq_enable(const struct m4_variant *v, bool tilt);
 uint32_t m4_irq_wake(const struct m4_variant *v, uint32_t status);
-/* The step count out of the pedometer block read from M4_PEDOMETER_BLOCK. */
+/* The step count and the distance out of the pedometer block read from
+ * M4_PEDOMETER_BLOCK. */
 uint32_t m4_block_steps(const uint8_t *block);
+uint32_t m4_block_distance(const uint8_t *block);
 /* The answer to the panic probe says the hub has crashed. */
 bool m4_panicked(const uint8_t *reply);
 #endif

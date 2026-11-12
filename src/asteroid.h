@@ -82,6 +82,8 @@ enum setting {
 	SETTING_HEIGHT,
 	SETTING_WEIGHT,
 	SETTING_HR_INTERVAL,
+	SETTING_AGE,
+	SETTING_MALE,
 	SETTINGS
 };
 int setting_get(enum setting s);

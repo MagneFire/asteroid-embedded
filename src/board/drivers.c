@@ -91,6 +91,13 @@ void hub_set_time(void)
 		board->hub->set_time();
 }
 uint32_t hub_steps(void) { return HUB(steps) ? board->hub->steps() : HUB_NONE; }
+bool hub_measures_activity(void) { return HUB(activity); }
+bool hub_activity(uint32_t v[2]) { return HUB(activity) && board->hub->activity(v); }
+void hub_profile(const struct hub_profile *p)
+{
+	if (HUB(profile))
+		board->hub->profile(p);
+}
 void hub_heart_rate_on(bool on)
 {
 	if (HUB(heart_rate_on))

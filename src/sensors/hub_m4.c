@@ -12,7 +12,9 @@
  * A crashed hub raises the wake line with nothing in the status and
  * answers the panic probe with a magic word; it is then started again,
  * as is a hub that keeps failing on the bus. Its step count starts over
- * each time, so what it had counted is carried across. The hub crashes
+ * each time, so what it had counted is carried across, as are the
+ * distance and calories it works out from the wearer's profile, which it
+ * forgets too and is given again after each start. The hub crashes
  * on its own about a second after it finds the watch still (a minute
  * without motion) unless the accelerometer is enabled, which also keeps
  * it from going still at all, so the accelerometer stays enabled and is
@@ -52,6 +54,9 @@
 
 static enum { HUB_OFF, HUB_BOOTING, HUB_READY } state;
 static uint32_t go_t, steps_t, steps, steps_base, restart_t, wake_retry_t;
+static uint32_t activity[2], activity_base[2];
+static bool activity_read, profile_set;
+static struct hub_profile profile = { 30, 170, 70, false };
 static uint16_t version;
 static volatile bool wake_pending;
 static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_wanted, accel_set;
@@ -300,7 +305,7 @@ static void started(void)
 	time_start();
 	reg_write(V->pedometer, M4_PEDOMETER_ENABLE, &on, 1);
 	reg_write(V->mets, M4_METS_ENABLE, &on, 1);
-	tilt_set = false;
+	tilt_set = profile_set = false;
 	write_tilt(time_ms());
 	accel_set = light_on = false;
 	gpio_irq_config(GPIO_WAKE, GPIO_IRQ_LEVEL_HIGH, wake_line);
@@ -310,6 +315,32 @@ static void started(void)
 
 static void write_accel(uint32_t now);
 
+/* The profile, at most once a second after a failure, one register at a
+ * time as the vendor writes it. */
+static void write_profile(uint32_t now)
+{
+	static uint32_t tried_t;
+	uint8_t b[4] = { profile.age, profile.male, profile.height_cm, profile.weight_kg };
+	if (state != HUB_READY || !V->profile || profile_set || now - tried_t < RETRY_MS)
+		return;
+	for (unsigned i = 0; i < 4; i++)
+		if (reg_write(V->profile, (uint8_t)(M4_PROFILE_AGE + i), &b[i], 1)) {
+			tried_t = now;
+			return;
+		}
+	profile_set = true;
+}
+
+static void m4_profile(const struct hub_profile *p)
+{
+	if (p->age != profile.age || p->male != profile.male || p->height_cm != profile.height_cm ||
+	    p->weight_kg != profile.weight_kg) {
+		profile = *p;
+		profile_set = false;
+	}
+	write_profile(time_ms());
+}
+
 static void restart(uint32_t now, const char *why)
 {
 	log_printf("hub: m4 %s, restarting it\n", why);
@@ -318,6 +349,8 @@ static void restart(uint32_t now, const char *why)
 	gpio_irq_enable(GPIO_WAKE, false);
 	wake_pending = wake_retry = false;
 	steps_base = steps;
+	for (unsigned i = 0; i < 2; i++)
+		activity_base[i] = activity[i];
 	state = HUB_OFF;
 	m4_init();
 }
@@ -344,6 +377,7 @@ static void m4_poll(void)
 	if (state == HUB_READY && !tilt_set)
 		write_tilt(now);
 	write_accel(now);
+	write_profile(now);
 	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
 		wake_retry = false;
 		gpio_irq_enable(GPIO_WAKE, true);
@@ -440,10 +474,25 @@ static uint32_t m4_steps(void)
 	uint8_t b[M4_PEDOMETER_BLOCK_SIZE];
 	if (now - steps_t >= STEPS_MS) {
 		steps_t = now;
-		if (!reg_read(V->pedometer, M4_PEDOMETER_BLOCK, b, sizeof b))
+		if (!reg_read(V->pedometer, M4_PEDOMETER_BLOCK, b, sizeof b)) {
 			steps = steps_base + m4_block_steps(b);
+			activity[0] = activity_base[0] + m4_block_distance(b);
+			if (!reg_read(V->mets, M4_METS_CALORIES, b, 4)) {
+				activity[1] = activity_base[1] + m4_u32(b);
+				activity_read = true;
+			}
+		}
 	}
 	return steps;
+}
+
+static bool m4_activity(uint32_t v[2])
+{
+	if (state != HUB_READY || !activity_read)
+		return false;
+	v[0] = activity[0];
+	v[1] = activity[1];
+	return true;
 }
 
 static bool m4_tilted(void)
@@ -482,7 +531,8 @@ static void m4_status(void (*say)(const char *fmt, ...))
 {
 	uint8_t pm[2] = { 0, 0 };
 	uint32_t enable = 0;
-	say("hub: m4 firmware %04x, %s, %lu steps\n", version, state == HUB_READY ? "up" : "not up", steps);
+	say("hub: m4 firmware %04x, %s, %lu steps, %lu m, %lu kcal\n", version, state == HUB_READY ? "up" : "not up",
+	    steps, activity[0], activity[1]);
 	say("hub: %lu wakes, last status %08lx, %lu crashes, %lu restarts, %u fails\n", wakes, last_wake, crashes,
 	    restarts, fails);
 	if (state == HUB_READY && !m4_raw(V->power, M4_POWER_ENABLE, NULL, 0, pm, 1) &&
@@ -533,6 +583,8 @@ const struct hub_driver hub_m4 = {
 	.poll = m4_poll,
 	.set_time = set_time,
 	.steps = m4_steps,
+	.activity = m4_activity,
+	.profile = m4_profile,
 	.tilted = m4_tilted,
 	.tilt_on = m4_tilt_on,
 	.accel_on = m4_accel_on,

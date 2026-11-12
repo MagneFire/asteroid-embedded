@@ -13,7 +13,6 @@
 #include "calc.h"
 #include "game.h"
 #include "agenda.h"
-#include "fitness.h"
 #include "workout.h"
 #include "hrlog.h"
 #include "power.h"
@@ -83,9 +82,9 @@ void present_activity(void)
 	uint32_t days[7];
 	for (unsigned i = 0; i < ARRAY_SIZE(days); i++)
 		days[i] = have_hub ? steps_day(ARRAY_SIZE(days) - 1 - i) : 0;
-	ui_set_activity(days[6], setting_get(SETTING_STEP_GOAL) * STEP_GOAL_UNIT,
-			fitness_distance_m(days[6], setting_get(SETTING_HEIGHT)), fitness_kcal(days[6], setting_get(SETTING_WEIGHT)),
-			days, ARRAY_SIZE(days));
+	struct activity today = have_hub ? steps_activity_today() : (struct activity){ 0 };
+	ui_set_activity(days[6], setting_get(SETTING_STEP_GOAL) * STEP_GOAL_UNIT, today.distance_m, today.kcal, days,
+			ARRAY_SIZE(days));
 }
 
 void present_workout(void)
@@ -93,10 +92,9 @@ void present_workout(void)
 	struct workout none = { 0 }, now;
 	bool running = workout_running();
 	if (running)
-		now = workout_now(rtc_read(), have_hub ? steps_total() : 0);
+		now = workout_now(rtc_read());
 	const struct workout *w = running ? &now : workout_past(0) ? workout_past(0) : &none;
-	ui_set_workout(running, w->start, w->seconds, w->steps, fitness_distance_m(w->steps, setting_get(SETTING_HEIGHT)),
-		       fitness_kcal(w->steps, setting_get(SETTING_WEIGHT)), w->avg_bpm, w->max_bpm);
+	ui_set_workout(running, w->start, w->seconds, w->steps, w->distance_m, w->kcal, w->avg_bpm, w->max_bpm);
 }
 
 void present_heart_log(void)
@@ -131,6 +129,8 @@ void present_settings(void)
 		.height_cm = setting_get(SETTING_HEIGHT),
 		.weight_kg = setting_get(SETTING_WEIGHT),
 		.hr_interval = setting_get(SETTING_HR_INTERVAL),
+		.age = setting_get(SETTING_AGE),
+		.male = setting_get(SETTING_MALE),
 	};
 	ui_set_settings(&u);
 	present_activity();

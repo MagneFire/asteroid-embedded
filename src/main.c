@@ -75,7 +75,8 @@ void main(uint32_t machtype, const void *fdt)
 	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
 					       fb.width, fb.height);
 	if (have_ui) {
-		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round, board->light, !board->panel.lcd);
+		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round, board->light, !board->panel.lcd,
+			     hub_measures_activity());
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
 		if (board->panel.edge_px)
 			stack_set_edge(board->panel.edge_px);
