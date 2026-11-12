@@ -389,6 +389,16 @@ uint32_t sgx_generation(void) { return generation; }
 
 struct sgx_mem *sgx_memory(void) { return built ? &mem : NULL; }
 
+void sgx_wait_irq(void)
+{
+	static uint32_t seen;
+	uint32_t flags = irq_save();
+	if (events + stray == seen)
+		wfi();
+	seen = events + stray;
+	irq_restore(flags);
+}
+
 bool sgx_submit_ta(uint32_t context, uint32_t cache)
 {
 	return running && command(SGX_CMD_TA, context, cache);

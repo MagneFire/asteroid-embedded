@@ -57,6 +57,7 @@ uint32_t time_us(void)
 	return t += 7;
 }
 void wdt_feed(void) {}
+void sgx_wait_irq(void) {}
 void dcache_clean_invalidate_range(const void *addr, uint32_t size) {}
 void log_printf(const char *fmt, ...)
 {

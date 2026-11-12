@@ -35,4 +35,7 @@ void sgx_log_state(void);
 struct sgx_mem;
 struct sgx_mem *sgx_memory(void);
 bool sgx_submit_ta(uint32_t context, uint32_t cache);
+/* Sleeps until the GPU's next interrupt, or any other, unless one came
+ * since the last call. */
+void sgx_wait_irq(void);
 #endif

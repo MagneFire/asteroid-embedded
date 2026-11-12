@@ -57,6 +57,7 @@ uint32_t time_us(void)
 	return t += 7;
 }
 void wdt_feed(void) {}
+void sgx_wait_irq(void) {}
 void sgx_log_state(void) { printf("  log: microkernel state\n"); }
 bool sgx_running(void) { return running; }
 uint32_t sgx_generation(void) { return generation; }

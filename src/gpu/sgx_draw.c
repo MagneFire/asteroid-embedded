@@ -307,6 +307,7 @@ static bool wait(bool last, uint32_t *us)
 			return false;
 		}
 		wdt_feed();
+		sgx_wait_irq();
 	}
 	*us = time_us() - t0;
 	return true;
