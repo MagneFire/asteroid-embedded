@@ -52,8 +52,10 @@ void action_setting_toggled(int s)
 		}
 	} else if (s == UI_REBOOT || s == UI_POWER_OFF) {
 		log_printf("%s\n", s == UI_REBOOT ? "rebooting" : "powering off");
-		if (s == UI_POWER_OFF)
+		if (s == UI_POWER_OFF) {
+			hub_screen(false);
 			power_off_arm();
+		}
 		reboot();
 	} else if (s == UI_PAIR_REJECT || s == UI_PAIR_ACCEPT) {
 		bt_pairing_reply(s == UI_PAIR_ACCEPT);

@@ -32,7 +32,10 @@ const struct board board_catfish = {
 	.touch = &touch_fts,
 	.touch_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x38 }, .irq = 65, .reset = 23, .mpm = 3,
 			.ldo = 17, .ldo_uv = 2850000, .ldo_io = 6, .ldo_io_uv = 1800000, .power = 93 },
-	.hub_pins = { .irq = 97, .wake_mcu = 71, .reset = 72, .boot0 = 70, .mpm = 37 },
+	/* The STM32 sensor hub on BLSP1 QUP4 (gpio 12, 13, 15, function 1). */
+	.hub = &hub_nanohub,
+	.hub_pins = { .irq = 97, .spi = 4, .gpio = 12, .func = 1, .cs = 14, .wake_mcu = 71, .reset = 72, .boot0 = 70,
+		      .mode_irq = 90, .strobe = 73, .mode = { 8, 9, 99, 110 }, .mpm = 37 },
 	/* DRV2605 on BLSP1 QUP6, no trigger line. */
 	.motor = &motor_drv2605,
 	.motor_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x5a }, .enable = 26,

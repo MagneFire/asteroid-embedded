@@ -33,6 +33,7 @@ void hub_accel_on(bool on);
 bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);
+void hub_screen(bool on);
 void hub_status(void (*say)(const char *fmt, ...));
 /* A register access for the console: wn bytes written after the bank
  * and offset, then rn bytes read; -1 without such a hub. */

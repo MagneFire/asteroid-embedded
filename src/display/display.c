@@ -11,6 +11,7 @@
 #include "asteroid.h"
 #include "display.h"
 #include "mdp3.h"
+#include "sensors/hub.h"
 
 #define DSI_MDP_DONE		BIT(8)
 
@@ -569,6 +570,7 @@ static void panel_power(bool on)
 
 void display_sleep(void)
 {
+	hub_screen(false);
 	if (board->backlight)
 		board->backlight->set(0);
 	backlight_code = 0;
@@ -585,6 +587,7 @@ void display_sleep(void)
  * before display_show puts it on screen. */
 void display_wake_hidden(void)
 {
+	hub_screen(true);
 	display_active();
 	panel_asleep = false;
 	if (panel_switched()) {

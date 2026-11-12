@@ -80,6 +80,8 @@ struct hub_driver {
 	void (*status)(void (*say)(const char *fmt, ...));
 	/* A register of the hub, written then read, for the console. */
 	int (*raw)(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
+	/* The watch's screen on or off, for a hub with a display of its own. */
+	void (*screen)(bool on);
 	bool (*gauge)(struct hub_gauge *g);
 	void (*poll_gauge)(void);
 };
@@ -132,7 +134,7 @@ struct battery_driver {
 
 extern const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
-extern const struct hub_driver hub_stm32, hub_em7184, hub_m4;
+extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo;
 extern const struct backlight_driver backlight_lm3535;
 extern const struct light_driver light_tsl2584, light_m4;
@@ -280,6 +282,9 @@ struct board {
 		/* A supply the hub needs on before it starts, 0 for none. */
 		uint8_t ldo;
 		uint32_t ldo_uv;
+		/* An SPI hub: its QUP and chip select, and the mode lines with
+		 * their strobe and the hub's request for them. */
+		uint8_t spi, cs, mode_irq, strobe, mode[4];
 	} hub_pins;
 	/* Which of the M4 hub's firmwares the watch has. */
 	const struct m4_variant *hub_variant;

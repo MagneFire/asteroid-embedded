@@ -136,6 +136,11 @@ void hub_sleep(bool asleep)
 	if (HUB(sleep))
 		board->hub->sleep(asleep);
 }
+void hub_screen(bool on)
+{
+	if (HUB(screen))
+		board->hub->screen(on);
+}
 void hub_status(void (*say)(const char *fmt, ...))
 {
 	if (HUB(status))

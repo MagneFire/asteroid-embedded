@@ -6,7 +6,7 @@
 #include "asteroid.h"
 
 const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
-const struct hub_driver hub_stm32, hub_em7184, hub_m4;
+const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
 const struct motor_driver motor_drv2605, motor_pm8226;
 const struct backlight_driver backlight_lm3535;
 const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
