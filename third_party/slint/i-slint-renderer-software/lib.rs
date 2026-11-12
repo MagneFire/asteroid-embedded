@@ -1364,6 +1364,7 @@ fn render_window_frame_by_line(
 ) -> PhysicalRegion {
     let gradient_background = gradient_background(&background);
     let mut scene = prepare_scene(window, size, gradient_background, renderer);
+    line_buffer.begin(&scene.dirty_region);
 
     let to_draw_tr = scene.dirty_region.bounding_rect();
 

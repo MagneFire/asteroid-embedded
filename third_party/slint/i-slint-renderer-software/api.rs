@@ -91,6 +91,9 @@ pub trait LineBufferProvider {
         range: core::ops::Range<usize>,
         render_fn: impl FnOnce(&mut [Self::TargetPixel]),
     );
+
+    /// Called once per frame before any line, with the region the lines will cover.
+    fn begin(&mut self, _region: &PhysicalRegion) {}
 }
 
 #[cfg(not(cbindgen))]
