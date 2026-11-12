@@ -33,6 +33,9 @@ void display_show(void);
 void display_idle(bool on);
 bool display_rest(void);
 void display_active(void);
+/* Without a frame buffer: true once after the panel lost its picture, as
+ * it does when turned off, so that the next draw is of all of it. */
+bool display_lost(void);
 
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n);
 /* Commands go out in low power mode while on, as a panel fresh from reset

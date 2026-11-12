@@ -1,7 +1,10 @@
 #include "asteroid.h"
 #include "prof.h"
 
-#define SAMPLES	8192
+#ifndef PROF_SAMPLES
+#define PROF_SAMPLES	8192
+#endif
+#define SAMPLES	PROF_SAMPLES
 #define SHOWN	256
 
 extern const uint32_t *irq_frame;

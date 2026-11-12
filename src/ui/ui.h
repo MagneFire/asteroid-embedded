@@ -299,6 +299,17 @@ void ui_set_touch_ms(uint32_t ms);
 void ui_tick(void);
 bool ui_update(uint32_t panel, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h);
 void ui_render(uint32_t *buf, uint32_t stride_px, int dx, int dy);
+/* Without layers (ui_init given none): ui_draw renders what changed on
+ * that panel, or all of it if whole, straight to the display, between
+ * ui_draw_begin with the box it covers and ui_draw_end, as runs of
+ * RGB565 pixels through ui_draw_line, which the display provides; false
+ * if nothing changed. ui_heap_peak is the most of the heap the UI has
+ * used. */
+bool ui_draw(uint32_t panel, bool whole);
+void ui_draw_begin(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *rgb565);
+void ui_draw_end(void);
+uint32_t ui_heap_peak(void);
 void ui_repaint(uint32_t panel, bool gpu);
 void ui_panic(const char *msg, size_t len) __attribute__((noreturn));
 #endif

@@ -717,6 +717,7 @@ static void cmd_bt(const char *args)
 		say("bt: host starting, advertises once synced (bt status)\n");
 }
 
+#ifndef SOC_NO_EMMC
 static void hexdump(uint32_t base, const uint8_t *p, uint32_t n)
 {
 	for (uint32_t i = 0; i < n; i += 16) {
@@ -730,6 +731,7 @@ static void hexdump(uint32_t base, const uint8_t *p, uint32_t n)
 		say("%08lx:%s  %s\n", base + i, hex, asc);
 	}
 }
+#endif
 
 static uint32_t bits(const uint32_t *r, unsigned start, unsigned len)
 {
@@ -790,6 +792,7 @@ static void cmd_part(const char *args)
 	}
 }
 
+#ifndef SOC_NO_EMMC
 static void cmd_emmcrd(const char *args)
 {
 	char name[37];
@@ -821,6 +824,7 @@ static void cmd_emmcrd(const char *args)
 	}
 	hexdump(off * EMMC_BLOCK, buf, count * EMMC_BLOCK);
 }
+#endif
 
 static void ls_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
 {
@@ -915,6 +919,7 @@ static void cmd_store(const char *args)
 		say("  offset %7lu: lba %8lu + %lu\n", s->segs[i].off, s->segs[i].lba, s->segs[i].count);
 }
 
+#ifndef SOC_NO_EMMC
 static void cmd_emmctest(const char *args)
 {
 	if (store_open() || !store_info()->writable) {
@@ -939,6 +944,7 @@ static void cmd_emmctest(const char *args)
 	bool restored = !r2 && !memcmp(save, back, sizeof save);
 	say("write %d (%lu us), compare %s, restore %s\n", r, t1 - t0, same ? "ok" : "FAILED", restored ? "ok" : "FAILED");
 }
+#endif
 
 static void kv_fn(const char *key, const uint8_t *val, unsigned len, void *ctx)
 {
@@ -1329,6 +1335,7 @@ static void cmd_agenda(const char *args)
 		say("no events\n");
 }
 
+#if UI_LAYER_SIZE
 static void cmd_uibench(const char *args)
 {
 	uint32_t p = 0, gpu = 0, n = 10;
@@ -1344,6 +1351,7 @@ static void cmd_uibench(const char *args)
 	}
 	say("panel %lu: %lu us per repaint\n", p, (time_us() - t0) / n);
 }
+#endif
 
 #ifdef SGX_BASE
 /* A red triangle on a ground of the given colour (blue-grey if none),
@@ -1791,12 +1799,16 @@ static const struct command commands[] = {
 #endif
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
+#ifndef SOC_NO_EMMC
 	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
+#endif
 	{ "fs", "", cmd_fs },
 	{ "ls", "[userdata:]<path>", cmd_ls },
 	{ "cat", "[userdata:]<path>", cmd_cat },
 	{ "store", "", cmd_store },
+#ifndef SOC_NO_EMMC
 	{ "emmctest", "", cmd_emmctest },
+#endif
 	{ "kv", "[set <key> <text> | del <key>]", cmd_kv },
 	{ "btinfo", "", cmd_btinfo },
 	{ "amp", "", cmd_amp },
@@ -1809,7 +1821,9 @@ static const struct command commands[] = {
 	{ "notify", "[text] | remove <n>", cmd_notify },
 	{ "agenda", AGENDA_USAGE, cmd_agenda },
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
+#if UI_LAYER_SIZE
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
+#endif
 #ifdef SGX_BASE
 	{ "sgx",
 	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off] | "

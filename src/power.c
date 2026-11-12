@@ -50,7 +50,9 @@ static struct power_policy policy = { .awake = true };
 static struct nightstand stand;
 static enum screen_state screen;
 static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
+#if UI_LAYER_SIZE
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
+#endif
 static const char *wake_cause;
 static bool lit_pending;
 static enum { LUX_IDLE, LUX_READING, LUX_WATCHING, LUX_DONE } lux_state;
@@ -226,6 +228,7 @@ void power_tick(void)
 	}
 }
 
+#if UI_LAYER_SIZE
 static int burn_in_shift(uint32_t *seed, int range)
 {
 	*seed ^= *seed << 13;
@@ -233,6 +236,7 @@ static int burn_in_shift(uint32_t *seed, int range)
 	*seed ^= *seed << 5;
 	return range ? (int)(*seed % (uint32_t)(2 * range + 1)) - range : 0;
 }
+#endif
 
 /* Back to the normal panel state and brightness, for waking or for the
  * panel turning off. */
@@ -261,7 +265,7 @@ static void ambient_draw(void)
 	if (board->backlight_aod_code)
 		light_start();
 	struct civil c;
-	uint32_t rtc = rtc_read(), x, y, w, h, *buf = display_backbuffer();
+	uint32_t rtc = rtc_read();
 	civil_from_epoch(rtc, &c);
 	ambient_minute = rtc / 60;
 	ui_set_clock(c.hour, c.minute, c.second, c.weekday, c.day, c.month, c.year, rtc);
@@ -269,6 +273,8 @@ static void ambient_draw(void)
 	bool ns = power_nightstand();
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
 	ui_tick();
+#if UI_LAYER_SIZE
+	uint32_t x, y, w, h, *buf = display_backbuffer();
 	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
 	for (unsigned i = 0; i < ARRAY_SIZE(panels); i++) {
 		unsigned p = panels[i];
@@ -298,6 +304,9 @@ static void ambient_draw(void)
 	stack_indicators_cpu(buf, fb.stride, ix, iy);
 	rotation_buffer(buf, fb.stride);
 	display_flip();
+#else
+	ui_draw(UI_PANEL_FACE, display_lost());
+#endif
 	if (board->backlight_aod_code)
 		ambient_backlight();
 }

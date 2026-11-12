@@ -31,7 +31,9 @@ const struct store_info *store_info(void);
 int store_read(uint32_t off, void *buf, uint32_t len);
 int store_write(uint32_t off, const void *buf, uint32_t len);
 
+#ifndef KV_SLOT_SIZE
 #define KV_SLOT_SIZE		(16u * 1024)
+#endif
 #define KV_KEY_MAX		32u
 #define KV_VALUE_MAX		1024u
 int kv_load(void);

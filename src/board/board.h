@@ -178,10 +178,10 @@ struct battery_driver {
 	const char *(*status)(void);
 };
 
-extern const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231;
-extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x;
+extern const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231, battery_adc;
+extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x, touch_tma525;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3;
-extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm;
+extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm, motor_aw8624;
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530;
 extern const struct light_driver light_tsl2584, light_m4, light_nanohub, light_al3320;
 extern const struct gauge_driver gauge_stc3117;
@@ -198,11 +198,18 @@ struct board_pad {
 	uint16_t off, value;
 };
 
+/* A microcontroller's pad set at boot: its number, function and the
+ * SoC's PAD_* flags; a function of 0xff ends the list. */
+struct board_mcu_pad {
+	uint8_t pad, func, flags;
+};
+
 struct board {
 	const char *name, *compatible;
 	/* Pads to set at boot, ended by an offset of 0, for a SoC that
 	 * has the pins muxed apart from their use. */
 	const struct board_pad *pads;
+	const struct board_mcu_pad *mcu_pads;
 	/* The pads that can wake such a SoC, which a driver names by its
 	 * place here where another watch has an MPM pin. */
 	const uint16_t *wake_pads;
@@ -246,6 +253,13 @@ struct board {
 		 * on, and the pad of that line) and its memory. */
 		uint8_t bridge_reset, bridge_supply, vio_gpio, mem_gpio;
 		uint16_t vio_pad;
+		/* A panel on SPI: the bus, its chip select and rate, the
+		 * data/command line, the lines that switch it on, the
+		 * column its picture starts at and the bytes its ID reads. */
+		uint8_t spi_bus, spi_cs, spi_mode, dc_gpio, enable_gpio[2];
+		uint32_t spi_hz;
+		uint16_t col_offset;
+		uint8_t id[3];
 	} panel;
 	/* The line that switches a clock the panel's bridge and the USB
 	 * PHY share, 0 for none. */
@@ -320,6 +334,15 @@ struct board {
 	 * against mV and with mV falling, where it is not sturgeon's. */
 	const struct board_therm *therm;
 	uint8_t therm_n;
+	/* The battery on an ADC channel: its pad and function, and the
+	 * mV a full-scale reading stands for through the divider. */
+	struct {
+		uint8_t pad, func, channel;
+		uint16_t mv_full;
+	} battery_adc;
+	/* Keys on GPIOs, pressed low: the power key and a second one, 0
+	 * for none. */
+	uint8_t key_gpio[2];
 	/* A MAX17050 gauge (or the fuel gauge's bus), the wireless pad line (low on the pad), the
 	 * receiver's charge output and its termination (high stops charging)
 	 * and reduced rate inputs. */
@@ -389,6 +412,8 @@ struct board {
 		/* An F12 object wider than this is a palm, 0 for only its
 		 * own palm type. */
 		uint8_t palm_width;
+		/* A line that switches its supply, 0 for none. */
+		uint8_t power_gpio;
 	} touch_pins;
 
 	const struct hub_driver *hub;
@@ -461,7 +486,7 @@ struct board {
 			       (ibat_safe) / 50 <= 0x3f && (ibat_max) <= (ibat_safe),                             \
 		       "charger current off the 50 mA steps")
 
-extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory, board_swift;
+extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory, board_swift, board_beluga, board_beluga_41;
 /* The watch this is, set by board_detect before anything uses it. */
 extern const struct board *board;
 extern const char *board_detected_by;
