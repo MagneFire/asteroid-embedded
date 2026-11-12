@@ -38,7 +38,7 @@ extern uintptr_t gpu_host_base;
 #define MAX_RECTS	128
 #define LOG_MS		1000
 /* Whether the GPU composites from boot, or only from sgx_compose(true). */
-#define AT_BOOT		false
+#define AT_BOOT		true
 
 static struct sgx_region regions[3];
 static unsigned nregions;

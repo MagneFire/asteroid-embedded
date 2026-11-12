@@ -506,7 +506,7 @@ static void check_gpu(const char *what)
 /* The GPU is off at boot until it is turned on. */
 static bool boot(void)
 {
-	return gpu_init() && !starts && !gpu_ready() && sgx_compose(true) && gpu_ready() && sgx_compose_on();
+	return gpu_init() && starts == 1 && gpu_ready() && sgx_compose_on();
 }
 
 static void gpu_frame(void)
@@ -583,7 +583,8 @@ static void start_failing(void)
 	struct gpu_target t = frame_target();
 	bool ret;
 	start_ok = false;
-	CHECK(gpu_init() && !sgx_compose(true) && !gpu_ready() && halts == 1, "a start that fails: %u halts", halts);
+	CHECK(gpu_init() && !gpu_ready() && halts == 1, "a start at boot that fails: %u halts", halts);
+	CHECK(!sgx_compose(true) && !gpu_ready() && halts == 2, "a start by hand that fails: %u halts", halts);
 	CHECK(same_as_soft(full, &t, &ret) && ret && !frame_calls, "a frame after it");
 	start_ok = true;
 	gpu_suspend();
@@ -591,7 +592,7 @@ static void start_failing(void)
 	CHECK(gpu_init() && starts == s && !gpu_ready(), "wake tried again");
 	/* A map that fails halts the GPU as well. */
 	map_fail = 2;
-	CHECK(!sgx_compose(true) && halts == 2 && !running, "a map that fails: %u halts", halts);
+	CHECK(!sgx_compose(true) && halts == 3 && !running, "a map that fails: %u halts", halts);
 	map_fail = 0;
 	CHECK(sgx_compose(true) && gpu_ready() && nmaps == 3, "on again: %u maps", nmaps);
 	CHECK(full(&gpu_api, &t) && frame_calls == 1, "a GPU frame");

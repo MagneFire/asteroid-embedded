@@ -214,7 +214,7 @@ static void setup(void)
 					{ ADDR(spool), size } };
 	sgx_compose_regions(r, 3);
 	fill();
-	CHECK(gpu_init() && !running && sgx_compose(true) && gpu_ready(), "on");
+	CHECK(gpu_init() && running && gpu_ready(), "on at boot");
 }
 
 static void refusals(void)
