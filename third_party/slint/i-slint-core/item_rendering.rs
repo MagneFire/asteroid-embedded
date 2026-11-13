@@ -100,6 +100,21 @@ impl<T> ItemCache<T> {
             .and_then(|entry| callback(&entry.data))
     }
 
+    /// Like [`Self::with_entry`], with the value mutable, and without checking that it is
+    /// still valid.
+    pub fn with_entry_mut<U>(
+        &self,
+        item_rc: &ItemRc,
+        callback: impl FnOnce(&mut T) -> Option<U>,
+    ) -> Option<U> {
+        let component = &(**item_rc.item_tree()) as *const _;
+        self.map
+            .borrow_mut()
+            .get_mut(&component)
+            .and_then(|per_component_entries| per_component_entries.get_mut(&item_rc.index()))
+            .and_then(|entry| callback(&mut entry.data))
+    }
+
     /// Clears the cache if the window's scale factor has changed since the last call.
     pub fn clear_cache_if_scale_factor_changed(&self, window: &crate::api::Window) {
         if self.window_scale_factor_tracker.is_dirty() {
@@ -462,6 +477,7 @@ pub trait HasFont {
 }
 
 #[allow(missing_docs)]
+#[derive(Clone, PartialEq)]
 pub enum PlainOrStyledText {
     Plain(SharedString),
     Styled(crate::styled_text::StyledText),
