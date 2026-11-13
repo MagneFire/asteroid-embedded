@@ -254,6 +254,16 @@ $(BUILD)/test/soft_test: tests/soft_test.c src/gpu/soft.c $(wildcard tests/*.h s
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/gpu/soft.c -o $@
 
+# Timing of the CPU's texture drawing: the soft_test run with SOFT_BENCH=1 on an optimised build without
+# the sanitizers. SOFT_BENCH_SRC names another soft.c to time against.
+SOFT_BENCH_SRC ?= src/gpu/soft.c
+$(BUILD)/test/soft_bench: tests/soft_test.c $(SOFT_BENCH_SRC) $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(filter-out -g -fsanitize=% -fno-sanitize-recover=all,$(HOST_CFLAGS)) -O2 $< $(SOFT_BENCH_SRC) -o $@
+
+bench-soft: FORCE $(BUILD)/test/soft_bench
+	SOFT_BENCH=1 $(BUILD)/test/soft_bench
+
 $(BUILD)/test/sgx_compose_test: tests/sgx_compose_test.c src/gpu/sgx_compose.c src/gpu/soft.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/gpu/sgx_compose.c src/gpu/soft.c -o $@
@@ -325,4 +335,4 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(OBJS:.o=.d)
-.PHONY: all run preview textbench disasm test clean FORCE
+.PHONY: all run preview textbench disasm test clean FORCE bench-soft

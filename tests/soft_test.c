@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "asteroid.h"
 #include "gpu/soft.h"
 #include "gpu/paint.h"
@@ -239,6 +240,133 @@ static void textures(void)
 	}
 }
 
+/* The texel of a pixel as a pixel, from the arithmetic alone. */
+static void texel_want(int format, bool colorize, uint32_t tint, const uint8_t *q, uint32_t p[4])
+{
+	uint32_t t[4] = { tint & 0xff, tint >> 8 & 0xff, tint >> 16 & 0xff, tint >> 24 };
+	if (format == PAINT_ALPHA || colorize) {
+		uint32_t a = format == PAINT_ALPHA ? q[0] : format == PAINT_RGB ? 255 : q[3];
+		for (int c = 0; c < 4; c++)
+			p[c] = div255(a * t[c]);
+		return;
+	}
+	p[3] = format == PAINT_RGB ? 255 : q[3];
+	for (int c = 0; c < 3; c++)
+		p[c] = format == PAINT_RGBA ? div255(q[c] * p[3]) : q[c];
+	if (tint != 0xffffffffu)
+		for (int c = 0; c < 4; c++)
+			p[c] = div255(p[c] * t[c]);
+}
+
+/* Texels in runs of nothing, of opaque ones and of any, so that the
+ * groups of eight are all one or the other or a mix. */
+static void texels_fill(uint8_t *tex, unsigned n, unsigned bytes, int format, int mode)
+{
+	unsigned run = 0, kind = 0;
+	for (unsigned i = 0; i < n; i++) {
+		if (!run) {
+			run = 1 + rnd() % 20;
+			kind = rnd() % 3;
+		}
+		run--;
+		uint8_t *q = tex + i * bytes;
+		for (unsigned c = 0; c < bytes; c++)
+			q[c] = (uint8_t)rnd();
+		unsigned ai = bytes == 4 ? 3 : bytes == 1 ? 0 : 99;
+		if (mode == 1 || (mode == 2 && kind == 1)) {
+			if (ai != 99)
+				q[ai] = 255;
+		} else if (mode == 2 && kind == 2) {
+			if (ai != 99)
+				q[ai] = 0;
+			else
+				memset(q, 0, bytes);
+		} else if (mode == 0 && rnd() % 5 == 0 && ai != 99) {
+			q[ai] = 0;
+		}
+		if (format == PAINT_RGBA_PREMULTIPLIED)
+			for (int c = 0; c < 3; c++)
+				if (q[c] > q[3])
+					q[c] = q[3];
+	}
+}
+
+/* Every kind of texel against the per-pixel reference, at its own size
+ * and scaled, in groups of eight that are empty, opaque and mixed, with
+ * tails of every length and clips that cut them. */
+static void texture_matrix(void)
+{
+	static const int formats[] = { PAINT_ALPHA, PAINT_RGBA_PREMULTIPLIED, PAINT_RGBA, PAINT_RGB };
+	static const uint8_t sizes[] = { 1, 4, 4, 3 };
+	static const uint32_t tints[] = { 0xffffffffu, 0x99999999u, 0xffa0b0c0u, 0x00000000u, 0x80402010u };
+	/* Texture size, then the size it is drawn at. */
+	static const int shapes[][4] = {
+		{ 1, 3, 1, 3 },   { 5, 2, 5, 2 },   { 7, 3, 7, 3 },    { 8, 3, 8, 3 },    { 9, 3, 9, 3 },    { 15, 2, 15, 2 },
+		{ 16, 3, 16, 3 }, { 17, 2, 17, 2 }, { 24, 3, 24, 3 },  { 37, 5, 37, 5 },  { 41, 4, 41, 4 },
+		{ 40, 20, 39, 19 }, { 40, 20, 41, 21 }, { 40, 20, 80, 40 }, { 40, 20, 20, 10 }, { 17, 5, 9, 5 },
+		{ 5, 5, 23, 11 },   { 33, 9, 33, 18 }, { 64, 3, 63, 3 },
+	};
+	static uint8_t tex[41 * 21 * 4];
+	static uint32_t want[H * W];
+	unsigned drawn = 0;
+	for (unsigned f = 0; f < 4; f++)
+		for (unsigned ti = 0; ti < 5; ti++)
+			for (unsigned col = 0; col < (f ? 2u : 1u); col++)
+				for (int mode = 0; mode < 3; mode++)
+					for (unsigned sh = 0; sh < sizeof shapes / sizeof *shapes; sh++)
+						for (unsigned cl = 0; cl < 3; cl++) {
+							int tw = shapes[sh][0], th = shapes[sh][1], dw = shapes[sh][2], dh = shapes[sh][3];
+							bool colorize = col;
+							unsigned bytes = sizes[f];
+							if (f == 0 && (dw != tw || dh != th))
+								continue;
+							texels_fill(tex, (unsigned)(tw * th), bytes, formats[f], mode);
+							int dx = cl == 1 ? -3 : cl == 2 ? W - dw / 2 : 4, dy = cl == 1 ? -1 : 2;
+							int32_t clip[4] = { 0, 0, W, H };
+							if (cl == 0) {
+								clip[0] = dx + 3;
+								clip[2] = dx + dw - 2;
+								clip[1] = dy + 1;
+							}
+							for (int i = 0; i < H * W; i++) {
+								uint32_t a = rnd() & 0xff;
+								layer[i] = want[i] = a << 24 | div255((rnd() & 0xff) * a) << 16 |
+										     div255((rnd() & 0xff) * a) << 8 | div255((rnd() & 0xff) * a);
+							}
+							uint32_t sx_step = (((uint32_t)tw << 16) + (uint32_t)dw - 1) / (uint32_t)dw;
+							uint32_t sy_step = (((uint32_t)th << 16) + (uint32_t)dh - 1) / (uint32_t)dh;
+							for (int y = 0; y < H; y++)
+								for (int x = 0; x < W; x++) {
+									if (x < clip[0] || x >= clip[2] || y < clip[1] || y >= clip[3] || x < dx ||
+									    x >= dx + dw || y < dy || y >= dy + dh)
+										continue;
+									uint32_t sx = ((uint32_t)(x - dx) * sx_step) >> 16;
+									uint32_t sy = ((uint32_t)(y - dy) * sy_step) >> 16;
+									if (sx >= (uint32_t)tw)
+										sx = (uint32_t)tw - 1;
+									if (sy >= (uint32_t)th)
+										sy = (uint32_t)th - 1;
+									uint32_t p[4];
+									texel_want(formats[f], colorize, tints[ti], tex + (sy * (uint32_t)tw + sx) * bytes, p);
+									uint8_t *d = (uint8_t *)&want[y * W + x];
+									for (int c = 0; c < 4; c++) {
+										uint32_t v = p[c] + div255(d[c] * (255 - p[3]));
+										d[c] = (uint8_t)(v > 255 ? 255 : v);
+									}
+								}
+							check(paint_begin(layer, W, H, W), "the layer is refused");
+							check(paint_texture(tex, (uint32_t)tw * bytes, (uint32_t)tw, (uint32_t)th, formats[f], dx, dy, dw,
+									    dh, clip, tints[ti], colorize),
+							      "a texture is refused");
+							if (memcmp(layer, want, sizeof want))
+								printf("soft_test: format %u tint %#x colorize %d mode %d %dx%d to %dx%d clip %u\n",
+								       f, tints[ti], colorize, mode, tw, th, dw, dh, cl);
+							check(!memcmp(layer, want, sizeof want), "a texture differs from a pixel at a time");
+							drawn++;
+						}
+	check(drawn > 1000, "the texture matrix is short");
+}
+
 /* A scaled texture takes each pixel from the texel under it, and a
  * rounded rectangle with a radius of half its side is a disc: the same
  * left to right and top to bottom, of the right area, soft at its edge. */
@@ -348,6 +476,75 @@ static void turned(void)
 	check(centre, "the centre moves in the turn");
 }
 
+/* Timing, for SOFT_BENCH=1 on a build with optimisation: the calls the
+ * UI makes most, per frame's worth. */
+static double now_ns(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1e9 + ts.tv_nsec;
+}
+
+#define BENCH_SIDE 320
+static uint32_t bench_layer[BENCH_SIDE * BENCH_SIDE];
+static uint8_t bench_tex[BENCH_SIDE * BENCH_SIDE * 4];
+
+static void bench_run(const char *name, const uint8_t *data, unsigned bytes, int tw, int th, int format, int dx, int dy,
+		      int dw, int dh, uint32_t tint, bool colorize, int count)
+{
+	const int32_t all[4] = { 0, 0, BENCH_SIDE, BENCH_SIDE };
+	paint_begin(bench_layer, BENCH_SIDE, BENCH_SIDE, BENCH_SIDE);
+	double best = 1e18;
+	for (int round = 0; round < 7; round++) {
+		int reps = 0;
+		double t0 = now_ns(), t1;
+		do {
+			for (int i = 0; i < count; i++)
+				paint_texture(data, (uint32_t)tw * bytes, (uint32_t)tw, (uint32_t)th, format, dx + (i % 7) * 3,
+					      dy + (i % 5) * 20, dw, dh, all, tint, colorize);
+			reps++;
+			t1 = now_ns();
+		} while (t1 - t0 < 30e6);
+		if ((t1 - t0) / reps < best)
+			best = (t1 - t0) / reps;
+	}
+	printf("soft_bench: %-44s %9.1f us\n", name, best / 1e3);
+}
+
+static void bench(void)
+{
+	/* A colorized icon: the alpha of RGBA texels, drawn in one colour. */
+	for (unsigned i = 0; i < 138 * 138; i++) {
+		uint8_t a = (uint8_t)((i % 138 > 20 && i % 138 < 117 && i / 138 > 20 && i / 138 < 117) ? 255 : rnd() % 4 ? 0 : rnd());
+		bench_tex[i * 4] = bench_tex[i * 4 + 1] = bench_tex[i * 4 + 2] = a;
+		bench_tex[i * 4 + 3] = a;
+	}
+	bench_run("icon 138x138 colorized, own size", bench_tex, 4, 138, 138, PAINT_RGBA_PREMULTIPLIED, 20, 20, 138, 138,
+		  0xff80c0e0u, true, 1);
+	bench_run("icon 138x138 colorized, to 137x137", bench_tex, 4, 138, 138, PAINT_RGBA_PREMULTIPLIED, 20, 20, 137, 137,
+		  0xff80c0e0u, true, 1);
+	/* 75 glyphs, 20x24 alpha maps, tinted. */
+	for (unsigned i = 0; i < 20 * 24; i++) {
+		unsigned x = i % 20, y = i / 20;
+		bench_tex[i] = (uint8_t)(x < 4 || x > 15 ? (rnd() % 3 ? 0 : rnd()) : y % 6 < 2 ? 255 : rnd() % 2 ? 255 : 0);
+	}
+	bench_run("75 glyphs 20x24 alpha maps, tinted", bench_tex, 1, 20, 24, PAINT_ALPHA, 10, 10, 20, 24, 0xffe0e0e0u, false, 75);
+	/* A whole layer's image with opaque areas. */
+	for (unsigned i = 0; i < BENCH_SIDE * BENCH_SIDE; i++) {
+		unsigned x = i % BENCH_SIDE, y = i / BENCH_SIDE;
+		uint8_t a = (x / 40 + y / 40) % 3 == 0 ? 0 : (x / 40 + y / 40) % 3 == 1 ? 255 : (uint8_t)rnd();
+		bench_tex[i * 4] = (uint8_t)(rnd() % (a + 1u));
+		bench_tex[i * 4 + 1] = (uint8_t)(rnd() % (a + 1u));
+		bench_tex[i * 4 + 2] = (uint8_t)(rnd() % (a + 1u));
+		bench_tex[i * 4 + 3] = a;
+	}
+	bench_run("image 320x320 premultiplied, own size", bench_tex, 4, 320, 320, PAINT_RGBA_PREMULTIPLIED, 0, 0, 320, 320,
+		  0xffffffffu, false, 1);
+	bench_run("image 320x320 premultiplied, to 319x319", bench_tex, 4, 320, 320, PAINT_RGBA_PREMULTIPLIED, 0, 0, 319, 319,
+		  0xffffffffu, false, 1);
+	bench_run("image 320x320 straight, own size", bench_tex, 4, 320, 320, PAINT_RGBA, 0, 0, 320, 320, 0xffffffffu, false, 1);
+}
+
 int main(void)
 {
 	gpu_host_base = (uintptr_t)&mem;
@@ -355,9 +552,12 @@ int main(void)
 	layers();
 	round_window();
 	textures();
+	texture_matrix();
 	scaled_and_rounded();
 	rounded_clip();
 	turned();
 	printf("soft_test: ok\n");
+	if (getenv("SOFT_BENCH"))
+		bench();
 	return 0;
 }
