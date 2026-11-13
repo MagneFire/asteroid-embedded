@@ -5,9 +5,9 @@
 
 //! From text to shaped paragraphs.
 //!
-//! Everything that ends up in a cache entry is produced here, and [`shape_paragraphs`] is the
-//! one function it happens through: measuring and drawing must register identical cache
-//! dependencies, so neither may shape through anything narrower.
+//! Everything that ends up in a cache entry is produced here, from the [`ShapingInputs`] that
+//! [`shaping_inputs`] reads: measuring and drawing must register identical cache dependencies,
+//! so neither may shape through anything narrower.
 
 use super::*;
 
@@ -29,6 +29,7 @@ pub(super) struct Brush {
     pub(super) link_color: Option<Color>,
 }
 
+#[derive(Clone, PartialEq)]
 pub(super) struct LayoutWithoutLineBreaksBuilder {
     font_request: Option<FontRequest>,
     /// See [`crate::item_rendering::RenderString::line_height_factor`].
@@ -393,27 +394,41 @@ pub(super) fn wrap_builder_for_tests() -> LayoutWithoutLineBreaksBuilder {
     LayoutWithoutLineBreaksBuilder::new(None, None, TextWrap::WordWrap, None, ScaleFactor::new(1.0))
 }
 
-/// Shapes `text` the way both the drawing and the measuring paths need it, so that they can share
-/// one cache entry.
+/// Everything the paragraphs are shaped from, so equal inputs shape identical paragraphs.
+#[derive(Clone, PartialEq)]
+pub(super) struct ShapingInputs {
+    builder: LayoutWithoutLineBreaksBuilder,
+    text: PlainOrStyledText,
+    link_color: Color,
+}
+
+impl ShapingInputs {
+    pub(super) fn shape(&self, font_context: &RefCell<FontContext>) -> Vec<TextParagraph> {
+        create_text_paragraphs(
+            &self.builder,
+            &mut font_context.borrow_mut(),
+            self.text.clone(),
+            self.link_color,
+        )
+    }
+}
+
+/// Reads what `text` is shaped from, the way both the drawing and the measuring paths need it,
+/// so that they can share one cache entry.
 ///
-/// Reads the item's properties before borrowing `font_context`,
-/// because their bindings may measure other text, which borrows it too.
-pub(super) fn shape_paragraphs(
+/// Doesn't borrow the font context: the bindings of the item's properties may measure other
+/// text, which borrows it.
+pub(super) fn shaping_inputs(
     text: Pin<&dyn crate::item_rendering::RenderString>,
     item_rc: Option<&crate::item_tree::ItemRc>,
     text_wrap: TextWrap,
     scale_factor: ScaleFactor,
-    font_context: &RefCell<FontContext>,
-) -> Vec<TextParagraph> {
-    let builder = shaping_builder(text, item_rc, text_wrap, scale_factor);
-    let plain_or_styled_text = text.text();
-    let link_color = text.link_color();
-    create_text_paragraphs(
-        &builder,
-        &mut font_context.borrow_mut(),
-        plain_or_styled_text,
-        link_color,
-    )
+) -> ShapingInputs {
+    ShapingInputs {
+        builder: shaping_builder(text, item_rc, text_wrap, scale_factor),
+        text: text.text(),
+        link_color: text.link_color(),
+    }
 }
 
 pub(super) struct TextParagraph {

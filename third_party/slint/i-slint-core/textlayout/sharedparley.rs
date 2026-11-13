@@ -156,8 +156,7 @@ use cache::cached_paragraphs;
 use layout::{Layout, LayoutOptions, layout};
 use selection::{SelectionRendering, SelectionSpans};
 use shaping::{
-    Brush, LayoutWithoutLineBreaksBuilder, create_text_paragraphs, shape_paragraphs,
-    shaping_builder,
+    Brush, LayoutWithoutLineBreaksBuilder, create_text_paragraphs, shaping_builder, shaping_inputs,
 };
 
 /// Lays out the shaped text of an item and runs `f` over the result.
@@ -195,7 +194,8 @@ fn with_text_layout<R>(
         layout_builder.line_height_factor,
         text.measures_width_only(),
         window,
-        &|| shape_paragraphs(text, item_rc, text_wrap, scale_factor, font_context),
+        font_context,
+        &|| shaping_inputs(text, item_rc, text_wrap, scale_factor),
     );
 
     let line_breaking = guard.take_line_breaking();
@@ -638,7 +638,7 @@ fn text_content_widths_impl(
 
     // Reads the text, the font request and the line limit, so the cache entry depends on all
     // three. Nothing else feeds the widths: the wrap mode, the width and the color don't.
-    // Reads them before borrowing the font context; see `shape_paragraphs`.
+    // Reads them before borrowing the font context; see `shaping_inputs`.
     let compute = || {
         let layout_builder =
             shaping::content_widths_builder(text_item.font_request(item_rc), scale_factor);

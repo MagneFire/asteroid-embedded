@@ -11,7 +11,7 @@
 //! with the one shaping function every path must share.
 
 use super::layout::RetainedLineBreaking;
-use super::shaping::TextParagraph;
+use super::shaping::{ShapingInputs, TextParagraph};
 use super::*;
 
 /// Shaped paragraphs together with the wrap mode and line-height factor they were shaped with.
@@ -27,6 +27,9 @@ use super::*;
 struct CachedParagraphs {
     wrap: TextWrap,
     line_height_factor: Option<f32>,
+    /// What the paragraphs were shaped from, to keep them when a dependency goes dirty but
+    /// reads back the same.
+    inputs: ShapingInputs,
     /// What [`super::layout::layout`] derived when it last broke these paragraphs, so an
     /// unchanged-input call can skip the breaking. `None` after a reshape (fresh entries
     /// start without one) and while checked out through the guard.
@@ -218,13 +221,15 @@ impl Drop for CachedParagraphsGuard<'_> {
 }
 
 /// Shapes the text of `item_rc` for `wrap` and `line_height_factor`, reusing the
-/// `TextLayoutCache` entry when it holds paragraphs shaped for the same wrap mode and none of the
-/// properties `shape` read have changed since. With `width_only`, an entry shaped with any
-/// line-height factor serves, since the line height can't change the width.
+/// `TextLayoutCache` entry when it holds paragraphs shaped for the same wrap mode from the same
+/// inputs. With `width_only`, an entry shaped with any line-height factor serves, since the line
+/// height can't change the width.
 /// Without a cache or item it just shapes, so the caller doesn't need to special-case that.
 ///
-/// `shape` runs inside the entry's dependency tracker, so everything it reads (the text and the
-/// font request, at least) invalidates the entry when it changes.
+/// `inputs` runs inside the entry's dependency tracker, so everything it reads (the text and the
+/// font request, at least) marks the entry dirty when it changes. A dirty entry reads its inputs
+/// again and only reshapes if they differ: a binding that depends on an animated property goes
+/// dirty every frame, mostly to come back with the same text and font.
 pub(super) fn cached_paragraphs<'a>(
     cache: Option<&'a TextLayoutCache>,
     item_rc: Option<&crate::item_tree::ItemRc>,
@@ -232,11 +237,12 @@ pub(super) fn cached_paragraphs<'a>(
     line_height_factor: Option<f32>,
     width_only: bool,
     window: &crate::api::Window,
-    shape: &dyn Fn() -> Vec<TextParagraph>,
+    font_context: &RefCell<FontContext>,
+    inputs: &dyn Fn() -> ShapingInputs,
 ) -> CachedParagraphsGuard<'a> {
     let Some((cache, item_rc)) = cache.zip(item_rc) else {
         return CachedParagraphsGuard {
-            paragraphs: Some(shape()),
+            paragraphs: Some(inputs().shape(font_context)),
             line_breaking: None,
             container: None,
         };
@@ -254,14 +260,30 @@ pub(super) fn cached_paragraphs<'a>(
     let mut entry = cache.inner.get_or_update_cache_entry_ref_unless(
         item_rc,
         || {
-            #[cfg(feature = "testing")]
-            cache.cache_miss_count.set(cache.cache_miss_count.get() + 1);
-            cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
+            let inputs = inputs();
+            // The map is not borrowed while an entry updates, and the old value is still in it.
+            // The inputs hold the wrap mode and line-height factor too.
+            let unchanged = cache.inner.with_entry_mut(item_rc, |old| {
+                (old.inputs == inputs)
+                    .then(|| {
+                        old.paragraphs
+                            .take()
+                            .map(|paragraphs| (paragraphs, old.line_breaking.take()))
+                    })
+                    .flatten()
+            });
+            let (paragraphs, line_breaking) = unchanged.unwrap_or_else(|| {
+                #[cfg(feature = "testing")]
+                cache.cache_miss_count.set(cache.cache_miss_count.get() + 1);
+                cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
+                (inputs.shape(font_context), None)
+            });
             CachedParagraphs {
                 wrap,
                 line_height_factor,
-                paragraphs: Some(shape()),
-                line_breaking: None,
+                inputs,
+                paragraphs: Some(paragraphs),
+                line_breaking,
                 last_used: 0, // stamped right below, for both a hit and this miss
             }
         },
