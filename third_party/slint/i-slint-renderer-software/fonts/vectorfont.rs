@@ -74,11 +74,20 @@ impl GlyphCache {
         if weight > self.limit {
             return;
         }
-        while self.weight + weight > self.limit {
-            let Some((&oldest, _)) = self.map.iter().min_by_key(|(_, entry)| entry.1) else { break };
-            if let Some((removed, _)) = self.map.remove(&oldest) {
-                self.weight -= removed.alpha_map.len();
-            }
+        // Drop the older half at once: finding the oldest entry is a scan of the whole map, too
+        // slow to repeat for every glyph rendered while text animates through sizes.
+        while self.weight + weight > self.limit && !self.map.is_empty() {
+            let mut ticks: Vec<u64> = self.map.values().map(|entry| entry.1).collect();
+            let middle = ticks.len() / 2;
+            let cutoff = *ticks.select_nth_unstable(middle).1;
+            let total = &mut self.weight;
+            self.map.retain(|_, entry| {
+                let keep = entry.1 > cutoff;
+                if !keep {
+                    *total -= entry.0.alpha_map.len();
+                }
+                keep
+            });
         }
         self.tick += 1;
         if self.map.insert(key, (glyph, self.tick)).is_none() {
