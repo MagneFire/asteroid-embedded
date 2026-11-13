@@ -296,6 +296,11 @@ where
     TextLayout { font, letter_spacing, line_height }
 }
 
+/// Without a bitmap font every request resolves to a vector font.
+pub fn has_bitmap_fonts() -> bool {
+    BITMAP_FONTS.with(|fonts| !fonts.borrow().is_empty())
+}
+
 pub fn register_bitmap_font(font_data: &'static BitmapFont) {
     register(RegisteredFont::Static(font_data));
 }

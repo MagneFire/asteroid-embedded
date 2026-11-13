@@ -758,6 +758,18 @@ impl RendererSealed for SoftwareRenderer {
         max_width: Option<LogicalLength>,
         text_wrap: TextWrap,
     ) -> LogicalSize {
+        #[cfg(feature = "systemfonts")]
+        if always_parley() {
+            return sharedparley::text_size(
+                self,
+                text_item,
+                item_rc,
+                max_width,
+                text_wrap,
+                Some(&self.text_layout_cache),
+            )
+            .unwrap_or_default();
+        }
         let Some(scale_factor) = self.scale_factor() else {
             return LogicalSize::default();
         };
@@ -826,6 +838,15 @@ impl RendererSealed for SoftwareRenderer {
         text_item: Pin<&dyn i_slint_core::item_rendering::RenderString>,
         item_rc: &i_slint_core::item_tree::ItemRc,
     ) -> Option<i_slint_core::renderer::ContentWidths> {
+        #[cfg(feature = "systemfonts")]
+        if always_parley() {
+            return sharedparley::text_content_widths(
+                self,
+                text_item,
+                item_rc,
+                Some(&self.text_layout_cache),
+            );
+        }
         let scale_factor = self.scale_factor()?;
         let font_request = text_item.font_request(item_rc);
         // Evaluate text() before borrowing font_context, as in text_size().
@@ -1294,6 +1315,14 @@ impl SoftwareRenderer {
         };
         uses_parley(&font)
     }
+}
+
+/// Whether [`uses_parley`] holds for any font `fonts::match_font` can return, so that the
+/// per-frame paths can skip resolving the font (a font query by family name and reading the
+/// font's metrics) only to hand the text to parley, which resolves it again.
+#[cfg(feature = "systemfonts")]
+fn always_parley() -> bool {
+    !parley_disabled() && !fonts::has_bitmap_fonts()
 }
 
 /// The paragraph layout the cursor and hit-testing queries measure against.
@@ -3173,6 +3202,12 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         size: LogicalSize,
         _cache: &CachedRenderingData,
     ) {
+        #[cfg(feature = "systemfonts")]
+        if always_parley() {
+            sharedparley::draw_text(self, text, Some(self_rc), size, Some(self.text_layout_cache));
+            return;
+        }
+
         let font_request = text.font_request(self_rc);
 
         let font = {
@@ -3264,6 +3299,12 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         self_rc: &ItemRc,
         size: LogicalSize,
     ) {
+        #[cfg(feature = "systemfonts")]
+        if always_parley() {
+            sharedparley::draw_text_input(self, text_input, self_rc, size, self.text_layout_cache);
+            return;
+        }
+
         let font_request = text_input.font_request(self_rc);
         let font = {
             #[cfg(feature = "systemfonts")]
@@ -3659,6 +3700,18 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
     }
 
     fn draw_string(&mut self, string: &str, color: Color) {
+        #[cfg(feature = "systemfonts")]
+        if always_parley() {
+            sharedparley::draw_text(
+                self,
+                core::pin::pin!((i_slint_core::SharedString::from(string), Brush::from(color))),
+                None,
+                self.current_state.clip.size.cast(),
+                None,
+            );
+            return;
+        }
+
         let font_request = Default::default();
         let font = {
             #[cfg(feature = "systemfonts")]
