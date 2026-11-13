@@ -64,13 +64,15 @@ export component IconButton {
 // finger less and less, up to give, and a flick that reaches an end with speed left goes past it
 // by up to 0.6 give and comes back. The children are the content, content-height tall, and
 // scroll is how far down it is. released says where a drag let go is heading, and scroll-to
-// moves the content over d.
+// moves the content over d. horizontal makes it a row content-width wide.
 export component Scroller inherits SwipeGestureHandler {
+    in property <bool> horizontal;
     in property <length> content-height;
+    in property <length> content-width: self.width;
     in-out property <length> scroll;
     in property <length> give: 15 * Theme.unit;
     callback released(length);
-    property <length> max: Math.max(0, self.content-height - self.height);
+    property <length> max: Math.max(0, self.horizontal ? self.content-width - self.width : self.content-height - self.height);
     property <duration> anim: 0ms;
     // Where the content was when the drag took it, and where it comes back to after going past an end.
     property <length> grab;
@@ -87,8 +89,10 @@ export component Scroller inherits SwipeGestureHandler {
         easing: ease-out;
     }
 
-    handle-swipe-up: true;
-    handle-swipe-down: true;
+    handle-swipe-up: !self.horizontal;
+    handle-swipe-down: !self.horizontal;
+    handle-swipe-left: self.horizontal;
+    handle-swipe-right: self.horizontal;
 
     function resist(e: length) -> length {
         return self.give > 0 ? self.give * (e / (e + 2 * self.give)) : 0;
@@ -144,7 +148,7 @@ export component Scroller inherits SwipeGestureHandler {
     }
 
     moved => {
-        let y = self.current-position.y;
+        let y = self.horizontal ? self.current-position.x : self.current-position.y;
         if !self.tracking {
             // The first move of a press takes the content where it is, coasting or not.
             self.tracking = true;
@@ -157,7 +161,7 @@ export component Scroller inherits SwipeGestureHandler {
         if !self.swiping {
             return;
         }
-        let raw = self.grab - (y - self.pressed-position.y);
+        let raw = self.grab - (y - (self.horizontal ? self.pressed-position.x : self.pressed-position.y));
         self.scroll = raw < 0 ? -self.resist(-raw) : raw > self.max ? self.max + self.resist(raw - self.max) : raw;
         let dt = Face.touch-time() - self.last-ms;
         if dt > 0 {
@@ -180,9 +184,10 @@ export component Scroller inherits SwipeGestureHandler {
         clip: true;
 
         Rectangle {
-            y: -root.scroll;
-            width: root.width;
-            height: root.content-height;
+            x: root.horizontal ? -root.scroll : 0;
+            y: root.horizontal ? 0 : -root.scroll;
+            width: root.content-width;
+            height: root.horizontal ? root.height : root.content-height;
 
             @children
         }
@@ -526,7 +531,7 @@ export component IntSelector {
     callback down();
     callback up();
     callback set(int);
-    property <bool> tracking;
+    out property <bool> tracking;
 
     function track(x: length) {
         let f = Math.clamp((x - 8.25 * Theme.unit) / (66.5 * Theme.unit - 16.5 * Theme.unit), 0, 1);

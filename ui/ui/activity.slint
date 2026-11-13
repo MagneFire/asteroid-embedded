@@ -1,7 +1,7 @@
-// The Activity app: pages scrolled up and down. Today's steps in the middle of a ring that fills
-// towards the daily goal, a workout to start and stop with the last one below it, the steps of
-// the last seven days as bars with the goal as a line, a day of logged heart rates where the watch
-// has the sensor, and the daily goal to set; the height and weight it works with are in Settings.
+// The Activity app: pages swiped sideways. Today's steps in the middle of a ring that fills
+// towards the daily goal, the steps of the last seven days as bars with the goal as a line, a day
+// of logged heart rates where the watch has the sensor, a workout to start and stop with the last
+// one below it, and the daily goal to set; the height and weight it works with are in Settings.
 import { Face, HeartPoint } from "face.slint";
 import { Codes } from "codes.slint";
 import { PageDot, IntSelector, RowLabel, Pill, LabeledSwitch, Scroller } from "controls.slint";
@@ -98,7 +98,7 @@ component TodayPage {
     }
 
     Caption {
-        y: 78 * Theme.unit;
+        y: 78 * Theme.unit - Face.chin / 2;
         text: root.today >= root.goal ? "Goal reached" : "of " + Activity.grouped(root.goal);
         color: root.today >= root.goal ? Activity.accent : #ffffffcc;
         font-weight: 700;
@@ -111,18 +111,21 @@ component WeekPage {
     property <[string]> initials: ["S", "M", "T", "W", "T", "F", "S"];
     property <int> best: Math.max(self.goal, self.days.length >= 7 ? Math.max(self.days[0], self.days[1], self.days[2], self.days[3], self.days[4], self.days[5], self.days[6]) : 0);
     property <int> sum: self.days.length >= 7 ? self.days[0] + self.days[1] + self.days[2] + self.days[3] + self.days[4] + self.days[5] + self.days[6] : 0;
+    // Where the bars stand and how tall the tallest is, above the flat tire.
+    property <length> base: 70 * Theme.unit - Face.chin;
+    property <length> tall: Math.min(40 * Theme.unit, 46 * Theme.unit - Face.chin);
 
     PageTitle {
         y: 10 * Theme.unit;
         text: "Last 7 days";
     }
 
-    // The bars stand on y = 70, 40 high for the best day or the goal, whichever is more.
+    // The bars are tall for the best day or the goal, whichever is more.
     for steps[i] in root.days: Rectangle {
         x: 18 * Theme.unit + i * 9.5 * Theme.unit;
-        y: 70 * Theme.unit - self.height;
+        y: root.base - self.height;
         width: 7 * Theme.unit;
-        height: Math.max(1, 40 * steps / root.best) * Theme.unit;
+        height: Math.max(1 * Theme.unit, root.tall * steps / root.best);
         border-radius: 1 * Theme.unit;
         background: Activity.accent;
         opacity: steps >= root.goal ? 1 : 0.55;
@@ -130,7 +133,7 @@ component WeekPage {
 
     Rectangle {
         x: 16 * Theme.unit;
-        y: 70 * Theme.unit - 40 * Theme.unit * root.goal / root.best;
+        y: root.base - root.tall * root.goal / root.best;
         width: 68 * Theme.unit;
         height: 0.5 * Theme.unit;
         background: white;
@@ -139,7 +142,7 @@ component WeekPage {
 
     for steps[i] in root.days: Text {
         x: 18 * Theme.unit + i * 9.5 * Theme.unit;
-        y: 71 * Theme.unit;
+        y: root.base + 1 * Theme.unit;
         width: 7 * Theme.unit;
         height: 7 * Theme.unit;
         text: root.initials[Math.mod(Face.weekday + i + 1, 7)];
@@ -151,7 +154,7 @@ component WeekPage {
     }
 
     Caption {
-        y: 79 * Theme.unit;
+        y: root.base + 9 * Theme.unit;
         text: "Average " + Activity.grouped(Math.round(root.sum / 7));
         font-size: 4.5 * Theme.unit;
         font-weight: 700;
@@ -175,7 +178,7 @@ component HeartPage {
         x: 15 * Theme.unit;
         y: 25 * Theme.unit;
         width: 70 * Theme.unit;
-        height: 34 * Theme.unit;
+        height: 34 * Theme.unit - Face.chin;
 
         for y in [60, 100, 140]: Rectangle {
             y: parent.height * (1 - (y - root.low) / (root.high - root.low));
@@ -206,13 +209,13 @@ component HeartPage {
     }
 
     Caption {
-        y: 59 * Theme.unit;
+        y: 59 * Theme.unit - Face.chin;
         text: root.log.length > 0 ? "Last " + root.log[root.log.length - 1].bpm + " bpm" : "";
         font-size: 4.5 * Theme.unit;
     }
 
     LabeledSwitch {
-        y: 67 * Theme.unit;
+        y: 67 * Theme.unit - Face.chin;
         text: "Measure every";
         value: ["Off", "10 min", "30 min", "60 min"][root.choice];
         clicked => {
@@ -283,13 +286,15 @@ component WorkoutPage {
 
 component GoalPage {
     property <int> goal: Math.max(1, Face.activity-goal);
+    // While the selector is held to drag, the pages stay put.
+    out property <bool> tracking: selector.tracking;
 
     RowLabel {
         y: 6 * Theme.unit;
         text: "Daily step goal";
     }
 
-    IntSelector {
+    selector := IntSelector {
         y: 18 * Theme.unit;
         value: root.goal;
         min: 500;
@@ -315,19 +320,24 @@ component GoalPage {
 }
 
 export component ActivityScreen {
-    // Page kinds: 0 today, 1 week, 2 heart rate, 3 workout, 4 goal.
-    property <[int]> pages: Face.has-heart-rate ? [0, 3, 1, 2, 4] : [0, 3, 1, 4];
+    // Page kinds: 0 today, 1 week, 2 heart rate, 3 workout, 4 goal; the charts after today, then
+    // the workout and the goal, as the other apps keep their actions and settings last.
+    property <[int]> pages: Face.has-heart-rate ? [0, 1, 2, 3, 4] : [0, 1, 3, 4];
     property <int> page;
 
     width: 100%;
     height: 100%;
 
-    // A Scroller, so a swipe that starts on a control still turns the page; it settles on the
-    // next page or the one before.
+    property <bool> goal-tracking;
+
+    // Swiped sideways like the other apps' pages. A Scroller, so a swipe that starts on a
+    // control still turns the page; it settles on the next page or the one before.
     list := Scroller {
+        horizontal: true;
+        enabled: !root.goal-tracking;
         width: 100 * Theme.unit;
         height: 100 * Theme.unit;
-        content-height: root.pages.length * 100 * Theme.unit;
+        content-width: root.pages.length * 100 * Theme.unit;
         give: 15 * Theme.unit;
         released(to) => {
             let at = root.page * 100 * Theme.unit;
@@ -336,10 +346,10 @@ export component ActivityScreen {
         }
 
         for kind[k] in root.pages: Rectangle {
-            y: k * 100 * Theme.unit;
+            x: k * 100 * Theme.unit;
             width: 100 * Theme.unit;
             height: 100 * Theme.unit;
-            visible: self.y - list.scroll > -100 * Theme.unit && self.y - list.scroll < 100 * Theme.unit;
+            visible: self.x - list.scroll > -100 * Theme.unit && self.x - list.scroll < 100 * Theme.unit;
 
             if kind == 0: TodayPage {
                 width: 100%;
@@ -360,6 +370,9 @@ export component ActivityScreen {
             if kind == 4: GoalPage {
                 width: 100%;
                 height: 100%;
+                changed tracking => {
+                    root.goal-tracking = self.tracking;
+                }
             }
         }
     }
