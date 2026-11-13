@@ -1,0 +1,124 @@
+// The Agenda's text: the day strip, seven reused days of two shadowed labels each whose
+// bindings follow the scroll, and a list of event rows of two shadowed labels each.
+
+component Shadowed {
+    in property <string> text;
+    in property <length> font-size;
+    in property <string> font-family;
+    in property <TextHorizontalAlignment> horizontal-alignment;
+    in property <float> shade: 1;
+
+    Text {
+        x: 1.5px;
+        y: 1.5px;
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: #00000077;
+        opacity: root.shade;
+        font-size: root.font-size;
+        font-family: root.font-family;
+        horizontal-alignment: root.horizontal-alignment;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.text;
+        color: white;
+        opacity: root.shade;
+        font-size: root.font-size;
+        font-family: root.font-family;
+        horizontal-alignment: root.horizontal-alignment;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component Bench inherits Window {
+    in property <length> scroll;
+    in property <length> list;
+    in property <int> rename;
+    property <length> unit: self.width / 100;
+    property <length> item: 84 * self.unit / 2.5;
+    property <[string]> weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    property <[string]> titles: ["Dentist", "Lunch with Sam", "Standup", "Gym", "Call mum"];
+
+    width: 320px;
+    height: 320px;
+    background: #203040;
+
+    Rectangle {
+        y: 0;
+        height: 40%;
+
+        for k in 7: day := Rectangle {
+            property <int> i: Math.round(root.scroll / root.item) - 3 + k;
+            property <float> near: Math.max(0, 1 - Math.abs(day.i * root.item - root.scroll) / root.item);
+            property <length> cx: 50 * root.unit + day.i * root.item - root.scroll;
+
+            x: self.cx - root.item / 2;
+            width: root.item;
+            visible: day.i >= 0 && day.i < 31;
+
+            Shadowed {
+                y: (-0.6 - 3.9 * parent.near) * root.unit;
+                width: parent.width;
+                height: parent.height;
+                text: day.i + 1;
+                font-size: Math.round(parent.height / 2.4 * (1 + 0.5 * parent.near) / 1phx) * 1phx;
+                font-family: parent.near > 0.5 ? "Noto Sans SemiCondensed Bold" : "Noto Sans Condensed Medium";
+                horizontal-alignment: center;
+                shade: 0.6 + 0.4 * parent.near;
+            }
+
+            Shadowed {
+                y: (10 + parent.near) * root.unit;
+                width: parent.width;
+                height: parent.height;
+                text: root.weekdays[Math.mod(day.i, 7)];
+                font-size: Math.round(parent.height / 9 * (1 + 0.5 * parent.near) / 1phx) * 1phx;
+                font-family: "Noto Sans SemiCondensed Light";
+                horizontal-alignment: center;
+                shade: 0.7 + 0.3 * parent.near;
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height * 0.4;
+        height: 60%;
+        clip: true;
+
+        for title[i] in root.titles: Rectangle {
+            property <length> mid: self.height * 0.48;
+
+            y: i * 20 * root.unit - root.list;
+            height: 20 * root.unit;
+
+            Shadowed {
+                x: 23 * root.unit;
+                y: parent.mid - parent.height / 2;
+                width: 25 * root.unit;
+                height: parent.height;
+                text: (9 + i) + ":00";
+                font-size: parent.height / 2;
+                font-family: "Noto Sans SemiCondensed SemiBold";
+                horizontal-alignment: right;
+            }
+
+            Shadowed {
+                x: 52 * root.unit;
+                y: parent.mid - parent.height / 2;
+                width: 48 * root.unit;
+                height: parent.height;
+                text: root.rename == 0 ? title : title + " " + root.rename;
+                font-size: parent.height / 2;
+                font-family: "Noto Sans SemiCondensed Light";
+                horizontal-alignment: left;
+            }
+        }
+    }
+}

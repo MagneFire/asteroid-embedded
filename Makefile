@@ -3,6 +3,7 @@
 #                 build/omap3/asteroid.img for the OMAP3630 one
 # make run        boot it over fastboot, wait for the reboot, show the log
 # make test       host unit tests of the console, adb and the parsers
+# make textbench  time Agenda-like text repaints on the host, with the UI's Slint
 CROSS   ?= arm-none-eabi-
 CC      := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
@@ -182,6 +183,11 @@ preview: $(UI_LIB)
 	$(SLINT_VIEWER) -I $(abspath $(dir $(firstword $(wildcard ui/target/armv7a-none-eabihf/release/build/asteroid-ui-*/out/codes.slint)))) \
 		--auto-reload --load-data tools/preview/watchface.json ui/ui/preview.slint
 
+# Its own crate, built for the host, so ui's armv7a target and allocator stay out of it.
+textbench:
+	cd ui/textbench && PATH="$(dir $(CARGO)):$$PATH" $(CARGO) run --release \
+		--target $$(PATH="$(dir $(CARGO)):$$PATH" rustc -vV | sed -n 's/^host: //p') --target-dir $(abspath build/textbench)
+
 disasm: $(BUILD)/asteroid.elf
 	$(OBJDUMP) -d $< > $(BUILD)/asteroid.dis
 
@@ -319,4 +325,4 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(OBJS:.o=.d)
-.PHONY: all run preview disasm test clean FORCE
+.PHONY: all run preview textbench disasm test clean FORCE

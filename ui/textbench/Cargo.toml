@@ -1,0 +1,27 @@
+[package]
+name = "textbench"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# Host benchmark of the text-heavy Agenda repaint, built with the firmware's Slint features.
+[dependencies]
+slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
+i-slint-renderer-software = { version = "=1.18.1", default-features = false, features = ["experimental", "systemfonts"] }
+i-slint-core = { version = "=1.18.1", default-features = false }
+
+[build-dependencies]
+slint-build = { version = "1.18.1", default-features = false, features = ["compat-1-18", "renderer-software"] }
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+debug = "line-tables-only"
+
+[patch.crates-io]
+i-slint-common = { path = "../../third_party/slint/i-slint-common" }
+i-slint-compiler = { path = "../../third_party/slint/i-slint-compiler" }
+i-slint-core = { path = "../../third_party/slint/i-slint-core" }
+i-slint-renderer-software = { path = "../../third_party/slint/i-slint-renderer-software" }
+slint-build = { path = "../../third_party/slint/slint-build" }
