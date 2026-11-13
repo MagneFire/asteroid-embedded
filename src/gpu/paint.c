@@ -48,7 +48,7 @@ static struct atlas atlases[2] = {
 
 static struct slot {
 	const uint8_t *key;
-	uint32_t sum;
+	uint32_t sum, checked;
 	uint16_t x, y, w, h;
 	uint8_t atlas;
 } slots[SLOTS];
@@ -62,6 +62,10 @@ static bool copy_mode, begun, drawn, ready;
 static bool rounded, rounded_prog, have_prog;
 static float rounded_clip[5];
 static int dirty_y0, dirty_y1;
+/* Counts paint_begin calls. An image drawn in a pass stays held by its
+ * item for the rest of it, so its texels are only checked once a pass;
+ * a glyph can be freed and its address reused within one. */
+static uint32_t pass;
 static struct { uint32_t *layer; uint32_t pitch; int y0, y1; } pending[8];
 static unsigned npending;
 
@@ -188,6 +192,7 @@ bool paint_begin(uint32_t *buf, uint32_t width, uint32_t height, uint32_t stride
 		paint_finish();
 	if (!atlases[0].row_h)
 		reset();
+	pass++;
 	layer = buf;
 	target = (struct gpu_target){ (uint32_t)(uintptr_t)buf, width, height, stride_px * 4, true };
 	kind = NONE;
@@ -353,11 +358,15 @@ static struct slot *lookup(const uint8_t *key, const uint8_t *data, uint32_t str
 {
 	unsigned n = format == PAINT_ALPHA ? 0 : 1;
 	struct atlas *a = &atlases[n];
-	uint32_t sum = make ? 0 : checksum(data, stride, width * (format == PAINT_ALPHA ? 1 : format == PAINT_RGB ? 3 : 4), height);
 	bool found;
 	struct slot *s = find(key, width, height, n, &found);
-	if (found && s->sum == sum)
+	if (found && n && s->checked == pass)
 		return s;
+	uint32_t sum = make ? 0 : checksum(data, stride, width * (format == PAINT_ALPHA ? 1 : format == PAINT_RGB ? 3 : 4), height);
+	if (found && s->sum == sum) {
+		s->checked = pass;
+		return s;
+	}
 	uint32_t x, y;
 	if (!s || !place(a, width, height, &x, &y)) {
 		paint_sync();
@@ -373,7 +382,7 @@ static struct slot *lookup(const uint8_t *key, const uint8_t *data, uint32_t str
 		stride = width;
 	}
 	copy_in(a, x, y, data, stride, width, height, format);
-	*s = (struct slot){ key, sum, (uint16_t)x, (uint16_t)y, (uint16_t)width, (uint16_t)height, (uint8_t)n };
+	*s = (struct slot){ key, sum, pass, (uint16_t)x, (uint16_t)y, (uint16_t)width, (uint16_t)height, (uint8_t)n };
 	return s;
 }
 
