@@ -1337,6 +1337,128 @@ static void sgx_tex(const char *arg)
 	say("geometry %lu us, render %lu us\n", t.ta_us, t.render_us);
 }
 
+/* A layer drawn onto itself, kept outside a square and painted over
+ * inside it, as a scene that redraws only a damaged part of a layer
+ * would: a 320x320 buffer of the GPU's whose every pixel differs (R x,
+ * G y, B x ^ y with the high bits of both in its two lowest bits) is
+ * the frame's target and its one texture, texel for pixel, outside the
+ * square (96,96)-(224,224); a flat red quad fills the square. The
+ * format byte of the texture is given in hex (0d if none): the pixels
+ * outside come back the same, with red and blue swapped, or wrong. */
+static uint32_t copy_pixel(uint32_t x, uint32_t y)
+{
+	return 0xff000000 | (x & 0xff) << 16 | (y & 0xff) << 8 | ((x ^ y) & 0xfc) | x >> 8 | (y >> 8) << 1;
+}
+
+static void sgx_copy(const char *arg)
+{
+	static uint32_t buf_gpu, buf_gen;
+	static uint32_t *buf;
+	enum { N = SGX_DRAW_SIZE, LO = 96, HI = 224, SHOWN = 4 };
+	const uint32_t bytes = N * N * 4, flat = 0xffff0000;
+	/* The four bands round the square: x0, y0, x1, y1. */
+	static const uint16_t bands[4][4] = { { 0, 0, N, LO }, { 0, HI, N, N }, { 0, LO, LO, HI }, { HI, LO, N, HI } };
+	static const float quad[6][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
+	char *end;
+	unsigned long format = *arg ? strtoul(arg, &end, 16) : 0x0d;
+	if (*arg && (*end || format > 0xff)) {
+		say("usage: sgx copy [format byte]\n");
+		return;
+	}
+	struct sgx_times t;
+	uint32_t vgpu;
+	float *v;
+	bool was = sgx_running();
+	if (!sgx_start()) {
+		say("failed, see the log\n");
+		return;
+	}
+	bool set = sgx_draw_setup();
+	if (buf_gen != sgx_generation())
+		buf_gpu = 0;
+	if (set && !buf_gpu && (buf_gpu = sgx_draw_alloc(bytes, (void **)&buf)))
+		buf_gen = sgx_generation();
+	if (!set || !buf_gpu || !(v = sgx_draw_vertices(3 * 24 + 24 * 16 + 6 * 24, &vgpu))) {
+		if (!was)
+			sgx_stop();
+		say("failed, see the log\n");
+		return;
+	}
+	for (uint32_t y = 0; y < N; y++)
+		for (uint32_t x = 0; x < N; x++)
+			buf[y * N + x] = copy_pixel(x, y);
+	/* Positions and texels in the buffer's own rows: the first row is
+	 * clip-space y = -1 and texture v = 0 alike. */
+	memset(v, 0, 3 * 24);
+	float *q = v + 18;
+	for (unsigned b = 0; b < 4; b++)
+		for (unsigned i = 0; i < 6; i++, q += 4) {
+			float x = quad[i][0] ? bands[b][2] : bands[b][0], y = quad[i][1] ? bands[b][3] : bands[b][1];
+			q[0] = x / (N / 2) - 1.0f;
+			q[1] = y / (N / 2) - 1.0f;
+			q[2] = x / N;
+			q[3] = y / N;
+		}
+	for (unsigned i = 0; i < 6; i++, q += 6) {
+		q[0] = (quad[i][0] ? HI : LO) / (float)(N / 2) - 1.0f;
+		q[1] = (quad[i][1] ? HI : LO) / (float)(N / 2) - 1.0f;
+		q[2] = 1.0f;
+		q[3] = 0.0f;
+		q[4] = 0.0f;
+		q[5] = 1.0f;
+	}
+	const struct sgx_draw d[3] = {
+		{ .verts = vgpu, .count = 3, .kind = SGX_DRAW_FLAT },
+		{ .verts = vgpu + 72, .count = 24, .kind = SGX_DRAW_TEXTURED, .blend = true, .tex = buf_gpu, .width = N,
+		  .height = N, .alpha = 255 },
+		{ .verts = vgpu + 72 + 24 * 16, .count = 6, .kind = SGX_DRAW_FLAT },
+	};
+	const struct sgx_frame f = { 0, d, 3 };
+	dcache_clean_range(buf, bytes);
+	sgx_draw_rows_format((uint8_t)format);
+	sgx_draw_target(buf_gpu);
+	bool ok = sgx_draw_frame(&f, &t);
+	sgx_draw_rows_format(0x0d);
+	if (!ok) {
+		log_printf("sgx: %s\n", sgx_draw_failure());
+		if (sgx_draw_refused()) {
+			if (!was)
+				sgx_stop();
+		} else {
+			sgx_log_state();
+			sgx_halt();
+		}
+		say("no frame, see the log\n");
+		return;
+	}
+	dcache_invalidate_range(buf, bytes);
+	uint32_t same = 0, swapped = 0, wrong = 0, filled = 0, swapped_in = 0, wrong_in = 0;
+	unsigned shown[2] = { 0 };
+	say("format %02lx: geometry %lu us, render %lu us\n", format, t.ta_us, t.render_us);
+	for (uint32_t y = 0; y < N; y++)
+		for (uint32_t x = 0; x < N; x++) {
+			bool in = x >= LO && x < HI && y >= LO && y < HI;
+			uint32_t want = in ? flat : copy_pixel(x, y), got = buf[y * N + x];
+			uint32_t rb = (want & 0xff00ff00) | (want & 0xff) << 16 | (want >> 16 & 0xff);
+			if (got == want) {
+				same += !in;
+				filled += in;
+				continue;
+			}
+			if (got == rb) {
+				swapped += !in;
+				swapped_in += in;
+				continue;
+			}
+			wrong += !in;
+			wrong_in += in;
+			if (shown[in]++ < SHOWN)
+				say("  %lu,%lu %s: want %08lx got %08lx\n", x, y, in ? "inside" : "outside", want, got);
+		}
+	say("outside: %lu same, %lu red and blue swapped, %lu wrong; inside: %lu red, %lu blue, %lu wrong\n", same,
+	    swapped, wrong, filled, swapped_in, wrong_in);
+}
+
 static void cmd_sgx(const char *args)
 {
 	struct sgx_info i;
@@ -1345,6 +1467,8 @@ static void cmd_sgx(const char *args)
 		sgx_tri(skip_spaces(args + 3));
 	} else if (!strncmp(args, "tex", 3) && (!args[3] || args[3] == ' ')) {
 		sgx_tex(skip_spaces(args + 3));
+	} else if (!strncmp(args, "copy", 4) && (!args[4] || args[4] == ' ')) {
+		sgx_copy(skip_spaces(args + 4));
 	} else if (!strcmp(args, "off")) {
 		sgx_compose(false);
 		say("off\n");
@@ -1362,7 +1486,7 @@ static void cmd_sgx(const char *args)
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | ui [on | off] | inval [on | off]]\n");
+		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1424,7 +1548,7 @@ static const struct command commands[] = {
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
-	{ "sgx", "[off | state | tri [rrggbb] | tex [format] | ui [on | off] | inval [on | off]]", cmd_sgx },
+	{ "sgx", "[off | state | tri [rrggbb] | tex [format] | copy [format] | ui [on | off] | inval [on | off]]", cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };
