@@ -44,6 +44,8 @@ void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigne
 unsigned gpio_get(unsigned n) { return 0; }
 uint32_t gpio_raw_config(unsigned n) { return 0; }
 void gpio_set(unsigned n, unsigned v) {}
+int regulator_on(uint32_t id, uint32_t uv) { return 0; }
+int regulator_off(uint32_t id) { return 0; }
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	memset(info, 0, sizeof *info);

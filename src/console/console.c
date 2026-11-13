@@ -364,6 +364,26 @@ static void cmd_pmic(const char *args)
 	}
 }
 
+/* A regulator on at a voltage in uV, or off. */
+static void cmd_ldo(const char *args)
+{
+	uint32_t n, uv;
+	if (!parse_num(&args, 10, &n)) {
+		say("usage: ldo <n> <uV> | off\n");
+		return;
+	}
+	args = skip_spaces(args);
+	if (!strncmp(args, "off", 3)) {
+		say("ldo %lu off: %d\n", n, regulator_off(n));
+		return;
+	}
+	if (!parse_num(&args, 10, &uv)) {
+		say("usage: ldo <n> <uV> | off\n");
+		return;
+	}
+	say("ldo %lu %lu uV: %d\n", n, uv, regulator_on(n, uv));
+}
+
 /* One pin: its configuration word, as the SoC has it, and level, or
  * made an output at a level. */
 static void cmd_gpio(const char *args)
@@ -1333,6 +1353,7 @@ static const struct command commands[] = {
 	{ "vadc", "<channel>", cmd_vadc },
 #endif
 	{ "gpio", "<pin> [= 0|1]", cmd_gpio },
+	{ "ldo", "<n> <uV> | off", cmd_ldo },
 	{ "gauge", "<reg>...", cmd_gauge },
 	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
