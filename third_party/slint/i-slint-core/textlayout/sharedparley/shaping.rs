@@ -411,6 +411,11 @@ impl ShapingInputs {
             self.link_color,
         )
     }
+
+    /// Whether the text is a short plain label, small to keep and quick to compare.
+    pub(super) fn is_label(&self) -> bool {
+        matches!(&self.text, PlainOrStyledText::Plain(text) if text.len() <= 64)
+    }
 }
 
 /// Reads what `text` is shaped from, the way both the drawing and the measuring paths need it,
@@ -431,6 +436,7 @@ pub(super) fn shaping_inputs(
     }
 }
 
+#[derive(Clone)]
 pub(super) struct TextParagraph {
     pub(super) range: Range<usize>,
     pub(super) y: PhysicalLength,
