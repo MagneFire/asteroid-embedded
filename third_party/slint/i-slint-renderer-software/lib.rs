@@ -3361,8 +3361,8 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
         let slint_context = self.window.context();
         let (swash_key, swash_offset) =
             fonts::systemfonts::get_swash_font_info(&font.data, font.index);
-        let font = fonts::vectorfont::VectorFont::new_from_blob_and_index_with_coords(
-            font.data.clone(),
+        let font = fonts::vectorfont::GlyphSource::new(
+            &font.data,
             font.index,
             swash_key,
             swash_offset,

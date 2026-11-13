@@ -208,6 +208,57 @@ impl VectorFont {
         subpixel_bin: u8,
         slint_context: &i_slint_core::SlintContext,
     ) -> Option<RenderableVectorGlyph> {
+        GlyphSource {
+            font_blob: &self.font_blob,
+            font_index: self.font_index,
+            swash_key: self.swash_key,
+            swash_offset: self.swash_offset,
+            pixel_size: self.pixel_size,
+            normalized_coords: &self.normalized_coords,
+            coords_hash: self.coords_hash,
+        }
+        .render_vector_glyph(glyph_id, subpixel_bin, slint_context)
+    }
+}
+
+/// What rendering glyphs takes of a font. Unlike a [`VectorFont`] it has no metrics, which
+/// cost parsing the font's tables, so it is cheap to make for every glyph run drawn.
+pub struct GlyphSource<'a> {
+    font_blob: &'a fontique::Blob<u8>,
+    font_index: u32,
+    swash_key: swash::CacheKey,
+    swash_offset: u32,
+    pixel_size: PhysicalLength,
+    normalized_coords: &'a [i16],
+    coords_hash: u64,
+}
+
+impl<'a> GlyphSource<'a> {
+    pub fn new(
+        font_blob: &'a fontique::Blob<u8>,
+        font_index: u32,
+        swash_key: swash::CacheKey,
+        swash_offset: u32,
+        pixel_size: PhysicalLength,
+        normalized_coords: &'a [i16],
+    ) -> Self {
+        Self {
+            font_blob,
+            font_index,
+            swash_key,
+            swash_offset,
+            pixel_size,
+            normalized_coords,
+            coords_hash: hash_coords(normalized_coords),
+        }
+    }
+
+    pub fn render_vector_glyph(
+        &self,
+        glyph_id: core::num::NonZeroU16,
+        subpixel_bin: u8,
+        slint_context: &i_slint_core::SlintContext,
+    ) -> Option<RenderableVectorGlyph> {
         GLYPH_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
 
@@ -228,12 +279,16 @@ impl VectorFont {
             let subpixel_offset_x = subpixel_bin as f32 / SUBPIXEL_BIN_COUNT as f32;
 
             let glyph = {
-                let font_ref = self.swash_font_ref();
+                let font_ref = swash::FontRef {
+                    data: self.font_blob.data(),
+                    offset: self.swash_offset,
+                    key: self.swash_key,
+                };
                 let mut ctx = slint_context.swash_scale_context().borrow_mut();
                 let mut scaler = ctx
                     .builder(font_ref)
                     .size(self.pixel_size.get() as f32)
-                    .normalized_coords(&self.normalized_coords)
+                    .normalized_coords(self.normalized_coords)
                     .build();
                 let image = swash::scale::Render::new(&[swash::scale::Source::Outline])
                     .format(swash::zeno::Format::Alpha)
