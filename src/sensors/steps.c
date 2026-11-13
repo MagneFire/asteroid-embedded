@@ -7,8 +7,9 @@
  * them. Each day that ends goes into a ring of the last STEPS_DAYS, and
  * the days the watch missed, off or with the clock set ahead, count as
  * none. A hub that measures the distance and calories from the wearer's
- * profile has them kept the same way, today's alone; otherwise they are
- * worked out from the steps. */
+ * profile has them kept the same way, today's alone; otherwise the
+ * distance is worked out from the steps. The calories always come from
+ * the distance: the hub counts arm movement at a desk as activity. */
 #include <string.h>
 #include "asteroid.h"
 #include "fitness.h"
@@ -130,13 +131,11 @@ struct activity steps_since(const struct activity *from)
 {
 	struct activity a = steps_activity();
 	a.steps = a.steps > from->steps ? a.steps - from->steps : 0;
-	if (hub_measures_activity()) {
+	if (hub_measures_activity())
 		a.distance_m = a.distance_m > from->distance_m ? a.distance_m - from->distance_m : 0;
-		a.kcal = a.kcal > from->kcal ? a.kcal - from->kcal : 0;
-	} else {
+	else
 		a.distance_m = fitness_distance_m(a.steps, setting_get(SETTING_HEIGHT));
-		a.kcal = fitness_kcal(a.steps, setting_get(SETTING_WEIGHT));
-	}
+	a.kcal = fitness_kcal(a.distance_m, setting_get(SETTING_WEIGHT));
 	return a;
 }
 

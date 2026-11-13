@@ -159,11 +159,12 @@ int main(void)
 	/* Worked out from the steps: 180 cm, 80 kg. */
 	at(today + 1, 400, count + 1095);
 	struct activity a = steps_activity_today();
-	CHECK(a.steps == 1000 && a.distance_m == 747 && a.kcal == 40);
+	CHECK(a.steps == 1000 && a.distance_m == 747 && a.kcal == 29);
 	CHECK(profile.age == 41 && profile.male && profile.height_cm == 180 && profile.weight_kg == 80);
 
-	/* Measured by the hub: from its first reading on, across a reboot
-	 * and into the next day. */
+	/* The distance measured by the hub: from its first reading on,
+	 * across a reboot and into the next day. The calories still come
+	 * from the distance, not from the hub. */
 	measures = true;
 	struct activity from = steps_activity();
 	measured_now = true;
@@ -171,7 +172,7 @@ int main(void)
 	fake_measured[1] = 20;
 	CHECK(steps_poll());
 	a = steps_since(&from);
-	CHECK(a.distance_m == 300 && a.kcal == 20);
+	CHECK(a.distance_m == 300 && a.kcal == 12);
 	CHECK(steps_activity_today().distance_m == 300);
 	fake_measured[0] = 500;
 	CHECK(steps_poll());
