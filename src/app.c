@@ -46,7 +46,7 @@ static struct app_caps caps;
 static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen;
 static uint32_t shown_bpm, key_down_t, down_t;
 static unsigned seen_readings;
-static int down_x, down_y;
+static int down_x, down_y, last_x, last_y;
 static struct orient orient;
 
 static void tasks_init(uint32_t now);
@@ -320,6 +320,12 @@ void app_touch(uint32_t now)
 		if (use != TOUCH_USE)
 			continue;
 		power_activity(now);
+		/* A move to where the finger already is keeps the UI from
+		 * taking the touch as a tap. */
+		if (t.event == TOUCH_MOVE && t.x == last_x && t.y == last_y)
+			continue;
+		last_x = t.x;
+		last_y = t.y;
 		if (have_ui)
 			rotation_touch(&t.x, &t.y);
 		if (have_ui)
