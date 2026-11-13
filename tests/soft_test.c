@@ -1,6 +1,7 @@
 /* The CPU's frame drawing on the host: triangles that share edges
  * cover every pixel once, and a layer blended over the frame matches
  * the arithmetic done a pixel at a time. */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,16 @@
 #include "gpu/paint.h"
 
 void rotation_buffer(uint32_t *buf, uint32_t stride) {}
+
+static char lastlog[512];
+
+void log_printf(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(lastlog, sizeof lastlog, fmt, ap);
+	va_end(ap);
+}
 
 #define W 96
 #define H 80
@@ -476,6 +487,35 @@ static void turned(void)
 	check(centre, "the centre moves in the turn");
 }
 
+/* With null painting everything is taken and nothing drawn, and the
+ * calls are counted all the same. */
+static void null_paint(void)
+{
+	static const uint8_t tex[16 * 4];
+	const int32_t all[4] = { 0, 0, W, H };
+	const float radii[4] = { 4, 4, 4, 4 };
+	soft_paint_log();
+	lastlog[0] = 0;
+	soft_paint_log();
+	check(!lastlog[0], "an idle second is logged");
+	memset(layer, 0, sizeof(uint32_t) * H * W);
+	paint_null(true);
+	soft_paint_begin(layer, W, H, W);
+	soft_paint_rect(0, 0, 10, 10, all, 0xffffffffu, true);
+	check(soft_paint_rounded(0, 0, 20, 20, radii, 2, all, 0xffffffffu, 0xffffffffu), "a border is refused");
+	check(soft_paint_texture(tex, 16, 4, 4, PAINT_ALPHA, 0, 0, 8, 8, all, 0xffffffffu, false), "a scaled glyph is refused");
+	check(soft_paint_texture(tex, 16, 4, 4, PAINT_RGBA, 2, 2, 4, 4, all, 0xffffffffu, false), "a texture is refused");
+	soft_paint_sync();
+	paint_refused(PAINT_REFUSED_BRUSH);
+	soft_paint_log();
+	paint_null(false);
+	for (int i = 0; i < W * H; i++)
+		check(!layer[i], "null painting draws");
+	check(strstr(lastlog, "null 1 repaints, rect 1 (px 100), rounded 1, texture 2 (px 16, scaled 1, alpha 1), "
+			      "clip 0, sync 1, refused 3 (border 1, scaled alpha 1, wide 0, gradient 1,") != NULL,
+	      "null painting is counted wrong");
+}
+
 /* Timing, for SOFT_BENCH=1 on a build with optimisation: the calls the
  * UI makes most, per frame's worth. */
 static double now_ns(void)
@@ -556,6 +596,7 @@ int main(void)
 	scaled_and_rounded();
 	rounded_clip();
 	turned();
+	null_paint();
 	printf("soft_test: ok\n");
 	if (getenv("SOFT_BENCH"))
 		bench();

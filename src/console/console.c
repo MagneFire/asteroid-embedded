@@ -15,6 +15,7 @@
 #include "gpu/sgx.h"
 #include "gpu/sgx_draw.h"
 #include "gpu/sgx_compose.h"
+#include "gpu/paint.h"
 #include "sensors/hub.h"
 #include "actions.h"
 #include "input/touch.h"
@@ -1469,6 +1470,20 @@ static void cmd_sgx(const char *args)
 		sgx_tex(skip_spaces(args + 3));
 	} else if (!strncmp(args, "copy", 4) && (!args[4] || args[4] == ' ')) {
 		sgx_copy(skip_spaces(args + 4));
+	} else if (!strncmp(args, "paint", 5) && (!args[5] || args[5] == ' ')) {
+		static const char *const modes[] = { [PAINT_MODE_SOFT] = "soft", [PAINT_MODE_GPU] = "gpu",
+						     [PAINT_MODE_NULL] = "null" };
+		const char *m = skip_spaces(args + 5);
+		unsigned i = 0;
+		while (*m && i < ARRAY_SIZE(modes) && strcmp(m, modes[i]))
+			i++;
+		if (i == ARRAY_SIZE(modes)) {
+			say("usage: sgx paint [gpu | soft | null]\n");
+			return;
+		}
+		if (*m)
+			paint_mode((int)i);
+		say("paint %s%s\n", modes[paint_mode_now()], paint_gpu_lost() ? ", the CPU since a failed scene" : "");
 	} else if (!strcmp(args, "off")) {
 		sgx_compose(false);
 		say("off\n");
@@ -1486,7 +1501,8 @@ static void cmd_sgx(const char *args)
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | ui [on | off] | inval [on | off]]\n");
+		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null] | "
+		    "ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1548,7 +1564,10 @@ static const struct command commands[] = {
 	{ "media", "<volume> <playing> <title>|<artist>", cmd_media },
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
-	{ "sgx", "[off | state | tri [rrggbb] | tex [format] | copy [format] | ui [on | off] | inval [on | off]]", cmd_sgx },
+	{ "sgx",
+	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null] | ui [on | off] | "
+	  "inval [on | off]]",
+	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };

@@ -17,6 +17,9 @@ embedded-alloc = { version = "0.7.0", default-features = false, features = ["tls
 zeno = { version = "0.3.3", default-features = false, features = ["eval", "libm"] }
 critical-section = { version = "1.2.0", features = ["restore-state-u32"] }
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(paint_counts)"] }
+
 [build-dependencies]
 slint-build = { version = "1.18.1", default-features = false, features = ["compat-1-18", "renderer-software"] }
 skrifa = "0.44.0"

@@ -53,8 +53,10 @@ TUSB_DEFS_qcom := -DTUP_USBIP_CHIPIDEA_HS -DTUP_DCD_ENDPOINT_MAX=16
 
 SRCS_omap3 := $(addprefix src/soc/omap3/,init.c intc.c timer.c wdt.c clock.c gpio.c i2c.c tps65912.c reboot.c sleep.c \
                detect.c rtc.c hsmmc.c dss.c uart.c) \
-        src/board/minnow.c src/gpu/soft.c src/gpu/sgx.c src/gpu/sgx_image.c src/gpu/sgx_draw.c src/gpu/sgx_scene_data.c src/gpu/sgx_compose.c src/display/display_minnow.c src/usb/dcd_musb_omap3.c src/usb/port_musb_omap3.c src/bt/ti.c
+        src/board/minnow.c src/gpu/soft.c src/gpu/sgx.c src/gpu/sgx_image.c src/gpu/sgx_draw.c src/gpu/sgx_scene_data.c src/gpu/sgx_compose.c src/gpu/sgx_paint.c src/display/display_minnow.c src/usb/dcd_musb_omap3.c src/usb/port_musb_omap3.c src/bt/ti.c
 CPU_omap3 := cortex-a8
+# Counts what the UI paints, for the paint line in the log.
+UI_CFG_omap3 := --cfg paint_counts
 FPU_omap3 := neon
 TUSB_PORT_omap3 := mentor/musb
 # The Mentor driver keeps its endpoint interrupts in 8 bits.
@@ -123,7 +125,7 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS)
-	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_ARMV7A_NONE_EABIHF_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC))" \
+	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_ARMV7A_NONE_EABIHF_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC))$(if $(UI_CFG_$(SOC)), $(UI_CFG_$(SOC)))" \
 		$(CARGO) build --release --target armv7a-none-eabihf --target-dir $(abspath $(UI_TARGET))
 	@touch $@
 
@@ -318,6 +320,11 @@ $(BUILD)/test/sgx_stack_test: tests/sgx_stack_test.c $(SGX_STACK) $(wildcard tes
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(SGX_STACK) -o $@
 
+SGX_PAINT := src/gpu/sgx_paint.c src/gpu/soft.c
+$(BUILD)/test/sgx_paint_test: tests/sgx_paint_test.c $(SGX_PAINT) $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< $(SGX_PAINT) -o $@
+
 $(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
@@ -334,7 +341,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -367,6 +374,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/sgx_draw_test
 	$(BUILD)/test/sgx_test
 	$(BUILD)/test/sgx_stack_test
+	$(BUILD)/test/sgx_paint_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb
 	$(PYTHON) tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test

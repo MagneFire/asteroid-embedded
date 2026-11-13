@@ -36,4 +36,22 @@ void paint_cpu(uint32_t y0, uint32_t y1);
 void paint_sync(void);
 void paint_end(void);
 void paint_finish(void);
+
+/* On minnow only. paint_mode picks who paints (sgx_paint.c): the GPU,
+ * the CPU (soft.c), or nobody, every call drawing nothing so that a
+ * repaint costs only the UI's walk of its items; paint_gpu_lost says the
+ * GPU failed a scene and the CPU paints until paint_mode(PAINT_MODE_GPU).
+ * paint_refused counts an item the UI kept for itself before asking, of
+ * a PAINT_REFUSED_* kind, and paint_log logs the last second's counts. */
+enum { PAINT_MODE_SOFT, PAINT_MODE_GPU, PAINT_MODE_NULL };
+enum { PAINT_REFUSED_BRUSH, PAINT_REFUSED_ROTATED, PAINT_REFUSED_TILED, PAINT_REFUSED_ALPHA_MAP, PAINT_REFUSED_FORMAT,
+       PAINT_REFUSED_KINDS };
+
+void paint_mode(int mode);
+int paint_mode_now(void);
+bool paint_gpu_lost(void);
+void paint_null(bool on);
+bool paint_null_on(void);
+void paint_refused(uint32_t kind);
+void paint_log(void);
 #endif

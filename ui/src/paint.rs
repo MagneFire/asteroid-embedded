@@ -49,6 +49,27 @@ const PAINT_RGBA: i32 = 1;
 const PAINT_RGBA_PREMULTIPLIED: i32 = 2;
 const PAINT_ALPHA: i32 = 3;
 
+// Items left to the software renderer before asking the GPU, counted on minnow (src/gpu/paint.h).
+#[cfg(paint_counts)]
+unsafe extern "C" {
+    fn paint_refused(kind: u32);
+}
+
+const REFUSED_BRUSH: u32 = 0;
+const REFUSED_ROTATED: u32 = 1;
+const REFUSED_TILED: u32 = 2;
+const REFUSED_ALPHA_MAP: u32 = 3;
+const REFUSED_FORMAT: u32 = 4;
+
+fn refused(kind: u32) -> bool {
+    #[cfg(paint_counts)]
+    unsafe {
+        paint_refused(kind)
+    };
+    let _ = kind;
+    false
+}
+
 pub struct GpuLayer<'a> {
     layer: &'a mut [PremultipliedRgbaColor],
     stride: usize,
@@ -139,7 +160,7 @@ impl TargetPixelBuffer for GpuLayer<'_> {
         if !self.on {
             return false;
         }
-        let Some(color) = solid(brush) else { return false };
+        let Some(color) = solid(brush) else { return refused(REFUSED_BRUSH) };
         self.gpu();
         let color = premultiplied(color, 255);
         for clip in Self::clips(region) {
@@ -155,9 +176,11 @@ impl TargetPixelBuffer for GpuLayer<'_> {
         }
         let radii = [args.top_left_radius, args.top_right_radius, args.bottom_right_radius, args.bottom_left_radius];
         if args.rotation != RenderingRotation::NoRotation {
-            return false;
+            return refused(REFUSED_ROTATED);
         }
-        let (Some(background), Some(border)) = (solid(&args.background), solid(&args.border)) else { return false };
+        let (Some(background), Some(border)) = (solid(&args.background), solid(&args.border)) else {
+            return refused(REFUSED_BRUSH);
+        };
         let color = premultiplied(background, args.alpha);
         let mut border_color = premultiplied(border, args.alpha);
         let b = if border_color >> 24 == 0 { 0.0 } else { args.border_width as i32 as f32 };
@@ -199,8 +222,11 @@ impl TargetPixelBuffer for GpuLayer<'_> {
         if !self.on {
             return false;
         }
-        if args.rotation != RenderingRotation::NoRotation || args.tiling.is_some() {
-            return false;
+        if args.rotation != RenderingRotation::NoRotation {
+            return refused(REFUSED_ROTATED);
+        }
+        if args.tiling.is_some() {
+            return refused(REFUSED_TILED);
         }
         let source = args.source();
         let format = match source.pixel_format {
@@ -208,11 +234,11 @@ impl TargetPixelBuffer for GpuLayer<'_> {
             TexturePixelFormat::Rgba => PAINT_RGBA,
             TexturePixelFormat::RgbaPremultiplied => PAINT_RGBA_PREMULTIPLIED,
             TexturePixelFormat::AlphaMap => PAINT_ALPHA,
-            _ => return false,
+            _ => return refused(REFUSED_FORMAT),
         };
         let tint = match args.colorize {
             Some(c) => premultiplied(Color::from_rgb_u8(c.red(), c.green(), c.blue()), args.alpha),
-            None if format == PAINT_ALPHA => return false,
+            None if format == PAINT_ALPHA => return refused(REFUSED_ALPHA_MAP),
             None => (args.alpha as u32) * 0x01010101,
         };
         self.gpu();

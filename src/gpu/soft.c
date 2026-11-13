@@ -408,8 +408,42 @@ static struct {
 	float radius;
 } paint;
 
+static bool null;
+static struct {
+	uint32_t repaints, rects, rect_px, rounded, textures, texture_px, scaled, alpha, clips, syncs;
+	uint32_t border, scaled_alpha, wide, ui[PAINT_REFUSED_KINDS];
+} counts;
+
+void paint_null(bool on) { null = on; }
+
+bool paint_null_on(void) { return null; }
+
+void paint_refused(uint32_t kind)
+{
+	if (kind < PAINT_REFUSED_KINDS)
+		counts.ui[kind]++;
+}
+
+void soft_paint_log(void)
+{
+	if (!counts.repaints)
+		return;
+	uint32_t c = counts.border + counts.scaled_alpha + counts.wide, ui = 0;
+	for (unsigned i = 0; i < PAINT_REFUSED_KINDS; i++)
+		ui += counts.ui[i];
+	log_printf("paint: %s %lu repaints, rect %lu (px %lu), rounded %lu, texture %lu (px %lu, scaled %lu, alpha %lu), "
+		   "clip %lu, sync %lu, refused %lu (border %lu, scaled alpha %lu, wide %lu, gradient %lu, rotated %lu, "
+		   "tiled %lu, alpha map %lu, format %lu)\n",
+		   null ? "null" : "soft", counts.repaints, counts.rects, counts.rect_px, counts.rounded, counts.textures,
+		   counts.texture_px, counts.scaled, counts.alpha, counts.clips, counts.syncs, c + ui, counts.border,
+		   counts.scaled_alpha, counts.wide, counts.ui[PAINT_REFUSED_BRUSH], counts.ui[PAINT_REFUSED_ROTATED],
+		   counts.ui[PAINT_REFUSED_TILED], counts.ui[PAINT_REFUSED_ALPHA_MAP], counts.ui[PAINT_REFUSED_FORMAT]);
+	memset(&counts, 0, sizeof counts);
+}
+
 bool soft_paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px)
 {
+	counts.repaints++;
 	paint.px = (uint8_t *)layer;
 	paint.width = (int)width;
 	paint.height = (int)height;
@@ -425,6 +459,7 @@ static int round_px(float v)
 
 void soft_paint_rounded_clip(const float *clip)
 {
+	counts.clips += clip != NULL;
 	paint.rounded = clip != NULL;
 	if (!clip)
 		return;
@@ -512,6 +547,16 @@ static uint32_t arc_cover(const struct arc *a, int i)
 		return 0;
 	float dx = a->r - ((float)i + 0.5f), cover = a->r + 0.5f - root(dx * dx + a->dy * a->dy);
 	return cover <= 0.0f ? 0 : cover >= 1.0f ? 255 : (uint32_t)(cover * 255.0f + 0.5f);
+}
+
+uint32_t soft_paint_corner(float r, int x, int y)
+{
+	float yc = (float)y + 0.5f;
+	if (yc >= r)
+		return 255;
+	struct arc a;
+	arc_set(&a, r, r - yc);
+	return arc_cover(&a, x);
 }
 
 /* The rounded clip in the row y: whether a corner's arc crosses it, and
@@ -633,7 +678,11 @@ static void rect_span(int y, int x0, int x1, uint32_t color, bool copy)
 void soft_paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4], uint32_t color, bool copy)
 {
 	int x0 = round_px(fx0), y0 = round_px(fy0), x1 = round_px(fx1), y1 = round_px(fy1);
+	counts.rects++;
 	if (!paint_clip(&x0, &y0, &x1, &y1, clip) || (!copy && !color))
+		return;
+	counts.rect_px += (uint32_t)((x1 - x0) * (y1 - y0));
+	if (null)
 		return;
 	for (int y = y0; y < y1; y++)
 		rect_span(y, x0, x1, color, copy);
@@ -795,13 +844,23 @@ bool soft_paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, ui
 			int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
 {
 	bool scaled = dw != (int)width || dh != (int)height;
-	if (scaled && (format == PAINT_ALPHA || dw <= 0 || dh <= 0 || !width || !height || width > 32767 || height > 32767))
-		return false;
+	counts.textures++;
+	counts.scaled += scaled;
+	counts.alpha += format == PAINT_ALPHA;
+	if (scaled && (format == PAINT_ALPHA || dw <= 0 || dh <= 0 || !width || !height || width > 32767 || height > 32767)) {
+		counts.scaled_alpha++;
+		return null;
+	}
 	int x0 = dx, y0 = dy, x1 = dx + dw, y1 = dy + dh;
 	if (!paint_clip(&x0, &y0, &x1, &y1, clip))
 		return true;
-	if (scaled && x1 - x0 > ROW_MAX)
-		return false;
+	if (scaled && x1 - x0 > ROW_MAX) {
+		counts.wide++;
+		return null;
+	}
+	counts.texture_px += (uint32_t)((x1 - x0) * (y1 - y0));
+	if (null)
+		return true;
 	struct texels k = {
 		.bytes = format == PAINT_ALPHA ? 1 : format == PAINT_RGB ? 3 : 4,
 		.kind = format == PAINT_ALPHA || colorize ? TEXEL_ALPHA :
@@ -862,8 +921,13 @@ bool soft_paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, ui
 bool soft_paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii[4], float border, const int32_t clip[4],
 			uint32_t fill_color, uint32_t edge)
 {
-	if (border > 0.0f)
-		return false;
+	counts.rounded++;
+	if (border > 0.0f) {
+		counts.border++;
+		return null;
+	}
+	if (null)
+		return true;
 	int x0 = round_px(fx0), y0 = round_px(fy0), x1 = round_px(fx1), y1 = round_px(fy1);
 	int cx0 = x0, cy0 = y0, cx1 = x1, cy1 = y1;
 	if (x1 <= x0 || y1 <= y0 || !paint_clip(&cx0, &cy0, &cx1, &cy1, clip) || !fill_color)
@@ -909,6 +973,6 @@ bool soft_paint_rounded(float fx0, float fy0, float fx1, float fy1, const float 
 	return true;
 }
 void soft_paint_cpu(uint32_t y0, uint32_t y1) {}
-void soft_paint_sync(void) {}
+void soft_paint_sync(void) { counts.syncs++; }
 void soft_paint_end(void) {}
 void soft_paint_finish(void) {}

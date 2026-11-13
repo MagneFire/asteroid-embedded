@@ -30,8 +30,12 @@ void soft_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint
 void soft_draw_layer(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes);
 void soft_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha);
 
-void soft_paint_rounded_clip(const float *clip);
+/* The UI's painting of paint.h on the CPU; on minnow sgx_paint.c hands
+ * it what the GPU does not paint. soft_paint_corner is how much of the
+ * pixel x across, y down in the top-left corner of radius r a rounded
+ * rectangle covers, out of 255, as soft_paint_rounded draws it. */
 bool soft_paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px);
+void soft_paint_rounded_clip(const float *clip);
 void soft_paint_rect(float x0, float y0, float x1, float y1, const int32_t clip[4], uint32_t color, bool copy);
 bool soft_paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
 			int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize);
@@ -41,4 +45,6 @@ void soft_paint_cpu(uint32_t y0, uint32_t y1);
 void soft_paint_sync(void);
 void soft_paint_end(void);
 void soft_paint_finish(void);
+void soft_paint_log(void);
+uint32_t soft_paint_corner(float r, int x, int y);
 #endif

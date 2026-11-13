@@ -317,4 +317,7 @@ void frame_log(void)
 			   ui_frames, ui_us / ui_frames, ui_repaints ? ui_repaint_us / ui_repaints : 0,
 			   idle_passes * 100 / ui_frames);
 	ui_frames = ui_us = ui_repaints = ui_repaint_us = idle_passes = 0;
+#ifdef SGX_BASE
+	paint_log();
+#endif
 }
