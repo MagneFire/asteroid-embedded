@@ -703,7 +703,8 @@ component ThreeByThree {
 
 // The discs of the speed dial, 45 degrees apart, or spread evenly around the wheel when there are
 // fewer than eight, pos turning it. Only the eight nearest the selected one are shown, the seam
-// at 9 o'clock being behind the bar. The held disc is lightened while pressed.
+// at 9 o'clock being behind the bar. The held disc is lightened while pressed. There is one disc
+// for each slot, showing whichever app is there, so turning the wheel does not create discs.
 component Wheel {
     in property <length> size;
     in property <float> pos;
@@ -714,25 +715,26 @@ component Wheel {
     property <length> orbit: self.size * 0.355;
     property <length> disc: self.size / 3.5 * 0.8;
 
-    for app[i] in Apps.list: Rectangle {
-        property <float> d: Math.mod(Math.mod(i - root.pos + 4, root.n) + root.n, root.n) - 4;
+    for j in root.slots: Rectangle {
+        property <int> first: Math.ceil(root.pos - 4);
+        property <int> i: Math.mod(Math.mod(self.first + j, root.n) + root.n, root.n);
+        property <float> d: self.first + j - root.pos;
         property <angle> a: self.d * 360deg / root.slots;
-        visible: self.d < root.slots - 4;
         x: root.size / 2 + root.orbit * Math.cos(self.a) - root.disc / 2;
         y: root.size / 2 + root.orbit * Math.sin(self.a) - root.disc / 2;
         width: root.disc;
         height: root.disc;
         border-radius: root.disc / 2;
-        background: (root.selected == i ? app.center : #f4f4f4).with-alpha(root.held == i ? 0.8 : 1);
+        background: (root.selected == self.i ? Apps.list[self.i].center : #f4f4f4).with-alpha(root.held == self.i ? 0.8 : 1);
 
         Image {
             x: root.disc * 0.15;
             y: root.disc * 0.15;
             width: root.disc * 0.7;
             height: self.width;
-            source: Icons.get(app.icon, self.width, self.height);
-            colorize: root.selected == i ? white : black;
-            opacity: root.held == i ? 1 : 0.9;
+            source: Icons.get(Apps.list[parent.i].icon, self.width, self.height);
+            colorize: root.selected == parent.i ? white : black;
+            opacity: root.held == parent.i ? 1 : 0.9;
         }
     }
 }
