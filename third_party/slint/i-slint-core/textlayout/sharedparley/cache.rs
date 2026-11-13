@@ -49,6 +49,9 @@ const ENTRY_LIMIT: usize = 1024;
 /// that elides.
 const ELLIPSIS_LIMIT: usize = 64;
 
+/// How many labels [`TextLayoutCache::shaped`] keeps (a few KB each).
+const LABEL_LIMIT: usize = 64;
+
 /// Cache for shaped text paragraphs (before line breaking), keyed by ItemRc.
 pub struct TextLayoutCache {
     inner: InnerTextLayoutCache,
@@ -60,6 +63,10 @@ pub struct TextLayoutCache {
     /// recently used first. Lines are broken again whenever the width or the text changes, and
     /// shaping the ellipsis then costs as much as shaping a short text.
     ellipses: RefCell<Vec<(LayoutWithoutLineBreaksBuilder, Option<EllipsisGlyph>)>>,
+    /// Short labels shaped lately, unbroken, by what they were shaped from, least recently used
+    /// first. Shared by all items: a label drawn twice for a shadow shapes the same twice, and
+    /// labels animated through sizes come back to the same ones.
+    labels: RefCell<Vec<(ShapingInputs, Vec<TextParagraph>)>>,
     /// Bumped once per rendered frame; entries are stamped with it when served.
     generation: core::cell::Cell<u32>,
     /// Approximate entry count; a stale-high value just triggers one extra sweep.
@@ -81,6 +88,7 @@ impl Default for TextLayoutCache {
             inner: Default::default(),
             content_widths: Default::default(),
             ellipses: Default::default(),
+            labels: Default::default(),
             generation: Default::default(),
             entry_count_estimate: Default::default(),
             sweep_threshold: core::cell::Cell::new(ENTRY_LIMIT),
@@ -102,6 +110,31 @@ impl TextLayoutCache {
     pub(super) fn clear_if_scale_factor_changed(&self, window: &crate::api::Window) {
         self.inner.clear_cache_if_scale_factor_changed(window);
         self.content_widths.clear_cache_if_scale_factor_changed(window);
+    }
+
+    /// Returns the paragraphs `inputs` shape to, copied from another item that shaped the same
+    /// label lately or else shaped.
+    fn shaped(
+        &self,
+        inputs: &ShapingInputs,
+        font_context: &mut parley::FontContext,
+    ) -> Vec<TextParagraph> {
+        if !inputs.is_label() {
+            return inputs.shape(font_context);
+        }
+        let mut labels = self.labels.borrow_mut();
+        if let Some(index) = labels.iter().position(|(shaped_from, _)| shaped_from == inputs) {
+            let entry = labels.remove(index);
+            let paragraphs = entry.1.clone();
+            labels.push(entry);
+            return paragraphs;
+        }
+        let paragraphs = inputs.shape(font_context);
+        if labels.len() >= LABEL_LIMIT {
+            labels.remove(0);
+        }
+        labels.push((inputs.clone(), paragraphs.clone()));
+        paragraphs
     }
 
     /// Returns the ellipsis glyph for text shaped by `builder`, shaping it on a miss. The scale
@@ -134,6 +167,7 @@ impl TextLayoutCache {
         self.inner.clear_all();
         self.content_widths.clear_all();
         self.ellipses.borrow_mut().clear();
+        self.labels.borrow_mut().clear();
     }
 
     /// Returns the cached content widths of `item_rc`, computing them on a miss.
@@ -305,7 +339,7 @@ pub(super) fn cached_paragraphs<'a>(
             #[cfg(feature = "testing")]
             cache.cache_miss_count.set(cache.cache_miss_count.get() + 1);
             cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
-            (inputs.shape(font_context), None)
+            (cache.shaped(&inputs, font_context), None)
         });
         CachedParagraphs {
             wrap,
