@@ -8,7 +8,7 @@ import { Face, HeartPoint } from "face.slint";
 import { Codes } from "codes.slint";
 import { PageDot, IntSelector, RowLabel, Pill, LabeledSwitch } from "controls.slint";
 import { Pager } from "launcher.slint";
-import { HeartArc } from "heart_arc.slint";
+import { ActivityArc } from "activity_arc.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
 
@@ -50,33 +50,18 @@ component Caption inherits Text {
 component TodayPage {
     property <int> today: Face.activity-today;
     property <int> goal: Math.max(1, Face.activity-goal);
-    // In whole degrees from 3 o'clock, as the arc's pieces are: the filled run is 115..end.
+    // In whole degrees from 3 o'clock, as the filled arc comes: the filled run is 115..end.
     property <int> end: 115 + Math.round(Math.min(1, self.today / self.goal) * 310);
 
-    for seg[i] in HeartArc.segments: Image {
-        x: seg.x;
-        y: seg.y;
-        width: seg.w;
-        height: seg.h;
-        source: Icons.get(seg.img, self.width, self.height);
-        colorize: 116 + i <= root.end ? Activity.accent : white;
-        opacity: 116 + i <= root.end ? 1 : 0.25;
-    }
-
-    for cap in [
-        { on: root.end > 115, img: HeartArc.starts[0], done: true },
-        { on: root.end > 115, img: HeartArc.ends[root.end - 115], done: true },
-        { on: root.end == 115, img: HeartArc.starts[0], done: false },
-        { on: root.end < 425, img: HeartArc.ends[310], done: false },
-    ]: Image {
-        x: cap.img.x;
-        y: cap.img.y;
-        width: cap.img.w;
-        height: cap.img.h;
-        source: Icons.get(cap.img.img, self.width, self.height);
-        colorize: cap.done ? Activity.accent : white;
-        opacity: cap.done ? 1 : 0.25;
-        visible: cap.on;
+    for name in ["activity-arc/track", root.end > 115 ? "activity-arc/fill-" + (root.end - 115) : ""]: Image {
+        x: ActivityArc.x;
+        y: ActivityArc.x;
+        width: ActivityArc.size;
+        height: ActivityArc.size;
+        source: Icons.get(name, self.width, self.height);
+        colorize: name == "activity-arc/track" ? white : Activity.accent;
+        opacity: name == "activity-arc/track" ? 0.25 : 1;
+        visible: name != "";
     }
 
     Image {

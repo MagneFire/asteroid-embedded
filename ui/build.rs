@@ -66,6 +66,7 @@ fn icon_outlines(out: &std::path::Path) {
         ("icons".to_string(), String::new()),
         generated("ring"),
         generated("heart-arc"),
+        generated("activity-arc"),
         generated("game"),
     ];
     for (dir, prefix) in &dirs {
@@ -146,6 +147,7 @@ fn main() {
 
     ring(&out);
     heart_arc(&out);
+    activity_arc(&out);
     game_shapes(&out);
     icon_outlines(&out);
     codes(&out);
@@ -268,6 +270,49 @@ fn heart_arc(out: &std::path::Path) {
     list("arrows", arrows);
     slint.push_str("}\n");
     std::fs::write(out.join("heart_arc.slint"), slint).unwrap();
+}
+
+/// The Activity app's ring, on the heart arc's circle: the whole of it, and for each degree k up
+/// to 310 the part from 115 to 115 + k filled, each a single band with round ends, as pieces of
+/// the band would show their seams. All share the circle's box, so they lie on top of each other.
+fn activity_arc(out: &std::path::Path) {
+    let size = UI_PX as f64;
+    let (r, half, c) = (size / 2.9, size * 0.034 / 2.0, size / 2.0);
+    let dir = out.join("activity-arc");
+    std::fs::create_dir_all(&dir).unwrap();
+    let x0 = (c - r - half).floor();
+    let w = (c + r + half).ceil() - x0;
+    let at = |rr: f64, deg: f64| {
+        let a = deg.to_radians();
+        (c + rr * a.cos() - x0, c + rr * a.sin() - x0)
+    };
+    let band = |from: f64, to: f64| {
+        let large = if to - from > 180.0 { 1 } else { 0 };
+        let (o0, o1, i1, i0) = (at(r + half, from), at(r + half, to), at(r - half, to), at(r - half, from));
+        format!(
+            "M{:.2},{:.2} A{ro:.2},{ro:.2} 0 {large} 1 {:.2},{:.2} A{half:.2},{half:.2} 0 0 1 {:.2},{:.2} \
+             A{ri:.2},{ri:.2} 0 {large} 0 {:.2},{:.2} A{half:.2},{half:.2} 0 0 1 {:.2},{:.2} Z",
+            o0.0, o0.1, o1.0, o1.1, i1.0, i1.1, i0.0, i0.1, o0.0, o0.1,
+            ro = r + half,
+            ri = r - half,
+        )
+    };
+    let write = |name: &str, d: String| {
+        let svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{w}\" viewBox=\"0 0 {w} {w}\"><path d=\"{d}\" fill=\"white\"/></svg>"
+        );
+        std::fs::write(dir.join(format!("{name}.svg")), svg).unwrap();
+    };
+    write("track", band(115.0, 425.0));
+    for k in 1..=310 {
+        write(&format!("fill-{k}"), band(115.0, 115.0 + k as f64));
+    }
+    let slint = format!(
+        "import {{ Theme }} from \"theme.slint\";\nexport global ActivityArc {{\n    out property <length> x: {};\n    out property <length> size: {};\n}}\n",
+        units(x0),
+        units(w)
+    );
+    std::fs::write(out.join("activity_arc.slint"), slint).unwrap();
 }
 
 /// The glyphs of text in the font at px as SVG paths from the baseline's start, filled with
