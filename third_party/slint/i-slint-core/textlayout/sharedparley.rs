@@ -116,8 +116,15 @@ fn with_text_layout<R>(
     });
 
     let line_breaking = guard.take_line_breaking();
-    let layout =
-        layout(layout_builder, &mut font_ctx, guard.take(), scale_factor, options, line_breaking);
+    let layout = layout(
+        layout_builder,
+        cache,
+        &mut font_ctx,
+        guard.take(),
+        scale_factor,
+        options,
+        line_breaking,
+    );
     drop(font_ctx);
 
     if layout.broke_lines {

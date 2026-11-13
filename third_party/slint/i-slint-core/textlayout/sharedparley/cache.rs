@@ -10,7 +10,7 @@
 //! [`cached_paragraphs`] is only meant to be called through `with_text_layout`, which pairs it
 //! with the one shaping function every path must share.
 
-use super::layout::RetainedLineBreaking;
+use super::layout::{EllipsisGlyph, RetainedLineBreaking};
 use super::shaping::{ShapingInputs, TextParagraph};
 use super::*;
 
@@ -45,6 +45,10 @@ type InnerTextLayoutCache = crate::item_rendering::ItemCache<CachedParagraphs>;
 /// Entry count above which [`TextLayoutCache::sweep`] runs (~4.7KB per entry).
 const ENTRY_LIMIT: usize = 1024;
 
+/// How many ellipsis glyphs [`TextLayoutCache::ellipsis`] keeps: one per font, size and stroke
+/// that elides.
+const ELLIPSIS_LIMIT: usize = 64;
+
 /// Cache for shaped text paragraphs (before line breaking), keyed by ItemRc.
 pub struct TextLayoutCache {
     inner: InnerTextLayoutCache,
@@ -52,6 +56,10 @@ pub struct TextLayoutCache {
     /// paragraphs that no other path can reuse, because they are shaped without
     /// `OverflowWrap::Anywhere`, so the result is kept instead of the paragraphs.
     content_widths: crate::item_rendering::ItemCache<crate::renderer::ContentWidths>,
+    /// The ellipsis glyphs eliding text was laid out with, by what they were shaped with, least
+    /// recently used first. Lines are broken again whenever the width or the text changes, and
+    /// shaping the ellipsis then costs as much as shaping a short text.
+    ellipses: RefCell<Vec<(LayoutWithoutLineBreaksBuilder, Option<EllipsisGlyph>)>>,
     /// Bumped once per rendered frame; entries are stamped with it when served.
     generation: core::cell::Cell<u32>,
     /// Approximate entry count; a stale-high value just triggers one extra sweep.
@@ -72,6 +80,7 @@ impl Default for TextLayoutCache {
         Self {
             inner: Default::default(),
             content_widths: Default::default(),
+            ellipses: Default::default(),
             generation: Default::default(),
             entry_count_estimate: Default::default(),
             sweep_threshold: core::cell::Cell::new(ENTRY_LIMIT),
@@ -94,6 +103,29 @@ impl TextLayoutCache {
         self.inner.clear_cache_if_scale_factor_changed(window);
         self.content_widths.clear_cache_if_scale_factor_changed(window);
     }
+
+    /// Returns the ellipsis glyph for text shaped by `builder`, shaping it on a miss. The scale
+    /// factor is part of `builder`, so it needs no clearing of its own when that changes.
+    pub(super) fn ellipsis(
+        &self,
+        builder: &LayoutWithoutLineBreaksBuilder,
+        shape: impl FnOnce() -> Option<EllipsisGlyph>,
+    ) -> Option<EllipsisGlyph> {
+        let mut ellipses = self.ellipses.borrow_mut();
+        if let Some(index) = ellipses.iter().position(|(shaped_by, _)| shaped_by == builder) {
+            let entry = ellipses.remove(index);
+            let glyph = entry.1.clone();
+            ellipses.push(entry);
+            return glyph;
+        }
+        let glyph = shape();
+        if ellipses.len() >= ELLIPSIS_LIMIT {
+            ellipses.remove(0);
+        }
+        ellipses.push((builder.clone(), glyph.clone()));
+        glyph
+    }
+
     pub fn component_destroyed(&self, component: crate::item_tree::ItemTreeRef) {
         self.inner.component_destroyed(component);
         self.content_widths.component_destroyed(component);
@@ -101,6 +133,7 @@ impl TextLayoutCache {
     pub fn clear_all(&self) {
         self.inner.clear_all();
         self.content_widths.clear_all();
+        self.ellipses.borrow_mut().clear();
     }
 
     /// Returns the cached content widths of `item_rc`, computing them on a miss.

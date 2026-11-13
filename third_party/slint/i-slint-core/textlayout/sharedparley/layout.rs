@@ -117,6 +117,7 @@ fn vertical_offset(
 
 pub(super) fn layout(
     layout_builder: &LayoutWithoutLineBreaksBuilder,
+    cache: Option<&TextLayoutCache>,
     font_context: &mut parley::FontContext,
     mut paragraphs: Vec<TextParagraph>,
     scale_factor: ScaleFactor,
@@ -148,7 +149,7 @@ pub(super) fn layout(
     }
 
     // Returned None if failed to get the ellipsis glyph for some rare reason.
-    let get_ellipsis_glyph = |font_context: &mut parley::FontContext| {
+    let get_ellipsis_glyph = |font_context: &mut parley::FontContext| -> Option<EllipsisGlyph> {
         let mut layout = layout_builder.build(font_context, "…", None, None);
         layout.break_all_lines(None);
         let line = layout.lines().next()?;
@@ -164,8 +165,14 @@ pub(super) fn layout(
     let elision_info = if let (TextOverflow::Elide, Some(max_physical_width)) =
         (options.text_overflow, max_physical_width)
     {
-        get_ellipsis_glyph(font_context).map(|(ellipsis_glyph, font_for_ellipsis_glyph)| {
-            ElisionInfo { ellipsis_glyph, font_for_ellipsis_glyph, max_physical_width }
+        let ellipsis = match cache {
+            Some(cache) => cache.ellipsis(layout_builder, || get_ellipsis_glyph(font_context)),
+            None => get_ellipsis_glyph(font_context),
+        };
+        ellipsis.map(|(ellipsis_glyph, font_for_ellipsis_glyph)| ElisionInfo {
+            ellipsis_glyph,
+            font_for_ellipsis_glyph,
+            max_physical_width,
         })
     } else {
         None
@@ -264,6 +271,9 @@ fn line_limit_cut(paragraphs: &[TextParagraph], max_lines: usize) -> Option<(usi
     }
     unreachable!("total_lines > max_lines, so the paragraph with the last kept line exists")
 }
+
+/// The ellipsis glyph and the font it was found in.
+pub(super) type EllipsisGlyph = (parley::layout::Glyph, parley::FontData);
 
 struct ElisionInfo {
     ellipsis_glyph: parley::layout::Glyph,
