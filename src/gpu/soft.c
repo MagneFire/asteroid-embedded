@@ -814,17 +814,42 @@ bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_
 	 * as that. */
 	uint32_t step_x = scaled ? ((width << 16) + (uint32_t)dw - 1) / (uint32_t)dw : 0;
 	uint32_t step_y = scaled ? ((height << 16) + (uint32_t)dh - 1) / (uint32_t)dh : 0;
+	uint8_t gathered[ROW_MAX * 4];
+	uint32_t shown = ~0u;
 	for (int y = y0; y < y1; y++) {
 		if (!scaled) {
 			texture_span(y, x0, x1, data + (uint32_t)(y - dy) * stride + (uint32_t)(x0 - dx) * k.bytes, &k);
 			continue;
 		}
-		uint8_t gathered[ROW_MAX * 4];
-		uint32_t sy = ((uint32_t)(y - dy) * step_y) >> 16, pos = (uint32_t)(x0 - dx) * step_x;
-		const uint8_t *line = data + (sy < height ? sy : height - 1) * stride;
-		for (int i = 0; i < x1 - x0; i++, pos += step_x) {
-			uint32_t sx = pos >> 16;
-			memcpy(gathered + (unsigned)i * k.bytes, line + (sx < width ? sx : width - 1) * k.bytes, k.bytes);
+		uint32_t sy = ((uint32_t)(y - dy) * step_y) >> 16;
+		if (sy >= height)
+			sy = height - 1;
+		/* The texels are the row before's when the source row is. */
+		if (sy != shown) {
+			shown = sy;
+			const uint8_t *line = data + sy * stride;
+			uint32_t pos = (uint32_t)(x0 - dx) * step_x, last = width - 1;
+			int n = x1 - x0;
+			/* Sized by the texel, so that each is a load and a store and not a call. */
+			if (k.bytes == 4) {
+				for (int i = 0; i < n; i++, pos += step_x) {
+					uint32_t sx = pos >> 16;
+					__builtin_memcpy(gathered + i * 4, line + (sx < width ? sx : last) * 4, 4);
+				}
+			} else if (k.bytes == 3) {
+				for (int i = 0; i < n; i++, pos += step_x) {
+					uint32_t sx = pos >> 16;
+					const uint8_t *q = line + (sx < width ? sx : last) * 3;
+					gathered[i * 3] = q[0];
+					gathered[i * 3 + 1] = q[1];
+					gathered[i * 3 + 2] = q[2];
+				}
+			} else {
+				for (int i = 0; i < n; i++, pos += step_x) {
+					uint32_t sx = pos >> 16;
+					gathered[i] = line[sx < width ? sx : last];
+				}
+			}
 		}
 		texture_span(y, x0, x1, gathered, &k);
 	}
