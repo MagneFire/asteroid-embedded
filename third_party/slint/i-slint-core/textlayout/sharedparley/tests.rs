@@ -45,7 +45,7 @@ fn layout_text_with_builder(
         PlainOrStyledText::Plain(text.into()),
         Color::default(),
     );
-    layout(&builder, &mut font_ctx, paragraphs, ScaleFactor::new(1.0), options, None)
+    layout(&builder, None, &mut font_ctx, paragraphs, ScaleFactor::new(1.0), options, None)
 }
 
 fn layout_text(text: &str) -> Layout {
