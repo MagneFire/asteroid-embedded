@@ -2,8 +2,8 @@
 // slides in from the right. The pages are the ones the firmware has settings for: Display
 // (brightness, automatic brightness, always on, burn-in protection, tilt and tap to wake), Nightstand (with its
 // brightness, delay and always on), Watchface and Launcher pickers, Time and Date, Units (12 hour
-// clock, Fahrenheit), Bluetooth (on/off, connection, forgetting the phone), Power (off, reboot)
-// and About. Rows call setting-toggled with a setting or an action from the Codes global (the
+// clock, Fahrenheit), Profile (height and weight, and age and sex where the hub uses them),
+// Bluetooth (on/off, connection, forgetting the phone), Power (off, reboot) and About. Rows call setting-toggled with a setting or an action from the Codes global (the
 // firmware's enum setting and enum ui_action), setting-set with a setting and its value,
 // brightness-set with a brightness in per cent, and time-set and date-set with the time or date
 // set.
@@ -12,6 +12,7 @@ import { Codes } from "codes.slint";
 import { Apps, LauncherView } from "launcher.slint";
 import { DigitalFace } from "digital.slint";
 import { PageHeader, Scroller, ListItem, LabeledSwitch, IntSelector, RowLabel, RowSeparator, StatusPage, Page, Spinner, IconButton, Remorse } from "controls.slint";
+import { ProfileRows } from "profile.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
 
@@ -102,6 +103,7 @@ export component SettingsApp {
                     { icon: "ios-clock-outline", title: "Time", page: 8 },
                     { icon: "ios-date-outline", title: "Date", page: 9 },
                     { icon: "ios-units-outline", title: "Units", page: 5 },
+                    { icon: "ios-person-outline", title: "Profile", page: 11 },
                     { icon: "ios-bluetooth-outline", title: "Bluetooth", page: 6 },
                     { icon: "ios-power-outline", title: "Power", page: 10 },
                     { icon: "ios-help-circle-outline", title: "About", page: 7 },
@@ -412,6 +414,23 @@ export component SettingsApp {
 
         PageHeader {
             text: "Units";
+        }
+    }
+
+    if root.page == 11: Page {
+        Scroller {
+            width: 100 * Theme.unit;
+            height: 100 * Theme.unit;
+            content-height: profile.preferred-height;
+
+            profile := ProfileRows {
+                padding-top: 15 * Theme.unit;
+                padding-bottom: 15 * Theme.unit;
+            }
+        }
+
+        PageHeader {
+            text: "Profile";
         }
     }
 

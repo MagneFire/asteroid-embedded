@@ -521,6 +521,8 @@ export component IntSelector {
     in property <int> max: 100;
     in property <int> step: 10;
     in property <string> unit: "%";
+    // What it shows, the value with its unit unless given.
+    in property <string> text: root.value + root.unit;
     callback down();
     callback up();
     callback set(int);
@@ -592,7 +594,7 @@ export component IntSelector {
         y: 4.25 * Theme.unit;
         width: 66.5 * Theme.unit;
         height: 16.5 * Theme.unit;
-        text: root.value + root.unit;
+        text: root.text;
         color: white;
         font-size: root.tracking ? 8.25 * Theme.unit : 6.5 * Theme.unit;
         font-weight: 700;

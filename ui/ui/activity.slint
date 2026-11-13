@@ -1,13 +1,10 @@
-// The Activity app: pages scrolled up and down. Today's steps in the middle of an arc that fills
-// towards the daily goal, the steps of the last seven days as bars with the goal as a line, a
-// day of logged heart rates where the watch has the sensor, a workout to start and stop with the
-// last one below it, and the daily goal, height and weight to
-// set. The arc is the Heart Rate app's: its pieces do not
-// overlap, so the part still to go can be drawn see-through.
+// The Activity app: pages scrolled up and down. Today's steps in the middle of a ring that fills
+// towards the daily goal, a workout to start and stop with the last one below it, the steps of
+// the last seven days as bars with the goal as a line, a day of logged heart rates where the watch
+// has the sensor, and the daily goal to set; the height and weight it works with are in Settings.
 import { Face, HeartPoint } from "face.slint";
 import { Codes } from "codes.slint";
-import { PageDot, IntSelector, RowLabel, Pill, LabeledSwitch } from "controls.slint";
-import { Pager } from "launcher.slint";
+import { PageDot, IntSelector, RowLabel, Pill, LabeledSwitch, Scroller } from "controls.slint";
 import { ActivityArc } from "activity_arc.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
@@ -18,8 +15,11 @@ global Activity {
     public pure function grouped(n: int) -> string {
         return n < 1000 ? n : Math.floor(n / 1000) + "," + (Math.mod(n, 1000) < 100 ? "0" : "") + (Math.mod(n, 1000) < 10 ? "0" : "") + Math.mod(n, 1000);
     }
+    // As the stopwatch shows its time.
     public pure function duration(s: int) -> string {
-        return (s >= 3600 ? Math.floor(s / 3600) + ":" + Face.two-digits(Math.mod(Math.floor(s / 60), 60)) : Math.floor(s / 60)) + ":" + Face.two-digits(Math.mod(s, 60));
+        let h = Math.floor(s / 3600);
+        let m = Math.floor(Math.mod(s, 3600) / 60);
+        return (h > 0 ? Face.two-digits(h) + "h" : "") + (h > 0 || m > 0 ? Face.two-digits(m) + "m" : "") + Face.two-digits(Math.mod(s, 60)) + "s";
     }
     // Miles where temperatures are in Fahrenheit, kilometres elsewhere, to a tenth.
     public pure function distance(m: int) -> string {
@@ -113,7 +113,7 @@ component WeekPage {
     property <int> sum: self.days.length >= 7 ? self.days[0] + self.days[1] + self.days[2] + self.days[3] + self.days[4] + self.days[5] + self.days[6] : 0;
 
     PageTitle {
-        y: 12 * Theme.unit;
+        y: 10 * Theme.unit;
         text: "Last 7 days";
     }
 
@@ -197,7 +197,7 @@ component HeartPage {
         if root.log.length == 0: Text {
             width: parent.width;
             height: parent.height;
-            text: Face.hr-interval > 0 ? "No readings yet" : "Not logged";
+            text: Face.hr-interval > 0 ? "No readings yet" : "Logging off";
             color: #ffffff99;
             font-size: 5 * Theme.unit;
             horizontal-alignment: center;
@@ -214,7 +214,7 @@ component HeartPage {
     LabeledSwitch {
         y: 67 * Theme.unit;
         text: "Measure every";
-        value: ["Off", "10 min", "30 min", "Hour"][root.choice];
+        value: ["Off", "10 min", "30 min", "60 min"][root.choice];
         clicked => {
             Face.setting-set(Codes.setting-hr-interval, [10, 30, 60, 0][root.choice]);
         }
@@ -229,7 +229,7 @@ component WorkoutPage {
     property <bool> any: self.running || Face.workout-seconds > 0;
 
     PageTitle {
-        y: 12 * Theme.unit;
+        y: 10 * Theme.unit;
         text: "Workout";
         visible: !root.running;
     }
@@ -265,9 +265,9 @@ component WorkoutPage {
         font-weight: 700;
     }
 
-    if Face.has-heart-rate && !root.running && Face.workout-avg-bpm > 0: Caption {
+    if Face.has-heart-rate && root.any && !root.running && Face.workout-avg-bpm > 0: Caption {
         y: 68 * Theme.unit;
-        text: "Heart rate " + Face.workout-avg-bpm + " avg, " + Face.workout-max-bpm + " max";
+        text: "Heart rate: " + Face.workout-avg-bpm + " avg, " + Face.workout-max-bpm + " max";
         font-size: 4.5 * Theme.unit;
     }
 
@@ -284,18 +284,18 @@ component WorkoutPage {
 component GoalPage {
     property <int> goal: Math.max(1, Face.activity-goal);
 
-    PageTitle {
-        y: 22 * Theme.unit;
-        text: "Daily goal";
+    RowLabel {
+        y: 6 * Theme.unit;
+        text: "Daily step goal";
     }
 
     IntSelector {
-        y: 40 * Theme.unit;
+        y: 18 * Theme.unit;
         value: root.goal;
         min: 500;
         max: 20000;
         step: 500;
-        unit: "";
+        text: Activity.grouped(self.value);
         down => {
             Face.setting-set(Codes.setting-step-goal, Math.max(500, root.goal - 500) / 500);
         }
@@ -308,163 +308,67 @@ component GoalPage {
     }
 
     Caption {
-        y: 66 * Theme.unit;
-        text: "steps a day";
-    }
-}
-
-// Kept in cm and kg; shown in inches and pounds where temperatures are in Fahrenheit, where a
-// press moves the weight a whole kg so that it always changes.
-component BodyPage {
-    property <bool> imperial: Face.fahrenheit;
-    property <int> inches: Math.round(Face.height-cm / 2.54);
-    property <int> pounds: Math.round(Face.weight-kg * 2.20462);
-
-    RowLabel {
-        y: 6 * Theme.unit;
-        text: "Height";
-    }
-
-    IntSelector {
-        y: 18 * Theme.unit;
-        value: root.imperial ? root.inches : Face.height-cm;
-        min: root.imperial ? 40 : 100;
-        max: root.imperial ? 90 : 230;
-        step: 1;
-        unit: root.imperial ? " in" : " cm";
-        down => {
-            Face.setting-set(Codes.setting-height, root.imperial ? Math.round((root.inches - 1) * 2.54) : Face.height-cm - 1);
-        }
-        up => {
-            Face.setting-set(Codes.setting-height, root.imperial ? Math.round((root.inches + 1) * 2.54) : Face.height-cm + 1);
-        }
-        set(v) => {
-            Face.setting-set(Codes.setting-height, root.imperial ? Math.round(v * 2.54) : v);
-        }
-    }
-
-    RowLabel {
-        y: 45 * Theme.unit;
-        text: "Weight";
-    }
-
-    IntSelector {
-        y: 57 * Theme.unit;
-        value: root.imperial ? root.pounds : Face.weight-kg;
-        min: root.imperial ? 66 : 30;
-        max: root.imperial ? 441 : 200;
-        step: 1;
-        unit: root.imperial ? " lb" : " kg";
-        down => {
-            Face.setting-set(Codes.setting-weight, Face.weight-kg - 1);
-        }
-        up => {
-            Face.setting-set(Codes.setting-weight, Face.weight-kg + 1);
-        }
-        set(v) => {
-            Face.setting-set(Codes.setting-weight, root.imperial ? Math.round(v / 2.20462) : v);
-        }
-    }
-}
-
-// Age and sex, for a hub that works the distance and calories out with them; it knows only these
-// two sexes.
-component ProfilePage {
-    RowLabel {
-        y: 6 * Theme.unit;
-        text: "Age";
-    }
-
-    IntSelector {
-        y: 18 * Theme.unit;
-        value: Face.age;
-        min: 10;
-        max: 99;
-        step: 1;
-        unit: " years";
-        down => {
-            Face.setting-set(Codes.setting-age, Face.age - 1);
-        }
-        up => {
-            Face.setting-set(Codes.setting-age, Face.age + 1);
-        }
-        set(v) => {
-            Face.setting-set(Codes.setting-age, v);
-        }
-    }
-
-    LabeledSwitch {
-        y: 50 * Theme.unit;
-        text: "Sex";
-        value: Face.male ? "Male" : "Female";
-        clicked => {
-            Face.setting-toggled(Codes.setting-male);
-        }
+        y: 48 * Theme.unit;
+        text: "Height and weight: Settings, Profile";
+        font-size: 4.5 * Theme.unit;
     }
 }
 
 export component ActivityScreen {
-    // Page kinds: 0 today, 1 week, 2 heart rate, 3 workout, 4 goal, 5 body, 6 age and sex.
-    property <[int]> pages: Face.has-heart-rate
-        ? (Face.has-profile ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5])
-        : (Face.has-profile ? [0, 1, 3, 4, 5, 6] : [0, 1, 3, 4, 5]);
-    property <length> scroll: pager.index * 100 * Theme.unit - pager.drag;
-    animate scroll {
-        duration: pager.dragging ? 0ms : pager.anim;
-        easing: ease-out;
-    }
+    // Page kinds: 0 today, 1 week, 2 heart rate, 3 workout, 4 goal.
+    property <[int]> pages: Face.has-heart-rate ? [0, 3, 1, 2, 4] : [0, 3, 1, 4];
+    property <int> page;
 
     width: 100%;
     height: 100%;
 
-    pager := Pager {
-        horizontal: false;
-        item: 100 * Theme.unit;
-        count: root.pages.length;
-        limit: 1;
-    }
-
-    for kind[k] in root.pages: Rectangle {
-        y: k * 100 * Theme.unit - root.scroll;
+    // A Scroller, so a swipe that starts on a control still turns the page; it settles on the
+    // next page or the one before.
+    list := Scroller {
         width: 100 * Theme.unit;
         height: 100 * Theme.unit;
-        visible: self.y > -100 * Theme.unit && self.y < 100 * Theme.unit;
+        content-height: root.pages.length * 100 * Theme.unit;
+        give: 15 * Theme.unit;
+        released(to) => {
+            let at = root.page * 100 * Theme.unit;
+            root.page = Math.clamp(to > at + 10 * Theme.unit ? root.page + 1 : to < at - 10 * Theme.unit ? root.page - 1 : root.page, 0, root.pages.length - 1);
+            list.scroll-to(root.page * 100 * Theme.unit, 200ms);
+        }
 
-        if kind == 0: TodayPage {
-            width: 100%;
-            height: 100%;
-        }
-        if kind == 1: WeekPage {
-            width: 100%;
-            height: 100%;
-        }
-        if kind == 2: HeartPage {
-            width: 100%;
-            height: 100%;
-        }
-        if kind == 3: WorkoutPage {
-            width: 100%;
-            height: 100%;
-        }
-        if kind == 4: GoalPage {
-            width: 100%;
-            height: 100%;
-        }
-        if kind == 5: BodyPage {
-            width: 100%;
-            height: 100%;
-        }
-        if kind == 6: ProfilePage {
-            width: 100%;
-            height: 100%;
+        for kind[k] in root.pages: Rectangle {
+            y: k * 100 * Theme.unit;
+            width: 100 * Theme.unit;
+            height: 100 * Theme.unit;
+            visible: self.y - list.scroll > -100 * Theme.unit && self.y - list.scroll < 100 * Theme.unit;
+
+            if kind == 0: TodayPage {
+                width: 100%;
+                height: 100%;
+            }
+            if kind == 1: WeekPage {
+                width: 100%;
+                height: 100%;
+            }
+            if kind == 2: HeartPage {
+                width: 100%;
+                height: 100%;
+            }
+            if kind == 3: WorkoutPage {
+                width: 100%;
+                height: 100%;
+            }
+            if kind == 4: GoalPage {
+                width: 100%;
+                height: 100%;
+            }
         }
     }
 
     PageDot {
         x: (100 * Theme.unit - self.width) / 2;
-        y: 94 * Theme.unit;
+        y: 94 * Theme.unit - Face.chin;
         count: root.pages.length;
-        current: pager.index;
+        current: root.page;
         size: 2 * Theme.unit;
     }
 }

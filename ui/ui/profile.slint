@@ -1,0 +1,85 @@
+// The wearer's height and weight, which the Activity app works the distance and calories out
+// with, and the age and sex a hub that does that itself uses. Kept in cm and kg; shown in inches
+// and pounds where temperatures are in Fahrenheit, where a press moves the weight a whole kg so
+// that it always changes. The hub knows only these two sexes.
+import { Face } from "face.slint";
+import { Codes } from "codes.slint";
+import { IntSelector, RowLabel, LabeledSwitch } from "controls.slint";
+import { Theme } from "theme.slint";
+
+export component ProfileRows inherits VerticalLayout {
+    property <bool> imperial: Face.fahrenheit;
+    property <int> inches: Math.round(Face.height-cm / 2.54);
+    property <int> pounds: Math.round(Face.weight-kg * 2.20462);
+
+    RowLabel {
+        text: "Height";
+    }
+
+    IntSelector {
+        value: root.imperial ? root.inches : Face.height-cm;
+        min: root.imperial ? 40 : 100;
+        max: root.imperial ? 90 : 230;
+        step: 1;
+        unit: root.imperial ? " in" : " cm";
+        down => {
+            Face.setting-set(Codes.setting-height, root.imperial ? Math.round((root.inches - 1) * 2.54) : Face.height-cm - 1);
+        }
+        up => {
+            Face.setting-set(Codes.setting-height, root.imperial ? Math.round((root.inches + 1) * 2.54) : Face.height-cm + 1);
+        }
+        set(v) => {
+            Face.setting-set(Codes.setting-height, root.imperial ? Math.round(v * 2.54) : v);
+        }
+    }
+
+    RowLabel {
+        text: "Weight";
+    }
+
+    IntSelector {
+        value: root.imperial ? root.pounds : Face.weight-kg;
+        min: root.imperial ? 66 : 30;
+        max: root.imperial ? 441 : 200;
+        step: 1;
+        unit: root.imperial ? " lb" : " kg";
+        down => {
+            Face.setting-set(Codes.setting-weight, Face.weight-kg - 1);
+        }
+        up => {
+            Face.setting-set(Codes.setting-weight, Face.weight-kg + 1);
+        }
+        set(v) => {
+            Face.setting-set(Codes.setting-weight, root.imperial ? Math.round(v / 2.20462) : v);
+        }
+    }
+
+    if Face.has-profile: RowLabel {
+        text: "Age";
+    }
+
+    if Face.has-profile: IntSelector {
+        value: Face.age;
+        min: 10;
+        max: 99;
+        step: 1;
+        unit: " years";
+        down => {
+            Face.setting-set(Codes.setting-age, Face.age - 1);
+        }
+        up => {
+            Face.setting-set(Codes.setting-age, Face.age + 1);
+        }
+        set(v) => {
+            Face.setting-set(Codes.setting-age, v);
+        }
+    }
+
+    if Face.has-profile: LabeledSwitch {
+        text: "Sex";
+        value: Face.male ? "Male" : "Female";
+        clicked => {
+            Face.setting-toggled(Codes.setting-male);
+        }
+    }
+}
