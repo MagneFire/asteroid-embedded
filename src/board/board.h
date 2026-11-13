@@ -252,6 +252,9 @@ struct board {
 		uint8_t mpm;
 		/* A line of the hub's that is kept low. */
 		uint8_t hold_low;
+		/* A supply the hub needs on before it starts, 0 for none. */
+		uint8_t ldo;
+		uint32_t ldo_uv;
 	} hub_pins;
 	/* Which of the M4 hub's firmwares the watch has. */
 	const struct m4_variant *hub_variant;

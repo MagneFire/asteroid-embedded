@@ -30,6 +30,8 @@ struct m4_variant {
 	uint8_t general, pedometer, mets, power, gesture;
 	uint8_t settings, light;	/* 0 for a hub without */
 	uint8_t profile;	/* the user settings bank, as settings without the screen */
+	/* The heart rate bank and where its rate in bpm and its confidence are. */
+	uint8_t heart, heart_bpm, heart_confidence;
 	uint8_t accel_x, version_size;
 	bool byte_irqs, drives_reset, keeps_time;
 };
@@ -64,6 +66,8 @@ extern const struct m4_variant m4_smelt, m4_minnow;
 /* Age, gender (1 male), height in cm, weight in kg: one byte each, as the
  * vendor writes them. */
 #define M4_PROFILE_AGE		0x01
+/* The time between heart rate samples in ms, -1 for off. */
+#define M4_HEART_RATE_MS	0x04
 #define M4_POWER_ENABLE		0x01
 #define M4_POWER_STILL_TIMEOUT	0x02
 #define M4_POWER_STATE		0x08

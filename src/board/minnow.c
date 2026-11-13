@@ -66,7 +66,7 @@ const struct board board_minnow = {
 	.pads = pads,
 	.wake_pads = wake_pads,
 	.wake_pad_count = ARRAY_SIZE(wake_pads),
-	.heart_rate = false,
+	.heart_rate = true,
 	/* OTM3201 panel behind an SSD2848 bridge, a round 320 px with the
 	 * bottom cut off at 290 lines, scanned at 60 Hz. Reset on gpio 14
 	 * and its supply LDO7; the bridge's reset on gpio 23, its 1.2 V

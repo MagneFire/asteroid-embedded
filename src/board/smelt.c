@@ -51,7 +51,7 @@ const struct board board_smelt = {
 	.name = "smelt",
 	.compatible = "moto,smelt",
 	.smem_platform = 0x41,
-	.heart_rate = false,
+	.heart_rate = true,
 	/* NT35350 or NT35355 command-mode panel, a round 360 px with the
 	 * bottom cut off: 330 lines on the large watch, 325 on the small
 	 * one, 401 with the porches at 60 Hz, TE on gpio 24. The small
@@ -93,7 +93,8 @@ const struct board board_smelt = {
 	/* M4 hub on BLSP1 QUP2, wake line on gpio 5 (MPM pin 5), reset on
 	 * gpio 62, boot0 on gpio 109. */
 	.hub = &hub_m4,
-	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x43 }, .irq = 5, .reset = 62, .boot0 = 109, .mpm = 5 },
+	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x43 }, .irq = 5, .reset = 62, .boot0 = 109, .mpm = 5,
+		      .ldo = 19, .ldo_uv = 2850000 },
 	.hub_variant = &m4_smelt,
 	/* LM3535 on BLSP1 QUP3 next to the gauge, enable on gpio 35. */
 	.backlight = &backlight_lm3535,

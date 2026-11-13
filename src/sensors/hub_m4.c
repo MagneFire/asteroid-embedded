@@ -14,7 +14,9 @@
  * as is a hub that keeps failing on the bus. Its step count starts over
  * each time, so what it had counted is carried across, as are the
  * distance and calories it works out from the wearer's profile, which it
- * forgets too and is given again after each start. The hub crashes
+ * forgets too and is given again after each start. The heart rate runs
+ * at a sample rate the hub is given and is read from its registers. The
+ * hub crashes
  * on its own about a second after it finds the watch still (a minute
  * without motion) unless the accelerometer is enabled, which also keeps
  * it from going still at all, so the accelerometer stays enabled and is
@@ -57,6 +59,10 @@ static uint32_t go_t, steps_t, steps, steps_base, restart_t, wake_retry_t;
 static uint32_t activity[2], activity_base[2];
 static bool activity_read, profile_set;
 static struct hub_profile profile = { 30, 170, 70, false };
+static bool heart_wanted, heart_set;
+static uint32_t heart_bpm = HUB_NONE, heart_t;
+static unsigned heart_readings;
+static uint8_t heart_confidence;
 static uint16_t version;
 static volatile bool wake_pending;
 static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_wanted, accel_set;
@@ -169,6 +175,10 @@ static bool m4_init(void)
 	uint8_t barker[M4_MARK_MAX];
 	unsigned round;
 	gpio_config(GPIO_WAKE, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	/* The hub's firmware crashes when it starts the heart rate sensor
+	 * if this was off when it started. */
+	if (board->hub_pins.ldo)
+		regulator_on(board->hub_pins.ldo, board->hub_pins.ldo_uv);
 	if (board->hub_pins.hold_low) {
 		gpio_set(board->hub_pins.hold_low, 0);
 		gpio_config(board->hub_pins.hold_low, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
@@ -305,7 +315,7 @@ static void started(void)
 	time_start();
 	reg_write(V->pedometer, M4_PEDOMETER_ENABLE, &on, 1);
 	reg_write(V->mets, M4_METS_ENABLE, &on, 1);
-	tilt_set = profile_set = false;
+	tilt_set = profile_set = heart_set = false;
 	write_tilt(time_ms());
 	accel_set = light_on = false;
 	gpio_irq_config(GPIO_WAKE, GPIO_IRQ_LEVEL_HIGH, wake_line);
@@ -329,6 +339,63 @@ static void write_profile(uint32_t now)
 			return;
 		}
 	profile_set = true;
+}
+
+/* The sample rate, at most once a second after a failure; while it runs
+ * the rate is read once a second, and counts as a reading when the hub
+ * has one. */
+#define HEART_MS	1000
+
+static void write_heart(uint32_t now)
+{
+	static uint32_t tried_t;
+	uint8_t b[4];
+	if (state != HUB_READY || !V->heart || heart_set || now - tried_t < RETRY_MS)
+		return;
+	m4_put_u32(heart_wanted ? HEART_MS : 0xffffffffu, b);
+	if (reg_write(V->heart, M4_HEART_RATE_MS, b, 4)) {
+		tried_t = now;
+		return;
+	}
+	heart_set = true;
+	heart_t = now;
+	log_printf("hub: heart rate %s\n", heart_wanted ? "on" : "off");
+}
+
+static void read_heart(uint32_t now)
+{
+	uint8_t b[2], c;
+	if (state != HUB_READY || !heart_wanted || !heart_set || now - heart_t < HEART_MS)
+		return;
+	heart_t = now;
+	if (reg_read(V->heart, V->heart_bpm, b, 2) || reg_read(V->heart, V->heart_confidence, &c, 1))
+		return;
+	uint32_t bpm = (uint32_t)(b[0] | b[1] << 8);
+	heart_confidence = c;
+	if (bpm) {
+		heart_bpm = bpm;
+		heart_readings++;
+	}
+}
+
+static void m4_heart_rate_on(bool on)
+{
+	if (on == heart_wanted)
+		return;
+	heart_wanted = on;
+	heart_set = false;
+	heart_bpm = HUB_NONE;
+	heart_readings = 0;
+	write_heart(time_ms());
+}
+
+static uint32_t m4_heart_rate(uint8_t *status, unsigned *readings)
+{
+	if (status)
+		*status = heart_confidence;
+	if (readings)
+		*readings = heart_wanted ? heart_readings : 0;
+	return heart_wanted ? heart_bpm : HUB_NONE;
 }
 
 static void m4_profile(const struct hub_profile *p)
@@ -378,6 +445,8 @@ static void m4_poll(void)
 		write_tilt(now);
 	write_accel(now);
 	write_profile(now);
+	write_heart(now);
+	read_heart(now);
 	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
 		wake_retry = false;
 		gpio_irq_enable(GPIO_WAKE, true);
@@ -585,6 +654,8 @@ const struct hub_driver hub_m4 = {
 	.steps = m4_steps,
 	.activity = m4_activity,
 	.profile = m4_profile,
+	.heart_rate_on = m4_heart_rate_on,
+	.heart_rate = m4_heart_rate,
 	.tilted = m4_tilted,
 	.tilt_on = m4_tilt_on,
 	.accel_on = m4_accel_on,

@@ -11,6 +11,7 @@ const struct m4_variant m4_smelt = {
 	.start = M4_FLASH_BASE, .mark_addr = M4_FLASH_BASE + 512 * 1024 - 8,
 	.mark = { 0xde, 0xc0, 0xce, 0x0a, 0, 0, 0, 0 }, .mark_size = 8,
 	.general = 1, .pedometer = 3, .mets = 9, .power = 11, .gesture = 13, .profile = 10,
+	.heart = 16, .heart_bpm = 0x02, .heart_confidence = 0x01,
 	.accel_x = 0x08, .version_size = 2,
 };
 
@@ -19,6 +20,7 @@ const struct m4_variant m4_minnow = {
 	.start = M4_FLASH_BASE + 256 * 1024, .mark_addr = M4_FLASH_BASE + 512 * 1024 - 4,
 	.mark = { 0xde, 0xc0, 0xce, 0x0a }, .mark_size = 4,
 	.general = 2, .pedometer = 4, .mets = 10, .power = 12, .gesture = 18, .settings = 11, .light = 23, .profile = 11,
+	.heart = 21, .heart_bpm = 0x08, .heart_confidence = 0x0a,
 	.accel_x = 0x04, .version_size = 1,
 	.byte_irqs = true, .drives_reset = true, .keeps_time = true,
 };
