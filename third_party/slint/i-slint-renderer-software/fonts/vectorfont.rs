@@ -142,9 +142,12 @@ pub struct VectorFont {
     synthesis: fontique::Synthesis,
 }
 
+/// FNV-1a. It has to be the same for every call: a randomly seeded hasher gives each
+/// `VectorFont` its own key space and the glyph cache never hits.
 fn hash_coords(coords: &[i16]) -> u64 {
-    use core::hash::BuildHasher;
-    hashbrown::DefaultHashBuilder::default().hash_one(coords)
+    coords.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &coord| {
+        (hash ^ coord as u16 as u64).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 impl VectorFont {
