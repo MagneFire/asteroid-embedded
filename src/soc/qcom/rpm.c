@@ -19,6 +19,7 @@
 #define SS_OPENING		1
 #define SS_OPENED		2
 #define RPM_REQ			0x00716572u
+#define RPM_MSG_ID		0x2367736du
 #define RPM_SET_ACTIVE		0
 #define RPM_SET_SLEEP		1
 
@@ -193,8 +194,9 @@ static int request(uint32_t set, uint32_t type, uint32_t id, const uint32_t *kvp
 	port->remote.data_written = 0;
 	port->local.data_read = 1;
 	notify();
-	log_printf("rpm: msg %lu -> %lu bytes: %08lx %08lx %08lx %08lx %08lx\n", msg_id, hdr[0],
-		   resp[0], resp[1], resp[2], resp[3], resp[4]);
+	if (resp[0] != RPM_REQ || resp[2] != RPM_MSG_ID || resp[4] != msg_id)
+		log_printf("rpm: msg %lu -> %lu bytes: %08lx %08lx %08lx %08lx %08lx\n", msg_id, hdr[0],
+			   resp[0], resp[1], resp[2], resp[3], resp[4]);
 	return resp[0] == RPM_REQ ? 0 : -3;
 }
 
