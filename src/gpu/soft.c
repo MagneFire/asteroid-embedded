@@ -670,38 +670,77 @@ static inline bool texel_px(const struct texels *k, const uint8_t *q, uint8_t p[
 	return p[3] != 0;
 }
 
-/* n texels in a row over the layer. */
+/* n texels in a row over the layer. The loop is picked once for the row;
+ * a group of eight that is all transparent is skipped, and one that is
+ * all opaque and untinted is stored as it is. */
 static void texture_row(uint8_t *d, const uint8_t *src, int n, const struct texels *k)
 {
 	unsigned bytes = k->bytes;
-	int i = 0;
-#ifdef __ARM_NEON
 	const uint8_t *t = k->tint;
+	int i = 0;
+	/* Without alpha of their own the texels of a colour are all opaque,
+	 * and so the tint is the pixel. */
+	if (k->kind == TEXEL_ALPHA && bytes == 3) {
+		rect_row(d, n, t[0] | (uint32_t)t[1] << 8 | (uint32_t)t[2] << 16 | (uint32_t)t[3] << 24, t[3] == 255);
+		return;
+	}
+#ifdef __ARM_NEON
 	uint8x8_t t0 = vdup_n_u8(t[0]), t1 = vdup_n_u8(t[1]), t2 = vdup_n_u8(t[2]), t3 = vdup_n_u8(t[3]);
-	for (; i + 8 <= n; i += 8) {
-		const uint8_t *q = src + (unsigned)i * bytes;
-		uint8x8x4_t p;
-		if (k->kind == TEXEL_ALPHA) {
-			uint8x8_t a = bytes == 1 ? vld1_u8(q) : bytes == 3 ? vdup_n_u8(255) : vld4_u8(q).val[3];
-			if (!vget_lane_u64(vreinterpret_u64_u8(a), 0))
+	if (k->kind == TEXEL_ALPHA) {
+		uint8x8x4_t solid = { { t0, t1, t2, t3 } };
+		for (; i + 8 <= n; i += 8) {
+			const uint8_t *q = src + (unsigned)i * bytes;
+			uint8x8_t a;
+			if (bytes == 1) {
+				a = vld1_u8(q);
+			} else {
+				/* The top byte of eight words, without taking them apart. */
+				uint32x4_t w0 = vreinterpretq_u32_u8(vld1q_u8(q)), w1 = vreinterpretq_u32_u8(vld1q_u8(q + 16));
+				a = vshrn_n_u16(vcombine_u16(vshrn_n_u32(w0, 16), vshrn_n_u32(w1, 16)), 8);
+			}
+			uint64_t all = vget_lane_u64(vreinterpret_u64_u8(a), 0);
+			if (!all)
 				continue;
+			if (all == ~0ull && t[3] == 255) {
+				vst4_u8(d + i * 4, solid);
+				continue;
+			}
+			uint8x8x4_t p;
 			p.val[0] = div255(vmull_u8(a, t0));
 			p.val[1] = div255(vmull_u8(a, t1));
 			p.val[2] = div255(vmull_u8(a, t2));
 			p.val[3] = div255(vmull_u8(a, t3));
-		} else {
-			if (k->kind == TEXEL_RGB) {
-				uint8x8x3_t rgb = vld3_u8(q);
-				p.val[0] = rgb.val[0];
-				p.val[1] = rgb.val[1];
-				p.val[2] = rgb.val[2];
-				p.val[3] = vdup_n_u8(255);
-			} else {
-				p = vld4_u8(q);
-				if (!vget_lane_u64(vreinterpret_u64_u8(p.val[3]), 0))
-					continue;
+			px8_over(d + i * 4, p);
+		}
+	} else if (k->kind == TEXEL_RGB) {
+		bool opaque = !k->tinted || t[3] == 255;
+		for (; i + 8 <= n; i += 8) {
+			uint8x8x3_t rgb = vld3_u8(src + (unsigned)i * 3);
+			uint8x8x4_t p = { { rgb.val[0], rgb.val[1], rgb.val[2], vdup_n_u8(255) } };
+			if (k->tinted) {
+				p.val[0] = div255(vmull_u8(p.val[0], t0));
+				p.val[1] = div255(vmull_u8(p.val[1], t1));
+				p.val[2] = div255(vmull_u8(p.val[2], t2));
+				p.val[3] = t3;
 			}
-			if (k->kind == TEXEL_STRAIGHT)
+			if (opaque)
+				vst4_u8(d + i * 4, p);
+			else
+				px8_over(d + i * 4, p);
+		}
+	} else {
+		bool straight = k->kind == TEXEL_STRAIGHT;
+		for (; i + 8 <= n; i += 8) {
+			uint8x8x4_t p = vld4_u8(src + (unsigned)i * 4);
+			uint64_t all = vget_lane_u64(vreinterpret_u64_u8(p.val[3]), 0);
+			if (!all)
+				continue;
+			if (all == ~0ull && !k->tinted) {
+				/* Opaque, so that premultiplying changes nothing. */
+				vst4_u8(d + i * 4, p);
+				continue;
+			}
+			if (straight)
 				for (int c = 0; c < 3; c++)
 					p.val[c] = div255(vmull_u8(p.val[c], p.val[3]));
 			if (k->tinted) {
@@ -710,8 +749,8 @@ static void texture_row(uint8_t *d, const uint8_t *src, int n, const struct texe
 				p.val[2] = div255(vmull_u8(p.val[2], t2));
 				p.val[3] = div255(vmull_u8(p.val[3], t3));
 			}
+			px8_over(d + i * 4, p);
 		}
-		px8_over(d + i * 4, p);
 	}
 #endif
 	for (; i < n; i++) {
