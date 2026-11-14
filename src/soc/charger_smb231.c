@@ -156,10 +156,32 @@ static bool gauge(struct hub_gauge *g)
 	return board->hub && board->hub->gauge && board->hub->gauge(g);
 }
 
+/* Until the hub's gauge has reported, a few seconds after boot, the charge
+ * comes from the cell voltage the PMIC measures: a rough curve for a
+ * 4.4 V cell, reading high while it charges. */
+static const struct {
+	uint16_t mv;
+	uint8_t percent;
+} curve[] = {
+	{ 3400, 0 }, { 3600, 5 }, { 3700, 12 }, { 3780, 25 }, { 3850, 40 },
+	{ 3950, 55 }, { 4100, 75 }, { 4250, 90 }, { 4380, 100 },
+};
+
+static uint32_t percent_from_mv(uint32_t mv)
+{
+	if (mv <= curve[0].mv)
+		return 0;
+	for (unsigned i = 1; i < ARRAY_SIZE(curve); i++)
+		if (mv < curve[i].mv)
+			return curve[i - 1].percent + (mv - curve[i - 1].mv) * (uint32_t)(curve[i].percent - curve[i - 1].percent) /
+							      (uint32_t)(curve[i].mv - curve[i - 1].mv);
+	return 100;
+}
+
 static uint32_t smb231_percent(void)
 {
 	struct hub_gauge g;
-	return gauge(&g) ? g.percent : 50;
+	return gauge(&g) ? g.percent : percent_from_mv(pmic_battery_mv());
 }
 
 static bool charge_done(void)
@@ -195,7 +217,7 @@ static bool smb231_cable_irq(void)
 static uint32_t smb231_mv(void)
 {
 	struct hub_gauge g;
-	return gauge(&g) ? g.mv : 0;
+	return gauge(&g) ? g.mv : pmic_battery_mv();
 }
 
 static int32_t smb231_ua(void)
@@ -210,7 +232,8 @@ static const char *smb231_status(void)
 	struct hub_gauge g = { 0 };
 	bool have = gauge(&g);
 	snprintf(s, sizeof s, "usb %u charging %u done %u, %s %lu%% %lu mV %d.%d C, %lu errors", cable_now, smb231_charging(),
-		 charge_done(), have ? "gauge" : "no gauge", have ? g.percent : 50, g.mv, g.decidegrees / 10,
+		 charge_done(), have ? "gauge" : "no gauge", have ? g.percent : smb231_percent(), have ? g.mv : smb231_mv(),
+		 g.decidegrees / 10,
 		 (g.decidegrees < 0 ? -g.decidegrees : g.decidegrees) % 10, errors);
 	return s;
 }
