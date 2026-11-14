@@ -49,6 +49,11 @@ static void power(bool on)
 {
 	gpio_set(GPIO_BT_REG_ON, 0);
 	gpio_config(GPIO_BT_REG_ON, 0, GPIO_OUTPUT, GPIO_PULL_DOWN, 2);
+	if (board->bt.ldo) {
+		int r = on ? regulator_on(board->bt.ldo, board->bt.ldo_uv) : regulator_off(board->bt.ldo);
+		if (r)
+			log_printf("bt: l%u %s not acknowledged\n", board->bt.ldo, on ? "on" : "off");
+	}
 	if (!on)
 		return;
 	gpio_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
@@ -74,13 +79,14 @@ static int reset(void)
 	return r;
 }
 
-static int set_baud(uint32_t baud)
+/* The rate asked of the controller and the one the host's UART then uses. */
+static int set_baud(uint32_t baud, uint32_t host)
 {
 	uint8_t p[6] = { 0, 0, (uint8_t)baud, (uint8_t)(baud >> 8), (uint8_t)(baud >> 16), (uint8_t)(baud >> 24) };
 	int r = hci_cmd(BCM_UPDATE_BAUD_RATE, p, sizeof p, NULL, NULL, 1000);
 	if (r)
 		return r;
-	return uart_set_baud(BT_UART, baud);
+	return uart_set_baud(BT_UART, host);
 }
 
 static int patchram(const uint8_t *hcd, uint32_t len)
@@ -117,8 +123,10 @@ static int fail(struct bt_info *info, const char *what, int r)
 	hci_stats(&pkts, &herr);
 	info->failed = what;
 	info->status = r;
-	log_printf("bt: %s failed: %d, cts %u, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu\n", what, r, uart_cts(BT_UART),
-		   gpio_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts, herr);
+	char bad[32];
+	hci_bad_bytes(bad, sizeof bad);
+	log_printf("bt: %s failed: %d, cts %u, host wake %u, uart %lu/%lu/%lu, hci %lu/%lu%s%s\n", what, r, uart_cts(BT_UART),
+		   gpio_get(GPIO_BT_HOST_WAKE), rx, tx, uerr, pkts, herr, bad[0] ? ", stray" : "", bad);
 	return r ? r : -1;
 }
 
@@ -140,16 +148,31 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 		bt_stop();
 	hci_reset_parser();
 	hci_set_handler(log_packet);
-	power(true);
-	sleep_ms(100);
-	if (uart_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, BAUD_BOOT, true))
-		return fail(info, "uart", -1);
+	uint32_t rom_baud = board->bt.rom_baud ? board->bt.rom_baud : BAUD_BOOT;
+	uint32_t rom_fast = board->bt.rom_fast ? board->bt.rom_fast : BAUD_FAST;
+	if (board->bt.rom_baud) {
+		/* TX idle and RFR deasserted while the chip starts: with RFR
+		 * asserted it starts in autobaud mode, which takes no baud rate
+		 * change before the patch. */
+		if (uart_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, rom_baud, true))
+			return fail(info, "uart", -1);
+		uart_hold_rfr(BT_UART, true);
+		power(true);
+		sleep_ms(100);
+		uart_hold_rfr(BT_UART, false);
+		sleep_ms(10);
+	} else {
+		power(true);
+		sleep_ms(100);
+		if (uart_init(BT_UART, GPIO_BT_UART, FUNC_BT_UART, BAUD_BOOT, true))
+			return fail(info, "uart", -1);
+	}
 	running = true;
 	log_printf("bt: powered, cts %u, host wake %u\n", uart_cts(BT_UART), gpio_get(GPIO_BT_HOST_WAKE));
 	int r;
 	if ((r = reset()))
 		return fail(info, "reset", r);
-	if ((r = set_baud(BAUD_FAST)))
+	if ((r = set_baud(BAUD_FAST, rom_fast)))
 		return fail(info, "baud rate for the download", r);
 	uint32_t t1 = time_ms();
 	if ((r = patchram(hcd, hcd_len)))
@@ -163,7 +186,7 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	hci_reset_parser();
 	if ((r = reset()))
 		return fail(info, "reset after the patch", r);
-	if ((r = set_baud(BAUD_FAST)))
+	if ((r = set_baud(BAUD_FAST, BAUD_FAST)))
 		return fail(info, "baud rate", r);
 	if (bdaddr) {
 		uint8_t a[6];

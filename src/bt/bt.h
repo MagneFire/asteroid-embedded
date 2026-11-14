@@ -22,6 +22,7 @@ void hci_rx_byte(uint8_t c);
 int hci_send(uint8_t type, const uint8_t *p, unsigned n);
 int hci_cmd(uint16_t opcode, const void *param, uint8_t plen, uint8_t *rsp, unsigned *rsp_len, uint32_t timeout_ms);
 void hci_stats(uint32_t *packets, uint32_t *errors);
+unsigned hci_bad_bytes(char *out, unsigned size);
 
 struct bt_info {
 	uint8_t hci_version, lmp_version;

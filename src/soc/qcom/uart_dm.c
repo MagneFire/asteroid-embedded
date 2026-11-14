@@ -87,6 +87,7 @@ struct baud {
 
 /* From GPLL0 at 600 MHz on the APQ8026 and 800 MHz on the APQ8009W. */
 static const struct baud bauds_8009[] = {
+	{ 80128, RCG_SRC_GPLL0 | 1, 1, 156, 0xcc },
 	{ 115200, RCG_SRC_GPLL0 | 1, 144, 15625, 0xcc },
 	{ 230400, RCG_SRC_GPLL0 | 1, 144, 15625, 0xee },
 	{ 460800, RCG_SRC_GPLL0 | 1, 144, 15625, 0xff },
@@ -94,6 +95,7 @@ static const struct baud bauds_8009[] = {
 	{ 1000000, RCG_SRC_GPLL0 | 19, 1, 5, 0xff },
 	{ 1500000, RCG_SRC_GPLL0 | 1, 3, 100, 0xff },
 	{ 2000000, RCG_SRC_GPLL0 | 1, 1, 25, 0xff },
+	{ 2083333, RCG_SRC_GPLL0 | 1, 1, 24, 0xff },
 	{ 3000000, RCG_SRC_GPLL0 | 1, 3, 50, 0xff },
 };
 
@@ -110,7 +112,7 @@ static const struct baud bauds[] = {
 
 struct uart {
 	uint32_t base;
-	unsigned port, irq, pins;
+	unsigned port, irq, pins, func;
 	bool flow;
 	uint8_t ring[RING_SIZE];
 	volatile uint32_t ring_head, ring_tail;
@@ -184,6 +186,11 @@ static unsigned pin(const struct uart *u, unsigned i)
 	return chip->uart2_pins[0] && u->port == 2 ? chip->uart2_pins[i] : u->pins + i;
 }
 
+static unsigned pin_func(const struct uart *u, unsigned i)
+{
+	return chip->uart2_pins[0] && u->port == 2 ? chip->uart2_funcs[i] : u->func;
+}
+
 static const struct baud *find_baud(uint32_t baud)
 {
 	const struct baud *t = chip == &chip_8009 ? bauds_8009 : bauds;
@@ -253,6 +260,7 @@ int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, 
 	struct uart *u = &uarts[uart - 1];
 	u->port = uart;
 	u->pins = first_gpio;
+	u->func = func;
 	u->flow = flow;
 	u->irq = 32 + 107 + uart - 1;
 	writel(readl(GCC_APCS_GPLL_ENA_VOTE) | BIT(0), GCC_APCS_GPLL_ENA_VOTE);
@@ -271,8 +279,7 @@ int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, 
 		return -1;
 	}
 	for (unsigned i = 0; i < 4; i++)
-		gpio_config(pin(u, i), chip->uart2_pins[0] && uart == 2 ? chip->uart2_funcs[i] : func, GPIO_INPUT,
-			    GPIO_PULL_NONE, 8);
+		gpio_config(pin(u, i), pin_func(u, i), GPIO_INPUT, GPIO_PULL_NONE, 8);
 	u->ring_head = u->ring_tail = 0;
 	u->rx_bytes = u->tx_bytes = u->dropped = u->overruns = 0;
 	u->base = chip->uart1 + (uart - 1) * 0x1000;
@@ -336,6 +343,20 @@ unsigned uart_read(unsigned uart, uint8_t *p, unsigned n)
 		u->ring_tail++;
 	}
 	return k;
+}
+
+/* RFR held deasserted by the pin itself, or given back to the UART. */
+void uart_hold_rfr(unsigned uart, bool hold)
+{
+	struct uart *u = get(uart);
+	if (!u)
+		return;
+	if (hold) {
+		gpio_set(pin(u, 3), 1);
+		gpio_config(pin(u, 3), 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	} else {
+		gpio_config(pin(u, 3), pin_func(u, 3), GPIO_INPUT, GPIO_PULL_NONE, 8);
+	}
 }
 
 bool uart_cts(unsigned uart)

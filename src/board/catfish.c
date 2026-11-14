@@ -16,10 +16,13 @@ const struct board board_catfish = {
 	.firmware_dirs = firmware_dirs,
 	.firmware_part = "vendor",
 	/* BCM43436 on BLSP1 UART2 (gpio 20, 21 function 3; 111, 112
-	 * function 2). Both wake lines are active low. */
+	 * function 2). Both wake lines are active low. Its I/O supply is
+	 * L12, which is also the WiFi's. Its ROM takes the 26 MHz crystal for
+	 * a 37.4 MHz one, so its UART runs at 0.695 times the rate asked. */
 	.bt = {
 		.uart = 2, .gpio = 20, .func = 3, .dev_wake = 32, .host_wake = 31, .reg_on = 34, .mpm = 19,
-		.dev_wake_active = false, .host_wake_active = false,
+		.dev_wake_active = false, .host_wake_active = false, .ldo = 12, .ldo_uv = 1800000,
+		.rom_baud = 80128, .rom_fast = 2083333,
 		.patch = "BCM43430B0.hcd",
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},

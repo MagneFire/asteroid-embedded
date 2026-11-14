@@ -149,6 +149,7 @@ int uart_init(unsigned uart, unsigned first_gpio, unsigned func, uint32_t baud, 
 int uart_set_baud(unsigned uart, uint32_t baud);
 int uart_write(unsigned uart, const uint8_t *p, unsigned n);
 unsigned uart_read(unsigned uart, uint8_t *p, unsigned n);
+void uart_hold_rfr(unsigned uart, bool hold);
 bool uart_cts(unsigned uart);
 void uart_stop(unsigned uart);
 bool uart_idle(unsigned uart);

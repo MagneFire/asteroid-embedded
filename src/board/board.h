@@ -198,6 +198,13 @@ struct board {
 	struct {
 		uint8_t uart, gpio, func, dev_wake, host_wake, reg_on, mpm;
 		bool dev_wake_active, host_wake_active;
+		/* The chip's I/O supply when the firmware has to switch it, 0 if not. */
+		uint8_t ldo;
+		uint32_t ldo_uv;
+		/* Where the chip's ROM gets its UART rates wrong (it assumes another
+		 * crystal), the host rates its 115200 and 3000000 really are; 0 if
+		 * they are right. */
+		uint32_t rom_baud, rom_fast;
 		const char *patch;
 		uint8_t sleep_mode[12];	/* the 0xfc27 parameters */
 	} bt;

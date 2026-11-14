@@ -58,6 +58,11 @@ static void deliver(void)
 		handler(type, pkt, have);
 }
 
+/* The last bytes that started no packet, for the log of a controller
+ * that answers at another rate or not at all. */
+static uint8_t bad[8];
+static unsigned bad_n;
+
 static void feed(uint8_t c)
 {
 	if (!type) {
@@ -65,6 +70,7 @@ static void feed(uint8_t c)
 			return;
 		need = header_len(c);
 		if (!need) {
+			bad[bad_n++ % sizeof bad] = c;
 			errors++;
 			return;
 		}
@@ -162,4 +168,13 @@ void hci_stats(uint32_t *p, uint32_t *e)
 {
 	*p = packets;
 	*e = errors;
+}
+
+unsigned hci_bad_bytes(char *out, unsigned size)
+{
+	unsigned n = bad_n < sizeof bad ? bad_n : sizeof bad, len = 0;
+	out[0] = 0;
+	for (unsigned i = 0; i < n && len + 3 < size; i++)
+		len += (unsigned)snprintf(out + len, size - len, " %02x", bad[(bad_n - n + i) % sizeof bad]);
+	return n;
 }
