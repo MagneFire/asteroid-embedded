@@ -260,6 +260,19 @@ static void cmd_awake(const char *args)
 	say("awake %s\n", on ? "held" : "released");
 }
 
+/* idle wfi|core|cluster: the deepest idle state, for comparing them. */
+static void cmd_idle(const char *args)
+{
+	static const char *const names[] = { "wfi", "core", "cluster" };
+	for (unsigned i = 0; i < ARRAY_SIZE(names); i++)
+		if (!strcmp(args, names[i])) {
+			cpu_idle_limit((enum idle_level)i);
+			say("idle down to %s\n", names[i]);
+			return;
+		}
+	say("usage: idle wfi|core|cluster\n");
+}
+
 /* rotate [0|90|180|270|auto]: turns the screen as in nightstand mode,
  * held at that angle until auto, for testing. */
 static void cmd_rotate(const char *args)
@@ -1374,6 +1387,7 @@ static const struct command commands[] = {
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
 	{ "awake", "on|off", cmd_awake },
+	{ "idle", "wfi|core|cluster", cmd_idle },
 	{ "rotate", "[0|90|180|270|auto]", cmd_rotate },
 	{ "aod", "[on|off]", cmd_aod },
 	{ "set", "[name [value]]", cmd_set },

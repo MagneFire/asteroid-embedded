@@ -72,6 +72,8 @@ void wake_pin(unsigned pin, bool on, bool high)
 	pad_config(board->wake_pads[pin], on ? pad | PAD_WAKEUP : pad & ~PAD_WAKEUP);
 }
 
+void cpu_idle_limit(enum idle_level level) {}
+
 void wake_pin_falling(unsigned pin, bool on)
 {
 	wake_pin(pin, on, false);

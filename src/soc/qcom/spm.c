@@ -96,6 +96,7 @@ static const struct spm_chip *spm;
 static uint32_t seq_base;
 
 static bool ready, can_collapse, cluster_parked;
+static enum idle_level idle_limit = IDLE_CLUSTER;
 static uint32_t collapses, cluster_collapses, bailouts;
 
 #define ACC_PWR_STATUS		0x08
@@ -197,7 +198,7 @@ void cpu_idle(bool cluster)
 	 * masked interrupt, and it is taken on unmasking. */
 	uint32_t ppis;
 	__asm__ volatile("cpsid i" ::: "memory");
-	if (!can_collapse) {
+	if (!can_collapse || idle_limit == IDLE_WFI) {
 		if (!sched_pending())
 			wfi();
 		__asm__ volatile("cpsie i" ::: "memory");
@@ -209,7 +210,7 @@ void cpu_idle(bool cluster)
 		__asm__ volatile("cpsie i" ::: "memory");
 		return;
 	}
-	cluster = cluster && cluster_parked && left >= timer_hz() / 50;
+	cluster = cluster && cluster_parked && idle_limit == IDLE_CLUSTER && left >= timer_hz() / 50;
 	if (cluster) {
 		mpm_arm(deadline);
 		writel(spm->ctl_l2_pc, SAW_L2 + SAW_SPM_CTL);
@@ -235,6 +236,11 @@ void cpu_idle(bool cluster)
 	if (cluster)
 		writel(0, SAW_L2 + SAW_SPM_CTL);
 	__asm__ volatile("cpsie i" ::: "memory");
+}
+
+void cpu_idle_limit(enum idle_level level)
+{
+	idle_limit = level;
 }
 
 void cpu_idle_stats(uint32_t *c, uint32_t *cc, uint32_t *b)

@@ -104,6 +104,9 @@ void settings_changed(void);
  * line that has to end a deep state. */
 bool cpu_idle_init(void);
 void cpu_idle(bool cluster);
+/* The deepest idle state cpu_idle may use, for testing. */
+enum idle_level { IDLE_WFI, IDLE_CORE, IDLE_CLUSTER };
+void cpu_idle_limit(enum idle_level level);
 void wake_pin(unsigned pin, bool on, bool high);
 void wake_pin_falling(unsigned pin, bool on);
 void cpu_idle_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
