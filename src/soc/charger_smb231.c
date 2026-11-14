@@ -8,6 +8,8 @@
  * read. USB is there while the input is neither under- nor over-voltage;
  * with a cable it is looked at every second. */
 #include "asteroid.h"
+#include "power.h"
+#include "sensors/hub.h"
 
 #define BUS		(board->charger.i2c.bus)
 #define ADDR		(board->charger.i2c.addr)
@@ -37,8 +39,10 @@
 #define POLL_MS		60000
 #define CABLE_POLL_MS	1000
 
+#define EMPTY_POLLS	2
+
 static bool ready, configured, cable_now, irq_seen;
-static uint32_t poll_t, errors;
+static uint32_t poll_t, errors, empty_polls;
 
 static int rd(uint8_t reg, uint8_t *v) { return i2c_xfer(BUS, ADDR, &reg, 1, v, 1); }
 
@@ -125,6 +129,27 @@ static void smb231_init(void)
 	irq_seen = true;
 }
 
+static uint32_t smb231_percent(void);
+static uint32_t smb231_mv(void);
+
+/* The hub's microcontroller stops at 3072 mV, and nothing else turns the
+ * watch off before the cell runs flat, so at 0 % without a cable it goes
+ * into Timepiece like the vendor's at shutdown, which powers it off. */
+static void check_empty(void)
+{
+	if (cable_now || !smb231_mv() || smb231_percent() > 0) {
+		empty_polls = 0;
+		return;
+	}
+	if (++empty_polls < EMPTY_POLLS)
+		return;
+	log_printf("charger: battery empty, powering off\n");
+	if (hub_has_timepiece())
+		power_timepiece();
+	power_off_arm();
+	reboot();
+}
+
 static uint32_t poll_ms(void) { return cable_now || !configured ? CABLE_POLL_MS : POLL_MS; }
 
 static void smb231_poll(void)
@@ -143,6 +168,7 @@ static void smb231_poll(void)
 	cable_now = c;
 	if (board->hub && board->hub->poll_gauge)
 		board->hub->poll_gauge();
+	check_empty();
 }
 
 static uint32_t smb231_next_ms(void)
