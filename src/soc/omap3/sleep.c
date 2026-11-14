@@ -45,6 +45,7 @@ void cpu_idle(bool deep)
 {
 	__asm__ volatile("cpsid i" ::: "memory");
 	if (!sched_pending()) {
+		timer_idle_enter();
 		if (deep) {
 			writel(0, PM_PREPWSTST_MPU);
 			writel(MPU_KEEP | MPU_RETENTION, PM_PWSTCTRL_MPU);
@@ -57,6 +58,7 @@ void cpu_idle(bool deep)
 			if ((readl(PM_PREPWSTST_MPU) & 3) == MPU_RETENTION)
 				retentions++;
 		}
+		timer_idle_exit();
 	}
 	__asm__ volatile("cpsie i" ::: "memory");
 }

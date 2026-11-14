@@ -1,7 +1,8 @@
-/* Time comes from GPTIMER2 counting the crystal, which stops with it in
- * a deep sleep: what the always-on 32 kHz counter saw pass meanwhile is
- * added on the way out (timer_slept). GPTIMER1 on the 32 kHz clock, in
- * the domain that stays up, gives the tick that wakes the main loop. */
+/* Time comes from GPTIMER2 counting the crystal. Its overflows, every
+ * 165 s at 26 MHz, are counted by interrupt, except across an idle: there
+ * they are worked out from the always-on 32 kHz counter instead, so a
+ * long sleep is not woken for them. GPTIMER1 on the 32 kHz clock, in the
+ * domain that stays up, gives the tick that wakes the main loop. */
 #include "asteroid.h"
 #include "prof.h"
 
@@ -25,9 +26,10 @@
 
 static uint32_t hz = 26000000;
 static volatile uint32_t ticks;
-/* The fast counter's overflows, and what deep sleeps add, in its ticks. */
+/* The fast counter's overflows. */
 static volatile uint32_t wraps;
-static uint64_t slept;
+static uint64_t idle_cnt;
+static uint32_t idle_32k;
 
 static uint64_t cnt_now(void)
 {
@@ -37,7 +39,7 @@ static uint64_t cnt_now(void)
 		lo = readl(GPT2_BASE + TCRR);
 		hi++;
 	}
-	uint64_t now = (((uint64_t)hi << 32) | lo) + slept;
+	uint64_t now = ((uint64_t)hi << 32) | lo;
 	irq_restore(flags);
 	return now;
 }
@@ -66,12 +68,27 @@ void delay_us(uint32_t us)
 
 void delay_ms(uint32_t ms) { delay_us(ms * 1000); }
 
-/* The fast counter stood still for this many 32 kHz ticks. */
-void timer_slept(uint32_t ticks32k)
+/* With interrupts masked. The two crystals drift apart by far less than
+ * half an overflow (82 s) over the longest sleep, so the count comes out
+ * exact, as long as the 32 kHz clock is the 32768 Hz rtc.c counts on. */
+void timer_idle_enter(void)
 {
-	uint32_t flags = irq_save();
-	slept += (uint64_t)ticks32k * hz / SLEEP_CLK_HZ;
-	irq_restore(flags);
+	irq_mask(IRQ_GPT2);
+	idle_cnt = cnt_now();
+	idle_32k = readl(SYNC32K_CR);
+}
+
+void timer_idle_exit(void)
+{
+	uint32_t ticks32k = readl(SYNC32K_CR) - idle_32k;
+	uint64_t expect = idle_cnt + (uint64_t)ticks32k * hz / SLEEP_CLK_HZ;
+	uint32_t lo;
+	do {
+		writel(OVF, GPT2_BASE + TISR);
+		lo = readl(GPT2_BASE + TCRR);
+	} while (readl(GPT2_BASE + TISR) & OVF);
+	wraps = (uint32_t)((expect - lo + (1ull << 31)) >> 32);
+	irq_unmask(IRQ_GPT2);
 }
 
 /* GPTIMER1's registers are written across to the 32 kHz side: a write

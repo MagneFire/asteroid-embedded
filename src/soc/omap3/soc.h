@@ -153,8 +153,8 @@ void wdt_tick(void);
 
 /* TPS65912: its registers are pmic_read and pmic_write. */
 bool tps65912_init(void);
-/* A deep sleep stopped the clock that time is counted from for this many
- * 32 kHz ticks. */
-void timer_slept(uint32_t ticks32k);
+/* Around an idle, with interrupts masked. */
+void timer_idle_enter(void);
+void timer_idle_exit(void);
 #endif
 #endif
