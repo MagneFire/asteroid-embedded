@@ -103,6 +103,7 @@ $(BUILD)/gitrev.h: FORCE
 $(BUILD)/config.h: FORCE
 	@mkdir -p $(BUILD)
 	@echo '$(if $(TEST),#define TEST_$(shell echo $(TEST) | tr a-z A-Z) 1,)' > $@.tmp
+	@echo '$(if $(ASLEEP_STATS),#define ASLEEP_STATS 1,)' >> $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
 FORCE:

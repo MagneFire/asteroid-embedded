@@ -1,6 +1,7 @@
-/* What the log says about the running system: each second awake, each
- * minute asleep. A build-time TEST hangs or faults here on purpose to
- * exercise the crash path. */
+/* What the log says about the running system: each second awake, and
+ * asleep at most each minute, on a wake for something else unless the
+ * build has ASLEEP_STATS. A build-time TEST hangs or faults here on
+ * purpose to exercise the crash path. */
 #include "asteroid.h"
 #include "display/display.h"
 #include "input/touch.h"
@@ -19,15 +20,26 @@ void stats_init(uint32_t start)
 	frames0 = display_frames();
 }
 
+static void asleep_line(uint32_t now)
+{
+	uint32_t pc, pcc, pcb;
+	cpu_idle_stats(&pc, &pcc, &pcb);
+	log_printf("power: asleep %lu s, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", (now - last) / 1000,
+		   power_wakeups(), pc, pcc, pcb, batt_avg_ua() / 1000);
+	last = now;
+}
+
+/* The pass that wakes the watch is already awake for stats_poll. */
+void stats_woke(uint32_t now)
+{
+	if (now - last >= 1000)
+		asleep_line(now);
+}
+
 void stats_poll(uint32_t now, bool awake)
 {
-	if (!awake && now - last >= ASLEEP_STATS_MS) {
-		last = now;
-		uint32_t pc, pcc, pcb;
-		cpu_idle_stats(&pc, &pcc, &pcb);
-		log_printf("power: asleep, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", power_wakeups(), pc, pcc,
-			   pcb, batt_avg_ua() / 1000);
-	}
+	if (!awake && now - last >= ASLEEP_STATS_MS)
+		asleep_line(now);
 	if (awake && now - last >= 1000) {
 		last = now;
 		uint32_t rx, tx, att, terr;

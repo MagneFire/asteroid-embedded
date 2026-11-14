@@ -30,6 +30,7 @@
 #include "stats.h"
 #include "actions.h"
 #include "app.h"
+#include "config.h"
 
 #define BT_START_MS 2000
 
@@ -542,6 +543,7 @@ void app_power_changed(enum power_change change)
 		frame_sleep();
 		break;
 	case POWER_WOKE:
+		stats_woke(time_ms());
 		if (have_touch)
 			touch_sleep(false);
 		frame_wake();
@@ -554,12 +556,14 @@ void app_power_changed(enum power_change change)
 }
 
 /* The time asleep until something here has work to do. The battery
- * monitor is left out on purpose: asleep its update follows the stats
- * line, as its own period would triple the wakeups. */
+ * driver's deadline is for safety: the charge limits on the dock, an
+ * empty battery off it. */
 uint32_t app_next_ms(void)
 {
 	uint32_t next[] = {
+#if ASLEEP_STATS
 		stats_next_ms(),
+#endif
 		clockapps_next_ms(time_ms()),
 		have_touch ? touch_next_ms() : UINT32_MAX,
 		usb_next_ms(),
