@@ -27,6 +27,9 @@
 #include "sched.h"
 
 #define AOD_BRIGHTNESS 18
+/* How long the hub's own display takes to show after ambient mode is
+ * set, as seen on catfish. */
+#define HUB_SCREEN_MS 800
 #define FIN_PX 6
 /* Awake, the light sensor is read this often, a reading is ready after
  * the integration time, and a change of brightness takes the fade time,
@@ -39,9 +42,10 @@ static bool have_display, have_ui, have_hub;
 static struct power_policy policy = { .awake = true };
 static struct nightstand stand;
 static enum screen_state screen;
-static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups;
+static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static const char *wake_cause;
+static bool lit_pending;
 
 void power_init(bool display, bool ui, bool hub)
 {
@@ -280,14 +284,22 @@ static void ambient_draw(void)
 
 /* The hub's own screen shows the time unless the main panel shows
  * something: awake, or the always-on face. */
-static void hub_follow(void)
+static void hub_follow(bool want, uint32_t now)
 {
 	static bool normal = true;
-	bool want = policy.awake || screen == SCREEN_AMBIENT;
 	if (want != normal) {
 		normal = want;
 		hub_screen(want);
+		if (!want)
+			hub_ambient_t = now;
 	}
+}
+
+/* From the always-on face the white screen waits for the hub's display,
+ * which was off, so the two show together. */
+static bool lit_waits(enum screen_state want, uint32_t now)
+{
+	return want == SCREEN_LIT && screen == SCREEN_AMBIENT && (int32_t)(now - hub_ambient_t) < HUB_SCREEN_MS;
 }
 
 /* The panel is on, the face goes up at its own brightness. */
@@ -411,9 +423,16 @@ enum power_change power_update(uint32_t *now_p)
 	/* Asleep on the charger the nightstand setting picked; once off the
 	 * charger the normal one applies, either way. The picture stays off
 	 * until the face is drawn, or the last screen would flash up. */
-	if (!policy.awake)
-		screen_set(screen_wanted(now));
-	hub_follow();
+	if (!policy.awake) {
+		enum screen_state want = screen_wanted(now);
+		hub_follow(want == SCREEN_AMBIENT, now);
+		lit_pending = lit_waits(want, now);
+		if (!lit_pending)
+			screen_set(want);
+	} else {
+		lit_pending = false;
+		hub_follow(true, now);
+	}
 	if (screen == SCREEN_AMBIENT && !policy.awake && rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);
 		ambient_draw();
@@ -432,8 +451,9 @@ void power_idle(uint32_t app_next_ms)
 	/* A USB completion that landed after this pass's poll would wait
 	 * for the next tick, a second asleep, and adb needs several per
 	 * message: go round again instead, at full speed, as a pass on the
-	 * sleep clock takes over 100 ms. */
-	if (usb_busy()) {
+	 * sleep clock takes over 100 ms. The wait for the hub's display is
+	 * too short for the sleep timer as well. */
+	if (usb_busy() || lit_pending) {
 		if (!policy.awake && cpu_clock_is_slow())
 			cpu_clock_slow(false);
 		return;
