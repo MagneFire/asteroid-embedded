@@ -21,6 +21,25 @@
 #define TEMP_MIN	(-200)
 #define TEMP_MAX	800
 
+/* No sleep current measured yet: well above what it draws asleep. */
+#define EMPTY_MIN_MA	12
+/* What healthd waits between readings in suspend. */
+#define EMPTY_WAIT_MIN_MS	600000u
+/* A percent can last only minutes, and an empty reading needs another. */
+#define EMPTY_CLOSE_PERCENT	2
+#define EMPTY_CLOSE_MS		60000u
+
+uint32_t charge_empty_wait_ms(uint32_t percent, int32_t ua, uint32_t cell_mah)
+{
+	uint32_t ma = (uint32_t)(ua < 0 ? -(int64_t)ua : ua) / 1000;
+	if (ma < EMPTY_MIN_MA)
+		ma = EMPTY_MIN_MA;
+	if (percent <= EMPTY_CLOSE_PERCENT)
+		return EMPTY_CLOSE_MS;
+	uint64_t ms = (uint64_t)(percent - 1) * cell_mah * 36000 / ma;
+	return ms < EMPTY_WAIT_MIN_MS ? EMPTY_WAIT_MIN_MS : ms > UINT32_MAX ? UINT32_MAX : (uint32_t)ms;
+}
+
 bool charge_temp_plausible(int temp)
 {
 	return temp > TEMP_MIN && temp < TEMP_MAX;

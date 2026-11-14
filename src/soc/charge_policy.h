@@ -28,4 +28,8 @@ struct charge_input {
 bool charge_policy_step(struct charge_policy *p, const struct charge_input *in);
 /* Whether a gauge temperature can be real. */
 bool charge_temp_plausible(int temp);
+/* Asleep without a cable, how long until the cell could be empty, for
+ * the next look at it: from the charge left at the current drawn or a
+ * higher one, never under 10 minutes, and each minute at 2 % or less. */
+uint32_t charge_empty_wait_ms(uint32_t percent, int32_t ua, uint32_t cell_mah);
 #endif

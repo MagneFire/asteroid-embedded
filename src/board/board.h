@@ -57,6 +57,7 @@ struct hub_profile;
 struct hub_gauge {
 	uint32_t mv, percent;
 	int32_t ua, decidegrees;
+	uint32_t t_ms;		/* time_ms of the reading */
 };
 
 struct hub_driver {

@@ -272,9 +272,10 @@ static void read_events(void)
 		if (ev.kind == NANOHUB_EV_SENSOR)
 			sensor_event(&ev);
 		else if (ev.kind == NANOHUB_EV_FUEL_GAUGE) {
-			gauge = (struct hub_gauge){ ev.gauge.mv, ev.gauge.percent, -ev.gauge.current_ma * 1000, ev.gauge.temp_dc };
-			have_gauge = true;
 			gauge_t = time_ms();
+			gauge = (struct hub_gauge){ ev.gauge.mv, ev.gauge.percent, -ev.gauge.current_ma * 1000, ev.gauge.temp_dc,
+						    gauge_t };
+			have_gauge = true;
 			gauge_asked_t = 0;
 		} else if (ev.kind == NANOHUB_EV_LOG) {
 			char line[96];

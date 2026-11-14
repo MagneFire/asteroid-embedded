@@ -132,6 +132,16 @@ int main(void)
 	in.now_ms += 1800000;
 	CHECK(charge_policy_step(&p, &in));
 
+	/* Catfish's cell asleep: at least 12 mA, at least 10 minutes, each
+	 * minute close to empty. */
+	CHECK(charge_empty_wait_ms(50, -5000, 415) == 61005000);
+	CHECK(charge_empty_wait_ms(50, -30000, 415) == 24402000);
+	CHECK(charge_empty_wait_ms(50, 30000, 415) == 24402000);
+	CHECK(charge_empty_wait_ms(4, 0, 415) == 3735000);
+	CHECK(charge_empty_wait_ms(3, -200000, 415) == 600000);
+	CHECK(charge_empty_wait_ms(2, 0, 415) == 60000);
+	CHECK(charge_empty_wait_ms(0, -100000, 415) == 60000);
+
 	puts(failures ? "gauge_test: FAILED" : "gauge_test: ok");
 	return failures != 0;
 }

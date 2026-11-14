@@ -10,6 +10,7 @@
 #include "asteroid.h"
 #include "power.h"
 #include "sensors/hub.h"
+#include "soc/charge_policy.h"
 
 #define BUS		(board->charger.i2c.bus)
 #define ADDR		(board->charger.i2c.addr)
@@ -40,9 +41,14 @@
 #define CABLE_POLL_MS	1000
 
 #define EMPTY_POLLS	2
+#define CELL_MAH	415
+#define CHARGER_TASK_MS	500
 
-static bool ready, configured, cable_now, irq_seen;
-static uint32_t poll_t, errors, empty_polls;
+static bool ready, configured, cable_now, irq_seen, have_seen, fresh, stale;
+static uint32_t poll_t, errors, empty_polls, quiet_polls;
+static bool empty_from_pmic;
+/* The last gauge reading taken in. */
+static struct hub_gauge seen;
 
 static int rd(uint8_t reg, uint8_t *v) { return i2c_xfer(BUS, ADDR, &reg, 1, v, 1); }
 
@@ -134,12 +140,15 @@ static uint32_t smb231_mv(void);
 
 /* The hub's microcontroller stops at 3072 mV, and nothing else turns the
  * watch off before the cell runs flat, so at 0 % without a cable it goes
- * into Timepiece like the vendor's at shutdown, which powers it off. */
-static void check_empty(void)
+ * into Timepiece like the vendor's at shutdown, which powers it off.
+ * Each reading counts once. */
+static void check_empty(uint32_t percent, bool pmic)
 {
-	if (cable_now || !smb231_mv() || smb231_percent() > 0) {
+	if (cable_now || percent > 0 || pmic != empty_from_pmic) {
 		empty_polls = 0;
-		return;
+		empty_from_pmic = pmic;
+		if (cable_now || percent > 0)
+			return;
 	}
 	if (++empty_polls < EMPTY_POLLS)
 		return;
@@ -152,34 +161,78 @@ static void check_empty(void)
 
 static uint32_t poll_ms(void) { return cable_now || !configured ? CABLE_POLL_MS : POLL_MS; }
 
+static bool gauge(struct hub_gauge *g);
+static bool reading_new(void);
+static uint32_t percent_from_mv(uint32_t mv);
+
+/* A hub that sent nothing over two polls, while it was asked for a
+ * reading, is not believed: the PMIC's voltage stands in. */
 static void smb231_poll(void)
 {
 	uint32_t now = time_ms();
-	if (!ready || (!irq_seen && now - poll_t < poll_ms()))
+	if (!ready)
 		return;
-	irq_seen = false;
-	poll_t = now;
-	uint8_t irqs[4];
-	uint8_t reg = IRQ_A;
-	i2c_xfer(BUS, ADDR, &reg, 1, irqs, sizeof irqs);
-	bool c = vbus();
-	if (c != cable_now || !configured)
-		configured = configure();
-	cable_now = c;
-	if (board->hub && board->hub->poll_gauge)
-		board->hub->poll_gauge();
-	check_empty();
+	bool due = irq_seen || now - poll_t >= poll_ms();
+	if (due) {
+		irq_seen = false;
+		poll_t = now;
+		uint8_t irqs[4];
+		uint8_t reg = IRQ_A;
+		i2c_xfer(BUS, ADDR, &reg, 1, irqs, sizeof irqs);
+		bool c = vbus();
+		if (c != cable_now || !configured)
+			configured = configure();
+		cable_now = c;
+		if (board->hub && board->hub->poll_gauge)
+			board->hub->poll_gauge();
+		quiet_polls = fresh || reading_new() ? 0 : quiet_polls + 1;
+		stale = quiet_polls >= 2;
+		fresh = false;
+	}
+	/* After the cable is known, so a plug-in is not taken for empty. */
+	if (reading_new()) {
+		gauge(&seen);
+		have_seen = fresh = true;
+		check_empty(seen.percent, false);
+	} else if (due && stale) {
+		uint32_t mv = pmic_battery_mv();
+		if (mv)
+			check_empty(percent_from_mv(mv), true);
+	}
 }
 
+/* Asleep without a cable, the next look is when the cell could have
+ * run empty since the newest reading, or soon to confirm an empty one.
+ * A new reading waits for the next wake to be checked. */
 static uint32_t smb231_next_ms(void)
 {
-	uint32_t gone = time_ms() - poll_t;
-	return irq_seen ? 1 : gone >= poll_ms() ? 1 : poll_ms() - gone;
+	if (!ready)
+		return UINT32_MAX;
+	uint32_t now = time_ms(), gone = now - poll_t;
+	struct hub_gauge g;
+	if (irq_seen)
+		return 1;
+	uint32_t next;
+	if (power_awake() || cable_now || !configured || empty_polls || stale || !gauge(&g)) {
+		next = gone >= poll_ms() ? 1 : poll_ms() - gone;
+	} else {
+		uint32_t wait = charge_empty_wait_ms(g.percent, g.ua, CELL_MAH), left = ms_left(g.t_ms, wait, now);
+		next = gone < POLL_MS && left < POLL_MS - gone ? POLL_MS - gone : left;
+	}
+	/* Asleep the poll comes from the charger task, run at most every
+	 * CHARGER_TASK_MS: sooner would only wake for nothing. */
+	return !power_awake() && next < CHARGER_TASK_MS ? CHARGER_TASK_MS : next;
 }
 
 static bool gauge(struct hub_gauge *g)
 {
 	return board->hub && board->hub->gauge && board->hub->gauge(g);
+}
+
+static bool reading_new(void)
+{
+	struct hub_gauge g;
+	return gauge(&g) && (!have_seen || g.t_ms != seen.t_ms);
 }
 
 /* Until the hub's gauge has reported, a few seconds after boot, the charge
