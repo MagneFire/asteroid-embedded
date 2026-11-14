@@ -350,7 +350,7 @@ static int fifo_read_sync(void)
 	while (!r && left) {
 		unsigned n = piece(left, at);
 		r = rd((uint8_t)(at % FIFO_WINDOW), rx, n);
-		if (r == -3 && chunk > 1) {
+		if (r == I2C_REFUSED && chunk > 1) {
 			chunk /= 2;
 			r = 0;
 		} else if (!r) {
@@ -529,7 +529,7 @@ static bool boot(void)
 		for (unsigned i = 0; i < n; i++)
 			buf[1 + i] = fw[off + (i ^ 3)];
 		r = i2c_xfer(BUS, ADDR, buf, n + 1, NULL, 0);
-		if (r == -3 && step > 4) {
+		if (r == I2C_REFUSED && step > 4) {
 			step /= 2;
 			r = 0;
 		} else if (!r) {

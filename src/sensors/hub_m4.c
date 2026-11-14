@@ -134,8 +134,16 @@ static bool bl_read(uint32_t addr, uint8_t *data, unsigned n)
 	       !xfer(NULL, 0, data, n);
 }
 
+/* A transfer the controller refused never reached the hub. */
 static int counted(int r)
 {
+	static bool told;
+	if (r == I2C_REFUSED) {
+		if (!told)
+			log_printf("hub: m4 transfer refused by the bus\n");
+		told = true;
+		return r;
+	}
 	fails = r ? fails + 1 : 0;
 	return r;
 }

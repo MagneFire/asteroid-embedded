@@ -207,7 +207,7 @@ int i2c_start(unsigned n, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *
 {
 	struct bus *b = bus(n);
 	if (!b || wn > MAX_WRITE || rn > MAX_READ || (!wn && !rn))
-		return -3;
+		return I2C_REFUSED;
 	uint32_t flags = irq_save();
 	if (b->xfer.busy) {
 		irq_restore(flags);

@@ -344,12 +344,12 @@ int i2c_start(unsigned qup, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t
 {
 	struct bus *b = bus(qup);
 	if (!b)
-		return -3;
+		return I2C_REFUSED;
 	uint16_t e[40];
 	unsigned n = 0;
 	if (wn > ARRAY_SIZE(e) - 4 || rn > 256 || b->fifo_entries < 4 || wn > b->fifo_entries - 4 ||
 	    rn > b->fifo_entries)
-		return -3;
+		return I2C_REFUSED;
 	if (wn) {
 		e[n++] = TAG_START | (uint16_t)(addr << 1);
 		for (unsigned i = 0; i < wn; i++)

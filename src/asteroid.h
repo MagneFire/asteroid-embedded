@@ -129,6 +129,9 @@ uint32_t gpio_raw_config(unsigned n);
 int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz);
 int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 typedef void (*i2c_done_fn)(int err, void *ctx);
+/* What i2c_start and i2c_xfer return for a transfer the controller
+ * cannot do, such as one longer than it takes, before using the bus. */
+#define I2C_REFUSED	(-3)
 int i2c_start(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn, i2c_done_fn done, void *ctx);
 bool i2c_busy(unsigned bus);
 /* How long a slave may hold the clock on a transfer this master has on
