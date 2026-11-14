@@ -6,7 +6,8 @@
 #include "asteroid.h"
 #include "sched.h"
 
-#define QTMR_CNTP_TVAL		(QTMR_FRAME0 + 0x28)
+#define QTMR_CNTP_CVAL_LO	(QTMR_FRAME0 + 0x20)
+#define QTMR_CNTP_CVAL_HI	(QTMR_FRAME0 + 0x24)
 #define QTMR_CNTP_CTL		(QTMR_FRAME0 + 0x2c)
 #define IRQ_QTMR_FRAME0		(32 + 8)
 #define IRQ_MPM_WAKE		(32 + 171)
@@ -139,7 +140,7 @@ void cpu_idle(bool cluster)
 	/* With interrupts masked, an event posted before this point is seen
 	 * here and one posted after it ends the wait: wfi returns for a
 	 * masked interrupt, and it is taken on unmasking. */
-	uint32_t tval, ppis;
+	uint32_t ppis;
 	__asm__ volatile("cpsid i" ::: "memory");
 	if (!can_collapse) {
 		if (!sched_pending())
@@ -147,17 +148,21 @@ void cpu_idle(bool cluster)
 		__asm__ volatile("cpsie i" ::: "memory");
 		return;
 	}
-	__asm__ volatile("mrc p15, 0, %0, c14, c2, 0" : "=r"(tval));	/* CNTP_TVAL */
-	if ((int32_t)tval <= 0 || sched_pending()) {
+	uint64_t deadline = timer_deadline();
+	int64_t left = (int64_t)(deadline - timer_count());
+	if (left <= 0 || sched_pending()) {
 		__asm__ volatile("cpsie i" ::: "memory");
 		return;
 	}
-	cluster = cluster && cluster_parked && tval >= timer_hz() / 50;
+	cluster = cluster && cluster_parked && left >= timer_hz() / 50;
 	if (cluster) {
-		mpm_arm(timer_count() + tval);
+		mpm_arm(deadline);
 		writel(SPM_CTL_START(L2_SEQ_POWER_COLLAPSE) | SPM_CTL_EN, SAW_L2 + SAW_SPM_CTL);
 	}
-	writel(tval, QTMR_CNTP_TVAL);
+	/* Off while the halves change, or one half-written may be past. */
+	writel(0, QTMR_CNTP_CTL);
+	writel((uint32_t)deadline, QTMR_CNTP_CVAL_LO);
+	writel((uint32_t)(deadline >> 32), QTMR_CNTP_CVAL_HI);
 	writel(1, QTMR_CNTP_CTL);
 	ppis = gic_cpu_save();
 	spm_cpu_mode(SPM_POWER_COLLAPSE);

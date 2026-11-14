@@ -37,16 +37,25 @@ void timer_set_period(uint32_t ms)
 	period_ms = ms ? ms : 1;
 }
 
-void timer_next(uint32_t ms)
+/* By CNTP_CVAL: TVAL is a signed 32-bit count, under two minutes. */
+static void arm_in(uint32_t ms)
 {
-	uint32_t tval = hz / 1000 * (ms ? ms : 1);
-	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));	/* CNTP_TVAL */
+	uint64_t cval = cnt_now() + (uint64_t)(ms ? ms : 1) * hz / 1000;
+	__asm__ volatile("mcrr p15, 2, %0, %1, c14" :: "r"((uint32_t)cval), "r"((uint32_t)(cval >> 32)));
 }
+
+uint64_t timer_deadline(void)
+{
+	uint32_t lo, hi;
+	__asm__ volatile("mrrc p15, 2, %0, %1, c14" : "=r"(lo), "=r"(hi));
+	return ((uint64_t)hi << 32) | lo;
+}
+
+void timer_next(uint32_t ms) { arm_in(ms); }
 
 static void tick_irq(void)
 {
-	uint32_t tval = hz / 1000 * period_ms;
-	__asm__ volatile("mcr p15, 0, %0, c14, c2, 0" :: "r"(tval));	/* CNTP_TVAL */
+	arm_in(period_ms);
 	ticks++;
 	prof_sample();
 }
