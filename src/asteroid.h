@@ -105,6 +105,7 @@ void settings_changed(void);
 bool cpu_idle_init(void);
 void cpu_idle(bool cluster);
 void wake_pin(unsigned pin, bool on, bool high);
+void wake_pin_falling(unsigned pin, bool on);
 void cpu_idle_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
 void dcache_clean_range(const void *addr, uint32_t size);
 void dcache_invalidate_range(const void *addr, uint32_t size);

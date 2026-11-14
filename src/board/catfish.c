@@ -41,7 +41,7 @@ const struct board board_catfish = {
 	/* The STM32 sensor hub on BLSP1 QUP4 (gpio 12, 13, 15, function 1). */
 	.hub = &hub_nanohub,
 	.hub_pins = { .irq = 97, .spi = 4, .gpio = 12, .func = 1, .cs = 14, .wake_mcu = 71, .reset = 72, .boot0 = 70,
-		      .mode_irq = 90, .strobe = 73, .mode = { 8, 9, 99, 110 }, .mpm = 37 },
+		      .mode_irq = 90, .mode_mpm = 30, .strobe = 73, .mode = { 8, 9, 99, 110 }, .mpm = 37 },
 	/* DRV2605 on BLSP1 QUP6, no trigger line. */
 	.light = &light_nanohub,
 	.motor = &motor_drv2605,

@@ -629,6 +629,14 @@ static bool nanohub_can_sleep(void)
 	return !present || (!data_irq && !mode_irq && !hub_irq_low());
 }
 
+/* With the cluster down only the MPM sees the hub's lines. The data line
+ * stays low until it is read, the mode ask is a pulse. */
+static void nanohub_sleep(bool asleep)
+{
+	wake_pin(PINS.mpm, asleep, false);
+	wake_pin_falling(PINS.mode_mpm, asleep);
+}
+
 /* With the screen off the hub draws the time on its own LCD. */
 static void nanohub_screen(bool on)
 {
@@ -753,6 +761,7 @@ const struct hub_driver hub_nanohub = {
 	.accel_on = nanohub_accel_on,
 	.accel = nanohub_accel,
 	.can_sleep = nanohub_can_sleep,
+	.sleep = nanohub_sleep,
 	.screen = nanohub_screen,
 	.status = nanohub_status,
 	.gauge = get_gauge,

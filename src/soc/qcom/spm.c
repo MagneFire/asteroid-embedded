@@ -144,7 +144,7 @@ static void mpm_wake_irq(void)
 /* The MPM watches the wake-up sources while the cluster is off. Its
  * register image in RPM memory is copied into the hardware when the RPM
  * is interrupted; the wake-up time is in system counter ticks. */
-static uint32_t extra_pins[2], extra_high[2];
+static uint32_t extra_pins[2], extra_high[2], extra_falling[2];
 
 void wake_pin(unsigned pin, bool on, bool high)
 {
@@ -158,6 +158,16 @@ void wake_pin(unsigned pin, bool on, bool high)
 		extra_high[pin / 32] &= ~BIT(pin % 32);
 }
 
+/* A pin whose pulse may be too short for the MPM to see as a level. */
+void wake_pin_falling(unsigned pin, bool on)
+{
+	wake_pin(pin, on, false);
+	if (on)
+		extra_falling[pin / 32] |= BIT(pin % 32);
+	else
+		extra_falling[pin / 32] &= ~BIT(pin % 32);
+}
+
 static void mpm_arm(uint64_t wake)
 {
 	volatile uint32_t *v = (volatile uint32_t *)(uintptr_t)VMPM;
@@ -166,7 +176,7 @@ static void mpm_arm(uint64_t wake)
 	for (unsigned i = 0; i < 2; i++) {
 		v[0 + i] = (uint32_t)(wake >> (32 * i));
 		v[2 + i] = enable[i];
-		v[4 + i] = 0;
+		v[4 + i] = extra_falling[i];
 		v[6 + i] = 0;
 		v[8 + i] = polarity[i];
 		v[10 + i] = 0;

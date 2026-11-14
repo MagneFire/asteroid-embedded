@@ -72,6 +72,11 @@ void wake_pin(unsigned pin, bool on, bool high)
 	pad_config(board->wake_pads[pin], on ? pad | PAD_WAKEUP : pad & ~PAD_WAKEUP);
 }
 
+void wake_pin_falling(unsigned pin, bool on)
+{
+	wake_pin(pin, on, false);
+}
+
 void cpu_idle_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts)
 {
 	*collapses = retentions;

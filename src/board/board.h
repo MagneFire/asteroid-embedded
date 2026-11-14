@@ -315,7 +315,7 @@ struct board {
 		uint32_t ldo_uv;
 		/* An SPI hub: its QUP and chip select, and the mode lines with
 		 * their strobe and the hub's request for them. */
-		uint8_t spi, cs, mode_irq, strobe, mode[4];
+		uint8_t spi, cs, mode_irq, mode_mpm, strobe, mode[4];
 	} hub_pins;
 	/* Which of the M4 hub's firmwares the watch has. */
 	const struct m4_variant *hub_variant;
