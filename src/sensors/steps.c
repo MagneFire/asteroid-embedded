@@ -36,6 +36,35 @@ static uint32_t base = HUB_NONE, measured_base[2];
 static bool measured_based;
 static bool ready, changed;
 
+/* A hub that keeps steps today itself (catfish) also counts while the
+ * watch is off: today follows it up, never down. Its midnight and ours
+ * can be a little apart, so for ROLL_S after ours its count is taken only
+ * once it dropped, and a lower count near midnight is not sent back. */
+#define ROLL_S		120
+#define SYNC_S		60
+static uint32_t hub_last = HUB_NONE, sync_t;
+static bool rolling;
+
+static void follow_hub(uint32_t t, uint32_t now)
+{
+	uint32_t mine = now_state.total - now_state.day_start, secs = now % 86400;
+	if (rolling) {
+		if (t >= hub_last && secs < ROLL_S) {
+			hub_last = t;
+			return;
+		}
+		rolling = false;
+	}
+	hub_last = t;
+	if (t > mine) {
+		now_state.total += t - mine;
+		changed = true;
+	} else if (t < mine && secs >= ROLL_S && secs < 86400 - ROLL_S && now - sync_t >= SYNC_S) {
+		sync_t = now;
+		hub_sync_steps_today(mine);
+	}
+}
+
 void steps_init(void)
 {
 	int n = kv_get(KV_STEPS, &saved, sizeof saved);
@@ -46,8 +75,9 @@ void steps_init(void)
 	now_state = saved;
 	if (kv_get(KV_DAYS, &days, sizeof days) != (int)sizeof days)
 		days = (struct days){ .last = saved.day - 1 };
-	base = HUB_NONE;
-	measured_based = changed = false;
+	base = hub_last = HUB_NONE;
+	measured_based = changed = rolling = false;
+	sync_t = 0;
 	ready = true;
 	log_printf("steps: %lu today, %lu in total\n", saved.total - saved.day_start, saved.total);
 }
@@ -66,6 +96,7 @@ static void end_day(uint32_t day)
 	}
 	now_state.day = day;
 	now_state.day_start = now_state.total;
+	rolling = hub_last != HUB_NONE;
 	for (unsigned i = 0; i < 2; i++)
 		now_state.measured_start[i] = now_state.measured[i];
 	steps_save();
@@ -103,6 +134,9 @@ bool steps_poll(void)
 		end_day(day);
 		return true;
 	}
+	uint32_t hub_today = hub_steps_today();
+	if (hub_today != HUB_NONE)
+		follow_hub(hub_today, rtc_read());
 	struct activity after = steps_activity_today();
 	return steps_today() != today || after.distance_m != before.distance_m || after.kcal != before.kcal;
 }

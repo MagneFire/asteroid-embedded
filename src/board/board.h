@@ -65,6 +65,10 @@ struct hub_driver {
 	int (*send)(const uint8_t *p, unsigned n);
 	void (*set_time)(void);
 	uint32_t (*steps)(void);
+	/* Steps since local midnight, kept by a hub that counts while the
+	 * watch is off; HUB_NONE until it has said. */
+	uint32_t (*steps_today)(void);
+	void (*sync_steps_today)(uint32_t steps);
 	bool (*activity)(uint32_t v[2]);
 	void (*profile)(const struct hub_profile *p);
 	void (*heart_rate_on)(bool on);

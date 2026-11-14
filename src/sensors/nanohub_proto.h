@@ -46,6 +46,8 @@
 #define NANOHUB_SENSOR_FUEL_GAUGE	68
 #define NANOHUB_SENSOR_HAND_UP		0x4b
 #define NANOHUB_SENSOR_TIME		0x55
+#define NANOHUB_SENSOR_STEPS_TODAY	0x5a
+#define NANOHUB_SENSOR_LCD_A		0x5b
 
 /* The fuel gauge report is 56 bytes: the event, the app id, 43 bytes of
  * app data of which 40 are the gauge's register cache. */

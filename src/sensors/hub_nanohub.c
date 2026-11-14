@@ -39,7 +39,7 @@ static uint32_t seq, errors, events, versions[2];
 static bool present, tilt_on, hr_on;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
-static uint32_t steps = HUB_NONE, heart_rate = HUB_NONE;
+static uint32_t steps_today = HUB_NONE, heart_rate = HUB_NONE;
 static bool tilted, have_gauge;
 static struct hub_gauge gauge;
 static uint32_t gauge_asked_t, gauge_t, level_t, failures, down_t;
@@ -209,9 +209,9 @@ static void sensor_event(const struct nanohub_event *ev)
 	case NANOHUB_SENSOR_HAND_UP:
 		tilted = true;
 		break;
-	case NANOHUB_SENSOR_STEP_COUNTER:
+	case NANOHUB_SENSOR_STEPS_TODAY:
 		if (ev->sensor.header && nanohub_sample(ev, last, 4, &ns, &d))
-			memcpy(&steps, d, 4);
+			memcpy(&steps_today, d, 4);
 		break;
 	case NANOHUB_SENSOR_HEART_RATE:
 		if (ev->sensor.header && nanohub_sample(ev, last, 12, &ns, &d)) {
@@ -287,8 +287,14 @@ static bool want_tilt, want_hr, want_accel;
 static void apply_state(void)
 {
 	set_time();
-	if (!configure(NANOHUB_SENSOR_STEP_COUNTER, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0))
-		log_printf("hub: step counter not enabled\n");
+	if (!configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0))
+		log_printf("hub: steps today not enabled\n");
+	/* The steps row on the hub's display. */
+	static const uint8_t steps_row[26] = { 0, 1, 1, 1 };
+	uint8_t b[NANOHUB_PAYLOAD_MAX];
+	unsigned n = nanohub_sensor_config(b, NANOHUB_SENSOR_LCD_A, NANOHUB_CMD_CFG_DATA, 0, 0, steps_row, sizeof steps_row);
+	if (present && exchange(NANOHUB_WRITE, b, n) < 0)
+		log_printf("hub: steps row not set\n");
 	tilt_on = want_tilt && configure(NANOHUB_SENSOR_HAND_UP, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 	if (want_accel)
@@ -409,7 +415,16 @@ static bool get_gauge(struct hub_gauge *g)
 	return have_gauge;
 }
 
-static uint32_t nanohub_steps(void) { return steps; }
+static uint32_t nanohub_steps_today(void) { return steps_today; }
+
+/* The hub's count replaced by ours, when ours is the higher one. */
+static void nanohub_sync_steps_today(uint32_t v)
+{
+	uint8_t b[NANOHUB_PAYLOAD_MAX];
+	unsigned n = nanohub_sensor_config(b, NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_CFG_DATA, 0, 0, (const uint8_t *)&v, 4);
+	if (present && exchange(NANOHUB_WRITE, b, n) >= 0)
+		steps_today = v;
+}
 
 static void nanohub_heart_rate_on(bool on)
 {
@@ -480,7 +495,6 @@ static void nanohub_screen(bool on)
 /* What the vendor's Essential mode leaves the hub in: its sensors for the
  * watch off, the idle workout frame, then BAND, in which it shows the
  * time, date, battery and steps until the next boot. */
-#define SENSOR_LCD_A		0x5b
 
 static void nanohub_timepiece(void)
 {
@@ -494,7 +508,7 @@ static void nanohub_timepiece(void)
 		uint8_t frame[26] = { 1, 5 };
 		frame[25] = 1;
 		uint8_t b[NANOHUB_PAYLOAD_MAX];
-		unsigned n = nanohub_sensor_config(b, SENSOR_LCD_A, NANOHUB_CMD_CFG_DATA, 0, 0, frame, sizeof frame);
+		unsigned n = nanohub_sensor_config(b, NANOHUB_SENSOR_LCD_A, NANOHUB_CMD_CFG_DATA, 0, 0, frame, sizeof frame);
 		if (exchange(NANOHUB_WRITE, b, n) < 0)
 			log_printf("hub: idle frame not set\n");
 	}
@@ -514,7 +528,7 @@ static int nanohub_mode(unsigned code)
 static void nanohub_status(void (*say)(const char *fmt, ...))
 {
 	say("hub: nanohub hw %08lx fw %08lx, %s, mode %u, %lu events, %lu errors, steps %ld, gauge %s %lu mV %lu%%\n",
-	    versions[0], versions[1], present ? "up" : "not up", mode, events, errors, (long)steps,
+	    versions[0], versions[1], present ? "up" : "not up", mode, events, errors, (long)steps_today,
 	    have_gauge ? "" : "none", gauge.mv, gauge.percent);
 }
 
@@ -522,7 +536,8 @@ const struct hub_driver hub_nanohub = {
 	.init = nanohub_init,
 	.poll = nanohub_poll,
 	.set_time = set_time,
-	.steps = nanohub_steps,
+	.steps_today = nanohub_steps_today,
+	.sync_steps_today = nanohub_sync_steps_today,
 	.heart_rate_on = nanohub_heart_rate_on,
 	.heart_rate = nanohub_heart_rate,
 	.tilted = nanohub_tilted,

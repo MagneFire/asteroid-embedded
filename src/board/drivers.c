@@ -91,6 +91,12 @@ void hub_set_time(void)
 		board->hub->set_time();
 }
 uint32_t hub_steps(void) { return HUB(steps) ? board->hub->steps() : HUB_NONE; }
+uint32_t hub_steps_today(void) { return HUB(steps_today) ? board->hub->steps_today() : HUB_NONE; }
+void hub_sync_steps_today(uint32_t steps)
+{
+	if (HUB(sync_steps_today))
+		board->hub->sync_steps_today(steps);
+}
 bool hub_measures_activity(void) { return HUB(activity); }
 bool hub_activity(uint32_t v[2]) { return HUB(activity) && board->hub->activity(v); }
 bool hub_has_passive(void) { return HUB(passive); }

@@ -47,6 +47,14 @@ int kv_set(const char *key, const void *val, unsigned len)
 }
 uint32_t rtc_read(void) { return fake_rtc; }
 uint32_t hub_steps(void) { return fake_steps; }
+static uint32_t fake_today = HUB_NONE, synced = HUB_NONE;
+static unsigned syncs;
+uint32_t hub_steps_today(void) { return fake_today; }
+void hub_sync_steps_today(uint32_t steps)
+{
+	synced = steps;
+	syncs++;
+}
 bool hub_measures_activity(void) { return measures; }
 bool hub_activity(uint32_t v[2])
 {
@@ -196,6 +204,64 @@ int main(void)
 	kv_set("steps", v1, sizeof v1);
 	steps_init();
 	CHECK(steps_today() == 77 && steps_activity_today().distance_m == 0);
+
+	/* A hub that keeps steps today (catfish), with no count since boot:
+	 * the steps it counted while the watch was off come in at once. */
+	memset(kvs, 0, sizeof kvs);
+	uint32_t d = 21000;
+	fake_steps = HUB_NONE;
+	fake_rtc = DAY(d) + 3600;
+	steps_init();
+	CHECK(steps_today() == 0);
+	fake_today = 500;
+	CHECK(steps_poll());
+	CHECK(steps_today() == 500);
+	fake_today = 520;
+	steps_poll();
+	CHECK(steps_today() == 520);
+
+	/* It lost its count: today stays, ours goes back, once a minute. */
+	fake_rtc += 100;
+	fake_today = 100;
+	steps_poll();
+	CHECK(steps_today() == 520 && synced == 520 && syncs == 1);
+	fake_rtc += 10;
+	steps_poll();
+	CHECK(syncs == 1);
+	fake_rtc += 60;
+	steps_poll();
+	CHECK(syncs == 2);
+	fake_today = 530;
+	steps_poll();
+	CHECK(steps_today() == 530);
+
+	/* Our midnight first: its count of yesterday is not taken into
+	 * today until it drops. */
+	fake_rtc = DAY(d) + 86399;
+	fake_today = 900;
+	steps_poll();
+	CHECK(steps_today() == 900);
+	fake_rtc = DAY(d + 1) + 30;
+	CHECK(steps_poll());
+	CHECK(steps_today() == 0 && steps_day(1) == 900);
+	fake_rtc += 30;
+	fake_today = 905;
+	steps_poll();
+	CHECK(steps_today() == 0);
+	fake_rtc += 30;
+	fake_today = 3;
+	steps_poll();
+	CHECK(steps_today() == 3);
+
+	/* Its midnight first: no drop and nothing sent back. */
+	fake_today = 4000;
+	fake_rtc = DAY(d + 1) + 50000;
+	steps_poll();
+	unsigned before = syncs;
+	fake_rtc = DAY(d + 1) + 86350;
+	fake_today = 2;
+	steps_poll();
+	CHECK(steps_today() == 4000 && syncs == before);
 
 	printf(failures ? "steps_test: %d failures\n" : "steps_test: ok\n", failures);
 	return failures != 0;
