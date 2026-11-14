@@ -649,12 +649,12 @@ static bool m4_tilted(void)
 }
 
 /* Not until the firmware is up, or the wait for it would stretch out,
- * nor with the wake line, the bus or the tilt wake still to be dealt
- * with. */
+ * nor with the wake line, the bus, the tilt wake or a full passive ring
+ * still to be dealt with: the hub wipes the ring at its next boundary. */
 static bool m4_can_sleep(void)
 {
 	return state != HUB_BOOTING && !wake_pending && !wake_retry && !i2c_busy(BUS) &&
-	       !(state == HUB_READY && !tilt_set);
+	       !(state == HUB_READY && !tilt_set) && !(passive.due && passive_readable());
 }
 
 static void m4_sleep(bool asleep)
