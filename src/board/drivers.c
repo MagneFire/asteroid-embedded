@@ -10,7 +10,7 @@
 /* The calls that write to the charger, which a guessed watch might not
  * have wired the way its table says. */
 #define BATT_SETUP(fn) (!board_assumed && BATT(fn))
-#define TOUCH(fn) (board->touch && board->touch->fn)
+#define TOUCH(fn) (touch && touch->fn)
 #define HUB(fn) (board->hub && board->hub->fn)
 #define LIGHT(fn) (board->light && board->light->fn)
 
@@ -57,23 +57,32 @@ void light_keep(bool on)
 }
 int32_t light_finish(void) { return LIGHT(finish) ? board->light->finish() : -1; }
 
-bool touch_init(void) { return TOUCH(init) && board->touch->init(); }
-bool touch_poll(struct touch *t) { return TOUCH(poll) && board->touch->poll(t); }
+static const struct touch_driver *touch;
+
+bool touch_init(void)
+{
+	touch = board->touch;
+	if (TOUCH(init) && touch->init())
+		return true;
+	touch = board->touch_alt;
+	return TOUCH(init) && touch->init();
+}
+bool touch_poll(struct touch *t) { return TOUCH(poll) && touch->poll(t); }
 void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms)
 {
 	if (TOUCH(inject))
-		board->touch->inject(x0, y0, x1, y1, ms);
+		touch->inject(x0, y0, x1, y1, ms);
 }
 void touch_sleep(bool on)
 {
 	if (TOUCH(sleep))
-		board->touch->sleep(on);
+		touch->sleep(on);
 }
-uint32_t touch_next_ms(void) { return TOUCH(next_ms) ? board->touch->next_ms() : UINT32_MAX; }
+uint32_t touch_next_ms(void) { return TOUCH(next_ms) ? touch->next_ms() : UINT32_MAX; }
 void touch_stats(uint32_t *attentions, uint32_t *errors)
 {
 	if (TOUCH(stats))
-		board->touch->stats(attentions, errors);
+		touch->stats(attentions, errors);
 	else
 		*attentions = *errors = 0;
 }

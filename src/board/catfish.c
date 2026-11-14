@@ -32,8 +32,11 @@ const struct board board_catfish = {
 	/* SMB231 on BLSP1 QUP1, its STAT line on gpio 95. */
 	.battery_driver = &battery_smb231,
 	.charger = { .i2c = { .bus = 1, .sda = 6, .scl = 7, .func = 3, .addr = 0x12 }, .irq = 95, .mpm = 35, .suspend = 58 },
+	/* FT3267 at 0x38, or an IT7259 at 0x46 on some units. */
 	.touch = &touch_fts,
-	.touch_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x38 }, .irq = 65, .reset = 23, .mpm = 3,
+	.touch_alt = &touch_it7260,
+	.touch_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x38 }, .alt_addr = 0x46, .range = 400,
+			.irq = 65, .reset = 23, .mpm = 3,
 			.ldo = 17, .ldo_uv = 2850000, .ldo_io = 6, .ldo_io_uv = 1800000, .power = 93 },
 	/* The STM32 sensor hub on BLSP1 QUP4 (gpio 12, 13, 15, function 1). */
 	.hub = &hub_nanohub,

@@ -279,9 +279,13 @@ struct board {
 		uint8_t irq, mpm, suspend;
 	} charger;
 
-	const struct touch_driver *touch;
+	/* Some units of a watch have this controller instead, at alt_addr. */
+	const struct touch_driver *touch, *touch_alt;
 	struct {
 		struct board_i2c i2c;
+		uint8_t alt_addr;
+		/* The controller's coordinate range, 0 for the driver's. */
+		uint16_t range;
 		uint8_t irq, reset, mpm;
 		/* The LDO a driver switches on for it and its voltage, 0 for none. */
 		uint8_t ldo;

@@ -9,14 +9,18 @@
  * Point record: flags (bits 7-4 record type, 0 for touch; bits 2-0 one
  * per valid finger), palm (bit 0), then three fingers of x low, high
  * nibbles (x in bits 3-0, y in bits 7-4), y low and pressure (bits 3-0,
- * 2 or more is a touch). Coordinates are in the panel's 320 x 320. */
+ * 2 or more is a touch). Coordinates are in the panel's 320 x 320.
+ *
+ * The IT7259 of some catfish units answers the same commands, at 0x46
+ * on the touch bus of its FocalTech controller, in a 400 x 400 range and
+ * without the palm command. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
 #include "touch.h"
 
 #define BUS		(board->touch_pins.i2c.bus)
-#define ADDR		(board->touch_pins.i2c.addr)
+#define ADDR		(board->touch_alt == &touch_it7260 ? board->touch_pins.alt_addr : board->touch_pins.i2c.addr)
 #define GPIO_IRQ	(board->touch_pins.irq)
 #define GPIO_RESET	(board->touch_pins.reset)
 
@@ -44,7 +48,9 @@
 #define REC_FINGERS	0x07
 #define REC_PALM	0x01
 #define PRESSURE_TOUCH	2
-#define RANGE		320
+#define RANGE		(board->touch_pins.range ? board->touch_pins.range : 320)
+
+static bool it7259;
 
 /* Command, response and status access, all synchronous (init only). */
 static int rd(uint8_t buf_index, uint8_t *buf, unsigned n)
@@ -93,8 +99,40 @@ static int command(const uint8_t *c, unsigned n, uint8_t *resp, unsigned rn)
 #define REG_LVS1	0x018000
 #define REG_STATUS1	0x08
 
+/* catfish: its two LDOs and the switch line, then a reset pulse, with
+ * the vendor's waits; the reset line stays driven high. */
+static void wait_ms(uint32_t ms)
+{
+	for (; ms >= 10; ms -= 10) {
+		delay_ms(10);
+		wdt_feed();
+	}
+	delay_ms(ms);
+}
+
+static void power_on_board(void)
+{
+	regulator_on(board->touch_pins.ldo, board->touch_pins.ldo_uv);
+	if (board->touch_pins.ldo_io)
+		regulator_on(board->touch_pins.ldo_io, board->touch_pins.ldo_io_uv);
+	if (board->touch_pins.power) {
+		gpio_set(board->touch_pins.power, 1);
+		gpio_config(board->touch_pins.power, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
+	wait_ms(170);
+	gpio_set(GPIO_RESET, 0);
+	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 8);
+	delay_ms(10);
+	gpio_set(GPIO_RESET, 1);
+	wait_ms(200);
+}
+
 static void power_on(void)
 {
+	if (board->touch_pins.ldo) {
+		power_on_board();
+		return;
+	}
 	rpm_regulator_enable(RPM_LDOA, 6, true);
 	rpm_regulator_voltage(RPM_LDOA, 19, 2850000);
 	rpm_regulator_enable(RPM_LDOA, 19, true);
@@ -326,7 +364,7 @@ static int set_mode(uint8_t mode, uint8_t palm)
 {
 	const uint8_t palm_cmd[] = { CMD_PALM, 0x00, 0x00, palm }, mode_cmd[] = { CMD_POWER, 0x00, mode };
 	uint8_t resp[2] = { 0xff, 0xff };
-	int ret = command(palm_cmd, sizeof(palm_cmd), resp, sizeof(resp));
+	int ret = it7259 ? 0 : command(palm_cmd, sizeof(palm_cmd), resp, sizeof(resp));
 	if (!ret && (resp[0] || resp[1]))
 		ret = -6;
 	if (!ret)
@@ -427,10 +465,11 @@ static bool it7260_init(void)
 		return false;
 	}
 
-	static const uint8_t ident[] = { CMD_IDENT }, expect[] = { 0x0a, 'I', 'T', 'E', '7', '2', '6', '0' };
+	static const uint8_t ident[] = { CMD_IDENT }, expect[] = { 0x0a, 'I', 'T', 'E', '7', '2' };
 	uint8_t id[10] = { 0 };
 	ret = command(ident, sizeof(ident), id, sizeof(id));
-	if (ret || memcmp(id, expect, sizeof(expect))) {
+	it7259 = id[6] == '5' && id[7] == '9';
+	if (ret || memcmp(id, expect, sizeof(expect)) || !(it7259 || (id[6] == '6' && id[7] == '0'))) {
 		log_printf("touch: identify failed (%d): %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", ret, id[0], id[1],
 			   id[2], id[3], id[4], id[5], id[6], id[7], id[8], id[9]);
 		return false;
@@ -440,7 +479,7 @@ static bool it7260_init(void)
 	int vret = command(fw_cmd, sizeof(fw_cmd), fw, sizeof(fw));
 	if (!vret)
 		vret = command(cfg_cmd, sizeof(cfg_cmd), cfg, sizeof(cfg));
-	log_printf("touch: IT7260 rev %c%c, firmware %02x %02x %02x %02x, config %02x %02x %02x %02x (%d)\n", id[8], id[9],
+	log_printf("touch: IT72%c%c rev %c%c, firmware %02x %02x %02x %02x, config %02x %02x %02x %02x (%d)\n", id[6], id[7], id[8], id[9],
 		   fw[5], fw[6], fw[7], fw[8], cfg[1], cfg[2], cfg[3], cfg[4], vret);
 
 	ret = set_mode(POWER_ACTIVE, PALM_AWAKE);
