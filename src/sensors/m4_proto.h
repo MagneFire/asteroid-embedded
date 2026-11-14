@@ -126,6 +126,27 @@ struct m4_passive_reading {
 };
 unsigned m4_passive_readings(const uint8_t *times, const uint8_t *heart, const uint8_t *confidence, uint32_t after,
 			     struct m4_passive_reading *out);
+
+/* A register read: the bank, its offset and the bytes wanted. */
+typedef int (*m4_read_fn)(void *ctx, uint8_t bank, uint8_t offset, uint8_t *data, unsigned n);
+/* The most one transfer reads: the smallest controller FIFO, smelt's. */
+#define M4_READ_MAX		32
+/* A read of any length, in transfers of at most M4_READ_MAX, each from
+ * where the last one ended. */
+int m4_read(m4_read_fn read, void *ctx, uint8_t bank, uint8_t offset, uint8_t *data, unsigned n);
+/* The passive ring is read every five minutes, or sooner when the hub
+ * says it is full. A failed read waits for the next five minutes: the
+ * hub wipes the ring the boundary after it says so, and a read that
+ * keeps failing must not keep the bus busy until then. */
+#define M4_PASSIVE_MS		(5 * 60 * 1000)
+struct m4_passive {
+	bool due;
+	uint32_t t, after;
+};
+/* The ring's new readings into out, oldest first; 0 when it is not
+ * time yet, -1 when the read failed. */
+int m4_passive_read(struct m4_passive *p, uint32_t now, m4_read_fn read, void *ctx, uint8_t bank,
+		    struct m4_passive_reading *out);
 /* The answer to the panic probe says the hub has crashed. */
 bool m4_panicked(const uint8_t *reply);
 #endif

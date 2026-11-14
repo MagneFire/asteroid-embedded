@@ -67,8 +67,8 @@ static bool heart_wanted, heart_set;
 static uint32_t heart_bpm = HUB_NONE, heart_t;
 static unsigned heart_readings;
 static uint8_t heart_confidence;
-static bool passive_wanted, passive_set, passive_due;
-static uint32_t passive_t, passive_after;
+static bool passive_wanted, passive_set;
+static struct m4_passive passive;
 static struct m4_passive_reading passive_new[M4_PASSIVE_SLOTS];
 static unsigned passive_n;
 static uint16_t version;
@@ -140,10 +140,20 @@ static int counted(int r)
 	return r;
 }
 
-static int reg_read(uint8_t bank, uint8_t offset, uint8_t *data, unsigned n)
+static int read_piece(void *ctx, uint8_t bank, uint8_t offset, uint8_t *data, unsigned n)
 {
 	uint8_t a[2] = { bank, offset };
-	return counted(xfer(a, 2, data, n));
+	return xfer(a, 2, data, n);
+}
+
+static int reg_read(uint8_t bank, uint8_t offset, uint8_t *data, unsigned n)
+{
+	return counted(m4_read(read_piece, NULL, bank, offset, data, n));
+}
+
+static int counted_read(void *ctx, uint8_t bank, uint8_t offset, uint8_t *data, unsigned n)
+{
+	return reg_read(bank, offset, data, n);
 }
 
 static int reg_write(uint8_t bank, uint8_t offset, const uint8_t *data, unsigned n)
@@ -386,8 +396,6 @@ static void read_heart(uint32_t now)
 	}
 }
 
-#define PASSIVE_MS	(5 * 60 * 1000)
-
 static void write_passive(uint32_t now)
 {
 	static uint32_t tried_t;
@@ -399,28 +407,25 @@ static void write_passive(uint32_t now)
 		return;
 	}
 	passive_set = true;
-	passive_t = now;
+	passive.t = now;
 	log_printf("hub: passive %s\n", on ? "on" : "off");
+}
+
+static bool passive_readable(void)
+{
+	return state == HUB_READY && passive_wanted && passive_set;
 }
 
 static void read_passive(uint32_t now)
 {
-	uint8_t times[4 * M4_PASSIVE_SLOTS], heart[2 * M4_PASSIVE_SLOTS], confidence[M4_PASSIVE_SLOTS];
 	struct m4_passive_reading r[M4_PASSIVE_SLOTS];
-	if (state != HUB_READY || !passive_wanted || !passive_set || (!passive_due && now - passive_t < PASSIVE_MS))
+	if (!passive_readable())
 		return;
-	passive_t = now;
-	if (reg_read(V->passive, M4_PASSIVE_TIME, times, sizeof times) ||
-	    reg_read(V->passive, M4_PASSIVE_HEART, heart, sizeof heart) ||
-	    reg_read(V->passive, M4_PASSIVE_CONFIDENCE, confidence, sizeof confidence))
-		return;
-	passive_due = false;
-	unsigned n = m4_passive_readings(times, heart, confidence, passive_after, r);
-	for (unsigned i = 0; i < n; i++) {
+	int n = m4_passive_read(&passive, now, counted_read, NULL, V->passive, r);
+	for (int i = 0; i < n; i++) {
 		if (passive_n == M4_PASSIVE_SLOTS)
 			memmove(passive_new, passive_new + 1, sizeof passive_new[0] * --passive_n);
 		passive_new[passive_n++] = r[i];
-		passive_after = r[i].t;
 	}
 }
 
@@ -482,6 +487,7 @@ static void restart(uint32_t now, const char *why)
 	restart_t = now;
 	gpio_irq_enable(GPIO_WAKE, false);
 	wake_pending = wake_retry = false;
+	passive = (struct m4_passive){ 0 };
 	steps_base = steps;
 	for (unsigned i = 0; i < 2; i++)
 		activity_base[i] = activity[i];
@@ -538,7 +544,7 @@ static void m4_poll(void)
 		return;
 	}
 	if (status & M4_WAKE_PASSIVE)
-		passive_due = true;
+		passive.due = true;
 	if (status & ~(M4_WAKE_GESTURE | M4_WAKE_PASSIVE))
 		log_printf("hub: m4 wake %08lx, %lu s after its start\n", raw, (now - go_t) / 1000);
 	if (status & M4_WAKE_GESTURE) {

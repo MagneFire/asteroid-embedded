@@ -124,3 +124,32 @@ unsigned m4_passive_readings(const uint8_t *times, const uint8_t *heart, const u
 	}
 	return n;
 }
+
+int m4_read(m4_read_fn read, void *ctx, uint8_t bank, uint8_t offset, uint8_t *data, unsigned n)
+{
+	for (unsigned done = 0; done < n;) {
+		unsigned k = n - done < M4_READ_MAX ? n - done : M4_READ_MAX;
+		int r = read(ctx, bank, (uint8_t)(offset + done), data + done, k);
+		if (r)
+			return r;
+		done += k;
+	}
+	return 0;
+}
+
+int m4_passive_read(struct m4_passive *p, uint32_t now, m4_read_fn read, void *ctx, uint8_t bank,
+		    struct m4_passive_reading *out)
+{
+	uint8_t times[4 * M4_PASSIVE_SLOTS], heart[2 * M4_PASSIVE_SLOTS], confidence[M4_PASSIVE_SLOTS];
+	if (!p->due && now - p->t < M4_PASSIVE_MS)
+		return 0;
+	p->t = now;
+	p->due = false;
+	if (read(ctx, bank, M4_PASSIVE_TIME, times, sizeof times) || read(ctx, bank, M4_PASSIVE_HEART, heart, sizeof heart) ||
+	    read(ctx, bank, M4_PASSIVE_CONFIDENCE, confidence, sizeof confidence))
+		return -1;
+	unsigned n = m4_passive_readings(times, heart, confidence, p->after, out);
+	if (n)
+		p->after = out[n - 1].t;
+	return (int)n;
+}
