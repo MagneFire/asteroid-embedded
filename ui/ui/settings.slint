@@ -609,6 +609,15 @@ export component SettingsApp {
                     remorse.code = item.action;
                 }
             }
+            // The watch off, with the time on the hub's own display.
+            if Face.has-timepiece: ListItem {
+                icon: "ios-clock-outline";
+                title: "Timepiece";
+                clicked => {
+                    remorse.action = "Timepiece";
+                    remorse.code = Codes.ui-timepiece;
+                }
+            }
         }
 
         PageHeader {

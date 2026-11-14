@@ -467,3 +467,34 @@ uint32_t power_slept_ms(uint32_t now)
 		asleep_t = now;
 	return slept;
 }
+
+/* Timepiece: the hub shows the time on its own display with the watch
+ * off. With a charger in, the PMIC powers straight back on, so there the
+ * watch waits with its screen off instead: the power key restarts it,
+ * and pulling the cable powers it off for real. */
+void power_timepiece(void)
+{
+	hub_timepiece();
+	if (!batt_cable()) {
+		power_off_arm();
+		reboot();
+	}
+	if (have_display)
+		display_sleep();
+	log_printf("timepiece: on the charger, waiting for the power key\n");
+	for (;;) {
+		wdt_feed();
+		batt_poll();
+		hub_poll();
+		if (power_key()) {
+			log_printf("timepiece: power key, restarting\n");
+			reboot();
+		}
+		if (!batt_cable()) {
+			log_printf("timepiece: charger gone, powering off\n");
+			power_off_arm();
+			reboot();
+		}
+		delay_ms(100);
+	}
+}

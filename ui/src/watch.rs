@@ -401,6 +401,11 @@ pub unsafe extern "C" fn ui_set_board(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_timepiece(on: bool) {
+    each(|face| face.set_has_timepiece(on));
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_chin(px: u32) {
     with_ui(|ui| {
         for screen in &ui.screens {

@@ -84,6 +84,11 @@ struct hub_driver {
 	void (*screen)(bool on);
 	bool (*gauge)(struct hub_gauge *g);
 	void (*poll_gauge)(void);
+	/* Leave the hub showing the time on its own display, before the
+	 * watch powers off. */
+	void (*timepiece)(void);
+	/* One of the hub's display modes, for the console; < 0 if refused. */
+	int (*mode)(unsigned code);
 };
 
 struct motor_driver {

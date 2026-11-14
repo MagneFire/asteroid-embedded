@@ -83,6 +83,9 @@ const char *setting_name(enum setting s) { return "x"; }
 void settings_changed(void) {}
 void settings_flush(void) {}
 void hub_status(void (*say)(const char *fmt, ...)) {}
+int hub_mode(unsigned code) { return -1; }
+bool hub_has_timepiece(void) { return false; }
+void action_setting_toggled(int s) {}
 int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void hub_set_time(void) {}
 int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }

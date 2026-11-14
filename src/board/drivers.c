@@ -141,6 +141,13 @@ void hub_screen(bool on)
 	if (HUB(screen))
 		board->hub->screen(on);
 }
+bool hub_has_timepiece(void) { return HUB(timepiece); }
+void hub_timepiece(void)
+{
+	if (HUB(timepiece))
+		board->hub->timepiece();
+}
+int hub_mode(unsigned code) { return HUB(mode) ? board->hub->mode(code) : -1; }
 void hub_status(void (*say)(const char *fmt, ...))
 {
 	if (HUB(status))

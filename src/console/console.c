@@ -16,6 +16,7 @@
 #include "gpu/sgx_draw.h"
 #include "gpu/sgx_compose.h"
 #include "sensors/hub.h"
+#include "actions.h"
 #include "input/touch.h"
 #include "screenshot/screenshot.h"
 #include "notify/notify.h"
@@ -945,6 +946,22 @@ static void cmd_hub(const char *args)
 {
 	uint8_t buf[36];
 	unsigned n = 0;
+	if (!strcmp(args, "timepiece")) {
+		if (!hub_has_timepiece()) {
+			say("hub: no timepiece on this watch\n");
+			return;
+		}
+		say("hub: timepiece, powering off\n");
+		action_setting_toggled(UI_TIMEPIECE);
+		return;
+	}
+	if (!strncmp(args, "mode ", 5)) {
+		const char *p = args + 5;
+		uint32_t code = 0;
+		parse_num(&p, 10, &code);
+		say("hub: mode %u: %s\n", code, hub_mode(code) ? "refused (1 band, 2 ambient, 3 normal)" : "sent");
+		return;
+	}
 	if (strncmp(args, "send ", 5)) {
 		hub_status(say);
 		return;
@@ -1383,7 +1400,7 @@ static const struct command commands[] = {
 	{ "btinfo", "", cmd_btinfo },
 	{ "amp", "", cmd_amp },
 	{ "buzz", "[ms]", cmd_buzz },
-	{ "hub", "[send <hex bytes>]", cmd_hub },
+	{ "hub", "[send <hex bytes> | mode 1|2|3 | timepiece]", cmd_hub },
 	{ "m4", "rd <bank> <offset> <n> | wr <bank> <offset> <bytes> | pm 0|1", cmd_m4 },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "prof", "[samples]", cmd_prof },

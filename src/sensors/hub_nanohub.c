@@ -477,6 +477,40 @@ static void nanohub_screen(bool on)
 		set_mode(on ? MODE_NORMAL : MODE_AMBIENT);
 }
 
+/* What the vendor's Essential mode leaves the hub in: its sensors for the
+ * watch off, the idle workout frame, then BAND, in which it shows the
+ * time, date, battery and steps until the next boot. */
+#define SENSOR_LCD_A		0x5b
+
+static void nanohub_timepiece(void)
+{
+	if (!started)
+		return;
+	want_tilt = want_hr = want_accel = false;
+	if (present) {
+		configure(NANOHUB_SENSOR_HAND_UP, NANOHUB_CMD_DISABLE, 0, 0);
+		configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_DISABLE, 0, 0);
+		configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_DISABLE, 0, 0);
+		uint8_t frame[26] = { 1, 5 };
+		frame[25] = 1;
+		uint8_t b[NANOHUB_PAYLOAD_MAX];
+		unsigned n = nanohub_sensor_config(b, SENSOR_LCD_A, NANOHUB_CMD_CFG_DATA, 0, 0, frame, sizeof frame);
+		if (exchange(NANOHUB_WRITE, b, n) < 0)
+			log_printf("hub: idle frame not set\n");
+	}
+	set_mode(MODE_AMBIENT);
+	set_mode(MODE_BAND);
+	log_printf("hub: timepiece\n");
+}
+
+static int nanohub_mode(unsigned code)
+{
+	if (!started || (code != MODE_BAND && code != MODE_AMBIENT && code != MODE_NORMAL))
+		return -1;
+	set_mode((uint8_t)code);
+	return 0;
+}
+
 static void nanohub_status(void (*say)(const char *fmt, ...))
 {
 	say("hub: nanohub hw %08lx fw %08lx, %s, mode %u, %lu events, %lu errors, steps %ld, gauge %s %lu mV %lu%%\n",
@@ -500,4 +534,6 @@ const struct hub_driver hub_nanohub = {
 	.status = nanohub_status,
 	.gauge = get_gauge,
 	.poll_gauge = poll_gauge,
+	.timepiece = nanohub_timepiece,
+	.mode = nanohub_mode,
 };

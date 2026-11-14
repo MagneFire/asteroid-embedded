@@ -50,6 +50,9 @@ void action_setting_toggled(int s)
 		} else {
 			setting_set(SETTING_AOD, setting_get(SETTING_CINEMA_AOD));
 		}
+	} else if (s == UI_TIMEPIECE) {
+		log_printf("timepiece\n");
+		power_timepiece();
 	} else if (s == UI_REBOOT || s == UI_POWER_OFF) {
 		log_printf("%s\n", s == UI_REBOOT ? "rebooting" : "powering off");
 		if (s == UI_POWER_OFF) {

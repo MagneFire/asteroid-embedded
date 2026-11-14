@@ -27,6 +27,7 @@ void power_set_brightness(void);
 void power_light(uint32_t now, bool hold);
 void power_tick(void);
 void power_idle(uint32_t app_next_ms);
+void power_timepiece(void) __attribute__((noreturn));
 uint32_t power_wakeups(void);
 uint32_t power_slept_ms(uint32_t now);
 #endif

@@ -118,6 +118,7 @@ enum ui_action {
 	UI_CINEMA,
 	UI_PAIR_REJECT,
 	UI_PAIR_ACCEPT,
+	UI_TIMEPIECE,
 	UI_LAUNCHER_FIRST = 48
 };
 #define UI_LAUNCHERS 7
@@ -227,6 +228,9 @@ void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t week
 		  uint32_t year, uint32_t rtc);
 /* The watch's codename and whether it has a heart rate sensor, a hub that works out the distance
  * and calories from the wearer's age and sex as well, and one that logs the heart rate by itself. */
+/* The power page offers Timepiece, where the hub shows the time with the
+ * watch off. */
+void ui_set_timepiece(bool on);
 void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in,
 		  bool profile, bool passive);
 /* The lines at the bottom of the picture the panel does not show. */
