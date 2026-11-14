@@ -40,6 +40,9 @@ static bool present, tilt_on, hr_on;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
 static uint32_t steps_today = HUB_NONE, heart_rate = HUB_NONE;
+/* The other two fields of a heart rate event, not yet understood:
+ * logged when they change. */
+static float hr_y, hr_z;
 static bool tilted, have_gauge;
 static struct hub_gauge gauge;
 static uint32_t gauge_asked_t, gauge_t, level_t, failures, down_t;
@@ -217,6 +220,13 @@ static void sensor_event(const struct nanohub_event *ev)
 		if (ev->sensor.header && nanohub_sample(ev, last, 12, &ns, &d)) {
 			float bpm;
 			memcpy(&bpm, d, 4);
+			float y, z;
+			memcpy(&y, d + 4, 4);
+			memcpy(&z, d + 8, 4);
+			if (y != hr_y || z != hr_z)
+				log_printf("hub: heart rate %ld, y %ld, z %ld\n", (long)(bpm + 0.5f), (long)y, (long)z);
+			hr_y = y;
+			hr_z = z;
 			heart_rate = bpm > 0 ? (uint32_t)(bpm + 0.5f) : HUB_NONE;
 		}
 		break;
