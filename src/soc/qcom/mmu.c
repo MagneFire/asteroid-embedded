@@ -37,6 +37,11 @@ void soc_memory_map(void)
 		mmu_map(0xfd800000, 0xfdc00000, MMU_DEVICE);
 		mmu_map(0xfe800000, 0xfe900000, MMU_DEVICE);
 	}
+	if (phys_offset) {
+		/* cpu_resume turns the MMU on before it jumps to its link address. */
+		uint32_t pa = ((uint32_t)(uintptr_t)cpu_resume + phys_offset) & ~0xfffffu;
+		mmu_map_to(pa, pa + 0x100000, pa, MMU_RAM);
+	}
 	map_ram(GPU_MEM_BASE, GPU_MEM_BASE + GPU_MEM_SIZE, MMU_RAM_UNCACHED);
 	uint32_t log = RAMOOPS_BASE & ~0xfffffu;
 	mmu_map_to(log, log + 0x100000, phys_offset ? RAMOOPS_8009_PHYS : log, MMU_RAM_UNCACHED);

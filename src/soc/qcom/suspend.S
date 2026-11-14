@@ -16,8 +16,6 @@
 
         .macro  handoff_lock cpu, tmp, addr
         add     \cpu, \cpu, #HANDOFF_TID
-        ldr     \addr, =suspend_handoff_lock
-        ldr     \addr, [\addr]
 1:      str     \cpu, [\addr]
         dsb
         ldr     \tmp, [\addr]
@@ -47,6 +45,8 @@ cpu_suspend:
         stmia   r1, {r2-r11}
         mrc     p15, 0, r3, c0, c0, 5           /* MPIDR */
         and     r3, r3, #3
+        ldr     r12, =suspend_handoff_lock
+        ldr     r12, [r12]
         handoff_lock r3, r0, r12
         bl      dcache_clean_invalidate_all
         ldr     r2, [sp]                        /* flag */
@@ -68,16 +68,13 @@ cpu_resume:
         mrc     p15, 0, r0, c1, c0, 1
         orr     r0, r0, #(1 << 6)               /* ACTLR.SMP */
         mcr     p15, 0, r0, c1, c0, 1
-        cps     #0x12
-        ldr     sp, =__stack_irq_top
-        cps     #0x17
-        ldr     sp, =__stack_abt_top
-        cps     #0x1b
-        ldr     sp, =__stack_und_top
-        cps     #0x11
-        ldr     sp, =__stack_fiq_top
-        cps     #0x13
+        /* The APQ8009W comes back at the physical address, which is
+         * mapped to itself as well as at the link address. */
+        adr     r0, cpu_resume
+        ldr     r1, =cpu_resume
+        sub     r0, r0, r1
         ldr     r1, =suspend_ctx
+        add     r1, r1, r0
         ldmia   r1, {r2-r11}
         mcr     p15, 0, r3, c2, c0, 0
         mcr     p15, 0, r4, c2, c0, 2
@@ -88,13 +85,21 @@ cpu_resume:
         vmsr    fpexc, r8
         mcr     p15, 0, r9, c10, c2, 0
         mcr     p15, 0, r10, c10, c2, 1
-        mov     sp, r11
-        ldr     r1, =suspend_ctx
-        ldr     r2, [r1]
         dsb
         isb
         mcr     p15, 0, r2, c1, c0, 0           /* MMU and caches back on */
         isb
+        ldr     pc, =1f
+1:      cps     #0x12
+        ldr     sp, =__stack_irq_top
+        cps     #0x17
+        ldr     sp, =__stack_abt_top
+        cps     #0x1b
+        ldr     sp, =__stack_und_top
+        cps     #0x11
+        ldr     sp, =__stack_fiq_top
+        cps     #0x13
+        mov     sp, r11
         mov     r0, #0
 suspend_return:
         pop     {r1, r2}
@@ -113,28 +118,38 @@ scm_ctx:
  * secure world sees them in power collapse, the state it expects before
  * it lets the last core take the cluster down. Each one points its SAW
  * at the power collapse sequence, counts its entry and asks the secure
- * world to collapse it as a hotplugged core. Runs with the MMU off. */
+ * world to collapse it as a hotplugged core. Runs with the MMU off and
+ * the caches off, at the physical address, so it takes the addresses it
+ * needs from park_info, which spm.c cleans to memory. */
 #define SAW_SPM_CTL             0x30
-#define SPM_CTL_POWER_COLLAPSE  0x59
 #define SCM_CORE_HOTPLUGGED     0x10
+#define PARK_SAW_CPU0           0
+#define PARK_HANDOFF_LOCK       4
+#define PARK_SPM_CTL            8
 
         .text
         .global secondary_park
 secondary_park:
         cpsid   if
+        adr     r8, secondary_park
+        ldr     r9, =secondary_park
+        sub     r8, r8, r9
         mrc     p15, 0, r4, c0, c0, 5           /* MPIDR */
         and     r4, r4, #3
         ldr     r5, =park_count
+        add     r5, r5, r8
         add     r5, r5, r4, lsl #2
         ldr     r0, [r5]
         add     r0, r0, #1
         str     r0, [r5]
-        ldr     r6, =suspend_saw_cpu0
-        ldr     r6, [r6]
+        ldr     r9, =park_info
+        add     r9, r9, r8
+        ldr     r6, [r9, #PARK_SAW_CPU0]
         add     r6, r6, r4, lsl #16
-        mov     r0, #SPM_CTL_POWER_COLLAPSE
+        ldr     r0, [r9, #PARK_SPM_CTL]
         str     r0, [r6, #SAW_SPM_CTL]
         dsb
+        ldr     r7, [r9, #PARK_HANDOFF_LOCK]
         handoff_lock r4, r0, r7
         ldr     r0, =SCM_TERMINATE_PC
         mov     r1, r5
@@ -142,8 +157,21 @@ secondary_park:
         smc     #0
         b       secondary_park
 
+/* The one entry of all cores on the APQ8009W, as its secure world may
+ * keep a single boot address for them: CPU0 resumes, the others park. */
+        .text
+        .global cpu_entry
+cpu_entry:
+        mrc     p15, 0, r0, c0, c0, 5           /* MPIDR */
+        ands    r0, r0, #3
+        beq     cpu_resume
+        b       secondary_park
+
         .data
         .align  6
         .global park_count
 park_count:
+        .space  64
+        .global park_info
+park_info:
         .space  64

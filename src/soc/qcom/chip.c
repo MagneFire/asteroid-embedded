@@ -113,12 +113,11 @@ const struct qcom_chip chip_8009 = {
 };
 
 const struct qcom_chip *chip = &chip_8026;
-uint32_t suspend_saw_cpu0 = 0xf9089000, suspend_handoff_lock = 0xfd484380;
+uint32_t suspend_handoff_lock = 0xfd484380;
 
 void chip_init(void)
 {
 	if (phys_offset)
 		chip = &chip_8009;
-	suspend_saw_cpu0 = SAW_CPU0;
 	suspend_handoff_lock = chip->handoff_lock;
 }

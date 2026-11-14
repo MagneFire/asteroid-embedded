@@ -103,9 +103,15 @@ static uint32_t collapses, cluster_collapses, bailouts;
 #define CPUS_123		(BIT(1) | BIT(2) | BIT(3))
 
 int cpu_suspend(uint32_t flag);
-void cpu_resume(void);
 void secondary_park(void);
+void cpu_entry(void);
 extern volatile uint32_t park_count[16];
+extern uint32_t park_info[16];
+
+static uint32_t entry_pa(void (*fn)(void))
+{
+	return (uint32_t)(uintptr_t)(chip == &chip_8009 ? cpu_entry : fn) + phys_offset;
+}
 
 static void load_seq(uint32_t saw, const uint8_t *seq, unsigned len)
 {
@@ -251,7 +257,7 @@ static void release_secondary(unsigned cpu)
 
 static bool park_secondaries(void)
 {
-	uint32_t park = (uint32_t)(uintptr_t)secondary_park + phys_offset;
+	uint32_t park = entry_pa(secondary_park);
 	int c = scm_set_boot_addr(park, CPUS_123, false);
 	int w = scm_set_boot_addr(park, CPUS_123, true);
 	if (c || w) {
@@ -265,6 +271,10 @@ static bool park_secondaries(void)
 		writel(0x3c102800, saw + SAW_SPM_DLY);
 		writel(spm->ctl_wfi & ~SPM_CTL_EN, saw + SAW_SPM_CTL);
 	}
+	park_info[0] = SAW_CPU0 - chip->io_offset;
+	park_info[1] = chip->handoff_lock - chip->io_offset;
+	park_info[2] = spm->ctl_pc;
+	dcache_clean_invalidate_range(park_info, sizeof park_info);
 	dcache_clean_invalidate_range((const void *)park_count, sizeof park_count);
 	bool ok = true;
 	for (unsigned cpu = 1; cpu < 4; cpu++) {
@@ -316,7 +326,7 @@ bool cpu_idle_init(void)
 			writel(spm->l2_pmic_data[i], SAW_L2 + SAW_PMIC_DATA(i));
 	ready = true;
 	spm_cpu_mode(SPM_CLOCK_GATING);
-	int ret = scm_set_boot_addr((uint32_t)(uintptr_t)cpu_resume + phys_offset, BIT(0), true);
+	int ret = scm_set_boot_addr(entry_pa(cpu_resume), BIT(0), true);
 	if (ret)
 		log_printf("spm: warm boot address not accepted (%d)\n", ret);
 	can_collapse = !ret;

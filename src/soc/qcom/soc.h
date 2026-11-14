@@ -172,6 +172,7 @@
 #ifndef __ASSEMBLER__
 enum spm_mode { SPM_CLOCK_GATING, SPM_POWER_COLLAPSE };
 void spm_cpu_mode(enum spm_mode mode);
+void cpu_resume(void);
 uint64_t timer_deadline(void);
 uint32_t gic_cpu_save(void);
 void gic_cpu_restore(uint32_t ppis);
