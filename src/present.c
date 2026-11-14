@@ -246,7 +246,7 @@ void present_clock(uint32_t now)
 		ui_set_connected(bt_host_connected(), bt_store_bonded());
 		static char addr_text[18];
 		uint8_t addr[6];
-		if (!addr_text[0] && !bt_addr_load(addr))
+		if (!addr_text[0] && !bt_addr_get(addr))
 			snprintf(addr_text, sizeof addr_text, "%02X:%02X:%02X:%02X:%02X:%02X", addr[5], addr[4], addr[3],
 				 addr[2], addr[1], addr[0]);
 		ui_set_info(addr_text, now / 1000);

@@ -95,6 +95,32 @@ int bt_addr_load(uint8_t addr[6])
 	return backend()->load(KEY_ADDR, addr, 6) == 6 ? 0 : -1;
 }
 
+/* The one set on the console, else the one from the factory. */
+int bt_addr_get(uint8_t addr[6])
+{
+	if (!bt_addr_load(addr))
+		return 0;
+	char t[24] = { 0 };
+	if (!board->bt.addr_part || storage_read_file(board->bt.addr_part, board->bt.addr_path, t, sizeof t - 1) < 17)
+		return -1;
+	const char *s = t;
+	for (int i = 0; i < 6; i++, s += 3) {
+		unsigned v = 0;
+		for (int k = 0; k < 2; k++) {
+			char c = s[k];
+			unsigned d = c >= '0' && c <= '9' ? (unsigned)(c - '0') : c >= 'a' && c <= 'f' ? (unsigned)(c - 'a' + 10)
+				   : c >= 'A' && c <= 'F' ? (unsigned)(c - 'A' + 10) : 16;
+			if (d > 15)
+				return -1;
+			v = v << 4 | d;
+		}
+		if (i < 5 && s[2] != ':')
+			return -1;
+		addr[i] = (uint8_t)v;
+	}
+	return 0;
+}
+
 int bt_addr_save(const uint8_t addr[6])
 {
 	return backend()->save(KEY_ADDR, addr, 6);

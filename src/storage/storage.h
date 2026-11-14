@@ -20,6 +20,7 @@ struct store_info {
 };
 
 int storage_mount(void);
+int storage_read_file(const char *part, const char *path, void *buf, uint32_t len);
 struct ext4 *storage_userdata(void);
 struct ext4 *storage_rootfs(void);
 const char *storage_rootfs_where(void);

@@ -22,7 +22,7 @@ const struct board board_catfish = {
 	.bt = {
 		.uart = 2, .gpio = 20, .func = 3, .dev_wake = 32, .host_wake = 31, .reg_on = 34, .mpm = 19,
 		.dev_wake_active = false, .host_wake_active = false, .ldo = 12, .ldo_uv = 1800000,
-		.rom_baud = 80128, .rom_fast = 2083333,
+		.rom_baud = 80128, .rom_fast = 2083333, .addr_part = "persist", .addr_path = "bt_nv.bin",
 		.patch = "BCM43430B0.hcd",
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},

@@ -105,3 +105,18 @@ const void *firmware_get(const char *name, uint32_t *size)
 	used = (used + (uint32_t)in.size + 63) & ~63u;
 	return pool + files[nfiles++].off;
 }
+
+/* A small file on another ext4 partition, such as a value written at the
+ * factory; its length, or < 0. */
+int storage_read_file(const char *part, const char *path, void *buf, uint32_t len)
+{
+	static struct ext4 other;
+	struct ext4_inode in;
+	uint32_t first, count;
+	int r;
+	if ((!emmc_card()->ready && (r = emmc_init(true))) || (!emmc_part_count() && (r = emmc_part_scan())) ||
+	    (r = emmc_part_find(part, &first, &count)) || (r = ext4_open_lba(&other, part, first, count)) ||
+	    (r = ext4_lookup(&other, path, &in)))
+		return r;
+	return ext4_read(&other, &in, 0, buf, len);
+}

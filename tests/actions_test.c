@@ -31,6 +31,7 @@ bool bt_host_connected(void) { return false; }
 bool bt_store_bonded(void) { return false; }
 void ui_set_connected(bool c, bool b) {}
 int bt_addr_load(uint8_t *a) { return 0; }
+int bt_addr_get(uint8_t *a) { return 0; }
 int bt_start(const uint8_t *a, struct bt_info *i) { bt_started++; return 0; }
 void bt_stop(void) { bt_stopped++; }
 int bt_host_start(void) { return 0; }

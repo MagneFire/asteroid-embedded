@@ -217,6 +217,9 @@ struct board {
 		 * crystal), the host rates its 115200 and 3000000 really are; 0 if
 		 * they are right. */
 		uint32_t rom_baud, rom_fast;
+		/* Where the factory wrote the address, as xx:xx:xx:xx:xx:xx
+		 * text, if anywhere. */
+		const char *addr_part, *addr_path;
 		const char *patch;
 		uint8_t sleep_mode[12];	/* the 0xfc27 parameters */
 	} bt;
