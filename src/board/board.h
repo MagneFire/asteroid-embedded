@@ -91,6 +91,9 @@ struct hub_driver {
 	/* Leave the hub showing the time on its own display, before the
 	 * watch powers off. */
 	void (*timepiece)(void);
+	/* A workout for the hub's display while the screen is off: running
+	 * with its time so far, distance and calories, or ended. */
+	void (*workout)(bool running, uint32_t seconds, uint32_t distance_m, uint32_t kcal);
 	/* One of the hub's display modes, for the console; < 0 if refused. */
 	int (*mode)(unsigned code);
 };

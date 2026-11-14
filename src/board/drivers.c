@@ -148,6 +148,11 @@ void hub_screen(bool on)
 		board->hub->screen(on);
 }
 bool hub_has_timepiece(void) { return HUB(timepiece); }
+void hub_workout(bool running, uint32_t seconds, uint32_t distance_m, uint32_t kcal)
+{
+	if (HUB(workout))
+		board->hub->workout(running, seconds, distance_m, kcal);
+}
 void hub_timepiece(void)
 {
 	if (HUB(timepiece))

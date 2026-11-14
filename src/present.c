@@ -95,6 +95,7 @@ void present_workout(void)
 		now = workout_now(rtc_read());
 	const struct workout *w = running ? &now : workout_past(0) ? workout_past(0) : &none;
 	ui_set_workout(running, w->start, w->seconds, w->steps, w->distance_m, w->kcal, w->avg_bpm, w->max_bpm);
+	hub_workout(running, w->seconds, w->distance_m, w->kcal);
 }
 
 void present_heart_log(void)

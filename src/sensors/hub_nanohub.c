@@ -517,6 +517,44 @@ static void nanohub_timepiece(void)
 	log_printf("hub: timepiece\n");
 }
 
+/* The workout frame of the hub's display (frame 6: time, heart rate,
+ * calories, distance and pace), shown in ambient mode; the hub runs the
+ * clock itself, so changes go at most every WORKOUT_MS. The end puts the
+ * idle frame back. */
+#define WORKOUT_MS		10000
+#define FRAME_IDLE		5
+#define FRAME_WORKOUT		6
+#define STATE_RUNNING		2
+#define STATE_STOPPED		4
+
+static bool workout_shown;
+static uint32_t workout_t;
+
+static void nanohub_workout(bool running, uint32_t seconds, uint32_t distance_m, uint32_t kcal)
+{
+	uint32_t now = time_ms();
+	if (!present || (!running && !workout_shown) ||
+	    (running && workout_shown && now - workout_t < WORKOUT_MS))
+		return;
+	uint8_t f[26] = { 1, running ? FRAME_WORKOUT : FRAME_IDLE, running ? STATE_RUNNING : STATE_STOPPED };
+	if (running) {
+		uint32_t ms = seconds * 1000, pace = distance_m ? seconds * 1000 / distance_m : 0;
+		float km = (float)distance_m / 1000.0f;
+		f[5] = heart_rate != HUB_NONE && heart_rate < 256 ? (uint8_t)heart_rate : 0;
+		memcpy(f + 6, &ms, 4);
+		memcpy(f + 10, &kcal, 4);
+		memcpy(f + 14, &km, 4);
+		memcpy(f + 18, &pace, 4);
+	}
+	f[25] = 1;
+	uint8_t b[NANOHUB_PAYLOAD_MAX];
+	unsigned n = nanohub_sensor_config(b, NANOHUB_SENSOR_LCD_A, NANOHUB_CMD_CFG_DATA, 0, 0, f, sizeof f);
+	if (exchange(NANOHUB_WRITE, b, n) < 0)
+		return;
+	workout_shown = running;
+	workout_t = now;
+}
+
 static int nanohub_mode(unsigned code)
 {
 	if (!started || (code != MODE_BAND && code != MODE_AMBIENT && code != MODE_NORMAL))
@@ -550,5 +588,6 @@ const struct hub_driver hub_nanohub = {
 	.gauge = get_gauge,
 	.poll_gauge = poll_gauge,
 	.timepiece = nanohub_timepiece,
+	.workout = nanohub_workout,
 	.mode = nanohub_mode,
 };
