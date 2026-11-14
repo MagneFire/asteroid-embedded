@@ -79,6 +79,17 @@ void fbcon_init(void)
 
 void fbcon_set_overlay(bool on) { overlay = on; }
 
+/* Only the text, on its own screen, whatever was shown. */
+void fbcon_fault(const char *s)
+{
+	if (!ready)
+		return;
+	overlay = false;
+	memset(grid, 0, sizeof grid);
+	cx = cy = 0;
+	fbcon_puts(s);
+}
+
 static void newline(void)
 {
 	cx = 0;

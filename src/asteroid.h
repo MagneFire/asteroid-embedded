@@ -257,6 +257,7 @@ size_t log_read(uint32_t *pos, uint32_t end, char *buf, size_t max);
 
 /* display (see display/display.h) */
 void fbcon_puts(const char *s);
+void fbcon_fault(const char *s);
 void fbcon_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /* usb */
