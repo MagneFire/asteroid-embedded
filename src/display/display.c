@@ -541,6 +541,10 @@ static void dcs_sequence(const struct dcs_step *steps, unsigned n)
 #define PANEL_SLEEP_MS	85
 #define PANEL_BIAS_MS	10
 #define PANEL_RESET_MS	10
+/* Sleep out has to wait this long after sleep in. */
+#define PANEL_SLEEP_IN_MS	120
+
+static uint32_t sleep_in_t;
 
 static void panel_power(bool on)
 {
@@ -576,6 +580,7 @@ void display_sleep(void)
 	pp_wait();
 	dsi_dcs_write(0x28, NULL, 0);
 	dsi_dcs_write(0x10, NULL, 0);
+	sleep_in_t = time_ms();
 	if (panel_switched())
 		panel_power(false);
 	panel_asleep = true;
@@ -591,6 +596,9 @@ void display_wake_hidden(void)
 		panel_power(true);
 		return;
 	}
+	uint32_t gone = time_ms() - sleep_in_t;
+	if (gone < PANEL_SLEEP_IN_MS)
+		delay_ms(PANEL_SLEEP_IN_MS - gone);
 	dsi_dcs_write(0x11, NULL, 0);
 	delay_ms(120);
 }
