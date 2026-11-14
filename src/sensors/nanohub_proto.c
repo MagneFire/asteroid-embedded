@@ -238,3 +238,33 @@ bool nanohub_sample(const struct nanohub_event *ev, unsigned i, unsigned data_si
 	*data = ev->sensor.points + i * step + 4;
 	return true;
 }
+
+static bool log_reply(const struct nanohub_event *ev)
+{
+	return ev->kind == NANOHUB_EV_APP && ev->app.id == NANOHUB_LOG_APP && ev->app.size >= 4 && ev->app.data[0] == 0xfe &&
+	       ev->app.data[1] == NANOHUB_SENSOR_CUSTOM_FLASH && ev->app.data[2] == 0;
+}
+
+int nanohub_log_chunk(const struct nanohub_event *ev, const uint8_t **records, bool *last)
+{
+	if (!log_reply(ev) || ev->app.size < 5 || ev->app.size != 5u + ev->app.data[3] || ev->app.data[3] % NANOHUB_LOG_RECORD)
+		return -1;
+	*records = ev->app.data + 5;
+	*last = ev->app.data[4] != 0;
+	return ev->app.data[3];
+}
+
+bool nanohub_log_erased(const struct nanohub_event *ev)
+{
+	return log_reply(ev) && ev->app.size == 4 && ev->app.data[3] == 1;
+}
+
+bool nanohub_log_record(const uint8_t *p, struct nanohub_log_record *r)
+{
+	uint32_t t = get32(p), w = get32(p + 4);
+	/* "FLAS" and "ORE_", the halves of FLASH_STORE_TAG. */
+	if (!t || t == 0x53414c46u || t == 0x5f45524fu)
+		return false;
+	*r = (struct nanohub_log_record){ t, w & 0x7ffff, (uint8_t)((w >> 19) & 0x1f), (uint8_t)(w >> 24) };
+	return true;
+}

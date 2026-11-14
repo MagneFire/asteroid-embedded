@@ -258,6 +258,24 @@ void app_sensors(uint32_t now)
 					present_heart_log();
 			}
 		}
+		/* What the hub logged with the watch off, newer than the log
+		 * and spaced as the setting asks: it measured every 30 s. */
+		if (have_heart_rate) {
+			uint32_t t[8], keep_t[8], gap = setting_get(SETTING_HR_INTERVAL) * 60;
+			uint8_t b[8], keep_b[8];
+			unsigned n;
+			while ((n = hub_heart_log(t, b, ARRAY_SIZE(t)))) {
+				unsigned k = 0;
+				for (unsigned i = 0; i < n; i++)
+					if (gap && t[i] >= hrlog_last() + gap && (!k || t[i] >= keep_t[k - 1] + gap)) {
+						keep_t[k] = t[i];
+						keep_b[k++] = b[i];
+					}
+				hrlog_add(keep_t, keep_b, k);
+				if (k && have_ui)
+					present_heart_log();
+			}
+		}
 		bool logging = have_heart_rate && !passive &&
 			       hrlog_poll(rtc_read(), setting_get(SETTING_HR_INTERVAL), readings >= 2 ? bpm : 0);
 		if (was_logging && !logging && have_ui)

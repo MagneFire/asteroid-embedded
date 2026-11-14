@@ -46,6 +46,7 @@
 #define NANOHUB_SENSOR_FUEL_GAUGE	68
 #define NANOHUB_SENSOR_HAND_UP		0x4b
 #define NANOHUB_SENSOR_TIME		0x55
+#define NANOHUB_SENSOR_CUSTOM_FLASH	0x59
 #define NANOHUB_SENSOR_STEPS_TODAY	0x5a
 #define NANOHUB_SENSOR_LCD_A		0x5b
 
@@ -129,5 +130,21 @@ unsigned nanohub_time_config(uint8_t *out, uint64_t utc, int32_t gmtoff, bool h2
 bool nanohub_event(const uint8_t *p, unsigned n, struct nanohub_event *ev);
 /* Sample i of a sensor event of data_size bytes per sample: its time (the reference plus the deltas up to it) and data. */
 bool nanohub_sample(const struct nanohub_event *ev, unsigned i, unsigned data_size, uint64_t *ns, const uint8_t **data);
+
+/* The band-mode log the hub keeps in its own flash (sensor 0x59, replies
+ * from app NANOHUB_LOG_APP): a chunk of 8-byte records, the last one
+ * flagged; and the reply to an erase. */
+#define NANOHUB_LOG_APP		0x4D6F62766F000019ull
+#define NANOHUB_LOG_RECORD	8
+struct nanohub_log_record {
+	uint32_t time, steps;
+	uint8_t type, bpm;
+};
+/* The records' bytes, or -1 if the event is not a chunk. */
+int nanohub_log_chunk(const struct nanohub_event *ev, const uint8_t **records, bool *last);
+bool nanohub_log_erased(const struct nanohub_event *ev);
+/* False for what is no record: the 16-byte tag the hub writes at each
+ * start of band mode, or a record without a time. */
+bool nanohub_log_record(const uint8_t *p, struct nanohub_log_record *r);
 
 #endif

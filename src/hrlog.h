@@ -15,4 +15,6 @@ uint32_t hrlog_next_ms(uint32_t rtc, unsigned interval_min);
 unsigned hrlog_get(uint32_t since, uint32_t *t, uint8_t *bpm, unsigned max);
 /* Readings taken elsewhere, oldest first, saved once. */
 void hrlog_add(const uint32_t *t, const uint8_t *bpm, unsigned n);
+/* The time of the newest reading, 0 if none. */
+uint32_t hrlog_last(void);
 #endif

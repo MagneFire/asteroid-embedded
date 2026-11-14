@@ -246,6 +246,29 @@ int main(void)
 	put32(g, 0x1234);
 	CHECK(nanohub_event(g, sizeof(g), &ev) && ev.kind == NANOHUB_EV_OTHER && ev.type == 0x1234);
 
+	/* The band-mode log: the read request as the research worked it out
+	 * for sequence 10, a chunk with a record and the tag the hub writes
+	 * at each start of band mode, and the reply to an erase. */
+	uint8_t rq[2] = { 1, 1 };
+	n = nanohub_sensor_config(pl, NANOHUB_SENSOR_CUSTOM_FLASH, NANOHUB_CMD_CFG_DATA, 0, 0, rq, sizeof rq);
+	vector("log read", 10, NANOHUB_WRITE, pl, n,
+	       "31 0a 00 00 00 91 10 00 00 16 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 59 03 00 00 01 01 a8 7f 2e e2");
+	static const uint8_t chunk[] = {
+		0x01, 0x04, 0x00, 0x00, 0x19, 0x00, 0x00, 0x6f, 0x76, 0x62, 0x6f, 0x4d, 5 + 24, 0xfe, 0x59, 0x00, 24, 1,
+		0x10, 0x32, 0x54, 0x76, 0x2a, 0x00, 0x18, 0x48, /* time 0x76543210, 42 steps, type 3, 72 bpm */
+		'F', 'L', 'A', 'S', 'H', '_', 'S', 'T', 'O', 'R', 'E', '_', 'T', 'A', 'G', 0,
+	};
+	struct nanohub_event lev;
+	const uint8_t *rec;
+	bool last = false;
+	CHECK(nanohub_event(chunk, sizeof chunk, &lev) && lev.kind == NANOHUB_EV_APP);
+	CHECK(nanohub_log_chunk(&lev, &rec, &last) == 24 && last && !nanohub_log_erased(&lev));
+	struct nanohub_log_record r;
+	CHECK(nanohub_log_record(rec, &r) && r.time == 0x76543210 && r.steps == 42 && r.type == 3 && r.bpm == 72);
+	CHECK(!nanohub_log_record(rec + 8, &r) && !nanohub_log_record(rec + 16, &r));
+	static const uint8_t erased[] = { 0x01, 0x04, 0x00, 0x00, 0x19, 0x00, 0x00, 0x6f, 0x76, 0x62, 0x6f, 0x4d, 4, 0xfe, 0x59, 0x00, 0x01 };
+	CHECK(nanohub_event(erased, sizeof erased, &lev) && nanohub_log_erased(&lev) && nanohub_log_chunk(&lev, &rec, &last) < 0);
+
 	puts(failures ? "nanohub_test: FAILED" : "nanohub_test: ok");
 	return failures != 0;
 }

@@ -148,6 +148,7 @@ void hub_screen(bool on)
 		board->hub->screen(on);
 }
 bool hub_has_timepiece(void) { return HUB(timepiece); }
+unsigned hub_heart_log(uint32_t *t, uint8_t *bpm, unsigned max) { return HUB(heart_log) ? board->hub->heart_log(t, bpm, max) : 0; }
 void hub_workout(bool running, uint32_t seconds, uint32_t distance_m, uint32_t kcal)
 {
 	if (HUB(workout))

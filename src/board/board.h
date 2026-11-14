@@ -94,6 +94,9 @@ struct hub_driver {
 	/* A workout for the hub's display while the screen is off: running
 	 * with its time so far, distance and calories, or ended. */
 	void (*workout)(bool running, uint32_t seconds, uint32_t distance_m, uint32_t kcal);
+	/* Heart rate readings the hub logged with the watch off, oldest
+	 * first; how many it gave. */
+	unsigned (*heart_log)(uint32_t *t, uint8_t *bpm, unsigned max);
 	/* One of the hub's display modes, for the console; < 0 if refused. */
 	int (*mode)(unsigned code);
 };

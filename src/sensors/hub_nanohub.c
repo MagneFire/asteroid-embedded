@@ -231,6 +231,9 @@ static void sensor_event(const struct nanohub_event *ev)
 	}
 }
 
+static void log_event(const struct nanohub_event *ev);
+static bool flash_cmd(uint8_t sub, uint8_t arg);
+
 /* Fetches events until the hub has none, a few per pass, and then
  * clears its two data-pending bits so it lets its line go. */
 static void read_events(void)
@@ -246,6 +249,8 @@ static void read_events(void)
 			break;
 		}
 		events++;
+		if (ev.kind == NANOHUB_EV_APP)
+			log_event(&ev);
 		if (ev.kind == NANOHUB_EV_SENSOR)
 			sensor_event(&ev);
 		else if (ev.kind == NANOHUB_EV_FUEL_GAUGE) {
@@ -261,6 +266,118 @@ static void read_events(void)
 			log_printf("hub: %c %s\n", ev.log.level, line);
 		}
 	}
+}
+
+/* The log the hub keeps in band mode (Timepiece): read once per boot, a
+ * chunk per pass, its heart rate readings kept for the app to take; it
+ * is erased only at the next Timepiece, and only once read. */
+#define LOG_SAMPLES		64
+#define LOG_REPLY_MS		300
+#define LOG_TRIES		3
+#define ERASE_STALL_MS		1500
+#define ERASE_WAIT_MS		3500
+enum { LOG_START, LOG_WAIT, LOG_PAUSED, LOG_DONE, LOG_FAILED };
+static uint8_t log_state = LOG_FAILED, log_tries;
+static uint32_t log_t, log_records;
+static uint32_t log_time[LOG_SAMPLES];
+static uint8_t log_bpm[LOG_SAMPLES];
+static unsigned log_head, log_tail;
+static bool erased;
+
+static bool flash_cmd(uint8_t sub, uint8_t arg)
+{
+	uint8_t c[2] = { sub, arg }, b[NANOHUB_PAYLOAD_MAX];
+	unsigned n = nanohub_sensor_config(b, NANOHUB_SENSOR_CUSTOM_FLASH, NANOHUB_CMD_CFG_DATA, 0, 0, c, sizeof c);
+	return present && exchange(NANOHUB_WRITE, b, n) >= 0;
+}
+
+static void log_request(void)
+{
+	if (LOG_SAMPLES - (log_head - log_tail) < 10) {
+		log_state = LOG_PAUSED;
+		return;
+	}
+	if (flash_cmd(1, 1)) {
+		log_state = LOG_WAIT;
+		log_t = time_ms();
+	} else {
+		log_state = LOG_FAILED;
+	}
+}
+
+static void log_event(const struct nanohub_event *ev)
+{
+	const uint8_t *p;
+	bool last;
+	int n = nanohub_log_chunk(ev, &p, &last);
+	if (nanohub_log_erased(ev))
+		erased = true;
+	if (n < 0 || log_state != LOG_WAIT)
+		return;
+	for (int i = 0; i < n; i += NANOHUB_LOG_RECORD) {
+		struct nanohub_log_record r;
+		if (!nanohub_log_record(p + i, &r))
+			continue;
+		log_records++;
+		if (r.bpm && log_head - log_tail < LOG_SAMPLES) {
+			log_time[log_head % LOG_SAMPLES] = r.time;
+			log_bpm[log_head % LOG_SAMPLES] = r.bpm;
+			log_head++;
+		}
+	}
+	log_tries = 0;
+	if (last) {
+		log_state = LOG_DONE;
+		log_printf("hub: band log read, %lu records\n", log_records);
+	} else {
+		log_request();
+	}
+}
+
+static void log_poll(void)
+{
+	if (log_state == LOG_START || (log_state == LOG_PAUSED && LOG_SAMPLES - (log_head - log_tail) >= 10)) {
+		log_request();
+	} else if (log_state == LOG_WAIT && time_ms() - log_t >= LOG_REPLY_MS) {
+		/* A request the hub got while busy is dropped without a reply. */
+		if (++log_tries > LOG_TRIES) {
+			log_state = LOG_FAILED;
+			log_printf("hub: band log not read\n");
+		} else {
+			log_request();
+		}
+	}
+}
+
+static unsigned nanohub_heart_log(uint32_t *t, uint8_t *bpm, unsigned max)
+{
+	unsigned n = 0;
+	for (; n < max && log_tail != log_head; n++, log_tail++) {
+		t[n] = log_time[log_tail % LOG_SAMPLES];
+		bpm[n] = log_bpm[log_tail % LOG_SAMPLES];
+	}
+	return n;
+}
+
+/* Erasing stalls the hub for up to a second, which looks like a hub that
+ * does not answer; it signals the end with an event. */
+static void log_erase(void)
+{
+	if (log_state != LOG_DONE || !flash_cmd(1, 0))
+		return;
+	erased = false;
+	for (uint32_t ms = 0; ms < ERASE_STALL_MS; ms += 10) {
+		wdt_feed();
+		delay_ms(10);
+	}
+	for (uint32_t t0 = time_ms(); !erased && time_ms() - t0 < ERASE_WAIT_MS;) {
+		wdt_feed();
+		answer_mode(true);
+		if (hub_irq_low())
+			read_events();
+		delay_ms(20);
+	}
+	log_printf("hub: band log %s\n", erased ? "erased" : "erase not confirmed");
 }
 
 static void data_edge(unsigned n)
@@ -289,6 +406,11 @@ static void apply_state(void)
 	set_time();
 	if (!configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0))
 		log_printf("hub: steps today not enabled\n");
+	/* What the hub logs in band mode: steps and activity, and the heart
+	 * rate if the watch logs it. */
+	flash_cmd(4, 1);
+	flash_cmd(3, 1);
+	flash_cmd(2, setting_get(SETTING_HR_INTERVAL) > 0);
 	/* The steps row on the hub's display. */
 	static const uint8_t steps_row[26] = { 0, 1, 1, 1 };
 	uint8_t b[NANOHUB_PAYLOAD_MAX];
@@ -356,6 +478,7 @@ static bool nanohub_init(void)
 	set_mode(mode);
 	apply_state();
 	data_irq = true;
+	log_state = LOG_START;
 	return true;
 }
 
@@ -405,6 +528,7 @@ static void nanohub_poll(void)
 		data_irq = false;
 		read_events();
 	}
+	log_poll();
 	poll_gauge();
 }
 
@@ -513,6 +637,7 @@ static void nanohub_timepiece(void)
 			log_printf("hub: idle frame not set\n");
 	}
 	set_mode(MODE_AMBIENT);
+	log_erase();
 	set_mode(MODE_BAND);
 	log_printf("hub: timepiece\n");
 }
@@ -589,5 +714,6 @@ const struct hub_driver hub_nanohub = {
 	.poll_gauge = poll_gauge,
 	.timepiece = nanohub_timepiece,
 	.workout = nanohub_workout,
+	.heart_log = nanohub_heart_log,
 	.mode = nanohub_mode,
 };

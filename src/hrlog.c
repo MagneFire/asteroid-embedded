@@ -41,6 +41,11 @@ static void record(uint32_t rtc, uint32_t bpm)
 	kv_set(KV_HRLOG, &saved, sizeof saved);
 }
 
+uint32_t hrlog_last(void)
+{
+	return saved.count ? saved.t[(saved.next + HRLOG_SAMPLES - 1) % HRLOG_SAMPLES] : 0;
+}
+
 void hrlog_add(const uint32_t *t, const uint8_t *bpm, unsigned n)
 {
 	for (unsigned i = 0; i < n; i++)

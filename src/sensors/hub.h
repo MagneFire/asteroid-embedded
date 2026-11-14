@@ -24,6 +24,7 @@ uint32_t hub_steps_today(void);
 void hub_sync_steps_today(uint32_t steps);
 bool hub_has_timepiece(void);
 void hub_timepiece(void);
+unsigned hub_heart_log(uint32_t *t, uint8_t *bpm, unsigned max);
 void hub_workout(bool running, uint32_t seconds, uint32_t distance_m, uint32_t kcal);
 int hub_mode(unsigned code);
 void hub_passive_on(bool on);
