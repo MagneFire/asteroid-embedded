@@ -291,7 +291,7 @@ static const uint32_t kept_regs[] = {
 };
 static uint32_t kept[ARRAY_SIZE(kept_regs)];
 
-static void clock_set(uint32_t cbcr, bool on)
+void display_clock_set(uint32_t cbcr, bool on)
 {
 	uint32_t v = readl(cbcr);
 	if (v & CBCR_HW_CTL)
@@ -322,7 +322,7 @@ static bool gdsc_set(bool on)
 /* The DSI PHY's clamps, which hold the lanes while the domain is off. */
 static void dsi_clamp(bool on)
 {
-	clock_set(MMSS_MISC_AHB_CBCR, true);
+	display_clock_set(MMSS_MISC_AHB_CBCR, true);
 	if (on) {
 		writel(readl(MMSS_DSI_CLAMP) | dsi_clamps, MMSS_DSI_CLAMP);
 		writel(readl(MMSS_DSI_CLAMP) | dsi_clamps | DSI_CLAMP_EN, MMSS_DSI_CLAMP);
@@ -331,7 +331,7 @@ static void dsi_clamp(bool on)
 		writel(0, MMSS_DSI_PHY_RESET);
 		writel(readl(MMSS_DSI_CLAMP) & ~(dsi_clamps | DSI_CLAMP_EN), MMSS_DSI_CLAMP);
 	}
-	clock_set(MMSS_MISC_AHB_CBCR, false);
+	display_clock_set(MMSS_MISC_AHB_CBCR, false);
 }
 
 static bool pll_locked(void)
@@ -403,10 +403,13 @@ static void pll_power_up(void)
 	log_printf("display: DSI PLL not locked, status %08lx\n", readl(DSI_PLL_STATUS));
 }
 
-/* The APQ8009W's display stays powered for now. */
 bool display_rest(void)
 {
-	if (resting || chip->mdp3)
+	if (chip->mdp3) {
+		pp_wait();
+		return mdp3_rest();
+	}
+	if (resting)
 		return true;
 	pp_wait();
 	uint32_t t0 = time_us();
@@ -429,12 +432,12 @@ bool display_rest(void)
 	if (!panel_asleep)
 		dsi_clamp(true);
 	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
-		clock_set(dsi_clocks[i], false);
+		display_clock_set(dsi_clocks[i], false);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
-		clock_set(mdp_clocks[i], false);
+		display_clock_set(mdp_clocks[i], false);
 	writel(0, DSI_PLL_GLB_CFG);
 	dsb();
-	clock_set(MDSS_AHB_CBCR, false);
+	display_clock_set(MDSS_AHB_CBCR, false);
 	if (!gdsc_set(false))
 		log_printf("display: power domain stays on, %08lx\n", readl(MDP_GDSCR));
 	resting = true;
@@ -443,14 +446,18 @@ bool display_rest(void)
 
 void display_active(void)
 {
+	if (chip->mdp3) {
+		mdp3_active();
+		return;
+	}
 	if (!resting)
 		return;
 	if (!gdsc_set(true))
 		reboot_fatal("display: power domain stays off");
 	delay_us(1);
-	clock_set(MDSS_AHB_CBCR, true);
+	display_clock_set(MDSS_AHB_CBCR, true);
 	for (unsigned i = 0; i < ARRAY_SIZE(mdp_clocks); i++)
-		clock_set(mdp_clocks[i], true);
+		display_clock_set(mdp_clocks[i], true);
 	int r = scm_restore_sec_cfg(1, 0);
 	if (r) {
 		log_printf("display: secure config not restored (%d)\n", r);
@@ -459,15 +466,15 @@ void display_active(void)
 	for (unsigned i = 0; i < ARRAY_SIZE(kept_regs); i++)
 		writel(kept[i], kept_regs[i]);
 	if (!panel_asleep) {
-		clock_set(MDSS_ESC0_CBCR, true);
+		display_clock_set(MDSS_ESC0_CBCR, true);
 		writel(ULPS_LANES, DSI_LANE_CTRL);
 		delay_us(100);
-		clock_set(MDSS_ESC0_CBCR, false);
+		display_clock_set(MDSS_ESC0_CBCR, false);
 		dsi_clamp(false);
 	}
 	pll_power_up();
 	for (unsigned i = 0; i < ARRAY_SIZE(dsi_clocks); i++)
-		clock_set(dsi_clocks[i], true);
+		display_clock_set(dsi_clocks[i], true);
 	uint32_t err = readl(DSI_DLN0_PHY_ERR);
 	if (err & 0x011111)
 		writel(err, DSI_DLN0_PHY_ERR);
