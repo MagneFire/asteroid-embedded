@@ -97,28 +97,38 @@ int bt_addr_load(uint8_t addr[6])
 
 /* The one set on the console, else the one from the factory: the first
  * twelve hex digits of the board's file, whatever separates them, as the
- * watches write it with colons, spaces or nothing in between. */
+ * watches write it with colons, spaces or nothing in between. The file is
+ * read once, as the clock asks every second until there is an address. */
 int bt_addr_get(uint8_t addr[6])
 {
+	static int factory_r = 1;
+	static uint8_t factory[6];
 	if (!bt_addr_load(addr))
 		return 0;
-	char t[40];
-	int n = board->bt.addr_part ? storage_read_file(board->bt.addr_part, board->bt.addr_path, t, sizeof t) : -1;
-	unsigned digits = 0, ors = 0, ands = 0xff;
-	for (int i = 0; i < n && digits < 12; i++) {
-		char c = t[i];
-		unsigned d = c >= '0' && c <= '9' ? (unsigned)(c - '0') : c >= 'a' && c <= 'f' ? (unsigned)(c - 'a' + 10)
-			   : c >= 'A' && c <= 'F' ? (unsigned)(c - 'A' + 10) : 16;
-		if (d > 15)
-			continue;
-		addr[digits / 2] = (uint8_t)(digits % 2 ? addr[digits / 2] << 4 | d : d);
-		digits++;
+	if (factory_r > 0) {
+		char t[40];
+		int n = board->bt.addr_part ? storage_read_file(board->bt.addr_part, board->bt.addr_path, t, sizeof t) : -1;
+		unsigned digits = 0, ors = 0, ands = 0xff;
+		for (int i = 0; i < n && digits < 12; i++) {
+			char c = t[i];
+			unsigned d = c >= '0' && c <= '9' ? (unsigned)(c - '0') : c >= 'a' && c <= 'f' ? (unsigned)(c - 'a' + 10)
+				   : c >= 'A' && c <= 'F' ? (unsigned)(c - 'A' + 10) : 16;
+			if (d > 15)
+				continue;
+			factory[digits / 2] = (uint8_t)(digits % 2 ? factory[digits / 2] << 4 | d : d);
+			digits++;
+		}
+		for (unsigned i = 0; digits == 12 && i < 6; i++) {
+			ors |= factory[i];
+			ands &= factory[i];
+		}
+		factory_r = digits == 12 && ors && ands != 0xff ? 0 : -1;
+		if (factory_r && board->bt.addr_part)
+			log_printf("bt: no factory address in %s/%s (%d)\n", board->bt.addr_part, board->bt.addr_path, n);
 	}
-	for (unsigned i = 0; digits == 12 && i < 6; i++) {
-		ors |= addr[i];
-		ands &= addr[i];
-	}
-	return digits == 12 && ors && ands != 0xff ? 0 : -1;
+	if (!factory_r)
+		memcpy(addr, factory, 6);
+	return factory_r;
 }
 
 int bt_addr_save(const uint8_t addr[6])
