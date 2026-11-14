@@ -26,7 +26,10 @@ static void rx(uint8_t type, const uint8_t *p, unsigned n)
 			return;
 		}
 		memcpy(buf, p, n);
-		if (n >= 14 && p[0] == BLE_HCI_EVCODE_LE_META && p[2] == BLE_HCI_LE_SUBEV_CONN_COMPLETE && p[7] == BLE_ADDR_RANDOM) {
+		/* Both connection events have the peer's address at the same place. */
+		bool conn = n >= 14 && p[0] == BLE_HCI_EVCODE_LE_META &&
+			    (p[2] == BLE_HCI_LE_SUBEV_CONN_COMPLETE || p[2] == BLE_HCI_LE_SUBEV_ENH_CONN_COMPLETE);
+		if (conn && p[7] == BLE_ADDR_RANDOM) {
 			uint8_t *b = buf;
 			if (bt_store_resolve(p + 8, &b[7], b + 8))
 				log_printf("bt: resolved private address of a bonded peer\n");
