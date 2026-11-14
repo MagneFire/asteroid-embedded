@@ -47,10 +47,16 @@ static void sink_fbcon(const char *s, size_t n)
 
 void main(uint32_t machtype, const void *fdt)
 {
+	boot_stage(BOOT_STAGE("main"));
 	soc_init();
+	boot_stage(BOOT_STAGE("wdt "));
 	wdt_arm(3000, 4000, wdt_bark_handler);
 	irq_enable();
+	boot_stage(BOOT_STAGE("log "));
 	log_init();
+	boot_stage(BOOT_STAGE("up  "));
+	if (boot_previous_stage())
+		log_printf("previous boot stopped at stage %s\n", boot_previous_stage());
 	log_printf("asteroid-embedded %s up, timer %lu Hz\n", build_id, timer_hz());
 	cpu_clock_log();
 	board_detect(machtype, fdt);

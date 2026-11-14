@@ -81,6 +81,9 @@ def symbolize(text):
 def show(blob, tail):
     console = zone(blob, (REGION_SIZE - CONSOLE_SIZE) // RECORD_SIZE * RECORD_SIZE, CONSOLE_SIZE)
     record = zone(blob, 0, RECORD_SIZE)
+    stage = zone(blob, (REGION_SIZE - CONSOLE_SIZE) // RECORD_SIZE * RECORD_SIZE - RECORD_SIZE, RECORD_SIZE)
+    if stage and stage != b"up  ":
+        print("the boot stopped at stage %s" % stage.decode("ascii", "replace").strip())
     if console is None:
         print("no console zone")
     else:
@@ -129,11 +132,16 @@ def fetch_ramoops(tail):
 def pstore(tail):
     """The log and fault record a Linux on the watch found in its ramoops
     region when it started."""
-    sh = "mount | grep -q ' /sys/fs/pstore ' || mount -t pstore pstore /sys/fs/pstore; cat /sys/fs/pstore/%s-ramoops* 2>/dev/null"
-    console = subprocess.run(adb_cmd("shell", sh % "console"), capture_output=True, timeout=60).stdout
-    # The fault record is "annotate" on minnow's kernel and "dmesg" on catfish's.
-    record = b"".join(subprocess.run(adb_cmd("shell", sh % k), capture_output=True, timeout=60).stdout
-                      for k in ("annotate", "dmesg"))
+    sh = "mount | grep -q ' /sys/fs/pstore ' || mount -t pstore pstore /sys/fs/pstore; cat /sys/fs/pstore/%s 2>/dev/null"
+    def read(name):
+        return subprocess.run(adb_cmd("shell", sh % name), capture_output=True, timeout=60).stdout
+    console = read("console-ramoops*")
+    # The fault record is "annotate" on minnow's kernel and the first dump
+    # record on catfish's, where the last one holds the boot stage.
+    record = read("annotate-ramoops*") + read("dmesg-ramoops-0")
+    stage = read("dmesg-ramoops-31").strip(b"\0").decode("ascii", "replace").strip()
+    if stage and stage != "up":
+        print("the boot stopped at stage %s" % stage)
     if not console and not record:
         sys.exit("nothing in /sys/fs/pstore: the region did not survive, or this boot was not the first after the reset")
     lines = console.decode("utf-8", "replace").splitlines()

@@ -60,6 +60,8 @@
         add     r1, r1, #1
         cmp     r1, #((IO_8009_BASE + IO_8009_SIZE) >> 20)
         blo     93b
+        ldr     r3, =(RAMOOPS_8009_PHYS | 0x1c0e)  /* the log, as mmu_init maps it */
+        str     r3, [r0, #((RAMOOPS_BASE >> 20) << 2)]
 
         mov     r1, #0
         mcr     p15, 0, r1, c2, c0, 2           /* TTBCR N=0 */

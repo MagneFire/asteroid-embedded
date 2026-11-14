@@ -18,9 +18,11 @@ struct zone {
 #define CONSOLE		((volatile struct zone *)(uintptr_t)RAMOOPS_CONSOLE_BASE)
 #define CONSOLE_CAP	(RAMOOPS_CONSOLE_SIZE - sizeof(struct zone))
 #define RECORD_CAP	(RAMOOPS_RECORD_SIZE - sizeof(struct zone))
+#define STAGE		((volatile struct zone *)(uintptr_t)RAMOOPS_STAGE_BASE)
 
 static char previous[RECORD_CAP + 1];
 static bool have_previous, ring_lost;
+static const char *previous_stage;
 static void (*sink)(const char *s, size_t n);
 /* Bytes put in the console ring since boot, counting those it held then:
  * the positions log_read works with, which keep their meaning while the
@@ -196,6 +198,32 @@ void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t
 		out(buf, n, ctx);
 	}
 }
+
+/* Where the boot got to before the log is up, four letters in a record of
+ * their own; "up  " once it is. The first call keeps what the previous
+ * boot left, if it stopped earlier. */
+void boot_stage(uint32_t tag)
+{
+	static bool read;
+	static char prev[5];
+	volatile struct zone *z = STAGE;
+	if (!read) {
+		read = true;
+		if (z->sig == SIG && z->size == 4) {
+			uint32_t t = *(volatile uint32_t *)z->data;
+			if (t != BOOT_STAGE("up  "))
+				memcpy(prev, &t, 4);
+		}
+		previous_stage = prev[0] ? prev : NULL;
+	}
+	z->start = 0;
+	z->size = 4;
+	*(volatile uint32_t *)z->data = tag;
+	z->sig = SIG;
+	dsb();
+}
+
+const char *boot_previous_stage(void) { return previous_stage; }
 
 const char *log_previous_record(void)
 {

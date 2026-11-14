@@ -245,6 +245,9 @@ void log_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log_puts(const char *s);
 void log_record(const char *text);
 const char *log_previous_record(void);
+#define BOOT_STAGE(s)	((uint32_t)(s)[0] | (uint32_t)(s)[1] << 8 | (uint32_t)(s)[2] << 16 | (uint32_t)(s)[3] << 24)
+void boot_stage(uint32_t tag);
+const char *boot_previous_stage(void);
 bool log_ring_lost(void);
 /* Boot and charger history in the kv store (events.c). */
 void events_poll(uint32_t now);
