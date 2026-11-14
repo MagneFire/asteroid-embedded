@@ -23,12 +23,12 @@
 #define SAW_SPM_CTL		0x30
 #define SAW_SPM_DLY		0x34
 #define SAW_PMIC_DATA(n)	(0x40 + 4 * (n))
-#define SAW_SEQ			0x80
 #define SAW_VERSION		0xfd0
 
 #define SPM_CTL_EN		BIT(0)
-#define SPM_CTL_BASE		BIT(3)
+#define SPM_CTL_ISAR		BIT(3)
 #define SPM_CTL_START(off)	((uint32_t)(off) << 4)
+#define SPM_CTL_PC_MODE		BIT(16)
 
 static const uint8_t cpu_seq[] = {
 	/* clock gating, offset 0 */
@@ -41,7 +41,7 @@ static const uint8_t cpu_seq[] = {
 #define CPU_SEQ_CLOCK_GATING	0
 #define CPU_SEQ_POWER_COLLAPSE	5
 
-static const uint8_t l2_seq[] = {
+static const uint8_t l2_seq_8026[] = {
 	/* retention, offset 0 */
 	0x00, 0x03, 0x00, 0x0f,
 	/* gdhs, offset 4 */
@@ -52,7 +52,51 @@ static const uint8_t l2_seq[] = {
 	0x50, 0x4e, 0x02, 0x02, 0xc0, 0xd0, 0x12, 0xe0, 0x6b, 0x02, 0x32, 0x50, 0xf0, 0x0f,
 };
 
+/* The APQ8009W's also turns the L2 memory off, through PMIC_DATA 4 and 5. */
+static const uint8_t l2_seq_8009[] = {
+	0x00, 0x03, 0x00, 0x0f,
+	0x00, 0x20, 0x32, 0x6b, 0xc0, 0xe0, 0xd0, 0x42, 0x03, 0x50, 0x4e,
+	0x02, 0x02, 0xd0, 0xe0, 0xc0, 0x22, 0x6b, 0x02, 0x32, 0x50, 0x0f,
+	0x00, 0x32, 0xb0, 0x10, 0xe0, 0xd0, 0x6b, 0xc0, 0x42, 0xf0, 0x51, 0x11, 0x07, 0x01, 0x41,
+	0xb0, 0x50, 0x4e, 0x02, 0x02, 0xc0, 0xd0, 0x12, 0xe0, 0x6b, 0x02, 0x32, 0x50, 0xf0, 0x0f,
+};
+
 #define L2_SEQ_POWER_COLLAPSE	26
+
+/* The vendor's SAW settings. The APQ8026's kernel sets only the start
+ * of a mode in SPM_CTL. The APQ8009W's writes the whole register, and
+ * leaves out the sleep command bit its device tree gives the power
+ * collapse modes, as the RPM is told through the MPM instead. */
+struct spm_chip {
+	uint32_t cpu_cfg;
+	uint32_t ctl_wfi, ctl_pc, ctl_l2_pc;
+	const uint8_t *l2_seq;
+	unsigned l2_len;
+	uint32_t l2_pmic_data[6];
+};
+
+static const struct spm_chip spm_8026 = {
+	.cpu_cfg = 0,
+	.ctl_wfi = SPM_CTL_ISAR | SPM_CTL_START(CPU_SEQ_CLOCK_GATING) | SPM_CTL_EN,
+	.ctl_pc = SPM_CTL_ISAR | SPM_CTL_START(CPU_SEQ_POWER_COLLAPSE) | SPM_CTL_EN,
+	.ctl_l2_pc = SPM_CTL_START(L2_SEQ_POWER_COLLAPSE) | SPM_CTL_EN,
+	.l2_seq = l2_seq_8026,
+	.l2_len = sizeof l2_seq_8026,
+	.l2_pmic_data = { 0x02030080, 0x00030000 },
+};
+
+static const struct spm_chip spm_8009 = {
+	.cpu_cfg = 0x01,
+	.ctl_wfi = SPM_CTL_START(CPU_SEQ_CLOCK_GATING) | SPM_CTL_EN,
+	.ctl_pc = SPM_CTL_PC_MODE | SPM_CTL_START(CPU_SEQ_POWER_COLLAPSE) | SPM_CTL_EN,
+	.ctl_l2_pc = SPM_CTL_PC_MODE | SPM_CTL_START(L2_SEQ_POWER_COLLAPSE) | SPM_CTL_EN,
+	.l2_seq = l2_seq_8009,
+	.l2_len = sizeof l2_seq_8009,
+	.l2_pmic_data = { 0x05030080, 0x00030000, 0, 0, 0x00010080, 0x00010000 },
+};
+
+static const struct spm_chip *spm;
+static uint32_t seq_base;
 
 static bool ready, can_collapse, cluster_parked;
 static uint32_t collapses, cluster_collapses, bailouts;
@@ -74,7 +118,7 @@ static void load_seq(uint32_t saw, const uint8_t *seq, unsigned len)
 		for (unsigned b = 0; b < 4; b++)
 			if (w * 4 + b < len)
 				v |= (uint32_t)seq[w * 4 + b] << (b * 8);
-		writel(v, saw + SAW_SEQ + w * 4);
+		writel(v, saw + seq_base + w * 4);
 	}
 }
 
@@ -82,8 +126,7 @@ void spm_cpu_mode(enum spm_mode mode)
 {
 	if (!ready)
 		return;
-	uint32_t off = mode == SPM_POWER_COLLAPSE ? CPU_SEQ_POWER_COLLAPSE : CPU_SEQ_CLOCK_GATING;
-	writel(SPM_CTL_BASE | SPM_CTL_START(off) | SPM_CTL_EN, SAW_CPU0 + SAW_SPM_CTL);
+	writel(mode == SPM_POWER_COLLAPSE ? spm->ctl_pc : spm->ctl_wfi, SAW_CPU0 + SAW_SPM_CTL);
 	dsb();
 }
 
@@ -157,7 +200,7 @@ void cpu_idle(bool cluster)
 	cluster = cluster && cluster_parked && left >= timer_hz() / 50;
 	if (cluster) {
 		mpm_arm(deadline);
-		writel(SPM_CTL_START(L2_SEQ_POWER_COLLAPSE) | SPM_CTL_EN, SAW_L2 + SAW_SPM_CTL);
+		writel(spm->ctl_l2_pc, SAW_L2 + SAW_SPM_CTL);
 	}
 	/* Off while the halves change, or one half-written may be past. */
 	writel(0, QTMR_CNTP_CTL);
@@ -221,9 +264,9 @@ static bool park_secondaries(void)
 	for (unsigned cpu = 1; cpu < 4; cpu++) {
 		uint32_t saw = SAW_CPU0 + cpu * 0x10000;
 		load_seq(saw, cpu_seq, sizeof cpu_seq);
-		writel(0, saw + SAW_CFG);
+		writel(spm->cpu_cfg, saw + SAW_CFG);
 		writel(0x3c102800, saw + SAW_SPM_DLY);
-		writel(SPM_CTL_BASE, saw + SAW_SPM_CTL);
+		writel(spm->ctl_wfi & ~SPM_CTL_EN, saw + SAW_SPM_CTL);
 	}
 	dcache_clean_invalidate_range((const void *)park_count, sizeof park_count);
 	bool ok = true;
@@ -251,20 +294,29 @@ bool cpu_idle_init(void)
 		log_printf("spm: power collapse not used on %s\n", chip->name);
 		return false;
 	}
-	uint32_t ver = readl(SAW_CPU0 + SAW_VERSION);
-	if ((ver >> 28) != 2 || ((ver >> 16) & 0xfff) != 1) {
+	spm = chip == &chip_8009 ? &spm_8009 : &spm_8026;
+	/* The sequence memory moved in versions 2.3 and 3.0, which read
+	 * as 3.0 and 1.0. */
+	uint32_t ver = readl(SAW_CPU0 + SAW_VERSION), major = ver >> 28, minor = (ver >> 16) & 0xfff;
+	if (major == 2 && minor == 1) {
+		seq_base = 0x80;
+	} else if ((major == 3 || major == 1) && minor == 0) {
+		seq_base = 0x400;
+	} else {
 		log_printf("spm: unexpected SAW version %08lx\n", ver);
 		return false;
 	}
+	log_printf("spm: SAW version %lu.%lu\n", major, minor);
 	load_seq(SAW_CPU0, cpu_seq, sizeof cpu_seq);
-	writel(0, SAW_CPU0 + SAW_CFG);
+	writel(spm->cpu_cfg, SAW_CPU0 + SAW_CFG);
 	writel(0x3c102800, SAW_CPU0 + SAW_SPM_DLY);
 	writel(0, SAW_L2 + SAW_SPM_CTL);
-	load_seq(SAW_L2, l2_seq, sizeof l2_seq);
+	load_seq(SAW_L2, spm->l2_seq, spm->l2_len);
 	writel(0x14, SAW_L2 + SAW_CFG);
 	writel(0x3c102800, SAW_L2 + SAW_SPM_DLY);
-	writel(0x02030080, SAW_L2 + SAW_PMIC_DATA(0));
-	writel(0x00030000, SAW_L2 + SAW_PMIC_DATA(1));
+	for (unsigned i = 0; i < ARRAY_SIZE(spm->l2_pmic_data); i++)
+		if (spm->l2_pmic_data[i])
+			writel(spm->l2_pmic_data[i], SAW_L2 + SAW_PMIC_DATA(i));
 	ready = true;
 	spm_cpu_mode(SPM_CLOCK_GATING);
 	int ret = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_WARMBOOT_CPU0, (uint32_t)(uintptr_t)cpu_resume);
