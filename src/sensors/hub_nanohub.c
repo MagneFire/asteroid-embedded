@@ -36,7 +36,8 @@ enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_GA
 static uint8_t tx[WRITE_PAD + REPLY_BYTES], rx[WRITE_PAD + REPLY_BYTES + MORE_BYTES];
 static uint8_t payload[NANOHUB_PAYLOAD_MAX];
 static uint32_t seq, errors, events, versions[2];
-static bool present, tilt_on, hr_on;
+static bool present, tilt_on, hr_on, light_on;
+static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
 static uint32_t steps_today = HUB_NONE, heart_rate = HUB_NONE;
@@ -230,6 +231,13 @@ static void sensor_event(const struct nanohub_event *ev)
 			heart_rate = bpm > 0 ? (uint32_t)(bpm + 0.5f) : HUB_NONE;
 		}
 		break;
+	case NANOHUB_SENSOR_LIGHT:
+		if (ev->sensor.header && nanohub_sample(ev, last, 4, &ns, &d)) {
+			float v;
+			memcpy(&v, d, 4);
+			lux = v >= 0 ? (int32_t)(v + 0.5f) : -1;
+		}
+		break;
 	case NANOHUB_SENSOR_ACCEL:
 		if (ev->sensor.header && nanohub_sample(ev, last, 6, &ns, &d)) {
 			memcpy(accel_v, d, 6);
@@ -409,7 +417,7 @@ static void out(uint8_t pin, unsigned v)
 }
 
 /* What the hub should be doing, sent again after it restarted. */
-static bool want_tilt, want_hr, want_accel;
+static bool want_tilt, want_hr, want_accel, want_light;
 
 static void apply_state(void)
 {
@@ -431,6 +439,7 @@ static void apply_state(void)
 	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 	if (want_accel)
 		configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_ENABLE, NANOHUB_HZ(10), 0);
+	light_on = want_light && configure(NANOHUB_SENSOR_LIGHT, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 }
 
 static bool answers(void)
@@ -704,6 +713,31 @@ static void nanohub_status(void (*say)(const char *fmt, ...))
 	    versions[0], versions[1], present ? "up" : "not up", mode, events, errors, (long)steps_today,
 	    have_gauge ? "" : "none", gauge.mv, gauge.percent);
 }
+
+/* The hub's light sensor: on while it is wanted, the last lux it
+ * reported when asked. */
+static void light_set(bool on)
+{
+	want_light = on;
+	if (on == light_on)
+		return;
+	if (!on)
+		lux = -1;
+	if (configure(NANOHUB_SENSOR_LIGHT, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, 0))
+		light_on = on;
+}
+
+static bool nanohub_light_init(void) { return true; }
+static void nanohub_light_start(void) { light_set(true); }
+static int32_t nanohub_light_finish(void) { return light_on ? lux : -1; }
+static void nanohub_light_keep(bool on) { light_set(on); }
+
+const struct light_driver light_nanohub = {
+	.init = nanohub_light_init,
+	.start = nanohub_light_start,
+	.finish = nanohub_light_finish,
+	.keep = nanohub_light_keep,
+};
 
 const struct hub_driver hub_nanohub = {
 	.init = nanohub_init,

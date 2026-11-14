@@ -10,7 +10,7 @@ const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
 const struct motor_driver motor_drv2605, motor_pm8226;
 const struct backlight_driver backlight_lm3535;
 const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
-const struct light_driver light_tsl2584;
+const struct light_driver light_tsl2584, light_nanohub;
 
 const struct qcom_chip chip_8026, chip_8009;
 const struct qcom_chip *chip = &chip_8026;

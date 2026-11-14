@@ -152,7 +152,7 @@ extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo;
 extern const struct backlight_driver backlight_lm3535;
-extern const struct light_driver light_tsl2584, light_m4;
+extern const struct light_driver light_tsl2584, light_m4, light_nanohub;
 
 /* A pad whose mux or pull the bootloader's setup is changed in: its
  * offset in the SoC's pad registers and their value. */

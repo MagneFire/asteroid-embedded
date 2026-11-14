@@ -43,6 +43,7 @@ const struct board board_catfish = {
 	.hub_pins = { .irq = 97, .spi = 4, .gpio = 12, .func = 1, .cs = 14, .wake_mcu = 71, .reset = 72, .boot0 = 70,
 		      .mode_irq = 90, .strobe = 73, .mode = { 8, 9, 99, 110 }, .mpm = 37 },
 	/* DRV2605 on BLSP1 QUP6, no trigger line. */
+	.light = &light_nanohub,
 	.motor = &motor_drv2605,
 	.motor_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x5a }, .enable = 26,
 			.rated = 0x4b, .clamp = 0x54 },
