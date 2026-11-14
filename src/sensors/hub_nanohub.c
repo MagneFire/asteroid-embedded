@@ -25,6 +25,7 @@
 #define RETRIES		10
 #define SPI_HZ		10000000
 #define GAUGE_MS	60000
+#define LIGHT_RETRY_MS	5000
 #define GAUGE_FORCE_MS	20000
 #define READS_PER_POLL	8
 #define LEVEL_MS	100
@@ -747,16 +748,24 @@ static void nanohub_status(void (*say)(const char *fmt, ...))
 }
 
 /* The hub's light sensor: on while it is wanted, the last lux it
- * reported when asked. */
+ * reported when asked. A refused enable waits LIGHT_RETRY_MS rather than
+ * a reading, as each try holds the main loop until the hub answers. */
 static void light_set(bool on)
 {
+	static uint32_t refused_t;
+	static bool refused;
 	want_light = on;
 	if (on == light_on)
 		return;
 	if (!on)
 		lux = -1;
+	uint32_t now = time_ms();
+	if (on && refused && now - refused_t < LIGHT_RETRY_MS)
+		return;
 	if (configure(NANOHUB_SENSOR_LIGHT, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, 0))
 		light_on = on;
+	refused = on && !light_on;
+	refused_t = now;
 }
 
 static bool nanohub_light_init(void) { return true; }
