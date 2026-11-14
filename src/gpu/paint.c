@@ -341,13 +341,24 @@ static void copy_in(struct atlas *a, uint32_t x, uint32_t y, const uint8_t *data
  * a checksum of their contents as well. */
 static uint32_t checksum(const uint8_t *data, uint32_t stride, uint32_t bytes, uint32_t height)
 {
-	uint32_t sum = 2166136261u;
+	uint32_t sum[4] = { 2166136261u, 1, 2, 3 };
 	if ((uintptr_t)data < UI_HEAP_BASE || (uintptr_t)data >= UI_HEAP_BASE + UI_HEAP_SIZE)
 		return 0;
-	for (uint32_t r = 0; r < height; r++)
-		for (uint32_t c = 0; c < bytes; c++)
-			sum = (sum ^ data[r * stride + c]) * 16777619u;
-	return sum;
+	/* Four words at a time, each into its own sum, as one sum waits for
+	 * every multiply. */
+	for (uint32_t r = 0; r < height; r++) {
+		const uint8_t *p = data + r * stride;
+		uint32_t c = 0;
+		for (; c + 16 <= bytes; c += 16)
+			for (unsigned i = 0; i < 4; i++) {
+				uint32_t w;
+				memcpy(&w, p + c + i * 4, 4);
+				sum[i] = (sum[i] ^ w) * 16777619u;
+			}
+		for (; c < bytes; c++)
+			sum[0] = (sum[0] ^ p[c]) * 16777619u;
+	}
+	return sum[0] ^ (sum[1] * 3) ^ (sum[2] * 5) ^ (sum[3] * 7);
 }
 
 /* The atlas slot holding the texels for key, copied in from data (or
