@@ -44,7 +44,7 @@
 #define CELL_MAH	415
 #define CHARGER_TASK_MS	500
 
-static bool ready, configured, cable_now, irq_seen, have_seen, fresh, stale;
+static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale;
 static uint32_t poll_t, errors, empty_polls, quiet_polls;
 static bool empty_from_pmic;
 /* The last gauge reading taken in. */
@@ -130,7 +130,7 @@ static void smb231_init(void)
 	}
 	ready = true;
 	configured = configure();
-	cable_now = vbus();
+	cable_now = cable_told = vbus();
 	log_printf("charger: smb231 %s, usb %u\n", configured ? "set up" : "not set up", cable_now);
 	irq_seen = true;
 }
@@ -285,12 +285,14 @@ static void smb231_cable_irq_init(void)
 		wake_pin(board->charger.mpm, true, false);
 }
 
+/* Also a change the charger task's poll saw first. */
 static bool smb231_cable_irq(void)
 {
-	bool before = cable_now;
 	if (irq_seen)
 		smb231_poll();
-	return cable_now != before;
+	bool changed = cable_now != cable_told;
+	cable_told = cable_now;
+	return changed;
 }
 
 static uint32_t smb231_mv(void)
