@@ -37,6 +37,8 @@
 #define LIGHT_READ_MS 250
 #define LIGHT_INTEGRATE_MS 60
 #define LIGHT_FADE_MS 1000
+/* Within the day and a half before the 32 kHz counter of minnow wraps. */
+#define MAX_SLEEP_MS (24 * 3600 * 1000u)
 
 static bool have_display, have_ui, have_hub;
 static struct power_policy policy = { .awake = true };
@@ -482,6 +484,8 @@ void power_idle(uint32_t app_next_ms)
 		uint32_t minute = (60 - rtc_read() % 60) * 1000;
 		if (screen == SCREEN_AMBIENT && minute < next)
 			next = minute;
+		if (next > MAX_SLEEP_MS)
+			next = MAX_SLEEP_MS;
 	}
 	/* The watchdog counts on the sleep clock through a cluster power
 	 * collapse, where its bark cannot wake the core, so a wake that
