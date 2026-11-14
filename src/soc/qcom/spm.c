@@ -16,7 +16,11 @@
 #define MPM_PIN_TOUCH		(board->touch_pins.mpm)
 #define MPM_PIN_PMIC		(board->pmic_mpm)
 
+#define SAW_ID			0x04
 #define SAW_CFG			0x08
+#define SAW_PMIC_STS		0x14
+#define SAW_RST			0x18
+#define SAW_VCTL		0x1c
 #define SAW_SPM_CTL		0x30
 #define SAW_SPM_DLY		0x34
 #define SAW_PMIC_DATA(n)	(0x40 + 4 * (n))
@@ -70,6 +74,7 @@ struct spm_chip {
 	const uint8_t *l2_seq;
 	unsigned l2_len;
 	uint32_t l2_pmic_data[6];
+	uint32_t apc_vset;
 };
 
 static const struct spm_chip spm_8026 = {
@@ -90,6 +95,8 @@ static const struct spm_chip spm_8009 = {
 	.l2_seq = l2_seq_8009,
 	.l2_len = sizeof l2_seq_8009,
 	.l2_pmic_data = { 0x05030080, 0x00030000, 0, 0, 0x00010080, 0x00010000 },
+	/* PM8916 S2, the APC rail */
+	.apc_vset = 0x11741,
 };
 
 static const struct spm_chip *spm;
@@ -114,9 +121,13 @@ static uint32_t entry_pa(void (*fn)(void))
 	return (uint32_t)(uintptr_t)(chip == &chip_8009 ? cpu_entry : fn) + phys_offset;
 }
 
+/* The newer SAWs give their sequence memory's size in words. */
 static void load_seq(uint32_t saw, const uint8_t *seq, unsigned len)
 {
-	for (unsigned w = 0; w < 32; w++) {
+	unsigned words = seq_base == 0x400 ? readl(saw + SAW_ID) >> 24 : 32;
+	if (words > 32)
+		words = 32;
+	for (unsigned w = 0; w < words; w++) {
 		uint32_t v = 0;
 		for (unsigned b = 0; b < 4; b++)
 			if (w * 4 + b < len)
@@ -308,15 +319,31 @@ static bool park_secondaries(void)
 	return ok;
 }
 
+/* The L2 SAW controls the APC rail once the cluster collapses. The
+ * vendor's regulator driver gives it the rail's level first. */
+static bool apc_level_init(void)
+{
+	if (!spm->apc_vset)
+		return true;
+	uint32_t level = pmic_read(spm->apc_vset), sts = 0;
+	writel(1, SAW_L2 + SAW_RST);
+	writel(level, SAW_L2 + SAW_VCTL);
+	writel(level, SAW_L2 + SAW_PMIC_DATA(3));
+	dsb();
+	for (unsigned us = 0; us < 500; us++) {
+		delay_us(1);
+		sts = readl(SAW_L2 + SAW_PMIC_STS);
+		if (!(sts & 0x30000) && (sts & 0xff) == level) {
+			log_printf("spm: APC rail level %02lx\n", level);
+			return true;
+		}
+	}
+	log_printf("spm: APC rail level %02lx not taken, status %08lx\n", level, sts);
+	return false;
+}
+
 bool cpu_idle_init(void)
 {
-	/* The APQ8009W resumes from a collapse, and starts the other cores,
-	 * with the MMU off at the physical address, which this code is not
-	 * written for yet: it only waits for interrupts. */
-	if (chip == &chip_8009) {
-		log_printf("spm: power collapse not used on %s\n", chip->name);
-		return false;
-	}
 	spm = chip == &chip_8009 ? &spm_8009 : &spm_8026;
 	/* The sequence memory moved in versions 2.3 and 3.0, which read
 	 * as 3.0 and 1.0. */
@@ -340,13 +367,14 @@ bool cpu_idle_init(void)
 	for (unsigned i = 0; i < ARRAY_SIZE(spm->l2_pmic_data); i++)
 		if (spm->l2_pmic_data[i])
 			writel(spm->l2_pmic_data[i], SAW_L2 + SAW_PMIC_DATA(i));
+	bool apc = apc_level_init();
 	ready = true;
 	spm_cpu_mode(SPM_CLOCK_GATING);
 	int ret = scm_set_boot_addr(entry_pa(cpu_resume), BIT(0), true);
 	if (ret)
 		log_printf("spm: warm boot address not accepted (%d)\n", ret);
 	can_collapse = !ret;
-	cluster_parked = can_collapse && park_secondaries();
+	cluster_parked = can_collapse && park_secondaries() && apc;
 	writel(0, QTMR_CNTP_CTL);
 	irq_attach(IRQ_QTMR_FRAME0, qtmr_irq);
 	irq_set_edge(IRQ_MPM_WAKE);

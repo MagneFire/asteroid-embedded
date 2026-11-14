@@ -77,8 +77,8 @@ bool cpu_clock_is_slow(void)
 	return slow_now;
 }
 
-/* Without power collapse (the APQ8009W for now) the cluster is not
- * parked, so the CPU stays on the crystal while it waits. */
+/* The APQ8009W runs from GPLL0, not the A7 PLL, so it has nothing to
+ * turn off here. */
 void cpu_clock_park(void)
 {
 	if (fast_cfg() != (SRC_A7_PLL | DIV_1))
