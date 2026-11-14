@@ -137,7 +137,7 @@ $(BUILD)/asteroid.bin: $(BUILD)/asteroid.elf
 
 $(BUILD)/%.dtb: dts/%.dts
 	@mkdir -p $(BUILD)
-	$(DTC) -q -I dts -O dtb -o $@ $<
+	$(DTC) -q -a 8 -I dts -O dtb -o $@ $<
 
 ifeq ($(SOC),qcom)
 # One tree per watch: each bootloader picks the one whose board-id it has.
@@ -151,8 +151,8 @@ $(BUILD)/qcdt.img: $(DTBS) tools/qcdt.py
 # ignore what follows the firmware. smelt's own images have no table and
 # the tree behind the kernel, so that is there too, in case its bootloader
 # only looks there.
-$(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/smelt.dtb tools/appenddtb.py
-	python3 tools/appenddtb.py -o $@ $< $(BUILD)/smelt.dtb
+$(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb tools/appenddtb.py
+	python3 tools/appenddtb.py -o $@ $< $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb
 
 $(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/qcdt.img tools/mkbootimg.py
 	python3 tools/mkbootimg.py --kernel $< --dt $(BUILD)/qcdt.img -o $@

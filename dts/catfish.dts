@@ -8,6 +8,7 @@
 	compatible = "mobvoi,catfish", "qcom,apq8009w";
 	qcom,msm-id = <265 0>, <301 0>;
 	qcom,board-id = <8 0x105>, <8 0x5>;
+	qcom,pmic-id = <0x1000b 0 0 0>;
 
 	chosen { };
 	aliases { };
