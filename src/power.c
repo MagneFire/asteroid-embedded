@@ -37,6 +37,7 @@
 #define LIGHT_READ_MS 250
 #define LIGHT_INTEGRATE_MS 60
 #define LIGHT_FADE_MS 1000
+#define DCS_FADE_STEP_MS 100
 /* Within the day and a half before the 32 kHz counter of minnow wraps. */
 #define MAX_SLEEP_MS (24 * 3600 * 1000u)
 
@@ -191,11 +192,15 @@ void power_light(uint32_t now, bool hold)
 		light_reading = true;
 		light_t = now;
 	}
-	if (fade_now != fade_to) {
+	/* Without a backlight chip each step is a panel command that waits
+	 * for the frame being sent, so those panels take fewer steps. */
+	static uint32_t step_t;
+	if (fade_now != fade_to && (board->backlight || now - step_t >= DCS_FADE_STEP_MS)) {
 		uint32_t gone = now - fade_t;
 		int b = gone >= LIGHT_FADE_MS ? fade_to : fade_from + (fade_to - fade_from) * (int)gone / LIGHT_FADE_MS;
 		if (b != fade_now) {
 			fade_now = b;
+			step_t = now;
 			display_set_brightness((uint8_t)(b * 255 / 100));
 		}
 	}
