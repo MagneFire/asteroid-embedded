@@ -184,12 +184,12 @@ export component SettingsApp {
 
                 RowSeparator { }
 
-                // OptionCycler: Off, Screen, Always-on face.
+                // OptionCycler: Off, Screen, Always-on face, and Backlight with a second display.
                 LabeledSwitch {
                     text: "Tilt-to-wake";
-                    value: ["Off", "Screen", "Always on"][Face.tilt];
+                    value: ["Off", "Screen", "Always on", "Backlight"][Face.tilt];
                     clicked => {
-                        Face.setting-set(Codes.setting-tilt, Math.mod(Face.tilt + 1, 3));
+                        Face.setting-set(Codes.setting-tilt, Math.mod(Face.tilt + 1, Face.has-tilt-light ? 4 : 3));
                     }
                 }
 

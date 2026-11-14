@@ -106,6 +106,10 @@ static void steps(void)
 	CHECK(values[SETTING_NIGHTSTAND_BRIGHTNESS] == 50);
 	action_setting_value(SETTING_NIGHTSTAND_BRIGHTNESS, 5);
 	CHECK(values[SETTING_NIGHTSTAND_BRIGHTNESS] == 50);
+	action_setting_value(SETTING_TILT, TILT_LIGHT);
+	CHECK(values[SETTING_TILT] == TILT_LIGHT);
+	action_setting_value(SETTING_TILT, TILT_LIGHT + 1);
+	CHECK(values[SETTING_TILT] == TILT_LIGHT);
 	action_setting_value(SETTING_NIGHTSTAND_DELAY, 17);
 	CHECK(values[SETTING_NIGHTSTAND_DELAY] == 15);
 	action_setting_value(SETTING_NIGHTSTAND_DELAY, 31);

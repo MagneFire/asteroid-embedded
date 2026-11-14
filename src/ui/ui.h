@@ -231,6 +231,7 @@ void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t week
 /* The power page offers Timepiece, where the hub shows the time with the
  * watch off. */
 void ui_set_timepiece(bool on);
+void ui_set_tilt_light(bool on);
 void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in,
 		  bool profile, bool passive);
 /* The lines at the bottom of the picture the panel does not show. */

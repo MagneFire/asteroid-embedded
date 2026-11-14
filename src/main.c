@@ -84,6 +84,7 @@ void main(uint32_t machtype, const void *fdt)
 		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round, board->light, !board->panel.lcd,
 			     hub_measures_activity(), board->heart_rate && hub_has_passive());
 		ui_set_timepiece(hub_has_timepiece());
+		ui_set_tilt_light(hub_has_screen());
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
 		if (board->panel.edge_px)
 			stack_set_edge(board->panel.edge_px);

@@ -138,7 +138,8 @@ export global Face {
     in-out property <bool> vibration-on: true;
     in-out property <bool> aod-on: true;
     in-out property <bool> clock12;
-    // Tilt-to-wake: 0 off, 1 wakes the screen, 2 shows the always-on face for a moment.
+    // Tilt-to-wake: 0 off, 1 wakes the screen, 2 shows the always-on face for a moment, 3 lights the
+    // hub's own display from behind.
     in-out property <int> tilt: 1;
     in-out property <bool> tap-on: true;
     in-out property <bool> fahrenheit;
@@ -176,6 +177,7 @@ export global Face {
     in property <bool> has-profile: true;
     in property <bool> has-passive;
     in property <bool> has-timepiece;
+    in property <bool> has-tilt-light;
     // The lines at the bottom the panel cuts off, AsteroidOS's flat tire.
     in property <length> chin;
     in-out property <string> notification-app;

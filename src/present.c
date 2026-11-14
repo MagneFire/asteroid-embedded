@@ -112,6 +112,7 @@ void present_heart_log(void)
 
 void present_settings(void)
 {
+	int tilt = setting_get(SETTING_TILT);
 	struct ui_settings u = {
 		.brightness = setting_get(SETTING_BRIGHTNESS),
 		.nightstand_brightness = setting_get(SETTING_NIGHTSTAND_BRIGHTNESS),
@@ -121,7 +122,7 @@ void present_settings(void)
 		.vibration = setting_get(SETTING_VIBRATION),
 		.aod = setting_get(SETTING_AOD),
 		.clock12 = setting_get(SETTING_CLOCK12),
-		.tilt = setting_get(SETTING_TILT),
+		.tilt = tilt == TILT_LIGHT && !hub_has_screen() ? TILT_FACE : tilt,
 		.tap = setting_get(SETTING_TAP),
 		.fahrenheit = setting_get(SETTING_FAHRENHEIT),
 		.nightstand_aod = setting_get(SETTING_NIGHTSTAND_AOD),

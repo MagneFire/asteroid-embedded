@@ -121,7 +121,7 @@ void action_setting_value(int s, int v)
 		setting_set(SETTING_NIGHTSTAND_DELAY, v / 5 * 5);
 	} else if (s == SETTING_BURN_IN && v >= 0 && v <= 3) {
 		setting_set(SETTING_BURN_IN, v);
-	} else if (s == SETTING_TILT && v >= TILT_OFF && v <= TILT_FACE) {
+	} else if (s == SETTING_TILT && v >= TILT_OFF && v <= TILT_LIGHT) {
 		setting_set(SETTING_TILT, v);
 	} else if (s == SETTING_STEP_GOAL && v >= 1 && v <= STEP_GOAL_MAX) {
 		setting_set(SETTING_STEP_GOAL, v);
