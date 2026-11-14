@@ -2,6 +2,7 @@
  * convention: r0 carries service, command and argument count, r1 points
  * at a context word, r2/r3 are the arguments, r0 returns the result. */
 #include <stddef.h>
+#include <string.h>
 #include "asteroid.h"
 #include "config.h"
 
@@ -49,40 +50,37 @@ int scm_wdog_debug_disable(void)
 /* The buffer-based convention: a command block in memory holds the
  * request and room for the response, r2 carries its address, and the
  * call is repeated while the secure world reports it interrupted. */
+#define SCM_SVC_INFO		0x06
+#define SCM_IS_CALL_AVAIL	0x01
 #define SCM_SVC_MP		0x0c
 #define SCM_RESTORE_SEC_CFG	0x02
+#define SCM_BOOT_ADDR		0x01
+#define SCM_BOOT_ADDR_MC	0x11
 #define SCM_INTERRUPTED		1
 #define SCM_WAIT_MS		100
+#define SCM_CMD_HDR		16
 #define SCM_RESP_HDR		12
+#define SCM_REQ_MAX		6
 
-static struct {
-	uint32_t len, buf_offset, resp_hdr_offset, id;
-	uint32_t req[2];
-	uint32_t resp_len, resp_buf_offset, is_complete;
-	uint32_t resp;
-} __attribute__((aligned(64))) scm_cmd;
+static uint32_t scm_cmd[16] __attribute__((aligned(64)));
 
-/* After its power domain collapsed, a device behind a TZ-managed SMMU
- * (the display is device 1) can't be reached until the secure world has
- * restored its configuration, with the SMMU's clocks running. The second
- * word is a context bank, 0 for the display. */
-int scm_restore_sec_cfg(uint32_t device, uint32_t bank)
+static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp)
 {
-	scm_cmd = (typeof(scm_cmd)){ .len = sizeof scm_cmd, .buf_offset = 16, .resp_hdr_offset = 24,
-				     .id = SCM_SVC_MP << 10 | SCM_RESTORE_SEC_CFG, .req = { device, bank } };
-	dcache_clean_invalidate_range(&scm_cmd, sizeof scm_cmd);
-#if defined(TEST_SCM_FAIL)
-	static bool injected;
-	if (!injected && time_ms() > 60000) {
-		injected = true;
-		return -1;
-	}
-#endif
+	if (n > SCM_REQ_MAX)
+		return -5;
+	unsigned resp_hdr = SCM_CMD_HDR + 4 * n;
+	memset(scm_cmd, 0, sizeof scm_cmd);
+	scm_cmd[0] = resp_hdr + SCM_RESP_HDR + 4;
+	scm_cmd[1] = SCM_CMD_HDR;
+	scm_cmd[2] = resp_hdr;
+	scm_cmd[3] = svc << 10 | cmd;
+	memcpy(&scm_cmd[SCM_CMD_HDR / 4], req, 4 * n);
+	dcache_clean_invalidate_range(scm_cmd, sizeof scm_cmd);
 	uint32_t context = 0, t0 = time_ms();
 	register uint32_t r0 __asm__("r0");
 	do {
 		register uint32_t r1 __asm__("r1") = (uint32_t)(uintptr_t)&context;
-		register uint32_t r2 __asm__("r2") = dma_addr(&scm_cmd);
+		register uint32_t r2 __asm__("r2") = dma_addr(scm_cmd);
 		r0 = SCM_INTERRUPTED;
 		__asm__ volatile("smc #0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "memory");
 		if (r0 == SCM_INTERRUPTED && time_ms() - t0 > SCM_WAIT_MS)
@@ -90,10 +88,10 @@ int scm_restore_sec_cfg(uint32_t device, uint32_t bank)
 	} while (r0 == SCM_INTERRUPTED);
 	if (r0)
 		return (int)r0;
-	const volatile uint32_t *complete = &scm_cmd.is_complete;
+	const volatile uint32_t *rh = &scm_cmd[resp_hdr / 4];
 	for (;;) {
-		dcache_invalidate_range(&scm_cmd, sizeof scm_cmd);
-		bool done = *complete;
+		dcache_invalidate_range(scm_cmd, sizeof scm_cmd);
+		bool done = rh[2];
 #if defined(TEST_SCM_SLOW)
 		/* Once, after a minute: complete only after 20 ms. */
 		static bool slowed;
@@ -110,9 +108,61 @@ int scm_restore_sec_cfg(uint32_t device, uint32_t bank)
 	}
 	/* The response follows its header unless the secure world says
 	 * otherwise. */
-	uint32_t at = offsetof(typeof(scm_cmd), resp_len) +
-		      (scm_cmd.resp_buf_offset ? scm_cmd.resp_buf_offset : SCM_RESP_HDR);
+	uint32_t at = resp_hdr + (rh[1] ? rh[1] : SCM_RESP_HDR);
 	if (at % 4 || at + 4 > sizeof scm_cmd)
 		return -4;
-	return *(const uint32_t *)((const char *)&scm_cmd + at) ? -1 : 0;
+	if (resp)
+		*resp = scm_cmd[at / 4];
+	return 0;
+}
+
+/* After its power domain collapsed, a device behind a TZ-managed SMMU
+ * (the display is device 1) can't be reached until the secure world has
+ * restored its configuration, with the SMMU's clocks running. The second
+ * word is a context bank, 0 for the display. */
+int scm_restore_sec_cfg(uint32_t device, uint32_t bank)
+{
+#if defined(TEST_SCM_FAIL)
+	static bool injected;
+	if (!injected && time_ms() > 60000) {
+		injected = true;
+		return -1;
+	}
+#endif
+	const uint32_t req[2] = { device, bank };
+	uint32_t resp = 0;
+	int r = scm_call_buf(SCM_SVC_MP, SCM_RESTORE_SEC_CFG, req, 2, &resp);
+	return r ? r : resp ? -1 : 0;
+}
+
+static bool scm_call_available(uint32_t svc, uint32_t cmd)
+{
+	uint32_t req = svc << 10 | cmd, resp = 0;
+	return !scm_call_buf(SCM_SVC_INFO, SCM_IS_CALL_AVAIL, &req, 1, &resp) && resp;
+}
+
+/* Where the secure world starts the cores in cpus (a bit each) on a
+ * cold or a warm boot. The APQ8026's takes the atomic call, the
+ * APQ8009W's the buffer-based ones its kernel uses, with the
+ * multi-cluster one where it exists. */
+int scm_set_boot_addr(uint32_t phys, uint32_t cpus, bool warm)
+{
+	static const uint8_t cold_flag[4] = { 0, 0x01, 0x08, 0x20 }, warm_flag[4] = { 0x04, 0x02, 0x10, 0x40 };
+	uint32_t flags = 0;
+	for (unsigned cpu = 0; cpu < 4; cpu++)
+		if (cpus & BIT(cpu))
+			flags |= warm ? warm_flag[cpu] : cold_flag[cpu];
+	if (chip != &chip_8009)
+		return scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, flags, phys);
+	static int mc = -1;
+	if (mc < 0) {
+		mc = scm_call_available(SCM_SVC_BOOT, SCM_BOOT_ADDR_MC);
+		log_printf("scm: multi-cluster boot address %s\n", mc ? "available" : "not available");
+	}
+	if (mc) {
+		const uint32_t req[6] = { phys, cpus, BIT(0), BIT(0), ~0u, warm ? 0x04 : 0x02 };
+		return scm_call_buf(SCM_SVC_BOOT, SCM_BOOT_ADDR_MC, req, 6, NULL);
+	}
+	const uint32_t req[2] = { flags, phys };
+	return scm_call_buf(SCM_SVC_BOOT, SCM_BOOT_ADDR, req, 2, NULL);
 }

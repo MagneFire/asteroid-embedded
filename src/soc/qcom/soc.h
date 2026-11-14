@@ -217,6 +217,7 @@ void dload_clear(void);
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
 int scm_wdog_debug_disable(void);
 int scm_restore_sec_cfg(uint32_t device, uint32_t bank);
+int scm_set_boot_addr(uint32_t phys, uint32_t cpus, bool warm);
 #endif
 
 #endif

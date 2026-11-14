@@ -16,9 +16,6 @@
 #define MPM_PIN_TOUCH		(board->touch_pins.mpm)
 #define MPM_PIN_PMIC		(board->pmic_mpm)
 
-#define SCM_SVC_BOOT		0x01
-#define SCM_BOOT_ADDR		0x01
-#define SCM_FLAG_WARMBOOT_CPU0	0x04
 #define SAW_CFG			0x08
 #define SAW_SPM_CTL		0x30
 #define SAW_SPM_DLY		0x34
@@ -103,8 +100,7 @@ static uint32_t collapses, cluster_collapses, bailouts;
 
 #define ACC_PWR_STATUS		0x08
 #define ACC_COLLAPSED		BIT(19)
-#define SCM_FLAG_COLDBOOT_CPU123	(0x01 | 0x08 | 0x20)
-#define SCM_FLAG_WARMBOOT_CPU123	(0x02 | 0x10 | 0x40)
+#define CPUS_123		(BIT(1) | BIT(2) | BIT(3))
 
 int cpu_suspend(uint32_t flag);
 void cpu_resume(void);
@@ -255,8 +251,9 @@ static void release_secondary(unsigned cpu)
 
 static bool park_secondaries(void)
 {
-	int c = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_COLDBOOT_CPU123, (uint32_t)(uintptr_t)secondary_park);
-	int w = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_WARMBOOT_CPU123, (uint32_t)(uintptr_t)secondary_park);
+	uint32_t park = (uint32_t)(uintptr_t)secondary_park + phys_offset;
+	int c = scm_set_boot_addr(park, CPUS_123, false);
+	int w = scm_set_boot_addr(park, CPUS_123, true);
 	if (c || w) {
 		log_printf("spm: secondary boot address not accepted (%d %d)\n", c, w);
 		return false;
@@ -319,7 +316,7 @@ bool cpu_idle_init(void)
 			writel(spm->l2_pmic_data[i], SAW_L2 + SAW_PMIC_DATA(i));
 	ready = true;
 	spm_cpu_mode(SPM_CLOCK_GATING);
-	int ret = scm_call2(SCM_SVC_BOOT, SCM_BOOT_ADDR, SCM_FLAG_WARMBOOT_CPU0, (uint32_t)(uintptr_t)cpu_resume);
+	int ret = scm_set_boot_addr((uint32_t)(uintptr_t)cpu_resume + phys_offset, BIT(0), true);
 	if (ret)
 		log_printf("spm: warm boot address not accepted (%d)\n", ret);
 	can_collapse = !ret;
