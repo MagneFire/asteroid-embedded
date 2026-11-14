@@ -113,5 +113,6 @@ const struct board board_minnow = {
 	.firmware_dirs = firmware_dirs,
 	/* WiLink on UART2 at 3 Mbaud, enabled by gpio 83; its RTS, the
 	 * UART's CTS, is what wakes the watch. */
-	.bt = { .uart = 2, .reg_on = 83, .mpm = WAKE_BT, .patch = "TIInit_11.8.32.bts" },
+	.bt = { .uart = 2, .reg_on = 83, .mpm = WAKE_BT, .patch = "TIInit_11.8.32.bts",
+		.addr_part = "pds", .addr_path = "bluetooth/bdaddr.txt" },
 };
