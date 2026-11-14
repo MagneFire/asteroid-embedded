@@ -130,13 +130,17 @@ bool steps_poll(void)
 			changed = true;
 		}
 	}
+	/* Steps the hub counted since the last poll go into the day that
+	 * ends, when that is the day before and its count can still be
+	 * yesterday's. */
+	uint32_t hub_today = hub_steps_today(), rtc = rtc_read();
+	bool just_ended = day == now_state.day + 1 && rtc % 86400 < ROLL_S;
+	if (hub_today != HUB_NONE && (day == now_state.day || just_ended))
+		follow_hub(hub_today, rtc);
 	if (day != now_state.day) {
 		end_day(day);
 		return true;
 	}
-	uint32_t hub_today = hub_steps_today();
-	if (hub_today != HUB_NONE)
-		follow_hub(hub_today, rtc_read());
 	struct activity after = steps_activity_today();
 	return steps_today() != today || after.distance_m != before.distance_m || after.kcal != before.kcal;
 }
@@ -190,8 +194,8 @@ uint32_t steps_day(unsigned ago)
 	return days.steps[d % STEPS_DAYS];
 }
 
+/* A few seconds late, as the timer and the clock drift apart. */
 uint32_t steps_next_ms(void)
 {
-	uint32_t ms = (86400 - rtc_read() % 86400 + 1) * 1000;
-	return ms < 3600000 ? ms : 3600000;
+	return (86400 - rtc_read() % 86400 + 5) * 1000;
 }

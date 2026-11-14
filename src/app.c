@@ -139,7 +139,8 @@ static bool start_run(uint32_t now)
 /* Work that only has to happen now and then, lazily so it adds no
  * wakeups: asleep it runs when something else wakes the watch. The
  * charger keeps its own 1 s, so it is asked more often than that. */
-static struct sched_task start_task, charger_task, notify_task, cable_task, settings_task, weather_task, steps_task;
+static struct sched_task start_task, charger_task, notify_task, cable_task, settings_task, weather_task, steps_task,
+	steps_asleep_task;
 
 static bool charger_run(uint32_t now)
 {
@@ -187,12 +188,26 @@ static bool steps_run(uint32_t now)
 	return false;
 }
 
+/* Asleep, the counts the hub sent are taken in on the next wake, so the
+ * midnight task finds none left over; on screen present_clock polls.
+ * Midnight is worked out again each time, for a clock set either way. */
+static bool steps_asleep_run(uint32_t now)
+{
+	if (!power_awake()) {
+		if (have_hub && steps_poll() && have_ui)
+			present_activity();
+		sched_after(&steps_task, now, steps_next_ms());
+	}
+	sched_after(&steps_asleep_task, now, 1000);
+	return false;
+}
+
 static void tasks_init(uint32_t now)
 {
 	static const struct { struct sched_task *t; const char *name; bool (*run)(uint32_t); } list[] = {
 		{ &charger_task, "charger", charger_run }, { &notify_task, "notify", notify_run },
 		{ &cable_task, "cable", cable_run }, { &settings_task, "settings", settings_run },
-		{ &weather_task, "weather", weather_run },
+		{ &weather_task, "weather", weather_run }, { &steps_asleep_task, "steps asleep", steps_asleep_run },
 	};
 	for (unsigned i = 0; i < ARRAY_SIZE(list); i++) {
 		list[i].t->name = list[i].name;

@@ -158,11 +158,11 @@ int main(void)
 	at(today + 1, 300, count + 95);
 	CHECK(steps_day(1) == 5 && steps_today() == 0);
 
-	/* Midnight, at most an hour away. */
+	/* Just after midnight, however far away. */
 	fake_rtc = DAY(20000) + 86400 - 30;
-	CHECK(steps_next_ms() == 31000);
+	CHECK(steps_next_ms() == 35000);
 	fake_rtc = DAY(20000) + 3600;
-	CHECK(steps_next_ms() == 3600000);
+	CHECK(steps_next_ms() == (86400 - 3600 + 5) * 1000u);
 
 	/* Worked out from the steps: 180 cm, 80 kg. */
 	at(today + 1, 400, count + 1095);
@@ -238,10 +238,12 @@ int main(void)
 	/* Our midnight first: its count of yesterday is not taken into
 	 * today until it drops. */
 	fake_rtc = DAY(d) + 86399;
-	fake_today = 900;
+	fake_today = 880;
 	steps_poll();
-	CHECK(steps_today() == 900);
+	CHECK(steps_today() == 880);
+	/* Counted before midnight, read after it. */
 	fake_rtc = DAY(d + 1) + 30;
+	fake_today = 900;
 	CHECK(steps_poll());
 	CHECK(steps_today() == 0 && steps_day(1) == 900);
 	fake_rtc += 30;
@@ -262,6 +264,21 @@ int main(void)
 	fake_today = 2;
 	steps_poll();
 	CHECK(steps_today() == 4000 && syncs == before);
+
+	/* Booted the next morning: yesterday's count is not sent to the hub
+	 * nor taken into today. */
+	fake_today = 1000;
+	fake_rtc = DAY(d + 2) + 80000;
+	steps_poll();
+	steps_poll();
+	steps_save();
+	fake_today = 50;
+	fake_rtc = DAY(d + 3) + 30000;
+	steps_init();
+	before = syncs;
+	CHECK(steps_poll());
+	steps_poll();
+	CHECK(syncs == before && steps_today() == 50 && steps_day(1) == 1000);
 
 	printf(failures ? "steps_test: %d failures\n" : "steps_test: ok\n", failures);
 	return failures != 0;
