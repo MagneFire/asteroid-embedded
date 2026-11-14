@@ -12,7 +12,9 @@
  * that make no sense at either gain, as in direct sun, give no reading.
  *
  * Read often, while the screen is on, the rail stays up in between
- * (light_keep), which leaves only the bus transfers.
+ * (light_keep), which leaves only the bus transfers. Then a reading that
+ * needs the other gain gives none and the next one uses it, as waiting
+ * for a second integration would stall the frames.
  *
  * The vendor's driver reads the ID register but never checks it, so
  * there is no value to expect here: a chip that answers is the sensor,
@@ -156,6 +158,8 @@ static int32_t tsl2584_finish(void)
 	int r = measure(&lux);
 	if (!r && tsl2584_next_mode(mode, lux) != mode) {
 		mode = tsl2584_next_mode(mode, lux);
+		if (kept)
+			return -1;
 		r = convert();
 		if (!r)
 			r = measure(&lux);

@@ -172,6 +172,26 @@ static void driver_test(void)
 	d->keep(false);
 	CHECK(reading() > 0);
 
+	/* Kept on, a reading that needs the other gain waits for nothing:
+	 * no reading, and the next one is at that gain. */
+	d->keep(true);
+	set_counts(0, 10, 3);
+	set_counts(1, 80, 24);
+	conversions = 0;
+	now = 5000;
+	d->start();
+	now += 60;
+	CHECK(d->finish() == -1);
+	CHECK(now == 5060 && conversions == 1 && mode == TSL2584_LOW_LUX);
+	d->start();
+	now += 60;
+	CHECK(d->finish() == (1627 * 80 - 2485 * 24) / 1024);
+	CHECK(conversions == 2);
+	d->keep(false);
+	set_counts(1, 18432, 18432);
+	set_counts(0, 1000, 300);
+	CHECK(reading() > 0 && mode == TSL2584_HIGH_LUX);
+
 	/* A conversion that never ends gives up. */
 	never_valid = true;
 	now = 3000;
