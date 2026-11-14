@@ -275,6 +275,18 @@ static void ambient_draw(void)
 		ambient_backlight();
 }
 
+/* The hub's own screen shows the time unless the main panel shows
+ * something: awake, or the always-on face. */
+static void hub_follow(void)
+{
+	static bool normal = true;
+	bool want = policy.awake || ambient;
+	if (want != normal) {
+		normal = want;
+		hub_screen(want);
+	}
+}
+
 /* The panel is on, the face goes up at its own brightness. */
 static void ambient_enter(void)
 {
@@ -372,6 +384,7 @@ enum power_change power_update(uint32_t *now_p)
 		if (aod != AOD_KEEP)
 			cpu_clock_slow(true);
 	}
+	hub_follow();
 	if (ambient && !policy.awake && rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);
 		ambient_draw();
