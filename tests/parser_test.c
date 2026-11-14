@@ -275,12 +275,45 @@ static void test_ext4(const char *image)
 	free(disk);
 }
 
+/* An ext2 volume (1 KiB blocks, block maps): a small file, and a 300 KiB
+ * one whose blocks reach the double indirect block. */
+static uint8_t big_byte(uint32_t i) { return (uint8_t)((i * 7 + i / 1024) & 0xff); }
+
+static void test_ext2(const char *image)
+{
+	FILE *f = fopen(image, "rb");
+	CHECK(f);
+	if (!f)
+		return;
+	static uint8_t img[1 << 20];
+	size_t n = fread(img, 1, sizeof img, f);
+	fclose(f);
+	disk = img;
+	disk_sectors = (uint32_t)(n / EMMC_BLOCK);
+	static struct ext4 fs;
+	struct ext4_inode in;
+	char text[24] = { 0 };
+	CHECK(ext4_open_lba(&fs, "ext2", 0, disk_sectors) == 0);
+	CHECK(ext4_lookup(&fs, "bluetooth/bdaddr.txt", &in) == 0 && in.size == 18);
+	CHECK(ext4_read(&fs, &in, 0, text, 18) == 18 && !memcmp(text, "5c:31:3e:eb:d5:24\n", 18));
+	CHECK(ext4_lookup(&fs, "big.bin", &in) == 0 && in.size == 300 * 1024);
+	static const uint32_t at[] = { 0, 11 * 1024 + 1000, 12 * 1024, 200 * 1024 + 3, 268 * 1024 + 5, 300 * 1024 - 16 };
+	for (unsigned i = 0; i < sizeof at / sizeof at[0]; i++) {
+		uint8_t b[16];
+		CHECK(ext4_read(&fs, &in, at[i], b, sizeof b) == (int)sizeof b);
+		for (unsigned k = 0; k < sizeof b; k++)
+			CHECK(b[k] == big_byte(at[i] + k));
+	}
+	disk = NULL;
+}
+
 int main(int argc, char **argv)
 {
 	test_notify();
 	test_weather_media();
 	test_kv();
 	test_ext4(argc > 1 ? argv[1] : "build/test/small.ext4");
+	test_ext2(argc > 2 ? argv[2] : "build/test/small.ext2");
 	if (failures)
 		return 1;
 	printf("parser_test: ok\n");

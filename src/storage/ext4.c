@@ -1,11 +1,11 @@
 /* Read-only ext4: superblock, group descriptors (32 or 64 bytes), inodes,
- * extent trees, linear directory scans (an htree directory's index blocks
- * look like empty entries, so a linear scan reads it too) and fast
- * symlinks. A volume sits either on a run of eMMC sectors or inside a
+ * extent trees or ext2/ext3 block maps, linear directory scans (an htree
+ * directory's index blocks look like empty entries, so a linear scan
+ * reads it too) and fast symlinks. A volume sits either on a run of eMMC sectors or inside a
  * regular file of another volume (a loop image); ext4_walk turns a byte
  * range of a volume into eMMC sector runs through every level. Nothing
  * here writes. Features it cannot read are refused at open time, inodes
- * it cannot read (block maps, inline data, encryption) at use. */
+ * it cannot read (inline data, encryption) at use. */
 #include <string.h>
 #include "asteroid.h"
 #include "emmc.h"
@@ -35,7 +35,7 @@
 #define FL_INLINE_DATA		0x10000000u
 
 enum {
-	E_IO = -100, E_RANGE, E_MAGIC, E_FEATURE, E_BLOCKSIZE, E_INODE, E_EXTENT, E_DEPTH, E_BLOCKMAP,
+	E_IO = -100, E_RANGE, E_MAGIC, E_FEATURE, E_BLOCKSIZE, E_INODE, E_EXTENT, E_DEPTH,
 	E_INLINE, E_ENCRYPTED, E_NOTDIR, E_NOENT, E_DIRENT, E_LOOP, E_HOLE, E_ALIGN, E_SYMLINK,
 };
 
@@ -50,7 +50,6 @@ const char *ext4_strerror(int err)
 	case E_INODE: return "bad inode number";
 	case E_EXTENT: return "corrupt extent tree";
 	case E_DEPTH: return "extent tree too deep";
-	case E_BLOCKMAP: return "inode uses block maps, not extents";
 	case E_INLINE: return "inline data not supported";
 	case E_ENCRYPTED: return "encrypted inode";
 	case E_NOTDIR: return "not a directory";
@@ -220,8 +219,45 @@ static int check_readable(const struct ext4_inode *in)
 		return E_INLINE;
 	if (in->flags & FL_ENCRYPT)
 		return E_ENCRYPTED;
-	if (!(in->flags & FL_EXTENTS))
-		return E_BLOCKMAP;
+	return 0;
+}
+
+/* An ext2/ext3 file: twelve direct block numbers, then one single, one
+ * double and one triple indirect block. A 0 is a hole. */
+static int map_blocks(struct ext4 *fs, const struct ext4_inode *in, uint64_t lblk, uint64_t *pblk, uint64_t *count,
+		      uint32_t *flags)
+{
+	uint64_t per = fs->bs / 4, span = 1;
+	uint32_t b;
+	unsigned level;
+	*count = 1;
+	*flags = 0;
+	if (lblk < 12) {
+		b = le32(in->iblock + 4 * lblk);
+		level = 0;
+	} else {
+		lblk -= 12;
+		for (level = 1; level <= 3; level++) {
+			span *= per;
+			if (lblk < span)
+				break;
+			lblk -= span;
+		}
+		if (level > 3)
+			return E_RANGE;
+		b = le32(in->iblock + 4 * (11 + level));
+	}
+	for (; level && b; level--) {
+		span /= per;
+		int r = vol_read(fs, (uint64_t)b * fs->bs, fs->bs, fs->node);
+		if (r)
+			return r;
+		b = le32(fs->node + 4 * (lblk / span));
+		lblk %= span;
+	}
+	*pblk = b;
+	if (!b)
+		*flags = EXT4_MAP_HOLE;
 	return 0;
 }
 
@@ -230,6 +266,8 @@ int ext4_map(struct ext4 *fs, const struct ext4_inode *in, uint64_t lblk, uint64
 	int r = check_readable(in);
 	if (r)
 		return r;
+	if (!(in->flags & FL_EXTENTS))
+		return map_blocks(fs, in, lblk, pblk, count, flags);
 	const uint8_t *n = in->iblock;
 	uint32_t size = sizeof in->iblock;
 	int depth = -1;
