@@ -225,10 +225,10 @@ bool ui_init(void *heap, uint32_t heap_size, uint32_t *layers, uint32_t panel_px
 	     uint32_t height);
 void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t weekday, uint32_t day, uint32_t month,
 		  uint32_t year, uint32_t rtc);
-/* The watch's codename and whether it has a heart rate sensor, and a hub that works out the
- * distance and calories from the wearer's age and sex as well. */
+/* The watch's codename and whether it has a heart rate sensor, a hub that works out the distance
+ * and calories from the wearer's age and sex as well, and one that logs the heart rate by itself. */
 void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in,
-		  bool profile);
+		  bool profile, bool passive);
 /* The lines at the bottom of the picture the panel does not show. */
 void ui_set_chin(uint32_t px);
 void ui_set_connected(bool connected, bool bonded);

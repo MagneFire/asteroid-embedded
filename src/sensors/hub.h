@@ -17,6 +17,11 @@ struct hub_profile {
 };
 bool hub_measures_activity(void);
 bool hub_activity(uint32_t v[2]);
+/* The heart rate the hub logs by itself, where it does: on or off, and
+ * the readings it took since the last call, oldest first. */
+bool hub_has_passive(void);
+void hub_passive_on(bool on);
+unsigned hub_passive(uint32_t *t, uint8_t *bpm, unsigned max);
 void hub_profile(const struct hub_profile *p);
 void hub_heart_rate_on(bool on);
 uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);

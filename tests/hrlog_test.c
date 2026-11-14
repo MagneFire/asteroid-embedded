@@ -82,6 +82,19 @@ int main(void)
 	hrlog_init();
 	CHECK(hrlog_get(0, t, bpm, HRLOG_SAMPLES) == HRLOG_SAMPLES && t[0] == 10005 * 600 + 20);
 
+	/* Readings taken elsewhere: in after the others, saved once. */
+	int before = writes;
+	uint32_t at[3] = { now + 1000, now + 1300, now + 1600 };
+	uint8_t rates[3] = { 61, 64, 70 };
+	hrlog_add(at, rates, 3);
+	CHECK(writes == before + 1);
+	uint32_t got_t[HRLOG_SAMPLES];
+	uint8_t got_b[HRLOG_SAMPLES];
+	unsigned got = hrlog_get(now + 1000, got_t, got_b, HRLOG_SAMPLES);
+	CHECK(got == 3 && got_t[0] == now + 1000 && got_b[2] == 70);
+	hrlog_add(at, rates, 0);
+	CHECK(writes == before + 1);
+
 	printf(failures ? "hrlog_test: %d failures\n" : "hrlog_test: ok\n", failures);
 	return failures != 0;
 }

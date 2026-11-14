@@ -118,6 +118,8 @@ static void steps(void)
 	action_setting_value(SETTING_HR_INTERVAL, 30);
 	action_setting_value(SETTING_HR_INTERVAL, 20);
 	CHECK(values[SETTING_HR_INTERVAL] == 30);
+	action_setting_value(SETTING_HR_INTERVAL, 5);
+	CHECK(values[SETTING_HR_INTERVAL] == 5);
 	action_setting_value(SETTING_STEP_GOAL, 0);
 	action_setting_value(SETTING_STEP_GOAL, STEP_GOAL_MAX + 1);
 	CHECK(values[SETTING_STEP_GOAL] == 20);

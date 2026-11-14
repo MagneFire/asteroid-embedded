@@ -25,8 +25,10 @@ int main(void)
 	CHECK(m4_barker_ok(&m4_minnow, tail) && !m4_barker_ok(&m4_minnow, bad));
 	/* Its interrupts: gesture is bit 7 of the first byte, still and
 	 * motion bits 0 and 1 of the second. */
-	CHECK(m4_irq_enable(&m4_minnow, true) == 0x0380 && m4_irq_enable(&m4_minnow, false) == 0x0300);
-	CHECK(m4_irq_enable(&m4_smelt, true) == 7);
+	CHECK(m4_irq_enable(&m4_minnow, true, false) == 0x0380 && m4_irq_enable(&m4_minnow, false, false) == 0x0300);
+	CHECK(m4_irq_enable(&m4_minnow, false, true) == 0x4300 && m4_irq_enable(&m4_smelt, false, true) == 0xb);
+	CHECK(m4_irq_enable(&m4_smelt, true, false) == 7);
+	CHECK(m4_irq_wake(&m4_minnow, 0x4000) == M4_WAKE_PASSIVE);
 	CHECK(m4_irq_wake(&m4_minnow, 0x0080) == M4_WAKE_GESTURE);
 	CHECK(m4_irq_wake(&m4_minnow, 0x0300) == (M4_WAKE_STILL | M4_WAKE_MOTION));
 	CHECK(m4_irq_wake(&m4_minnow, 0x020000) == M4_WAKE_OTHER && !m4_irq_wake(&m4_minnow, 0));
@@ -43,8 +45,25 @@ int main(void)
 	CHECK(!m4_is_tilt(0, 1, 0));
 
 	/* Still and motion are always followed, the gesture only when wanted. */
-	CHECK(m4_wake_mask(true) == 7);
-	CHECK(m4_wake_mask(false) == 3);
+	CHECK(m4_wake_mask(true, false) == 7);
+	CHECK(m4_wake_mask(false, false) == 3);
+
+	/* The passive ring: wrapped, with empty slots, a slot without a
+	 * rate, one without confidence and one already taken. */
+	uint8_t times[4 * M4_PASSIVE_SLOTS] = { 0 }, heart[2 * M4_PASSIVE_SLOTS] = { 0 }, conf[M4_PASSIVE_SLOTS] = { 0 };
+	struct m4_passive_reading r[M4_PASSIVE_SLOTS];
+	const uint32_t ts[] = { 1900, 2200, 0, 1000, 1300, 1600 };
+	const uint8_t bpms[] = { 70, 0, 0, 61, 65, 44 }, cs[] = { 3, 3, 0, 3, 0, 2 };
+	for (unsigned i = 0; i < 6; i++) {
+		m4_put_u32(ts[i], times + 4 * i);
+		heart[2 * i] = bpms[i];
+		conf[i] = cs[i];
+	}
+	heart[2 * 5 + 1] = 1;
+	unsigned got = m4_passive_readings(times, heart, conf, 0, r);
+	CHECK(got == 3 && r[0].t == 1000 && r[0].bpm == 61 && r[1].t == 1600 && r[1].bpm == 255 && r[2].t == 1900);
+	got = m4_passive_readings(times, heart, conf, 1600, r);
+	CHECK(got == 1 && r[0].t == 1900 && r[0].bpm == 70);
 
 	uint8_t le[4];
 	m4_put_u16(M4_STILL_TIMEOUT_S, le);

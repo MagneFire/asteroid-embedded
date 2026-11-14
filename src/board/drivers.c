@@ -93,6 +93,13 @@ void hub_set_time(void)
 uint32_t hub_steps(void) { return HUB(steps) ? board->hub->steps() : HUB_NONE; }
 bool hub_measures_activity(void) { return HUB(activity); }
 bool hub_activity(uint32_t v[2]) { return HUB(activity) && board->hub->activity(v); }
+bool hub_has_passive(void) { return HUB(passive); }
+void hub_passive_on(bool on)
+{
+	if (HUB(passive_on))
+		board->hub->passive_on(on);
+}
+unsigned hub_passive(uint32_t *t, uint8_t *bpm, unsigned max) { return HUB(passive) ? board->hub->passive(t, bpm, max) : 0; }
 void hub_profile(const struct hub_profile *p)
 {
 	if (HUB(profile))

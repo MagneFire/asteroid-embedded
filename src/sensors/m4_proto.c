@@ -11,7 +11,7 @@ const struct m4_variant m4_smelt = {
 	.start = M4_FLASH_BASE, .mark_addr = M4_FLASH_BASE + 512 * 1024 - 8,
 	.mark = { 0xde, 0xc0, 0xce, 0x0a, 0, 0, 0, 0 }, .mark_size = 8,
 	.general = 1, .pedometer = 3, .mets = 9, .power = 11, .gesture = 13, .profile = 10,
-	.heart = 16, .heart_bpm = 0x02, .heart_confidence = 0x01,
+	.heart = 16, .heart_bpm = 0x02, .heart_confidence = 0x01, .passive = 14,
 	.accel_x = 0x08, .version_size = 2,
 };
 
@@ -20,7 +20,7 @@ const struct m4_variant m4_minnow = {
 	.start = M4_FLASH_BASE + 256 * 1024, .mark_addr = M4_FLASH_BASE + 512 * 1024 - 4,
 	.mark = { 0xde, 0xc0, 0xce, 0x0a }, .mark_size = 4,
 	.general = 2, .pedometer = 4, .mets = 10, .power = 12, .gesture = 18, .settings = 11, .light = 23, .profile = 11,
-	.heart = 21, .heart_bpm = 0x08, .heart_confidence = 0x0a,
+	.heart = 21, .heart_bpm = 0x08, .heart_confidence = 0x0a, .passive = 19,
 	.accel_x = 0x04, .version_size = 1,
 	.byte_irqs = true, .drives_reset = true, .keeps_time = true,
 };
@@ -30,6 +30,7 @@ const struct m4_variant m4_minnow = {
 #define INT0_GESTURE	(1u << 7)
 #define INT1_STILL	(1u << 8)
 #define INT1_MOTION	(1u << 9)
+#define INT1_PASSIVE	(1u << 14)
 
 void m4_bl_address(uint32_t addr, uint8_t out[5])
 {
@@ -69,16 +70,16 @@ bool m4_is_tilt(uint32_t wake_status, uint8_t gesture, int8_t value)
 	return gesture == GESTURE_WRIST_ROTATE || (gesture == GESTURE_VIEW && value == GESTURE_VIEW_ON);
 }
 
-uint32_t m4_wake_mask(bool tilt)
+uint32_t m4_wake_mask(bool tilt, bool passive)
 {
-	return M4_WAKE_STILL | M4_WAKE_MOTION | (tilt ? M4_WAKE_GESTURE : 0);
+	return M4_WAKE_STILL | M4_WAKE_MOTION | (tilt ? M4_WAKE_GESTURE : 0) | (passive ? M4_WAKE_PASSIVE : 0);
 }
 
-uint32_t m4_irq_enable(const struct m4_variant *v, bool tilt)
+uint32_t m4_irq_enable(const struct m4_variant *v, bool tilt, bool passive)
 {
 	if (!v->byte_irqs)
-		return m4_wake_mask(tilt);
-	return INT1_STILL | INT1_MOTION | (tilt ? INT0_GESTURE : 0);
+		return m4_wake_mask(tilt, passive);
+	return INT1_STILL | INT1_MOTION | (tilt ? INT0_GESTURE : 0) | (passive ? INT1_PASSIVE : 0);
 }
 
 uint32_t m4_irq_wake(const struct m4_variant *v, uint32_t status)
@@ -86,8 +87,8 @@ uint32_t m4_irq_wake(const struct m4_variant *v, uint32_t status)
 	if (!v->byte_irqs)
 		return status;
 	return (status & INT1_STILL ? M4_WAKE_STILL : 0) | (status & INT1_MOTION ? M4_WAKE_MOTION : 0) |
-	       (status & INT0_GESTURE ? M4_WAKE_GESTURE : 0) |
-	       (status & ~(INT0_GESTURE | INT1_STILL | INT1_MOTION) ? M4_WAKE_OTHER : 0);
+	       (status & INT0_GESTURE ? M4_WAKE_GESTURE : 0) | (status & INT1_PASSIVE ? M4_WAKE_PASSIVE : 0) |
+	       (status & ~(INT0_GESTURE | INT1_STILL | INT1_MOTION | INT1_PASSIVE) ? M4_WAKE_OTHER : 0);
 }
 
 uint32_t m4_block_steps(const uint8_t *block)
@@ -103,4 +104,23 @@ uint32_t m4_block_distance(const uint8_t *block)
 bool m4_panicked(const uint8_t *reply)
 {
 	return m4_u32(reply) == M4_PANIC_MAGIC;
+}
+
+/* The ring only moves on to a slot that has something in it, so the
+ * slots are taken in order of their times. A rate with no confidence is
+ * the sensor finding nothing. */
+unsigned m4_passive_readings(const uint8_t *times, const uint8_t *heart, const uint8_t *confidence, uint32_t after,
+			     struct m4_passive_reading *out)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < M4_PASSIVE_SLOTS; i++) {
+		uint32_t t = m4_u32(times + 4 * i), bpm = (uint32_t)(heart[2 * i] | heart[2 * i + 1] << 8);
+		if (!t || t <= after || !bpm || !confidence[i])
+			continue;
+		unsigned j = n++;
+		for (; j > 0 && out[j - 1].t > t; j--)
+			out[j] = out[j - 1];
+		out[j] = (struct m4_passive_reading){ t, bpm > 255 ? 255 : (uint8_t)bpm };
+	}
+	return n;
 }

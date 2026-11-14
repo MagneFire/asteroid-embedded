@@ -165,14 +165,16 @@ export global Face {
     in-out property <int> notification-id;
     in-out property <string> notification-icon;
     // The watch's codename, whether it has a heart rate sensor, whether its screen is round,
-    // whether it has a light sensor, whether its panel can burn in, and whether its hub works out
-    // the distance and calories from the wearer's age and sex as well, from the firmware.
+    // whether it has a light sensor, whether its panel can burn in, whether its hub works out the
+    // distance and calories from the wearer's age and sex as well, and whether it logs the heart
+    // rate by itself every five minutes, from the firmware.
     in property <string> board;
     in property <bool> has-heart-rate: true;
     in property <bool> round-screen: true;
     in property <bool> has-light-sensor;
     in property <bool> has-burn-in: true;
     in property <bool> has-profile: true;
+    in property <bool> has-passive;
     // The lines at the bottom the panel cuts off, AsteroidOS's flat tire.
     in property <length> chin;
     in-out property <string> notification-app;

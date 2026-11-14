@@ -242,9 +242,23 @@ void app_sensors(uint32_t now)
 		unsigned readings;
 		uint32_t bpm = hub_heart_rate(NULL, &readings);
 		bpm = bpm == HUB_NONE ? 0 : bpm;
-		/* The log keeps the second reading, as the app above waits
-		 * for it too. */
-		bool logging = have_heart_rate &&
+		/* A hub that logs the rate by itself does so every five
+		 * minutes; the log takes in what it took. Otherwise the log
+		 * keeps the second reading, as the app above waits for it
+		 * too. */
+		bool passive = have_heart_rate && hub_has_passive();
+		if (passive) {
+			uint32_t t[8];
+			uint8_t b[8];
+			unsigned n;
+			hub_passive_on(setting_get(SETTING_HR_INTERVAL) > 0);
+			while ((n = hub_passive(t, b, ARRAY_SIZE(t)))) {
+				hrlog_add(t, b, n);
+				if (have_ui)
+					present_heart_log();
+			}
+		}
+		bool logging = have_heart_rate && !passive &&
 			       hrlog_poll(rtc_read(), setting_get(SETTING_HR_INTERVAL), readings >= 2 ? bpm : 0);
 		if (was_logging && !logging && have_ui)
 			present_heart_log();
@@ -535,7 +549,7 @@ uint32_t app_next_ms(void)
 		batt_next_ms(),
 		power_next_ms(),
 		sched_next_ms(time_ms()),
-		have_heart_rate ? hrlog_next_ms(rtc_read(), setting_get(SETTING_HR_INTERVAL)) : UINT32_MAX,
+		have_heart_rate && !hub_has_passive() ? hrlog_next_ms(rtc_read(), setting_get(SETTING_HR_INTERVAL)) : UINT32_MAX,
 	}, min = UINT32_MAX;
 	for (unsigned i = 0; i < ARRAY_SIZE(next); i++)
 		if (next[i] < min)

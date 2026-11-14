@@ -214,7 +214,17 @@ component HeartPage {
         font-size: 4.5 * Theme.unit;
     }
 
-    LabeledSwitch {
+    // A hub that logs the rate by itself does it every five minutes, on or off.
+    if Face.has-passive: LabeledSwitch {
+        y: 67 * Theme.unit - Face.chin;
+        text: "Log every 5 min";
+        checked: Face.hr-interval > 0;
+        clicked => {
+            Face.setting-set(Codes.setting-hr-interval, Face.hr-interval > 0 ? 0 : 5);
+        }
+    }
+
+    if !Face.has-passive: LabeledSwitch {
         y: 67 * Theme.unit - Face.chin;
         text: "Measure every";
         value: ["Off", "10 min", "30 min", "60 min"][root.choice];

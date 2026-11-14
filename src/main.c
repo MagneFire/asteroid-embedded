@@ -76,7 +76,7 @@ void main(uint32_t machtype, const void *fdt)
 					       fb.width, fb.height);
 	if (have_ui) {
 		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round, board->light, !board->panel.lcd,
-			     hub_measures_activity());
+			     hub_measures_activity(), board->heart_rate && hub_has_passive());
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
 		if (board->panel.edge_px)
 			stack_set_edge(board->panel.edge_px);

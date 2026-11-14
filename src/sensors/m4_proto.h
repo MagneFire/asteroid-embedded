@@ -32,6 +32,8 @@ struct m4_variant {
 	uint8_t profile;	/* the user settings bank, as settings without the screen */
 	/* The heart rate bank and where its rate in bpm and its confidence are. */
 	uint8_t heart, heart_bpm, heart_confidence;
+	/* The passive bank: what the hub logs by itself every five minutes. */
+	uint8_t passive;
 	uint8_t accel_x, version_size;
 	bool byte_irqs, drives_reset, keeps_time;
 };
@@ -68,6 +70,14 @@ extern const struct m4_variant m4_smelt, m4_minnow;
 #define M4_PROFILE_AGE		0x01
 /* The time between heart rate samples in ms, -1 for off. */
 #define M4_HEART_RATE_MS	0x04
+/* Passive logging on (1) or off, then a ring of M4_PASSIVE_SLOTS: each
+ * slot's time (UTC, 0 for empty), heart rate and its confidence, read
+ * as the vendor reads them. */
+#define M4_PASSIVE_ENABLE	0x00
+#define M4_PASSIVE_TIME		0x04
+#define M4_PASSIVE_HEART	0x64
+#define M4_PASSIVE_CONFIDENCE	0x7c
+#define M4_PASSIVE_SLOTS	12
 #define M4_POWER_ENABLE		0x01
 #define M4_POWER_STILL_TIMEOUT	0x02
 #define M4_POWER_STATE		0x08
@@ -82,6 +92,7 @@ extern const struct m4_variant m4_smelt, m4_minnow;
 #define M4_WAKE_STILL		(1u << 0)
 #define M4_WAKE_MOTION		(1u << 1)
 #define M4_WAKE_GESTURE		(1u << 2)
+#define M4_WAKE_PASSIVE		(1u << 3)
 #define M4_WAKE_OTHER		(1u << 31)
 /* The vendor's still mode timeout, in seconds. */
 #define M4_STILL_TIMEOUT_S	600
@@ -95,17 +106,26 @@ void m4_put_u32(uint32_t v, uint8_t *b);
  * first gesture and its value: looking away is a gesture too. */
 bool m4_is_tilt(uint32_t wake_status, uint8_t gesture, int8_t value);
 /* The wake interrupts to enable: the hub's still and motion states
- * always, so they can be followed, the gesture only when wanted. */
-uint32_t m4_wake_mask(bool tilt);
+ * always, so they can be followed, the gesture and the passive ring
+ * getting full only when wanted. */
+uint32_t m4_wake_mask(bool tilt, bool passive);
 /* The same for the hub's own registers, and what it reports back from
  * them as the bits above. The older hub's three bytes count from the
  * first up. */
-uint32_t m4_irq_enable(const struct m4_variant *v, bool tilt);
+uint32_t m4_irq_enable(const struct m4_variant *v, bool tilt, bool passive);
 uint32_t m4_irq_wake(const struct m4_variant *v, uint32_t status);
 /* The step count and the distance out of the pedometer block read from
  * M4_PEDOMETER_BLOCK. */
 uint32_t m4_block_steps(const uint8_t *block);
 uint32_t m4_block_distance(const uint8_t *block);
+/* The passive ring's readings newer than `after` (UTC), with a rate,
+ * oldest first. */
+struct m4_passive_reading {
+	uint32_t t;
+	uint8_t bpm;
+};
+unsigned m4_passive_readings(const uint8_t *times, const uint8_t *heart, const uint8_t *confidence, uint32_t after,
+			     struct m4_passive_reading *out);
 /* The answer to the panic probe says the hub has crashed. */
 bool m4_panicked(const uint8_t *reply);
 #endif

@@ -124,7 +124,7 @@ void action_setting_value(int s, int v)
 		setting_set(SETTING_HEIGHT, v);
 	} else if (s == SETTING_WEIGHT && v >= 30 && v <= 200) {
 		setting_set(SETTING_WEIGHT, v);
-	} else if (s == SETTING_HR_INTERVAL && (v == 0 || v == 10 || v == 30 || v == 60)) {
+	} else if (s == SETTING_HR_INTERVAL && (v == 0 || v == 5 || v == 10 || v == 30 || v == 60)) {
 		setting_set(SETTING_HR_INTERVAL, v);
 	} else if (s == SETTING_AGE && v >= 10 && v <= 99) {
 		setting_set(SETTING_AGE, v);

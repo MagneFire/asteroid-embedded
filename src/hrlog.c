@@ -26,14 +26,27 @@ void hrlog_init(void)
 	measuring = false;
 }
 
-static void record(uint32_t rtc, uint32_t bpm)
+static void put(uint32_t rtc, uint32_t bpm)
 {
 	saved.t[saved.next] = rtc;
 	saved.bpm[saved.next] = bpm > 255 ? 255 : (uint8_t)bpm;
 	saved.next = (saved.next + 1) % HRLOG_SAMPLES;
 	if (saved.count < HRLOG_SAMPLES)
 		saved.count++;
+}
+
+static void record(uint32_t rtc, uint32_t bpm)
+{
+	put(rtc, bpm);
 	kv_set(KV_HRLOG, &saved, sizeof saved);
+}
+
+void hrlog_add(const uint32_t *t, const uint8_t *bpm, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++)
+		put(t[i], bpm[i]);
+	if (n)
+		kv_set(KV_HRLOG, &saved, sizeof saved);
 }
 
 bool hrlog_poll(uint32_t rtc, unsigned interval_min, uint32_t steady_bpm)

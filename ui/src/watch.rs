@@ -386,6 +386,7 @@ pub unsafe extern "C" fn ui_set_board(
     light_sensor: bool,
     burn_in: bool,
     profile: bool,
+    passive: bool,
 ) {
     let name = unsafe { text(name, len) };
     each(|face| {
@@ -395,6 +396,7 @@ pub unsafe extern "C" fn ui_set_board(
         face.set_has_light_sensor(light_sensor);
         face.set_has_burn_in(burn_in);
         face.set_has_profile(profile);
+        face.set_has_passive(passive);
     });
 }
 

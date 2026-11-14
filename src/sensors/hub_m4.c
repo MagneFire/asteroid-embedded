@@ -15,12 +15,16 @@
  * each time, so what it had counted is carried across, as are the
  * distance and calories it works out from the wearer's profile, which it
  * forgets too and is given again after each start. The heart rate runs
- * at a sample rate the hub is given and is read from its registers. The
+ * at a sample rate the hub is given and is read from its registers. In
+ * passive mode the hub logs it by itself every five minutes into a ring
+ * of twelve, which is read when the hub says it is full, or every five
+ * minutes while the watch is awake, before it starts over. The
  * hub crashes
  * on its own about a second after it finds the watch still (a minute
  * without motion) unless the accelerometer is enabled, which also keeps
  * it from going still at all, so the accelerometer stays enabled and is
  * only read when wanted. */
+#include <string.h>
 #include "asteroid.h"
 #include "sensors/hub.h"
 #include "sensors/m4_proto.h"
@@ -63,6 +67,10 @@ static bool heart_wanted, heart_set;
 static uint32_t heart_bpm = HUB_NONE, heart_t;
 static unsigned heart_readings;
 static uint8_t heart_confidence;
+static bool passive_wanted, passive_set, passive_due;
+static uint32_t passive_t, passive_after;
+static struct m4_passive_reading passive_new[M4_PASSIVE_SLOTS];
+static unsigned passive_n;
 static uint16_t version;
 static volatile bool wake_pending;
 static bool tilt, tilt_wanted = true, tilt_set, wake_retry, accel_wanted, accel_set;
@@ -256,7 +264,7 @@ static bool write_tilt(uint32_t now)
 		return false;
 	if (tilt_set)
 		return true;
-	if (irq_enable_write(m4_irq_enable(V, tilt_wanted)) ||
+	if (irq_enable_write(m4_irq_enable(V, tilt_wanted, passive_wanted)) ||
 	    (V->settings && reg_write(V->settings, M4_SETTINGS_SCREEN, &screen, 1))) {
 		tried_t = now;
 		return false;
@@ -315,7 +323,7 @@ static void started(void)
 	time_start();
 	reg_write(V->pedometer, M4_PEDOMETER_ENABLE, &on, 1);
 	reg_write(V->mets, M4_METS_ENABLE, &on, 1);
-	tilt_set = profile_set = heart_set = false;
+	tilt_set = profile_set = heart_set = passive_set = false;
 	write_tilt(time_ms());
 	accel_set = light_on = false;
 	gpio_irq_config(GPIO_WAKE, GPIO_IRQ_LEVEL_HIGH, wake_line);
@@ -376,6 +384,65 @@ static void read_heart(uint32_t now)
 		heart_bpm = bpm;
 		heart_readings++;
 	}
+}
+
+#define PASSIVE_MS	(5 * 60 * 1000)
+
+static void write_passive(uint32_t now)
+{
+	static uint32_t tried_t;
+	uint8_t on = passive_wanted;
+	if (state != HUB_READY || !V->passive || passive_set || now - tried_t < RETRY_MS)
+		return;
+	if (reg_write(V->passive, M4_PASSIVE_ENABLE, &on, 1)) {
+		tried_t = now;
+		return;
+	}
+	passive_set = true;
+	passive_t = now;
+	log_printf("hub: passive %s\n", on ? "on" : "off");
+}
+
+static void read_passive(uint32_t now)
+{
+	uint8_t times[4 * M4_PASSIVE_SLOTS], heart[2 * M4_PASSIVE_SLOTS], confidence[M4_PASSIVE_SLOTS];
+	struct m4_passive_reading r[M4_PASSIVE_SLOTS];
+	if (state != HUB_READY || !passive_wanted || !passive_set || (!passive_due && now - passive_t < PASSIVE_MS))
+		return;
+	passive_t = now;
+	if (reg_read(V->passive, M4_PASSIVE_TIME, times, sizeof times) ||
+	    reg_read(V->passive, M4_PASSIVE_HEART, heart, sizeof heart) ||
+	    reg_read(V->passive, M4_PASSIVE_CONFIDENCE, confidence, sizeof confidence))
+		return;
+	passive_due = false;
+	unsigned n = m4_passive_readings(times, heart, confidence, passive_after, r);
+	for (unsigned i = 0; i < n; i++) {
+		if (passive_n == M4_PASSIVE_SLOTS)
+			memmove(passive_new, passive_new + 1, sizeof passive_new[0] * --passive_n);
+		passive_new[passive_n++] = r[i];
+		passive_after = r[i].t;
+	}
+}
+
+static void m4_passive_on(bool on)
+{
+	if (on == passive_wanted)
+		return;
+	passive_wanted = on;
+	passive_set = tilt_set = false;
+	write_passive(time_ms());
+}
+
+static unsigned m4_passive(uint32_t *t, uint8_t *bpm, unsigned max)
+{
+	unsigned n = passive_n < max ? passive_n : max;
+	for (unsigned i = 0; i < n; i++) {
+		t[i] = passive_new[i].t;
+		bpm[i] = passive_new[i].bpm;
+	}
+	memmove(passive_new, passive_new + n, sizeof passive_new[0] * (passive_n - n));
+	passive_n -= n;
+	return n;
 }
 
 static void m4_heart_rate_on(bool on)
@@ -447,6 +514,8 @@ static void m4_poll(void)
 	write_profile(now);
 	write_heart(now);
 	read_heart(now);
+	write_passive(now);
+	read_passive(now);
 	if (wake_retry && now - wake_retry_t >= RETRY_MS) {
 		wake_retry = false;
 		gpio_irq_enable(GPIO_WAKE, true);
@@ -468,7 +537,9 @@ static void m4_poll(void)
 		restart(now, "crashed");
 		return;
 	}
-	if (status & ~M4_WAKE_GESTURE)
+	if (status & M4_WAKE_PASSIVE)
+		passive_due = true;
+	if (status & ~(M4_WAKE_GESTURE | M4_WAKE_PASSIVE))
 		log_printf("hub: m4 wake %08lx, %lu s after its start\n", raw, (now - go_t) / 1000);
 	if (status & M4_WAKE_GESTURE) {
 		/* One register at a time, as the vendor reads them. */
@@ -656,6 +727,8 @@ const struct hub_driver hub_m4 = {
 	.profile = m4_profile,
 	.heart_rate_on = m4_heart_rate_on,
 	.heart_rate = m4_heart_rate,
+	.passive_on = m4_passive_on,
+	.passive = m4_passive,
 	.tilted = m4_tilted,
 	.tilt_on = m4_tilt_on,
 	.accel_on = m4_accel_on,
