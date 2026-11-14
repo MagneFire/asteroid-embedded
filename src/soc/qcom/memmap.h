@@ -39,6 +39,9 @@
 #define HOLE_8009_END		0x09700000
 #define IO_8009_BASE		0x40000000	/* its peripherals, from address 0 up */
 #define IO_8009_SIZE		0x0c000000
+/* The section its Linux reserves for ramoops, at the top of DRAM: the
+ * persistent log is mapped there, so that Linux can read it after a reset. */
+#define RAMOOPS_8009_PHYS	0x9ff00000
 
 #define GPU_MEM_BASE		0x1e000000	/* ring buffer, command and vertex memory */
 #define GPU_MEM_SIZE		0x00f00000
@@ -57,6 +60,8 @@ _Static_assert(HOLE_8009_BASE <= SMEM_8009_BASE && SMEM_8009_END <= HOLE_8009_EN
 _Static_assert(UI_HEAP_BASE + UI_HEAP_SIZE <= GPU_MEM_BASE, "UI heap overlaps GPU memory");
 _Static_assert(GPU_MEM_BASE + GPU_MEM_SIZE <= RAMOOPS_BASE, "GPU memory overlaps ramoops");
 _Static_assert(RAMOOPS_BASE + RAMOOPS_SIZE <= DRAM_END, "ramoops outside DRAM");
+_Static_assert((RAMOOPS_BASE & ~0xfffff) == ((RAMOOPS_BASE + RAMOOPS_SIZE - 1) & ~0xfffff), "ramoops not in one section");
+_Static_assert(RAMOOPS_8009_PHYS - PHYS_OFFSET_8009 + 0x100000 == DRAM_END, "APQ8009W ramoops not at the top of DRAM");
 _Static_assert((GPU_MEM_BASE & 0xfffff) == 0 && (GPU_MEM_SIZE & 0xfffff) == 0, "GPU memory not section aligned");
 #endif
 #endif

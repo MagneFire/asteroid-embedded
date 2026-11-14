@@ -131,7 +131,9 @@ def pstore(tail):
     region when it started."""
     sh = "mount | grep -q ' /sys/fs/pstore ' || mount -t pstore pstore /sys/fs/pstore; cat /sys/fs/pstore/%s-ramoops* 2>/dev/null"
     console = subprocess.run(adb_cmd("shell", sh % "console"), capture_output=True, timeout=60).stdout
-    record = subprocess.run(adb_cmd("shell", sh % "annotate"), capture_output=True, timeout=60).stdout
+    # The fault record is "annotate" on minnow's kernel and "dmesg" on catfish's.
+    record = b"".join(subprocess.run(adb_cmd("shell", sh % k), capture_output=True, timeout=60).stdout
+                      for k in ("annotate", "dmesg"))
     if not console and not record:
         sys.exit("nothing in /sys/fs/pstore: the region did not survive, or this boot was not the first after the reset")
     lines = console.decode("utf-8", "replace").splitlines()
