@@ -228,8 +228,8 @@ void app_sensors(uint32_t now)
 			int tilt = setting_get(SETTING_TILT);
 			if (tilt == TILT_WAKE)
 				power_wake("tilt");
-			else if (tilt == TILT_FACE)
-				power_peek("tilt");
+			else if (tilt == TILT_FACE || tilt == TILT_LIGHT)
+				power_peek("tilt", tilt == TILT_LIGHT);
 		}
 		if (steps_awake && !power_awake())
 			steps_save();

@@ -38,7 +38,7 @@
 static bool have_display, have_ui, have_hub;
 static struct power_policy policy = { .awake = true };
 static struct nightstand stand;
-static bool ambient;
+static enum screen_state screen;
 static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static const char *wake_cause;
@@ -74,13 +74,15 @@ void power_wake_cancel(const char *cause)
 	}
 }
 
-void power_peek(const char *cause)
+/* The white screen lights the hub's own display from behind, so it is
+ * the always-on face where there is none. */
+void power_peek(const char *cause, bool light)
 {
 	if (policy.awake)
 		return;
 	if (!policy.peeking)
 		log_printf("peek: %s\n", cause);
-	power_policy_peek(&policy, time_ms());
+	power_policy_peek(&policy, time_ms(), light && have_hub && hub_has_screen());
 }
 
 void power_activity(uint32_t now)
@@ -116,10 +118,12 @@ bool power_nightstand(void)
 	return setting_get(SETTING_NIGHTSTAND) && attached;
 }
 
-static bool aod_wanted(uint32_t now)
+static enum screen_state screen_wanted(uint32_t now)
 {
-	return power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD)) ||
-	       power_policy_peeking(&policy, now);
+	if (!have_ui)
+		return SCREEN_OFF;
+	bool aod = power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD));
+	return power_policy_screen(aod, power_policy_peeking(&policy, now), policy.peek_light);
 }
 
 static struct auto_brightness autob;
@@ -216,7 +220,6 @@ static void ambient_leave(void)
 	ui_set_ambient(false);
 	display_idle(false);
 	power_set_brightness();
-	ambient = false;
 }
 
 /* The code for the light the sensor saw, the board's own without a
@@ -280,7 +283,7 @@ static void ambient_draw(void)
 static void hub_follow(void)
 {
 	static bool normal = true;
-	bool want = policy.awake || ambient;
+	bool want = policy.awake || screen == SCREEN_AMBIENT;
 	if (want != normal) {
 		normal = want;
 		hub_screen(want);
@@ -295,7 +298,47 @@ static void ambient_enter(void)
 	if (!board->backlight_aod_code)
 		display_set_brightness(AOD_BRIGHTNESS * 255 / 100);
 	display_idle(true);
-	ambient = true;
+}
+
+static void light_fill(void)
+{
+	memset(display_backbuffer(), 0xff, fb.stride * fb.height * 4);
+	display_flip();
+}
+
+/* Asleep, from what the panel shows to what it should show. */
+static void screen_set(enum screen_state to)
+{
+	static const char *const names[] = { [SCREEN_AMBIENT] = "always-on", [SCREEN_LIT] = "backlight" };
+	enum screen_state from = screen;
+	if (to == from)
+		return;
+	cpu_clock_slow(false);
+	if (to == SCREEN_OFF) {
+		if (from == SCREEN_AMBIENT)
+			ambient_leave();
+		display_sleep();
+	} else {
+		if (from == SCREEN_OFF)
+			display_wake_hidden();
+		if (to == SCREEN_AMBIENT) {
+			ambient_enter();
+		} else {
+			light_fill();
+			if (from == SCREEN_AMBIENT)
+				ambient_leave();
+			else
+				power_set_brightness();
+		}
+		if (from == SCREEN_OFF)
+			display_show();
+	}
+	screen = to;
+	if (from != SCREEN_OFF)
+		log_printf("power: %s off\n", names[from]);
+	if (to != SCREEN_OFF)
+		log_printf("power: %s on\n", names[to]);
+	cpu_clock_slow(true);
 }
 
 /* Asleep, the end of a peek is a deadline, and off the charger the end
@@ -306,7 +349,7 @@ uint32_t power_next_ms(void)
 	if (policy.awake)
 		return UINT32_MAX;
 	uint32_t now = time_ms(), next = power_policy_peek_next_ms(&policy, now);
-	if (ambient != (have_ui && setting_get(SETTING_AOD)) && !batt_cable()) {
+	if ((screen == SCREEN_AMBIENT) != (have_ui && setting_get(SETTING_AOD)) && !batt_cable()) {
 		uint32_t stand_next = nightstand_next_ms(&stand, now, nightstand_delay_ms());
 		if (stand_next < next)
 			next = stand_next;
@@ -329,14 +372,14 @@ enum power_change power_update(uint32_t *now_p)
 		light_follow(false, now);
 		clockapps_sleep();
 		settings_flush();
-		ambient = have_ui && aod_wanted(now);
-		if (!ambient)
+		screen = screen_wanted(now);
+		if (screen == SCREEN_OFF)
 			display_sleep();
 		if (have_ui) {
 			stack_sleep(now);
 			ui_hide_notification();
 		}
-		if (ambient)
+		if (screen == SCREEN_AMBIENT)
 			ambient_enter();
 		timer_set_period(1000);
 		cpu_clock_slow(true);
@@ -347,11 +390,12 @@ enum power_change power_update(uint32_t *now_p)
 	} else if (step == POWER_STEP_WAKE) {
 		cpu_clock_slow(false);
 		timer_set_period(1);
-		if (ambient) {
+		/* The white screen is already at the normal brightness. */
+		if (screen == SCREEN_AMBIENT)
 			ambient_leave();
-		} else {
+		else if (screen == SCREEN_OFF)
 			display_wake();
-		}
+		screen = SCREEN_OFF;
 		policy.awake = true;
 		asleep_ms += now - asleep_t;
 		now = time_ms();
@@ -367,25 +411,10 @@ enum power_change power_update(uint32_t *now_p)
 	/* Asleep on the charger the nightstand setting picked; once off the
 	 * charger the normal one applies, either way. The picture stays off
 	 * until the face is drawn, or the last screen would flash up. */
-	if (!policy.awake) {
-		enum aod_change aod = power_policy_aod_change(ambient, have_ui && aod_wanted(now));
-		if (aod != AOD_KEEP)
-			cpu_clock_slow(false);
-		if (aod == AOD_LEAVE) {
-			ambient_leave();
-			display_sleep();
-			log_printf("power: always-on off\n");
-		} else if (aod == AOD_ENTER) {
-			display_wake_hidden();
-			ambient_enter();
-			display_show();
-			log_printf("power: always-on on\n");
-		}
-		if (aod != AOD_KEEP)
-			cpu_clock_slow(true);
-	}
+	if (!policy.awake)
+		screen_set(screen_wanted(now));
 	hub_follow();
-	if (ambient && !policy.awake && rtc_read() / 60 != ambient_minute) {
+	if (screen == SCREEN_AMBIENT && !policy.awake && rtc_read() / 60 != ambient_minute) {
 		cpu_clock_slow(false);
 		ambient_draw();
 		cpu_clock_slow(true);
@@ -431,7 +460,7 @@ void power_idle(uint32_t app_next_ms)
 		if (have_hub && !hub_can_sleep() && next > 50)
 			next = 50;
 		uint32_t minute = (60 - rtc_read() % 60) * 1000;
-		if (ambient && minute < next)
+		if (screen == SCREEN_AMBIENT && minute < next)
 			next = minute;
 	}
 	/* The watchdog counts on the sleep clock through a cluster power

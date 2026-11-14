@@ -51,33 +51,33 @@ static void peek(void)
 	/* Awake a peek is ignored; asleep it lasts PEEK_MS and another one
 	 * starts it over. */
 	struct power_policy p = { .awake = true };
-	power_policy_peek(&p, 100);
+	power_policy_peek(&p, 100, false);
 	CHECK(!power_policy_peeking(&p, 100));
 	CHECK(power_policy_peek_next_ms(&p, 100) == UINT32_MAX);
 	p.awake = false;
 	CHECK(!power_policy_peeking(&p, 100));
-	power_policy_peek(&p, 1000);
+	power_policy_peek(&p, 1000, false);
 	CHECK(power_policy_peeking(&p, 1000));
 	CHECK(power_policy_peek_next_ms(&p, 1000) == PEEK_MS);
 	CHECK(power_policy_peeking(&p, 1000 + PEEK_MS - 1));
 	CHECK(power_policy_peek_next_ms(&p, 1000 + PEEK_MS - 1) == 1);
-	power_policy_peek(&p, 1000 + PEEK_MS - 1);
+	power_policy_peek(&p, 1000 + PEEK_MS - 1, false);
 	CHECK(power_policy_peeking(&p, 1000 + PEEK_MS));
 	CHECK(!power_policy_peeking(&p, 1000 + 2 * PEEK_MS - 1));
 	CHECK(power_policy_peek_next_ms(&p, 1000 + 2 * PEEK_MS) == UINT32_MAX);
 	/* Waking ends it, and it does not come back when the watch sleeps. */
-	power_policy_peek(&p, 20000);
+	power_policy_peek(&p, 20000, false);
 	p.awake = true;
 	power_policy_woke(&p, 20100);
 	CHECK(!p.peeking);
 	p.awake = false;
 	CHECK(!power_policy_peeking(&p, 20200));
 	/* Stamped a little after the time the pass works with. */
-	power_policy_peek(&p, 30000);
+	power_policy_peek(&p, 30000, false);
 	CHECK(power_policy_peeking(&p, 29990));
 	CHECK(power_policy_peek_next_ms(&p, 29990) == PEEK_MS + 10);
 	/* Across the wrap of the clock. */
-	power_policy_peek(&p, UINT32_MAX - 10);
+	power_policy_peek(&p, UINT32_MAX - 10, false);
 	CHECK(power_policy_peeking(&p, PEEK_MS - 20));
 	CHECK(power_policy_peek_next_ms(&p, PEEK_MS - 20) == 9);
 	CHECK(!power_policy_peeking(&p, PEEK_MS - 11));
@@ -134,18 +134,48 @@ static void aod(void)
 static void unplug(void)
 {
 	for (int m = 0; m < 4; m++) {
-		bool ns_aod = m & 1, normal = m & 2, ambient = ns_aod;
+		bool ns_aod = m & 1, normal = m & 2;
+		enum screen_state ambient = ns_aod ? SCREEN_AMBIENT : SCREEN_OFF;
 		struct nightstand n = { 0 };
 		nightstand_step(&n, true, 0, 5000);
-		CHECK(power_policy_aod_change(ambient, power_policy_aod(true, ns_aod, normal)) == AOD_KEEP);
+		CHECK(power_policy_screen(power_policy_aod(true, ns_aod, normal), false, false) == ambient);
 		bool attached = nightstand_step(&n, false, 1000, 5000);
-		CHECK(power_policy_aod_change(ambient, power_policy_aod(attached, ns_aod, normal)) == AOD_KEEP);
+		CHECK(power_policy_screen(power_policy_aod(attached, ns_aod, normal), false, false) == ambient);
 		CHECK(nightstand_next_ms(&n, 1000, 5000) == 5000);
 		attached = nightstand_step(&n, false, 6000, 5000);
 		CHECK(!attached);
-		enum aod_change c = power_policy_aod_change(ambient, power_policy_aod(attached, ns_aod, normal));
-		CHECK(c == (ns_aod == normal ? AOD_KEEP : normal ? AOD_ENTER : AOD_LEAVE));
+		CHECK(power_policy_screen(power_policy_aod(attached, ns_aod, normal), false, false) == (normal ? SCREEN_AMBIENT : SCREEN_OFF));
 	}
+}
+
+/* A light peek shows the white screen over either state, and when it
+ * ends the setting decides again. */
+static void light(void)
+{
+	struct power_policy p = { 0 };
+	for (int aod = 0; aod < 2; aod++) {
+		enum screen_state rest = aod ? SCREEN_AMBIENT : SCREEN_OFF;
+		CHECK(power_policy_screen(aod, power_policy_peeking(&p, 0), p.peek_light) == rest);
+		power_policy_peek(&p, 1000, true);
+		CHECK(power_policy_screen(aod, power_policy_peeking(&p, 1000), p.peek_light) == SCREEN_LIT);
+		CHECK(power_policy_screen(aod, power_policy_peeking(&p, 1000 + PEEK_MS - 1), p.peek_light) == SCREEN_LIT);
+		CHECK(power_policy_screen(aod, power_policy_peeking(&p, 1000 + PEEK_MS), p.peek_light) == rest);
+	}
+	/* The newest peek decides what shows, and starts the time over. */
+	power_policy_peek(&p, 20000, true);
+	power_policy_peek(&p, 21000, false);
+	CHECK(power_policy_screen(false, power_policy_peeking(&p, 21000), p.peek_light) == SCREEN_AMBIENT);
+	power_policy_peek(&p, 22000, true);
+	CHECK(power_policy_screen(false, power_policy_peeking(&p, 22000 + PEEK_MS - 1), p.peek_light) == SCREEN_LIT);
+	/* Waking ends it. */
+	p.awake = true;
+	power_policy_woke(&p, 23000);
+	p.awake = false;
+	CHECK(power_policy_screen(false, power_policy_peeking(&p, 23001), p.peek_light) == SCREEN_OFF);
+	/* Awake it is ignored. */
+	p.awake = true;
+	power_policy_peek(&p, 24000, true);
+	CHECK(!power_policy_peeking(&p, 24000));
 }
 
 static void touches(void)
@@ -170,6 +200,7 @@ int main(void)
 	touches();
 	nightstand();
 	peek();
+	light();
 	timeout();
 	requests();
 	charger();

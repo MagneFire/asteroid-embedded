@@ -60,8 +60,8 @@ void power_wake(const char *cause);
 /* Takes back a power_wake if this was its cause. */
 void power_wake_cancel(const char *cause);
 /* Asleep with the screen dark, shows the always-on face for a while. */
-void power_peek(const char *cause);
-enum tilt_mode { TILT_OFF, TILT_WAKE, TILT_FACE };
+void power_peek(const char *cause, bool light);
+enum tilt_mode { TILT_OFF, TILT_WAKE, TILT_FACE, TILT_LIGHT };
 /* The daily step goal is set in units of STEP_GOAL_UNIT steps. */
 #define STEP_GOAL_UNIT	500
 #define STEP_GOAL_MAX	40

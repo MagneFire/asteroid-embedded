@@ -85,6 +85,7 @@ void settings_flush(void) {}
 void hub_status(void (*say)(const char *fmt, ...)) {}
 int hub_mode(unsigned code) { return -1; }
 bool hub_has_timepiece(void) { return false; }
+bool hub_has_screen(void) { return false; }
 void action_setting_toggled(int s) {}
 int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void hub_set_time(void) {}

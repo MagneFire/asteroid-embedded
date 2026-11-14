@@ -47,11 +47,12 @@ bool power_policy_aod(bool nightstand, bool nightstand_aod, bool aod)
 	return nightstand ? nightstand_aod : aod;
 }
 
-void power_policy_peek(struct power_policy *p, uint32_t now)
+void power_policy_peek(struct power_policy *p, uint32_t now, bool light)
 {
 	if (p->awake)
 		return;
 	p->peeking = true;
+	p->peek_light = light;
 	p->peek_t = now;
 }
 
@@ -76,11 +77,11 @@ uint32_t power_policy_peek_next_ms(const struct power_policy *p, uint32_t now)
 	return gone >= (int32_t)PEEK_MS ? 1 : (uint32_t)((int32_t)PEEK_MS - gone);
 }
 
-enum aod_change power_policy_aod_change(bool ambient, bool wanted)
+enum screen_state power_policy_screen(bool aod, bool peeking, bool peek_light)
 {
-	if (ambient == wanted)
-		return AOD_KEEP;
-	return wanted ? AOD_ENTER : AOD_LEAVE;
+	if (peeking)
+		return peek_light ? SCREEN_LIT : SCREEN_AMBIENT;
+	return aod ? SCREEN_AMBIENT : SCREEN_OFF;
 }
 
 enum touch_use power_policy_touch(bool *wake_touch, bool awake, bool tap_wakes, bool down, bool up)
