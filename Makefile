@@ -10,6 +10,8 @@ OBJCOPY := $(CROSS)objcopy
 OBJDUMP := $(CROSS)objdump
 SIZE    := $(CROSS)size
 DTC     ?= dtc
+# The tools carry their Python version and packages for uv (PEP 723).
+PYTHON  ?= $(if $(shell command -v uv),uv run --script,python3)
 TEST    ?=
 
 # The SoC the image is for: qcom (APQ8026) or omap3 (OMAP3630). Its code
@@ -145,35 +147,35 @@ ifeq ($(SOC),qcom)
 DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb $(BUILD)/catfish.dtb
 
 $(BUILD)/qcdt.img: $(DTBS) tools/qcdt.py
-	python3 tools/qcdt.py -o $@ $(DTBS)
+	$(PYTHON) tools/qcdt.py -o $@ $(DTBS)
 
 # One image for every watch. Bootloaders that read the table use it, and
 # ignore what follows the firmware. smelt's own images have no table and
 # the tree behind the kernel, so that is there too, in case its bootloader
 # only looks there.
 $(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb tools/appenddtb.py
-	python3 tools/appenddtb.py -o $@ $< $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb
+	$(PYTHON) tools/appenddtb.py -o $@ $< $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb
 
 $(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/qcdt.img tools/mkbootimg.py
-	python3 tools/mkbootimg.py --kernel $< --dt $(BUILD)/qcdt.img -o $@
+	$(PYTHON) tools/mkbootimg.py --kernel $< --dt $(BUILD)/qcdt.img -o $@
 else
 # The bootloader takes its tree from behind the image, as it does with
 # the vendor's kernels, and picks it by the hardware revision the tree
 # names. Its own images all have a ramdisk, so this one has one too,
 # with nothing in it.
 $(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/minnow.dtb tools/appenddtb.py
-	python3 tools/appenddtb.py -o $@ $< $(BUILD)/minnow.dtb
+	$(PYTHON) tools/appenddtb.py -o $@ $< $(BUILD)/minnow.dtb
 
 $(BUILD)/ramdisk.bin:
 	@mkdir -p $(BUILD)
 	head -c 512 /dev/zero > $@
 
 $(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/ramdisk.bin tools/mkbootimg.py
-	python3 tools/mkbootimg.py --kernel $< --ramdisk $(BUILD)/ramdisk.bin --cmdline androidboot.hardware=minnow -o $@
+	$(PYTHON) tools/mkbootimg.py --kernel $< --ramdisk $(BUILD)/ramdisk.bin --cmdline androidboot.hardware=minnow -o $@
 endif
 
 run: $(BUILD)/asteroid.img
-	python3 tools/run.py $(if $(filter qcom,$(SOC)),,--soc $(SOC)) $(RUNFLAGS)
+	$(PYTHON) tools/run.py $(if $(filter qcom,$(SOC)),,--soc $(SOC)) $(RUNFLAGS)
 
 SLINT_VIEWER ?= $(or $(shell command -v slint-viewer 2>/dev/null),$(HOME)/.cargo/bin/slint-viewer)
 
@@ -361,7 +363,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/sgx_test
 	$(BUILD)/test/sgx_stack_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb
-	python3 tests/boot_test.py $(BUILD)/qcdt.img
+	$(PYTHON) tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test
 	$(BUILD)/test/adb_test
 	$(BUILD)/test/parser_test $(BUILD)/test/small.ext4

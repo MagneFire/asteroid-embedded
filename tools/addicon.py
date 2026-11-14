@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Copy Ionicons from third_party/asteroid-icons-ion into ui/icons, or resize those already
 there, giving each a 160 px intrinsic size with a viewBox over its drawing. Slint renders an
 icon at build time at the size it is drawn when it can tell, otherwise at this intrinsic size,

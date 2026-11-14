@@ -1,8 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["fonttools==4.68.0"]
+# ///
 """Make a Noto Sans width style selectable on its own: Slint picks fonts by family and weight but
 not by width, and Noto's condensed styles share the family "Noto Sans". Each static font given is
 cut down to Latin, Greek and Cyrillic without hinting, which the renderer does not use, renamed
-to the family "Noto Sans <style>" and written to ui/fonts. Needs fontTools.
+to the family "Noto Sans <style>" and written to ui/fonts.
 
   tools/notofont.py NotoSans-SemiCondensedLight.ttf...
 """

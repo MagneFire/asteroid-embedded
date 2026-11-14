@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Boot build/asteroid.img over fastboot (after an adb reboot if the previous
 image is running) and show its log over adb. If the image dies and the watch
 returns to fastboot, fetch the persistent log region instead and print the

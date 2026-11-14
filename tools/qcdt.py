@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Build a QCDT table (the "dt" blob of a Qualcomm boot image) from compiled
 device trees: a header, one entry per (msm-id, board-id) pair read from the
 tree's qcom,msm-id and qcom,board-id properties, then the trees themselves.

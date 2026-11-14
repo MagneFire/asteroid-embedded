@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Wrap a flat binary, an optional ramdisk and an optional device-tree table
 into an Android boot image (header version 0) the way the Qualcomm bootloader
 expects it. Without a table the bootloader looks for trees after the kernel

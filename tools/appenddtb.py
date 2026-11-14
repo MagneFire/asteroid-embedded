@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Put device trees behind a flat binary the way a bootloader without a QCDT
 table expects them: the zImage magic and the offset of the first tree in the
 header words start.S leaves free, the trees after the binary on an 8-byte

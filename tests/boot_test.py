@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """The boot image's device trees: sparrow's and sturgeon's QCDT entries, at the
 offsets they have always had, with smelt's and catfish's after them, and the
 tree behind the

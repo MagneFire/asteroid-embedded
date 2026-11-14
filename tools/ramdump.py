@@ -1,14 +1,17 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyusb==1.3.1", "libusb-package==1.0.30.1"]
+# ///
 """Read a Qualcomm watch's memory in crash dump mode (USB 05c6:900e), which
 its boot chain enters after a reset while download mode is armed: print the
 persistent log and fault record from it, check the image the bootloader
 loaded against the build, or save whole regions. Only reads: it answers
 the Sahara hello in memory debug mode and sends memory reads, never a reset.
-The watch stays in that mode until a long press of the power key.
-Needs pyusb and libusb (pip install pyusb, brew install libusb)."""
-import argparse, ctypes.util, os, struct, sys
+The watch stays in that mode until a long press of the power key."""
+import argparse, os, struct, sys
 
-import usb.backend.libusb1, usb.core, usb.util
+import libusb_package, usb.core, usb.util
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run
@@ -21,9 +24,7 @@ LOG = 0x9ff80000
 
 class Sahara:
     def __init__(self):
-        lib = ctypes.util.find_library("usb-1.0") or "/opt/homebrew/lib/libusb-1.0.0.dylib"
-        dev = usb.core.find(idVendor=VID, idProduct=PID,
-                            backend=usb.backend.libusb1.get_backend(find_library=lambda _: lib))
+        dev = usb.core.find(idVendor=VID, idProduct=PID, backend=libusb_package.get_libusb1_backend())
         if dev is None:
             sys.exit("no watch in crash dump mode (USB %04x:%04x)" % (VID, PID))
         intf = dev.get_active_configuration()[(0, 0)]

@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Names the functions in the output of the console's prof command.
 
     adb shell prof 4000; (use the watch); adb shell prof | tools/prof.py build/omap3/asteroid.elf
