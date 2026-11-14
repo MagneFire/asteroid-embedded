@@ -96,6 +96,7 @@ const struct board board_sturgeon = {
 		.uart = 4, .gpio = 12, .func = 2, .dev_wake = 63, .host_wake = 64, .reg_on = 67, .mpm = 28,
 		.dev_wake_active = false, .host_wake_active = false,
 		.patch = "4343A0.hcd",
+		.addr_part = "nvdata", .addr_path = "MACBT",
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},
 	.pmic_mpm = 62,

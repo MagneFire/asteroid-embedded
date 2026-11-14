@@ -99,6 +99,7 @@ const struct board board_sparrow = {
 		.uart = 1, .gpio = 0, .func = 2, .dev_wake = 61, .host_wake = 48, .reg_on = 34, .mpm = 20,
 		.dev_wake_active = true, .host_wake_active = true,
 		.patch = "BCM4343A1_001.002.009.0053.0240.hcd",
+		.addr_part = "asusdata", .addr_path = "bd_addr.conf",
 		.sleep_mode = { 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0 },
 	},
 	.pmic_mpm = 62,

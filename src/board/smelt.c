@@ -77,6 +77,7 @@ const struct board board_smelt = {
 		.uart = 6, .gpio = 20, .func = 2, .dev_wake = 30, .host_wake = 27, .reg_on = 26, .mpm = 10,
 		.dev_wake_active = false, .host_wake_active = false,
 		.patch = "BCM43430A1_001.002.009.0031.0000_TEST.hcd",
+		.addr_part = "persist", .addr_path = "bt/bdaddr.txt",
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},
 	.pmic_mpm = 62,
