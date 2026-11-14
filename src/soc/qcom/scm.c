@@ -12,6 +12,8 @@
 #define SCM_SVC_BOOT		0x01
 #define SCM_WDOG_DEBUG_BOOT_PART 0x09
 #define SCM_DLOAD_CMD		0x10
+#define SCM_SVC_IO		0x05
+#define SCM_IO_WRITE		0x02
 
 int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2)
 {
@@ -24,13 +26,23 @@ int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2)
 	return (int)r0;
 }
 
+/* The secure world's download-mode flag. A TZ without the call has it in
+ * a TCSR register only it can write. */
+int soc_dload_mode(bool on)
+{
+	int r = scm_call2(SCM_SVC_BOOT, SCM_DLOAD_CMD, on ? SCM_DLOAD_CMD : 0, 0);
+	if (r && chip->tcsr_boot_misc)
+		r = scm_call2(SCM_SVC_IO, SCM_IO_WRITE, chip->tcsr_boot_misc, on ? SCM_DLOAD_CMD : 0);
+	return r;
+}
+
 /* Without this a watchdog bite stops in the secure debug image instead
- * of resetting the chip, and a PS_HOLD drop may be ignored. The second
- * call clears the secure world's own download-mode flag. */
+ * of resetting the chip, and a PS_HOLD drop may be ignored. Download mode
+ * is cleared as well. */
 int scm_wdog_debug_disable(void)
 {
 	int ret = scm_call2(SCM_SVC_BOOT, SCM_WDOG_DEBUG_BOOT_PART, 1, 0);
-	scm_call2(SCM_SVC_BOOT, SCM_DLOAD_CMD, 0, 0);
+	soc_dload_mode(false);
 	return ret;
 }
 

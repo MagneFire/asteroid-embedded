@@ -218,6 +218,20 @@ static void cmd_reboot(const char *args)
 	reboot();
 }
 
+static void cmd_dload(const char *args)
+{
+	bool on = !strcmp(args, "on");
+	if (!on && strcmp(args, "off")) {
+		say("usage: dload on|off\n");
+		return;
+	}
+	int r = soc_dload_mode(on);
+	if (r)
+		say("dload: failed (%d)\n", r);
+	else
+		say("dload: %s\n", on ? "a reset now stops in the memory dump mode" : "off");
+}
+
 static void cmd_bright(const char *args)
 {
 	uint32_t v;
@@ -1339,6 +1353,7 @@ static const struct command commands[] = {
 	{ "status", "", cmd_status },
 	{ "log", "[lines]", cmd_log },
 	{ "reboot", "[bootloader]", cmd_reboot },
+	{ "dload", "on | off", cmd_dload },
 	{ "bright", "<0-255>", cmd_bright },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },

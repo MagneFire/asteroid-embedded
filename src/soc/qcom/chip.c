@@ -108,6 +108,7 @@ const struct qcom_chip chip_8009 = {
 	.mdp3 = IO(0x01a00000),
 	.gpu = IO(0x01c00000),
 	.pon_restart_reason = true,
+	.tcsr_boot_misc = 0x0193d100,
 };
 
 const struct qcom_chip *chip = &chip_8026;

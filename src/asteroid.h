@@ -239,6 +239,9 @@ void reboot(void) __attribute__((noreturn));
 void reboot_fatal(const char *what) __attribute__((noreturn));
 void fault_record(const char *kind, uint32_t pc, uint32_t lr, uint32_t sp, const uint32_t *regs);
 extern bool reboot_to_bootloader;
+/* Whether a reset the firmware did not do itself stops in the boot chain's
+ * memory dump mode; < 0 where the SoC has none. A reboot clears it. */
+int soc_dload_mode(bool on);
 
 /* log (persistent RAM, survives a warm reset) */
 void log_init(void);

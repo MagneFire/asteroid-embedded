@@ -33,6 +33,7 @@ struct qcom_chip {
 	bool cnoc;			/* has the RPM's CNOC bus clock */
 	bool imem_dload;		/* download-mode cookies in IMEM */
 	bool pon_restart_reason;	/* the bootloader reads it from the PMIC */
+	uint32_t tcsr_boot_misc;	/* download-mode flag for a TZ without the call, physical */
 };
 
 extern const struct qcom_chip chip_8026, chip_8009;

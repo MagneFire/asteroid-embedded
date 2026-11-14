@@ -115,6 +115,7 @@ __attribute__((weak)) void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t widt
 						  const struct gpu_rect *parts, unsigned n) {}
 
 bool reboot_to_bootloader;
+int soc_dload_mode(bool on) { return -1; }
 void reboot(void)
 {
 	if (stub_reboot_jmp)

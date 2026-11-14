@@ -52,3 +52,5 @@ void reboot_fatal(const char *what)
 	fault_record(what, lr, lr, (uint32_t)(uintptr_t)__builtin_frame_address(0), NULL);
 	reset_now();
 }
+
+int soc_dload_mode(bool on) { return -1; }
