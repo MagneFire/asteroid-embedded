@@ -22,6 +22,7 @@ static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
 static uint32_t mesh_us, layer_us, end_us, flip_us;
 /* How long after the last thing moved the processor may slow down. */
 #define BUSY_MS	300
+static uint32_t waited_us;
 static uint32_t busy_t, idle_passes;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static uint32_t start_ms, shown_step = UINT32_MAX, hold_t;
@@ -201,6 +202,7 @@ void frame_hold(uint32_t ms)
  * an interrupt, at the latest the next 1 ms tick. */
 void frame_draw(uint32_t now)
 {
+	waited_us = 0;
 	if (hold_t) {
 		if ((int32_t)(hold_t - now) > 0)
 			return;
@@ -289,12 +291,16 @@ void frame_draw(uint32_t now)
 		woke = false;
 	} else {
 		/* Masked, so an event posted just before cannot wait a tick. */
+		uint32_t w0 = time_us();
 		uint32_t flags = irq_save();
 		if (!sched_pending())
 			wfi();
 		irq_restore(flags);
+		waited_us = time_us() - w0;
 	}
 }
+
+uint32_t frame_waited_us(void) { return waited_us; }
 
 /* The last second's numbers, for the log. */
 void frame_log(void)

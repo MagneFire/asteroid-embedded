@@ -15,5 +15,7 @@ void frame_wake(void);
 /* Leaves what is on the panel there for a while, for a test picture. */
 void frame_hold(uint32_t ms);
 void frame_draw(uint32_t now);
+/* How long the last frame_draw slept with nothing to draw. */
+uint32_t frame_waited_us(void);
 void frame_log(void);
 #endif

@@ -29,6 +29,56 @@
 #define REBOOT_AFTER_MS 0
 #endif
 
+/* For LAG_WINDOW_MS after a wake, where the time of the wake's own pass
+ * and of the slowest pass after it went, logged once the window ends.
+ * Sleeping with nothing to draw is not counted. */
+#define LAG_WINDOW_MS 3000
+#define LAG_SLOW_US 50000
+enum { LAG_START, LAG_SCHED, LAG_SENSORS, LAG_EVENTS, LAG_UPDATE, LAG_CHANGED, LAG_CLOCK, LAG_FRAME, LAG_MARKS };
+static uint32_t lag_t[LAG_MARKS], lag_wake[LAG_MARKS], lag_worst[LAG_MARKS], lag_woke, lag_slow;
+static bool lag_open;
+
+static void lag_mark(unsigned i) { lag_t[i] = time_us(); }
+
+static void lag_take(uint32_t *to)
+{
+	for (unsigned i = 1; i < LAG_MARKS; i++)
+		to[i] = lag_t[i] - lag_t[i - 1];
+	to[LAG_FRAME] -= frame_waited_us();
+	to[0] = lag_t[LAG_FRAME] - lag_t[LAG_START] - frame_waited_us();
+}
+
+static void lag_say(const char *what, const uint32_t *p)
+{
+	log_printf("lag: %s %lu us (sched %lu, sensors %lu, events %lu, power %lu, woke %lu, clock %lu, frame %lu)\n", what,
+		   p[0], p[LAG_SCHED], p[LAG_SENSORS], p[LAG_EVENTS], p[LAG_UPDATE], p[LAG_CHANGED], p[LAG_CLOCK],
+		   p[LAG_FRAME]);
+}
+
+static void lag_pass(uint32_t now, bool woke)
+{
+	if (woke) {
+		lag_open = true;
+		lag_woke = now;
+		lag_slow = 0;
+		lag_take(lag_wake);
+		memset(lag_worst, 0, sizeof lag_worst);
+		return;
+	}
+	if (!lag_open)
+		return;
+	uint32_t total = lag_t[LAG_FRAME] - lag_t[LAG_START] - frame_waited_us();
+	lag_slow += total >= LAG_SLOW_US;
+	if (total > lag_worst[0])
+		lag_take(lag_worst);
+	if (now - lag_woke < LAG_WINDOW_MS && power_awake())
+		return;
+	lag_open = false;
+	lag_say("wake pass", lag_wake);
+	lag_say("slowest after", lag_worst);
+	log_printf("lag: %lu passes over %u ms\n", lag_slow, LAG_SLOW_US / 1000);
+}
+
 extern void wdt_bark_handler(void);
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 
@@ -125,6 +175,7 @@ void main(uint32_t machtype, const void *fdt)
 		fbcon_set_overlay(true);
 	for (;;) {
 		uint32_t now = time_ms();
+		lag_mark(LAG_START);
 		wdt_feed();
 		usb_pass();
 		usb_poll();
@@ -133,7 +184,9 @@ void main(uint32_t machtype, const void *fdt)
 		screenshot_poll();
 		weather_poll();
 		sched_run(now);
+		lag_mark(LAG_SCHED);
 		app_sensors(now);
+		lag_mark(LAG_SENSORS);
 		app_flashlight(now);
 		if (have_haptics)
 			haptics_poll();
@@ -147,10 +200,17 @@ void main(uint32_t machtype, const void *fdt)
 		app_ui_events(now);
 		app_after_events(now);
 		app_console_settings();
-		app_power_changed(power_update(&now));
+		lag_mark(LAG_EVENTS);
+		enum power_change change = power_update(&now);
+		lag_mark(LAG_UPDATE);
+		app_power_changed(change);
+		lag_mark(LAG_CHANGED);
 		present_clock(now);
+		lag_mark(LAG_CLOCK);
 		if (have_display && power_awake())
 			frame_draw(now);
+		lag_mark(LAG_FRAME);
+		lag_pass(now, change == POWER_WOKE);
 		bool awake = power_awake();
 		stats_poll(now, awake);
 #if REBOOT_AFTER_MS > 0
