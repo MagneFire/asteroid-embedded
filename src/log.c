@@ -20,7 +20,7 @@ struct zone {
 #define RECORD_CAP	(RAMOOPS_RECORD_SIZE - sizeof(struct zone))
 #define STAGE		((volatile struct zone *)(uintptr_t)RAMOOPS_STAGE_BASE)
 
-static char previous[RECORD_CAP + 1];
+static char previous[RAMOOPS_RECORD_MAX - sizeof(struct zone) + 1];
 static bool have_previous, ring_lost;
 static const char *previous_stage;
 static void (*sink)(const char *s, size_t n);

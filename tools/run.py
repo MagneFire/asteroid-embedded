@@ -31,6 +31,11 @@ SIG = 0x43474244
 RECORD_SIZE = 0x2000
 CONSOLE_SIZE = 0x40000
 REGION_SIZE = 0x80000
+# The APQ8009W's log is the whole ramoops section of its AsteroidOS kernel.
+REGION_8009 = 0x9ff00000
+REGION_SIZE_8009 = 0x100000
+RECORD_SIZE_8009 = 0x1000
+CONSOLE_8009 = 0xbe000
 
 def fastboot(*args, check=True, quiet=False):
     r = subprocess.run(fb_cmd(*args), capture_output=True, text=True)
@@ -83,9 +88,13 @@ def symbolize(text):
             print("  %s  %s  %s" % (a, fn, loc.replace(os.getcwd() + "/", "")))
 
 def show(blob, tail):
-    console = zone(blob, (REGION_SIZE - CONSOLE_SIZE) // RECORD_SIZE * RECORD_SIZE, CONSOLE_SIZE)
-    record = zone(blob, 0, RECORD_SIZE)
-    stage = zone(blob, (REGION_SIZE - CONSOLE_SIZE) // RECORD_SIZE * RECORD_SIZE - RECORD_SIZE, RECORD_SIZE)
+    if len(blob) == REGION_SIZE_8009:
+        record_size, console_at = RECORD_SIZE_8009, CONSOLE_8009
+    else:
+        record_size, console_at = RECORD_SIZE, (REGION_SIZE - CONSOLE_SIZE) // RECORD_SIZE * RECORD_SIZE
+    console = zone(blob, console_at, CONSOLE_SIZE)
+    record = zone(blob, 0, record_size)
+    stage = zone(blob, console_at - record_size, record_size)
     if stage and stage != b"up  ":
         print("the boot stopped at stage %s" % stage.decode("ascii", "replace").strip())
     if console is None:
@@ -141,9 +150,9 @@ def pstore(tail):
         return subprocess.run(adb_cmd("shell", sh % name), capture_output=True, timeout=60).stdout
     console = read("console-ramoops*")
     # The fault record is "annotate" on minnow's kernel and the first dump
-    # record on catfish's, where the last one holds the boot stage.
+    # record on catfish's, where the last one (of 190) holds the boot stage.
     record = read("annotate-ramoops*") + read("dmesg-ramoops-0")
-    stage = read("dmesg-ramoops-31").strip(b"\0").decode("ascii", "replace").strip()
+    stage = read("dmesg-ramoops-189").strip(b"\0").decode("ascii", "replace").strip()
     if stage and stage != "up":
         print("the boot stopped at stage %s" % stage)
     if not console and not record:

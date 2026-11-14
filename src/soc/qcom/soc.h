@@ -150,12 +150,17 @@
 #define IRQ_PPI_TIMER		19
 #define IRQ_WDT_BARK		(32 + 3)
 
-/* The log region as the bootloader's dump command reads it: fault
- * records first, then the console ring. */
-#define RAMOOPS_RECORD_SIZE	0x2000u
+/* The log region as what reads it after a reset expects it, fault
+ * records first, then the console ring: on the APQ8026 the bootloader's
+ * dump command, on the APQ8009W the ramoops of its AsteroidOS kernel,
+ * which takes the whole section (190 records of 4 KiB, the console, then
+ * its ftrace and pmsg zones). */
+#define RAMOOPS_RECORD_MAX	0x2000u
+#define RAMOOPS_RECORD_SIZE	(phys_offset ? 0x1000u : RAMOOPS_RECORD_MAX)
 #define RAMOOPS_CONSOLE_SIZE	0x40000u
-#define RAMOOPS_RECORD_BASE	RAMOOPS_BASE
-#define RAMOOPS_CONSOLE_BASE	(RAMOOPS_BASE + (RAMOOPS_SIZE - RAMOOPS_CONSOLE_SIZE) / RAMOOPS_RECORD_SIZE * RAMOOPS_RECORD_SIZE)
+#define RAMOOPS_RECORD_BASE	(phys_offset ? RAMOOPS_BASE & ~0xfffffu : RAMOOPS_BASE)
+#define RAMOOPS_CONSOLE_BASE	(phys_offset ? (RAMOOPS_BASE & ~0xfffffu) + 0xbe000u : \
+				 RAMOOPS_BASE + (RAMOOPS_SIZE - RAMOOPS_CONSOLE_SIZE) / RAMOOPS_RECORD_MAX * RAMOOPS_RECORD_MAX)
 /* The last record holds the boot stage, so Linux shows it too. */
 #define RAMOOPS_STAGE_BASE	(RAMOOPS_CONSOLE_BASE - RAMOOPS_RECORD_SIZE)
 

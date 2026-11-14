@@ -20,7 +20,7 @@ VID, PID = 0x05c6, 0x900e
 CHUNK = 0x1000
 # Where the APQ8009W's DRAM starts and where the firmware's log is there.
 DRAM = 0x80000000
-LOG = 0x9ff80000
+LOG = run.REGION_8009
 
 class Sahara:
     def __init__(self):
@@ -141,7 +141,7 @@ def main():
     print("regions:")
     for base, length, desc, name in regions:
         print("  %08x %08x %-22s %s" % (base, length, desc, name))
-    blob = s.mem(a.log, run.REGION_SIZE)
+    blob = s.mem(a.log, run.REGION_SIZE_8009)
     open(run.RAW, "wb").write(blob)
     run.show(blob, a.tail)
     if a.image:
