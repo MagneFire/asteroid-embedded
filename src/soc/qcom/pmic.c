@@ -4,6 +4,8 @@
  * reboot the firmware or the watchdog causes. */
 #include <string.h>
 #include "asteroid.h"
+#include "storage/emmc.h"
+#include "storage/storage.h"
 
 /* VADC channels (the block itself is below). */
 #define CHAN_USBIN		0
@@ -187,7 +189,26 @@ bool power_key_irq(void)
 #define RTC_READ		0x006048
 #define RTC_ENABLE		BIT(7)
 
-uint32_t rtc_read(void)
+/* Where the RTC is the secure world's, a write of it hangs the chip, so
+ * the time is kept as an offset to the counter in the store, as the
+ * vendor's systems do. It is read once the eMMC is up; until then the
+ * counter is given as it is. */
+#define KEY_RTC_OFFSET		"rtc_offset"
+
+static int32_t rtc_offset;
+static bool rtc_offset_read;
+
+static void rtc_offset_load(void)
+{
+	if (rtc_offset_read || !chip->rtc_read_only || !emmc_card()->ready)
+		return;
+	rtc_offset_read = true;
+	int32_t v;
+	if (kv_get(KEY_RTC_OFFSET, &v, sizeof v) == sizeof v)
+		rtc_offset = v;
+}
+
+static uint32_t rtc_counter(void)
 {
 	uint8_t b[4];
 	spmi_read(RTC_READ, b, 4);
@@ -201,10 +222,23 @@ uint32_t rtc_read(void)
 	return s;
 }
 
+uint32_t rtc_read(void)
+{
+	rtc_offset_load();
+	return rtc_counter() + (uint32_t)rtc_offset;
+}
+
 bool rtc_valid(void) { return true; }
 
 void rtc_write(uint32_t secs)
 {
+	if (chip->rtc_read_only) {
+		rtc_offset_load();
+		rtc_offset = (int32_t)(secs - rtc_counter());
+		if (kv_set(KEY_RTC_OFFSET, &rtc_offset, sizeof rtc_offset))
+			log_printf("rtc: offset %ld not stored\n", rtc_offset);
+		return;
+	}
 	uint8_t ctrl = pmic_read(RTC_CTRL);
 	uint8_t b[4] = { (uint8_t)secs, (uint8_t)(secs >> 8), (uint8_t)(secs >> 16), (uint8_t)(secs >> 24) };
 	pmic_write(RTC_CTRL, ctrl & ~RTC_ENABLE);
