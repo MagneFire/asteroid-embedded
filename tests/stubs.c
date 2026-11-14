@@ -89,6 +89,7 @@ void action_setting_toggled(int s) {}
 int hub_send(const uint8_t *p, unsigned n) { return -1; }
 void hub_set_time(void) {}
 int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }
+int hub_power_management(bool on) { return -1; }
 void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms) {}
 void screenshot_to_file(int layer) {}
 uint32_t stub_repaints;

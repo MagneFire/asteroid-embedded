@@ -146,6 +146,7 @@ int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t
 {
 	return HUB(raw) ? board->hub->raw(bank, offset, w, wn, r, rn) : -1;
 }
+int hub_power_management(bool on) { return HUB(power_management) ? board->hub->power_management(on) : -1; }
 void hub_sleep(bool asleep)
 {
 	if (HUB(sleep))

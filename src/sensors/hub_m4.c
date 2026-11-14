@@ -681,6 +681,12 @@ static int m4_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, u
 	return xfer(b, 2 + wn, r, rn);
 }
 
+static int m4_power_management(bool on)
+{
+	uint8_t v = on;
+	return m4_raw(V->power, M4_POWER_ENABLE, &v, 1, NULL, 0);
+}
+
 static void m4_status(void (*say)(const char *fmt, ...))
 {
 	uint8_t pm[2] = { 0, 0 };
@@ -751,4 +757,5 @@ const struct hub_driver hub_m4 = {
 	.sleep = m4_sleep,
 	.status = m4_status,
 	.raw = m4_raw,
+	.power_management = m4_power_management,
 };

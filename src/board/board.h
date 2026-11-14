@@ -84,6 +84,7 @@ struct hub_driver {
 	void (*status)(void (*say)(const char *fmt, ...));
 	/* A register of the hub, written then read, for the console. */
 	int (*raw)(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
+	int (*power_management)(bool on);
 	/* The watch's screen on or off, for a hub with a display of its own. */
 	void (*screen)(bool on);
 	bool (*gauge)(struct hub_gauge *g);

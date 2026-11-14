@@ -985,8 +985,7 @@ static void cmd_m4(const char *args)
 			say("usage: m4 pm 0|1\n");
 			return;
 		}
-		w[0] = (uint8_t)v;
-		say("m4: power management %s: %d\n", v ? "on" : "off", hub_raw(11, 1, w, 1, NULL, 0));
+		say("m4: power management %s: %d\n", v ? "on" : "off", hub_power_management(v));
 		return;
 	}
 	bool rd = !strncmp(args, "rd ", 3), wr = !strncmp(args, "wr ", 3);
