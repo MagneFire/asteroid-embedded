@@ -417,6 +417,8 @@ static bool valid(const struct sgx_frame *f)
 	if (!f->n || f->n > SGX_DRAW_MAX_DRAWS || f->draws[0].kind != SGX_DRAW_FLAT)
 		return false;
 	unsigned flats = 0;
+	/* A row texture's width goes into bits 3-8 of a sampling word whose
+	 * next bits are filter bits: 960 wide drew streaks. */
 	for (unsigned i = 0; i < f->n; i++) {
 		const struct sgx_draw *d = &f->draws[i];
 		if (!d->count || d->count % 3 || d->count > SGX_DRAW_MAX_VERTS)
@@ -426,7 +428,7 @@ static bool valid(const struct sgx_frame *f)
 			if (i && (d->blend || f->draws[i - 1].kind == SGX_DRAW_FLAT))
 				return false;
 		} else if ((d->kind != SGX_DRAW_TEXTURED && d->kind != SGX_DRAW_COLOURED) || !d->blend || d->tex & (SGX_PAGE - 1) || d->width % 32 ||
-			   (d->linear && !d->tiled) ||
+			   (d->linear && !d->tiled) || (!d->tiled && d->width > 512) ||
 			   d->width > 2048 || !d->height || d->height > 2048 || power_of_two(d->width) ||
 			   power_of_two(d->height)) {
 			return false;
