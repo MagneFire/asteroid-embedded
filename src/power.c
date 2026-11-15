@@ -408,7 +408,10 @@ enum power_change power_update(uint32_t *now_p)
 		change = POWER_SLEPT;
 	} else if (step == POWER_STEP_WAKE) {
 		cpu_clock_slow(false);
+		/* The tick armed while asleep can be up to a second away, and
+		 * the touch drivers retry from the passes it brings. */
 		timer_set_period(1);
+		timer_next(1);
 		/* The white screen is already at the normal brightness. */
 		if (screen == SCREEN_AMBIENT)
 			ambient_leave();
