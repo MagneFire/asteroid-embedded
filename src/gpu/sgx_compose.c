@@ -663,6 +663,7 @@ bool gpu_draw_end(void)
 	log_printf("sgx: a frame lost; the GPU stays off\n");
 	lost = true;
 	wanted = false;
+	paint_wait();
 	sgx_stop();
 	return false;
 }
