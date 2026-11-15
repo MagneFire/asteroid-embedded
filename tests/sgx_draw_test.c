@@ -38,7 +38,7 @@ static uint8_t *pool, *lib;
 static long lib_size;
 static int failures;
 static const char *recordings;
-static bool running = true, hang;
+static bool running = true, hang, hold;
 static uint32_t generation = 1, caches[8];
 
 #define CHECK(cond, ...) \
@@ -136,7 +136,9 @@ bool sgx_submit_ta(uint32_t context, uint32_t cache)
 	sgx_command_words(c, SGX_CMD_TA, cache, context);
 	if (on_kick)
 		on_kick(kick_no, c);
-	if (!hang)
+	uint32_t *ctl = P(SGX_SCENE_CCB_CTL);
+	bool last = P(SGX_SCENE_CCB + (ctl[0] + 0x10000 - CMD_SIZE) % 0x10000)[1] & 2;
+	if (!hang && !(hold && last))
 		complete();
 	caches[kick_no++ % 8] = cache;
 	return true;
@@ -887,11 +889,14 @@ static void own_frames(void)
 	uint32_t gpu = sgx_draw_map(0x8a000000u, 2 * 409600);
 	CHECK(gpu && sgx_draw_map(0x8a000000u + 409600, 409600) == gpu + 409600 && !sgx_draw_map(0x8a000001u, 4096),
 	      "mapping");
+	uint32_t was = immediate(P(SGX_SCENE_TILE_STORE0));
 	sgx_draw_target(gpu + 409600);
+	CHECK(immediate(P(SGX_SCENE_TILE_STORE0)) == was && sgx_draw_get_target() == gpu + 409600,
+	      "target words left to the next frame");
+	CHECK(frame(tri_d, 1, 0), "frame into a mapped buffer");
 	CHECK(immediate(P(SGX_SCENE_TILE_STORE0)) == gpu + 409600 && immediate(P(SGX_SCENE_TILE_STORE1)) == gpu + 409600 &&
 	      *P(SGX_SCENE_BG_TEXTURE) == gpu + 409600, "target words");
 	CHECK(P(SGX_SCENE_TILE_STORE0)[0] >> 21 == 3, "tile-store register kept");
-	CHECK(frame(tri_d, 1, 0), "frame into a mapped buffer");
 	CHECK(caches[(kick_no - 2) % 8] == (SGX_CACHE_INVAL_PT | SGX_CACHE_INVAL_PD) && !caches[(kick_no - 1) % 8],
 	      "page tables invalidated after a mapping, once");
 	sgx_draw_inval_data(true);
@@ -905,6 +910,43 @@ static void own_frames(void)
 	CHECK(sgx_draw_frame(&f, &t), "a texture of rows");
 	CHECK(P(SGX_SCENE_PC + SGX_SCENE_PC_PREFIX)[2] == 0x80020138 &&
 	      P(SGX_SCENE_PC + SGX_SCENE_PC_PREFIX)[3] == 0xed13f13f, "texture of rows state");
+}
+
+/* A frame left rendering: its target stays until the next frame, which
+ * waits for it, and a render that never ends fails at the wait. */
+static void in_flight(void)
+{
+	CHECK(sgx_draw_setup(), "setup");
+	uint32_t vgpu, gpu = sgx_draw_map(0x8a000000u, 0x100000);
+	float *v = sgx_draw_vertices(3 * 24, &vgpu);
+	memset(v, 0, 3 * 24);
+	struct sgx_draw d = { .verts = vgpu, .count = 3, .kind = SGX_DRAW_FLAT };
+	struct sgx_frame fr = { 0, &d, 1 };
+	struct sgx_times t;
+	sgx_draw_target(gpu);
+	hold = true;
+	uint32_t ticket = sgx_draw_kick(&fr, &t);
+	CHECK(ticket && sgx_draw_busy(), "a frame left rendering");
+	sgx_draw_target(gpu + 409600);
+	CHECK(immediate(P(SGX_SCENE_TILE_STORE0)) == gpu && *P(SGX_SCENE_BG_TEXTURE) == gpu,
+	      "its target kept while it renders");
+	complete();
+	CHECK(sgx_draw_finish(ticket, &t) && !sgx_draw_busy(), "its render waited for");
+	CHECK(sgx_draw_finish(ticket, &t), "and again");
+	uint32_t next = sgx_draw_kick(&fr, &t);
+	CHECK(next && immediate(P(SGX_SCENE_TILE_STORE0)) == gpu + 409600, "the next frame with the new target");
+	complete();
+	uint32_t third = sgx_draw_kick(&fr, &t);
+	CHECK(third && sgx_draw_finish(next, &t), "a frame waits for the one before");
+	printf("  (a timeout is expected here)\n");
+	CHECK(!sgx_draw_finish(third, &t), "a render that never ends");
+	hold = false;
+	unsigned k = kick_no;
+	CHECK(!sgx_draw_kick(&fr, &t) && sgx_draw_refused() && kick_no == k, "a frame after it");
+	if (!fresh())
+		CHECK(0, "image");
+	generation++;
+	CHECK(sgx_draw_setup(), "setup after the rebuild");
 }
 
 /* A frame that times out leaves the scene stuck, and every frame after
@@ -957,6 +999,7 @@ int main(void)
 	run("own frames", own_frames);
 	run("refusal", wrong_place);
 	run("rebuilt after a failure", rebuilt);
+	run("in flight", in_flight);
 	char flat[512];
 	snprintf(flat, sizeof flat, "%s/mix/flat.txt", recordings);
 	FILE *f = fopen(flat, "r");

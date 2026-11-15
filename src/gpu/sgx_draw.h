@@ -6,7 +6,8 @@
  * writes what the driver would for its draws: a clear, then a list of
  * draws of flat-coloured or textured triangles, in two kicks, the first
  * with the geometry, the second ending the scene, which the GPU then
- * renders. Frames run one at a time; each waits for its render.
+ * renders. Frames run one at a time: sgx_draw_frame waits for its
+ * render, sgx_draw_kick leaves it to sgx_draw_finish or the next frame.
  *
  * Pixels land as 32-bit words 0xAARRGGBB, rows of 1280 bytes, the
  * layout of the display's XRGB8888 frame buffer, with GL's origin: the
@@ -75,9 +76,17 @@ uint32_t sgx_draw_alloc(uint32_t size, void **cpu);
  * back with sgx_draw_discard. */
 void *sgx_draw_vertices(uint32_t bytes, uint32_t *gpu);
 void sgx_draw_discard(void);
+/* The target of the frames from the next one on. */
 void sgx_draw_target(uint32_t gpu_addr);
 uint32_t sgx_draw_get_target(void);
 bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t);
+/* A frame whose render is not waited for: 0 if it failed, or a ticket
+ * for sgx_draw_finish, which waits for the render if it still runs and
+ * says whether it went well. Until then the target and the textures of
+ * the frame are the GPU's; the next frame waits for it first. */
+uint32_t sgx_draw_kick(const struct sgx_frame *f, struct sgx_times *t);
+bool sgx_draw_finish(uint32_t ticket, struct sgx_times *t);
+bool sgx_draw_busy(void);
 /* After a frame that failed: why, as a line for the log, and whether it
  * was refused before anything reached the GPU. Otherwise the GPU must be
  * halted before its target is touched. */

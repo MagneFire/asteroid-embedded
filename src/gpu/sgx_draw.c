@@ -54,9 +54,9 @@ static const uint32_t rtdata[2] = { SGX_SCENE_RTDATA0, SGX_SCENE_RTDATA1 };
 static const uint32_t regions[2] = { SGX_SCENE_REGIONS0, SGX_SCENE_REGIONS1 };
 
 static struct sgx_mem *mem;
-static bool ready, stuck, refused, inval, colour_code;
+static bool ready, stuck, refused, inval, colour_code, busy, last_ok;
 static uint8_t rows_format = 0x0d;
-static uint32_t gen, ccb_at, kicks, scenes, rt, target, cache, launches, verts_used;
+static uint32_t gen, ccb_at, kicks, scenes, rt, target, cache, launches, verts_used, rendering, last_scene, render_t0;
 static struct { uint32_t phys, size, gpu; } maps[4];
 static unsigned nmaps;
 static char failure[160];
@@ -101,8 +101,8 @@ static bool current(void) { return ready && gen == sgx_generation(); }
 
 static void forget(void)
 {
-	ready = stuck = colour_code = false;
-	ccb_at = kicks = scenes = rt = target = cache = launches = verts_used = 0;
+	ready = stuck = colour_code = busy = last_ok = false;
+	ccb_at = kicks = scenes = rt = target = cache = launches = verts_used = rendering = last_scene = 0;
 	nmaps = 0;
 	failure[0] = 0;
 	gen = sgx_generation();
@@ -192,9 +192,15 @@ void sgx_draw_target(uint32_t gpu_addr)
 	if (!current())
 		return;
 	target = gpu_addr;
-	sgx_set_constant(sgx_ptr(mem, SGX_SCENE_TILE_STORE0), 0, gpu_addr);
-	sgx_set_constant(sgx_ptr(mem, SGX_SCENE_TILE_STORE1), 0, gpu_addr);
-	*word(SGX_SCENE_BG_TEXTURE) = gpu_addr & ~3u;
+}
+
+/* The target goes in with the frame: a scene still rendering stores to
+ * the one it was given. */
+static void put_target(void)
+{
+	sgx_set_constant(sgx_ptr(mem, SGX_SCENE_TILE_STORE0), 0, target);
+	sgx_set_constant(sgx_ptr(mem, SGX_SCENE_TILE_STORE1), 0, target);
+	*word(SGX_SCENE_BG_TEXTURE) = target & ~3u;
 }
 
 uint32_t sgx_draw_get_target(void) { return target; }
@@ -570,6 +576,7 @@ static void put_draws(const struct sgx_frame *f)
 
 static void put_frame(const struct sgx_frame *f)
 {
+	put_target();
 	for (unsigned i = 0; i < SGX_SCENE_CLEARS; i++)
 		*word(SGX_SCENE_CLEAR + i * SGX_SCENE_CLEAR_STEP) = f->clear;
 	const uint32_t *b = sgx_scene_blend[f->draws[0].blend];
@@ -588,20 +595,40 @@ static void put_frame(const struct sgx_frame *f)
 	*word(SGX_SCENE_SYNC_LIST_ACCESS) = 1;
 }
 
-static bool frame(const struct sgx_frame *f, struct sgx_times *t)
+/* The render of the scene in flight, waited for. */
+static bool settle(void)
 {
+	if (!busy)
+		return true;
+	busy = false;
+	last_scene = rendering;
+	uint32_t us;
+	last_ok = current() && !stuck && wait(true, &us);
+	if (!last_ok) {
+		if (!stuck)
+			snprintf(failure, sizeof failure, "the GPU stopped while a scene rendered");
+		stuck = true;
+	}
+	return last_ok;
+}
+
+static uint32_t kick_frame(const struct sgx_frame *f, struct sgx_times *t)
+{
+	refused = false;
+	if (!settle())
+		return 0;
 	refused = true;
 	if (!current() || stuck || !sgx_running()) {
 		snprintf(failure, sizeof failure, "no scene, or the GPU is off");
-		return false;
+		return 0;
 	}
 	if (!valid(f)) {
 		snprintf(failure, sizeof failure, "draws of a kind not recorded");
-		return false;
+		return 0;
 	}
 	if (*word(SGX_SCENE_DETAILS_ACCESS) || *word(SGX_SCENE_SYNC_LIST_ACCESS)) {
 		snprintf(failure, sizeof failure, "the last scene still holds its render details");
-		return false;
+		return 0;
 	}
 	refused = false;
 	scenes++;
@@ -611,16 +638,38 @@ static bool frame(const struct sgx_frame *f, struct sgx_times *t)
 	if (ok) {
 		vd += END_BYTES;
 		put(vd, sgx_scene_end, 7);
-		ok = kick(true) && wait(true, &t->render_us);
+		render_t0 = time_us();
+		ok = kick(true);
 	}
-	if (!ok)
+	if (!ok) {
 		stuck = true;
-	return ok;
+		return 0;
+	}
+	busy = true;
+	rendering = scenes;
+	return scenes;
 }
+
+uint32_t sgx_draw_kick(const struct sgx_frame *f, struct sgx_times *t)
+{
+	uint32_t ticket = kick_frame(f, t);
+	verts_used = 0;
+	return ticket;
+}
+
+bool sgx_draw_finish(uint32_t ticket, struct sgx_times *t)
+{
+	if (busy && ticket == rendering) {
+		settle();
+		t->render_us = time_us() - render_t0;
+	}
+	return ticket == last_scene ? last_ok : ticket && (int32_t)(last_scene - ticket) > 0;
+}
+
+bool sgx_draw_busy(void) { return busy; }
 
 bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
 {
-	bool ok = frame(f, t);
-	verts_used = 0;
-	return ok;
+	uint32_t ticket = sgx_draw_kick(f, t);
+	return ticket && sgx_draw_finish(ticket, t);
 }
