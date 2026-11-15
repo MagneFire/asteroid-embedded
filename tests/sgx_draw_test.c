@@ -394,17 +394,18 @@ struct tdraw {
 	uint16_t count;
 	uint32_t tex;
 	uint8_t alpha;
-	bool blend;
+	bool blend, colour;
 };
-#define FLAT(v, n)		{ (v), (n), 0, 0, false }
-#define FLAT_BLEND(v, n)	{ (v), (n), 0, 0, true }
-#define TEX(v, n, t, a)		{ (v), (n), (t), (a), true }
+#define FLAT(v, n)		{ (v), (n), 0, 0, false, false }
+#define FLAT_BLEND(v, n)	{ (v), (n), 0, 0, true, false }
+#define TEX(v, n, t, a)		{ (v), (n), (t), (a), true, false }
+#define COL(v, n, t)		{ (v), (n), (t), 0, true, true }
 
 static struct sgx_frame frame_of(const struct tdraw *td, unsigned n, uint32_t clear)
 {
 	static struct sgx_draw d[SGX_DRAW_MAX_DRAWS];
 	for (unsigned i = 0; i < n; i++)
-		d[i] = (struct sgx_draw){ .verts = td[i].verts, .count = td[i].count, .kind = td[i].tex ? SGX_DRAW_TEXTURED : 0,
+		d[i] = (struct sgx_draw){ .verts = td[i].verts, .count = td[i].count, .kind = td[i].colour ? SGX_DRAW_COLOURED : td[i].tex ? SGX_DRAW_TEXTURED : 0,
 					  .blend = td[i].blend, .tex = td[i].tex, .width = 320, .height = 320,
 					  .alpha = td[i].alpha, .tiled = true };
 	return (struct sgx_frame){ clear, d, n };
@@ -452,6 +453,8 @@ static void scene(const char *name, const struct tdraw *td, unsigned n, uint32_t
 #define TB		0x0018b000
 #define TC		0x001ef000
 #define Q(first)	(QUAD_VBO + 16 * (first))
+/* The colour scenes' vertices, after the textured ones in the same buffer. */
+#define CQ(first)	(QUAD_VBO + 16 * 210 + 32 * (first))
 
 /* Where the first draw's index list has the table's address, and the
  * flat draws' vertex-secondary constants. */
@@ -636,30 +639,104 @@ static const struct tdraw alpha_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0x
 static const struct tdraw back_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), FLAT(MESH_VBO, 180),
 				       TEX(Q(6), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
 
+/* After a colour draw the driver leaves the colour program's word in
+ * word 6 of the vertex programs of the frame's other draws, which do not
+ * read it; the native code writes 0. */
+static uint32_t stale_word6[SGX_DRAW_MAX_DRAWS];
+static unsigned nstale;
+
 static void mix_scene(const char *name, const struct tdraw *td, unsigned n, unsigned frames, void (*more)(unsigned))
 {
 	load(&meshref, "mesh");
 	load(&mixref, "mix");
-	nflat = 0;
+	nflat = nstale = 0;
+	bool colour = false;
 	/* Where each flat draw's constants land: the first after its state
 	 * block, a later one after its vertex program and block. */
 	uint32_t pv = SGX_SCENE_PV + SGX_SCENE_PV_PREFIX;
 	for (unsigned i = 0; i < n; i++) {
-		if (!td[i].tex && !i) {
+		const struct tdraw *d = &td[i], *p = i ? &td[i - 1] : NULL;
+		if (i && !d->colour && colour)
+			stale_word6[nstale++] = pv + 4 * 6;
+		colour |= d->colour;
+		if (!d->tex && !i) {
 			flat_consts[nflat++] = pv + 0x60;
 			pv += 0x60 + 0x80;
-		} else if (!td[i].tex) {
+		} else if (!d->tex) {
 			flat_consts[nflat++] = pv + 0x60 + 0x40;
 			pv += 0x60 + 0x40 + 0x80;
+		} else if (p->colour && d->colour && p->tex == d->tex) {
+			pv += 0x60;
 		} else {
-			bool after_flat = !td[i - 1].tex;
-			pv += 0x60 + (after_flat ? 0x40 : 0x20);
-			if (after_flat || td[i - 1].tex != td[i].tex)
-				pv += 0x80;
+			bool after_flat = !p->tex;
+			pv += 0x60 + (after_flat ? 0x40 : 0x20) + 0x80;
+			if (!after_flat && p->colour == d->colour && p->tex == d->tex)
+				pv -= 0x80;
 		}
 	}
 	scene(name, td, n, CLEAR, frames, more, 0);
 }
+
+static void colour_subs(unsigned n)
+{
+	clean_consts(n);
+	for (unsigned i = 0; i < nstale; i++)
+		sub(stale_word6[i], 4, NULL, 0, 0, "the colour program's word, stale");
+}
+
+/* With an odd number of MTE-copy launches a frame (mixc has seven) the
+ * toggles of frame 2's launches are the other way round from frame 1's:
+ * compared with the vendor's frame 2, at the same place in its stream. */
+static void colour2_subs(unsigned n)
+{
+	colour_subs(n);
+	if (n >= 2) {
+		unsigned fa = n & ~1u;
+		uint32_t s1 = rec_word(cur, 0, cmd_at(0) + 0x4e4), s2 = rec_word(cur, fa, cmd_at(fa) + 0x4e4);
+		for (uint32_t a = SGX_SCENE_VDM + SGX_SCENE_VDM_PREFIX; a + 8 <= SGX_SCENE_VDM + 0x400; a += 4)
+			if ((*P(a) & 0xffff0000) == SGX_SCENE_LAUNCH && (*P(a + 4) & ~0xffu) == SGX_SCENE_MTE_WORD)
+				sub(a + 4, 4, cur, fa, s2 + (a + 4 - s1), "the vendor's frame 2 launch");
+	}
+	/* The rest of the second frame as mix2's: subs found first win. */
+	second_frame(n);
+}
+
+static const struct tdraw mixc_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+				       TEX(Q(6), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw mixc_end_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), TEX(Q(6), 6, TB, 0x80),
+					   TEX(Q(18), 192, TA, 0xbf), COL(CQ(0), 6, TA) };
+static const struct tdraw mixc_two_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+					   COL(CQ(6), 6, TA), TEX(Q(6), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw mixc_tex_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+					   COL(CQ(6), 6, TB), TEX(Q(6), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw mixc_grad_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(12), 6, TA),
+					    TEX(Q(6), 6, TB, 0x80), TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw acm2b_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+					FLAT(MESH_VBO, 180), TEX(Q(6), 6, TB, 0x80) };
+static const struct tdraw am2c_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), FLAT(MESH_VBO, 180),
+				       COL(CQ(0), 6, TA) };
+static const struct tdraw acc2_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+				       COL(CQ(6), 6, TA) };
+static const struct tdraw acc2m2b_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+					  COL(CQ(6), 6, TA), FLAT(MESH_VBO, 180), TEX(Q(6), 6, TB, 0x80) };
+static const struct tdraw acp_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+				      TEX(Q(18), 192, TA, 0xbf) };
+static const struct tdraw aca_d[] = { FLAT(MESH_VBO, 516), TEX(Q(0), 6, TA, 0xff), COL(CQ(0), 6, TA),
+				      TEX(Q(0), 6, TA, 0xff) };
+
+static void mixc(void) { mix_scene("mixc", mixc_d, 5, 1, colour_subs); }
+static void mixc_col(void) { mix_scene("mixc_col", mixc_d, 5, 1, colour_subs); }
+static void mixc_grad(void) { mix_scene("mixc_grad", mixc_grad_d, 5, 1, colour_subs); }
+static void mixc_end(void) { mix_scene("mixc_end", mixc_end_d, 5, 1, colour_subs); }
+static void mixc_two(void) { mix_scene("mixc_two", mixc_two_d, 6, 1, colour_subs); }
+static void mixc_tex(void) { mix_scene("mixc_tex", mixc_tex_d, 6, 1, colour_subs); }
+static void mixc_acm2b(void) { mix_scene("mixq_mesh_A_C_M2_B", acm2b_d, 5, 1, colour_subs); }
+static void mixc_am2c(void) { mix_scene("mixq_mesh_A_M2_C", am2c_d, 4, 1, colour_subs); }
+static void mixc_acc2(void) { mix_scene("mixq_mesh_A_C_C2", acc2_d, 4, 1, colour_subs); }
+static void mixc_acc2m2b(void) { mix_scene("mixq_mesh_A_C_C2_M2_B", acc2m2b_d, 6, 1, colour_subs); }
+static void mixc_acp(void) { mix_scene("mixq_mesh_A_C_P", acp_d, 4, 1, colour_subs); }
+static void mixc_aca(void) { mix_scene("mixq_mesh_A_C_A", aca_d, 4, 1, colour_subs); }
+static void mixc2(void) { mix_scene("mixq_mesh_A_C_B_P_x2", mixc_d, 5, 2, colour2_subs); }
 
 static void mesh(void)
 {
@@ -911,6 +988,19 @@ int main(void)
 		run("mix_back", mix_back);
 		run("mix2", mix2);
 		run("mix2 with the GPU off between the frames", mix2_power);
+		run("mixc", mixc);
+		run("mixc_col", mixc_col);
+		run("mixc_grad", mixc_grad);
+		run("mixc_end", mixc_end);
+		run("mixc_two", mixc_two);
+		run("mixc_tex", mixc_tex);
+		run("mixq_mesh_A_C_M2_B", mixc_acm2b);
+		run("mixq_mesh_A_M2_C", mixc_am2c);
+		run("mixq_mesh_A_C_C2", mixc_acc2);
+		run("mixq_mesh_A_C_C2_M2_B", mixc_acc2m2b);
+		run("mixq_mesh_A_C_P", mixc_acp);
+		run("mixq_mesh_A_C_A", mixc_aca);
+		run("mixq_mesh_A_C_B_P_x2", mixc2);
 	}
 	if (failures)
 		return 1;

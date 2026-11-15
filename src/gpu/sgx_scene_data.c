@@ -318,10 +318,28 @@ const uint32_t sgx_scene_tex_block4[4] = {
 	0x00000040, 0x00000000, 0x20078001, 0x00000000,
 };
 
-const uint32_t sgx_scene_mte_copy[3][3] = {
+const uint32_t sgx_scene_colour_block9[9] = {
+	0x0000c443, 0x03d00200, 0x000000f0, 0x00000800, 0x20030003, 0x00000000,
+	0x0a001000, 0x0000000f, 0x00000003,
+};
+
+const uint32_t sgx_scene_colour_block7[7] = {
+	0x0000c440, 0x00000800, 0x20030003, 0x00000000, 0x0a001000, 0x0000000f, 0x00000003,
+};
+
+const uint32_t sgx_scene_colour_block4[4] = {
+	0x00000040, 0x00000800, 0x20030003, 0x00000000,
+};
+
+const uint32_t sgx_scene_tex_block7[7] = {
+	0x0000c440, 0x00000000, 0x20078001, 0x00000000, 0x06001000, 0x00000001, 0x00000001,
+};
+
+const uint32_t sgx_scene_mte_copy[4][3] = {
 	{ 4, 0x00600003, 0x00200b1a },
 	{ 9, 0x01000008, 0x0020101a },
 	{ 18, 0x01000018, 0x00201a1a },
+	{ 7, 0x00c00006, 0x00200e1a },
 };
 
 const uint32_t sgx_scene_mte_code[8] = {
@@ -341,6 +359,16 @@ const uint32_t sgx_scene_vprog_tex[12] = {
 
 const uint32_t sgx_scene_vprog_code[6] = {
 	0x67800072, 0x2f032343, 0x67800472, 0x2f072343, 0x03082345, 0xaf000000,
+};
+
+const uint32_t sgx_scene_vprog_colour[12] = {
+	0x00000000, 0x00000801, 0x00000000, 0x00000001, 0x00000000, 0x00000403,
+	0x00002e1a, 0x00000000, 0x00000020, 0x00000020, 0x00000020, 0x00000000,
+};
+
+const uint32_t sgx_scene_vprog_colour_code[8] = {
+	0x67800072, 0x2f032343, 0x67800472, 0x2f072343,
+	0x67800872, 0x2f0b2343, 0x030c23e5, 0xaf000000,
 };
 
 const uint32_t sgx_scene_vsec_const[10] = {
@@ -373,4 +401,25 @@ const uint32_t sgx_scene_sampling[2] = {
 
 const uint32_t sgx_scene_index_list[6] = {
 	0x81c00000, 0x00000000, 0x70000000, 0x003fffff, 0x700c0000, 0x05800303,
+};
+
+const uint32_t sgx_scene_colour_program[16] = {
+	0x00181580, 0x00000000, 0x00000000, 0x00000000,
+	0x00000000, 0x00000000, 0x00000000, 0x00000000,
+	0x00000020, 0x1fc00901, 0x00000000, 0x00000000,
+	0x07000365, 0x070418a2, 0x07042364, 0xaf000000,
+};
+
+const uint32_t sgx_scene_colour_index[2] = {
+	0x400c0000, 0x07800303,
+};
+
+const uint32_t sgx_scene_colour_fs[4] = {
+	0xa000a041, 0x88801506, 0x90000000, 0x81848a1d,
+};
+
+const uint32_t sgx_scene_colour_vs[12] = {
+	0xa1000000, 0x28a11001, 0xa0800200, 0x28a13001,
+	0xa0000400, 0x28a11001, 0x01010401, 0xfa100000,
+	0x60401800, 0x28a31001, 0xa0200000, 0xfb275000,
 };

@@ -664,11 +664,121 @@ def main():
         bad = [a for a in diff(mix, 0, r, 0) if a not in own_r and a not in tex_words]
         check(not bad, "%s differs from the image at %s" % (r.name, " ".join("%08x" % a for a in bad[:8])))
 
+    colour = coloured(locals())
     data_bytes = 12 * len(runs) + 4 * len(words)
-    write_h(locals())
-    write_c(locals())
+    v = dict(locals())
+    v.update(colour)
+    write_h(v)
+    write_c(v)
     print("mkreplay: %d allocations, %d runs, %d words: %d bytes of image data" % (
         len(table), len(runs), len(words), data_bytes))
+
+
+def coloured(v):
+    """The program of texels times a colour per vertex (glrec.py's VS_TEXC, FS_TEXC), from the mixc
+    scenes, which compile it after mix's two programs and use the textured one first: its code then
+    sits after the textured one's, where the native scene puts it."""
+    mix, block_of, prim, prim_t, vprog_tex = v["mix"], v["block"], v["prim"], v["prim_t"], v["vprog_tex"]
+    none, mc, tex, two = Rec("mixc_none"), Rec("mixc"), Rec("mixc_tex"), Rec("mixq_mesh_A_C_C2_M2_B")
+    after_flat, last, end = Rec("mixq_mesh_A_M2_C"), Rec("mixq_mesh_A_C_C2"), Rec("mixc_end")
+
+    def draws(r, k=0):
+        return draws_of(r, k, u32(r.cmd(k), 0x4e4))[1]
+
+    # compiling it changes nothing at the first kick but the vertices (one buffer, longer) and the
+    # flat draw's stale secondary constants
+    vb = mix.at(v["qvbo"])
+    d = {a: w for a, w in diff(mix, 0, none, 0).items() if not vb["devva"] <= a < vb["devva"] + 0x1000}
+    stale = {v["draws"][0]["desc"] - 0x40 + 4 * i for i in (6, 7, 8, 9)}
+    check(set(d) <= stale, "compiling the colour program changes %s" % " ".join("%08x" % a for a in sorted(d)))
+    # its code, written at its first use: after the textured program's in both code heaps
+    cd = diff(none, 0, mc, 0)
+    usse = sorted(a for a in cd if mix.at(a)["heap_id"] in (4, 5))
+    check(all(cd[a][0] == 0 for a in usse), "colour code over other code")
+    code = []
+    for a in usse:
+        if code and a == code[-1][0] + 4 * len(code[-1][1]):
+            code[-1][1].append(cd[a][1])
+        else:
+            code.append([a, [cd[a][1]]])
+    check([len(c) for _, c in code] == [4, 12], "colour code: %s" % [(hex(a), len(c)) for a, c in code])
+    tc = v["tex_code"]
+    check(code[0][0] == tc[0][0] + 4 * tc[0][1] and code[1][0] >= tc[1][0] + 4 * tc[1][1], "colour code after the textured")
+    fs_code, vs_code = code
+
+    m, A, C, B, P = draws(mc)
+    cb, bb = block_of(C, mc), block_of(B, mc)
+    check(len(cb) == 7 and len(bb) == 7, "blocks at a program change: %d %d" % (len(cb), len(bb)))
+    ta, tb = draws(tex)[3:5]
+    c4 = block_of(ta, tex)
+    check(len(c4) == 4 and len(block_of(tb, tex)) == 7, "a colour draw after one with another texture")
+    t2 = draws(two)
+    check("mte" not in t2[3] and "vsec" not in t2[3], "a colour draw after one with the same texture: an index list only")
+    flat_after = block_of(t2[4], two)
+    check(flat_after == v["flat9"], "a flat block after a colour draw")
+    b5 = block_of(t2[5], two)
+    check([w for i, w in enumerate(b5) if i not in (3, 5)] == [w for i, w in enumerate(v["tex9_t"]) if i not in (3, 5)],
+          "a textured block after a flat draw")
+    c9 = block_of(draws(after_flat)[3], after_flat)
+    check(len(c9) == 9, "a colour block after a flat draw")
+
+    # the blocks: a header (after a flat draw: also the ISP word and 0xf0; at a program change; else),
+    # the secondary program (none for colour draws), the mode word, the primary program, and at a
+    # program change the iteration words
+    pw = paddr
+    tex9, tex4 = v["tex9_t"], v["tex4_t"]
+    check(cb[1] == c9[3] == c4[1] and pw(cb[1]) == 0x0dc08000, "colour draws: no pixel secondary")
+    check(cb[2] == c9[4] == c4[2] and cb[4:] == c9[6:] and cb[0] == bb[0] and c9[:3] == tex9[:3]
+          and c4[0] == tex4[0], "colour blocks")
+    check(bb[2] == tex9[4] and bb[4:] == tex9[6:], "a textured block after a colour draw")
+    t7 = list(bb)
+    t7[1] = t7[3] = 0
+    c9_t, c7_t, c4_t = list(c9), list(cb), list(c4)
+    c9_t[5] = c7_t[3] = c4_t[3] = 0
+    e7 = mc.words(0, C["entry"], 32)
+    check(C["copy"] == e7[1] and (B["copy"], B["dest"]) == (e7[1], e7[4]), "MTE copy words of a 7-word block")
+    check((ta["copy"], ta["dest"]) == v["ent"][4] and (draws(after_flat)[3]["copy"], draws(after_flat)[3]["dest"])
+          == v["ent"][9], "MTE copy words of the colour blocks")
+    check("vsec" in C and "vsec" in B and "vsec" in ta, "a vertex-secondary launch at each program or texture change")
+
+    # the vertex program: three streams, 0x20 apart
+    vc = mc.words(0, C["vprog"], 24)
+    q = vc[0]
+    check(vc[2] == q + 8 and vc[4] == q + 16 and vc[8:11] == [0x20] * 3 and not any(vc[20:]), "colour vertex program")
+    check(vc[6] & ~0xff == (vs_code[0] & 0xff0) << 4 and vc[6] & 0xff == vprog_tex[4] & 0xff, "the program word is its code's place")
+    vprog_c = list(vc[:12])
+    vprog_c[0] = vprog_c[2] = vprog_c[4] = 0
+    vprog_c_code = vc[12:20]
+    check(C["block_at"] == C["vprog"] + 0x60, "a colour vertex program takes 0x60 of the ring")
+    # a textured or flat program after it keeps the colour one's program word in its stale word 6
+    vbt = mc.words(0, B["vprog"], 12)
+    check(vbt[6] == vc[6] and [w for i, w in enumerate(vbt) if i not in (0, 2, 6)] ==
+          [w for i, w in enumerate(vprog_tex) if i not in (0, 2, 6)], "a textured program after a colour one")
+    ic = C["index"]
+    check(ic[2:4] == v["index_words"][2:4] and ic[4] & 0xFFFF0000 != v["index_words"][4], "colour index list")
+    index_c = [ic[4] & 0xFFFF0000, ic[5]]
+
+    # the texture program: the textured one's, other iteration words, and 0x60 of the pixel code
+    # chunk; shared by colour draws of the same texture only
+    qc = paddr(cb[3])
+    pc = mc.words(0, qc, 24)
+    check([w for i, w in enumerate(pc[:16]) if i not in (0, 9)] == [w for i, w in enumerate(prim) if i not in (0, 9)]
+          and not any(pc[16:]), "colour texture program")
+    prog_c = list(pc[:16])
+    prog_c[2] = prog_c[3] = prog_c[10] = 0
+    check(pw(bb[3]) == qc + 0x60 and pw(c4[3]) == pw(block_of(draws(tex)[2], tex)[3]) + 0x60,
+          "texture programs 0x60 after a colour one")
+    check(pw(cb[3]) != pw(block_of(A, mc)[5]), "a colour program of its own for a texture a textured draw has")
+
+    # ring ends: a colour program's vertex program can be the last item; a colour draw rounds the
+    # pixel ring's end up to 32 bytes
+    lt = last.fields(0)["TAStatus"][v["ta_pv"]]["value"]
+    lc = draws(last)[3]
+    check(lt == lc["vprog"] + 0x50 - v["pv_ring"]["devva"], "PDS vertex ring end after a colour program")
+    e3, m3 = end.fields(0)["3DStatus"][v["pp_end_i"]]["value"], mix.fields(0)["3DStatus"][v["pp_end_i"]]["value"]
+    check(e3 == (m3 + 31) & ~31 and e3 != m3, "pixel ring end after a colour draw: 0x%x, 0x%x" % (e3, m3))
+    return dict(fs_code=fs_code, vs_code=vs_code, t7=t7, c9_t=c9_t, c7_t=c7_t, c4_t=c4_t, ent7=(e7[1], e7[4]),
+                vprog_c=vprog_c, vprog_c_code=vprog_c_code, index_c=index_c, prog_c=prog_c)
 
 
 def write_h(v):
@@ -759,6 +869,8 @@ def write_h(v):
     d("TEX_FS_WORDS", v["tex_code"][0][1])
     d("TEX_VS_CODE", v["tex_code"][1][0])
     d("TEX_VS_WORDS", v["tex_code"][1][1])
+    d("COLOUR_FS_CODE", v["fs_code"][0])
+    d("COLOUR_VS_CODE", v["vs_code"][0])
     lines.append("")
     lines.append("/* The rings a frame is written into, from frame one's place: the")
     lines.append(" * part before the first draw (the clear) is in the image. */")
@@ -803,13 +915,24 @@ def write_h(v):
         "extern const uint32_t sgx_scene_flat_block[9];",
         "extern const uint32_t sgx_scene_tex_block9[9];",
         "extern const uint32_t sgx_scene_tex_block4[4];",
+        "/* Blocks of the colour program (texels times a colour per vertex):",
+        " * after a flat draw (pixel program in word 5), after a textured one",
+        " * (3) and after a colour one of another texture (3); and a textured",
+        " * block after a colour draw (1 and 3). */",
+        "extern const uint32_t sgx_scene_colour_block9[9];",
+        "extern const uint32_t sgx_scene_colour_block7[7];",
+        "extern const uint32_t sgx_scene_colour_block4[4];",
+        "extern const uint32_t sgx_scene_tex_block7[7];",
         "/* MTE-copy entry: copy and destination words by block size, code. */",
-        "extern const uint32_t sgx_scene_mte_copy[3][3];",
+        "extern const uint32_t sgx_scene_mte_copy[4][3];",
         "extern const uint32_t sgx_scene_mte_code[8];",
         "/* Vertex programs: data (stream addresses in words 0 and 2), code. */",
         "extern const uint32_t sgx_scene_vprog_flat[12];",
         "extern const uint32_t sgx_scene_vprog_tex[12];",
         "extern const uint32_t sgx_scene_vprog_code[6];",
+        "/* The colour program's: stream addresses in words 0, 2 and 4. */",
+        "extern const uint32_t sgx_scene_vprog_colour[12];",
+        "extern const uint32_t sgx_scene_vprog_colour_code[8];",
         "/* Vertex-secondary constants and the descriptor of both secondary",
         " * programs (address first), and their code. */",
         "extern const uint32_t sgx_scene_vsec_const[10];",
@@ -821,6 +944,12 @@ def write_h(v):
         "extern const uint32_t sgx_scene_tex_program[16];",
         "extern const uint32_t sgx_scene_sampling[2];",
         "extern const uint32_t sgx_scene_index_list[6];",
+        "/* A colour draw's texture program (as sgx_scene_tex_program), words 4",
+        " * and 5 of its index list, and the program's code, written at setup. */",
+        "extern const uint32_t sgx_scene_colour_program[16];",
+        "extern const uint32_t sgx_scene_colour_index[2];",
+        "extern const uint32_t sgx_scene_colour_fs[4];",
+        "extern const uint32_t sgx_scene_colour_vs[12];",
         "#endif",
     ]
     with open(OUT_H, "w") as f:
@@ -871,15 +1000,22 @@ def write_c(v):
     arr("sgx_scene_flat_block[9]", v["flat9"])
     arr("sgx_scene_tex_block9[9]", v["tex9_t"])
     arr("sgx_scene_tex_block4[4]", v["tex4_t"])
-    ent = v["ent"]
-    lines += ["const uint32_t sgx_scene_mte_copy[3][3] = {"]
-    for n in (4, 9, 18):
+    arr("sgx_scene_colour_block9[9]", v["c9_t"])
+    arr("sgx_scene_colour_block7[7]", v["c7_t"], 7)
+    arr("sgx_scene_colour_block4[4]", v["c4_t"])
+    arr("sgx_scene_tex_block7[7]", v["t7"], 7)
+    ent = dict(v["ent"])
+    ent[7] = v["ent7"]
+    lines += ["const uint32_t sgx_scene_mte_copy[4][3] = {"]
+    for n in (4, 9, 18, 7):
         lines.append("\t{ %d, 0x%08x, 0x%08x }," % ((n,) + ent[n]))
     lines += ["};", ""]
     arr("sgx_scene_mte_code[8]", v["mte_code"], 4)
     arr("sgx_scene_vprog_flat[12]", v["vprog_flat"])
     arr("sgx_scene_vprog_tex[12]", v["vprog_tex"])
     arr("sgx_scene_vprog_code[6]", v["vprog_code"])
+    arr("sgx_scene_vprog_colour[12]", v["vprog_c"])
+    arr("sgx_scene_vprog_colour_code[8]", v["vprog_c_code"], 4)
     arr("sgx_scene_vsec_const[10]", v["vsec_const"], 5)
     arr("sgx_scene_vsec_desc[2]", v["vsec_desc"])
     arr("sgx_scene_psec_desc[2]", v["psec_desc"])
@@ -887,6 +1023,10 @@ def write_c(v):
     arr("sgx_scene_tex_program[16]", v["prim_t"], 4)
     arr("sgx_scene_sampling[2]", [v["near"], v["lin"]])
     arr("sgx_scene_index_list[6]", v["index_words"])
+    arr("sgx_scene_colour_program[16]", v["prog_c"], 4)
+    arr("sgx_scene_colour_index[2]", v["index_c"])
+    arr("sgx_scene_colour_fs[4]", v["fs_code"][1], 4)
+    arr("sgx_scene_colour_vs[12]", v["vs_code"][1], 4)
     with open(OUT_C, "w") as f:
         f.write("\n".join(lines).rstrip("\n") + "\n")
 

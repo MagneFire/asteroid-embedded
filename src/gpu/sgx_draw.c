@@ -54,7 +54,7 @@ static const uint32_t rtdata[2] = { SGX_SCENE_RTDATA0, SGX_SCENE_RTDATA1 };
 static const uint32_t regions[2] = { SGX_SCENE_REGIONS0, SGX_SCENE_REGIONS1 };
 
 static struct sgx_mem *mem;
-static bool ready, stuck, refused, inval;
+static bool ready, stuck, refused, inval, colour_code;
 static uint8_t rows_format = 0x0d;
 static uint32_t gen, ccb_at, kicks, scenes, rt, target, cache, launches, verts_used;
 static struct { uint32_t phys, size, gpu; } maps[4];
@@ -101,7 +101,7 @@ static bool current(void) { return ready && gen == sgx_generation(); }
 
 static void forget(void)
 {
-	ready = stuck = false;
+	ready = stuck = colour_code = false;
 	ccb_at = kicks = scenes = rt = target = cache = launches = verts_used = 0;
 	nmaps = 0;
 	failure[0] = 0;
@@ -326,7 +326,7 @@ static void vdm(uint32_t a, uint32_t b)
  * toggle the driver flips at every launch. */
 static void state(const uint32_t *block, unsigned n)
 {
-	unsigned k = n == 4 ? 0 : n == 9 ? 1 : 2;
+	unsigned k = n == 4 ? 0 : n == 9 ? 1 : n == 18 ? 2 : 3;
 	put(pv, block, n);
 	uint32_t entry[32] = { pv, sgx_scene_mte_copy[k][1], 0, 0, sgx_scene_mte_copy[k][2] };
 	memcpy(&entry[12], sgx_scene_mte_code, sizeof sgx_scene_mte_code);
@@ -347,6 +347,19 @@ static void vertex_program(const uint32_t *data, uint32_t v)
 	p[2] = v + 8;
 	put(pv, p, 24);
 	pv_end = pv + 18 * 4;
+	pv += 0x60;
+}
+
+static void colour_vertex_program(uint32_t v)
+{
+	uint32_t p[24] = { 0 };
+	memcpy(p, sgx_scene_vprog_colour, sizeof sgx_scene_vprog_colour);
+	memcpy(&p[12], sgx_scene_vprog_colour_code, sizeof sgx_scene_vprog_colour_code);
+	p[0] = v;
+	p[2] = v + 8;
+	p[4] = v + 16;
+	put(pv, p, 24);
+	pv_end = pv + 20 * 4;
 	pv += 0x60;
 }
 
@@ -374,10 +387,14 @@ static void vertex_secondary(void)
 	vdm(SGX_SCENE_LAUNCH | offset(desc, SGX_SCENE_VERTEX_BASE), SGX_SCENE_VSEC_WORD);
 }
 
-static void index_list(unsigned count, uint32_t program)
+static void index_list(unsigned count, uint32_t program, bool colour)
 {
 	uint32_t w[6];
 	memcpy(w, sgx_scene_index_list, sizeof w);
+	if (colour) {
+		w[4] = sgx_scene_colour_index[0];
+		w[5] = sgx_scene_colour_index[1];
+	}
 	w[0] |= count;
 	w[1] = SGX_SCENE_INDICES;
 	w[4] |= offset(program, SGX_SCENE_VERTEX_BASE);
@@ -400,9 +417,9 @@ static bool valid(const struct sgx_frame *f)
 			return false;
 		if (d->kind == SGX_DRAW_FLAT) {
 			flats++;
-			if (i && (d->blend || f->draws[i - 1].kind != SGX_DRAW_TEXTURED))
+			if (i && (d->blend || f->draws[i - 1].kind == SGX_DRAW_FLAT))
 				return false;
-		} else if (d->kind != SGX_DRAW_TEXTURED || !d->blend || d->tex & (SGX_PAGE - 1) || d->width % 32 ||
+		} else if ((d->kind != SGX_DRAW_TEXTURED && d->kind != SGX_DRAW_COLOURED) || !d->blend || d->tex & (SGX_PAGE - 1) || d->width % 32 ||
 			   (d->linear && !d->tiled) ||
 			   d->width > 2048 || !d->height || d->height > 2048 || power_of_two(d->width) ||
 			   power_of_two(d->height)) {
@@ -412,18 +429,23 @@ static bool valid(const struct sgx_frame *f)
 	return !f->draws[0].blend || flats == 1;
 }
 
-/* A texture's pixel program, written at its first use in the frame and
- * shared by the draws after. */
+static bool same_texture(const struct sgx_draw *a, const struct sgx_draw *b)
+{
+	return a->kind == b->kind && a->tex == b->tex && a->width == b->width && a->height == b->height &&
+	       a->linear == b->linear && a->tiled == b->tiled;
+}
+
+/* A texture's pixel program, written at its first use in the frame by
+ * draws of one kind and shared by the draws of that kind after. A
+ * coloured draw's takes 0x60 of the ring, as the driver's does. */
 static uint32_t texture_program(const struct sgx_draw *d, const struct sgx_draw *draws, unsigned i, uint32_t *slots)
 {
-	for (unsigned j = 0; j < i; j++) {
-		const struct sgx_draw *e = &draws[j];
-		if (e->kind == SGX_DRAW_TEXTURED && e->tex == d->tex && e->width == d->width && e->height == d->height &&
-		    e->linear == d->linear && e->tiled == d->tiled)
+	for (unsigned j = 0; j < i; j++)
+		if (same_texture(&draws[j], d))
 			return slots[j];
-	}
+	bool colour = d->kind == SGX_DRAW_COLOURED;
 	uint32_t p[16], size = (uint32_t)(d->width - 1) << 12 | (uint32_t)(d->height - 1);
-	memcpy(p, sgx_scene_tex_program, sizeof p);
+	memcpy(p, colour ? sgx_scene_colour_program : sgx_scene_tex_program, sizeof p);
 	if (d->tiled) {
 		p[TEX_PROGRAM_SAMPLING] = sgx_scene_sampling[d->linear];
 		p[TEX_PROGRAM_SIZE] = SGX_SCENE_TEX_FORMAT | size;
@@ -433,8 +455,46 @@ static uint32_t texture_program(const struct sgx_draw *d, const struct sgx_draw 
 	}
 	p[TEX_PROGRAM_ADDR] = d->tex;
 	put(pc, p, 16);
-	pc += 0x40;
-	return pc - 0x40;
+	uint32_t at = pc;
+	pc += colour ? 0x60 : 0x40;
+	return at;
+}
+
+/* Its code, written where the driver writes it at its first use, after
+ * the textured program's. */
+static void put_colour_code(void)
+{
+	if (colour_code)
+		return;
+	put(SGX_SCENE_COLOUR_FS_CODE, sgx_scene_colour_fs, 4);
+	put(SGX_SCENE_COLOUR_VS_CODE, sgx_scene_colour_vs, 12);
+	colour_code = true;
+}
+
+static void coloured(const struct sgx_draw *d, const struct sgx_draw *prev, uint32_t q)
+{
+	uint32_t program = pv;
+	colour_vertex_program(d->verts);
+	/* Without a secondary program its pixel ring's end is rounded up. */
+	pp_end = (pp_end + 31) & ~31u;
+	if (prev->kind == SGX_DRAW_COLOURED && same_texture(prev, d)) {
+		index_list(d->count, program, true);
+		return;
+	}
+	if (prev->kind == SGX_DRAW_FLAT) {
+		uint32_t b[9];
+		memcpy(b, sgx_scene_colour_block9, sizeof b);
+		b[5] = program_word(q);
+		state(b, 9);
+	} else {
+		uint32_t b[7];
+		unsigned n = prev->kind != SGX_DRAW_COLOURED ? 7 : 4;
+		memcpy(b, n == 7 ? sgx_scene_colour_block7 : sgx_scene_colour_block4, 4 * n);
+		b[3] = program_word(q);
+		state(b, n);
+	}
+	vertex_secondary();
+	index_list(d->count, program, true);
 }
 
 static void put_draws(const struct sgx_frame *f)
@@ -468,6 +528,10 @@ static void put_draws(const struct sgx_frame *f)
 				state(sgx_scene_flat_block, 9);
 			}
 			vertex_secondary();
+		} else if (d->kind == SGX_DRAW_COLOURED) {
+			put_colour_code();
+			coloured(d, prev, slots[i] = texture_program(d, f->draws, i, slots));
+			continue;
 		} else {
 			uint32_t q = slots[i] = texture_program(d, f->draws, i, slots);
 			uint32_t c[16] = { 0 };
@@ -483,6 +547,12 @@ static void put_draws(const struct sgx_frame *f)
 				b[3] = program_word(s);
 				b[5] = program_word(q);
 				state(b, 9);
+			} else if (prev->kind == SGX_DRAW_COLOURED) {
+				uint32_t b[7];
+				memcpy(b, sgx_scene_tex_block7, sizeof b);
+				b[1] = program_word(s);
+				b[3] = program_word(q);
+				state(b, 7);
 			} else {
 				uint32_t b[4];
 				memcpy(b, sgx_scene_tex_block4, sizeof b);
@@ -490,11 +560,10 @@ static void put_draws(const struct sgx_frame *f)
 				b[3] = program_word(q);
 				state(b, 4);
 			}
-			if (prev->kind == SGX_DRAW_FLAT || prev->tex != d->tex || prev->width != d->width ||
-			    prev->height != d->height || prev->linear != d->linear || prev->tiled != d->tiled)
+			if (!same_texture(prev, d))
 				vertex_secondary();
 		}
-		index_list(d->count, program);
+		index_list(d->count, program, false);
 	}
 	put(vd, sgx_scene_end, 7);
 }

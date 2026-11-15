@@ -78,6 +78,8 @@ struct sgx_scene_word {
 #define SGX_SCENE_TEX_FS_WORDS         0x00000004
 #define SGX_SCENE_TEX_VS_CODE          0x0fc082b0
 #define SGX_SCENE_TEX_VS_WORDS         0x0000000a
+#define SGX_SCENE_COLOUR_FS_CODE       0x0f440150
+#define SGX_SCENE_COLOUR_VS_CODE       0x0fc082e0
 
 /* The rings a frame is written into, from frame one's place: the
  * part before the first draw (the clear) is in the image. */
@@ -130,13 +132,24 @@ extern const uint32_t sgx_scene_first_flat[18];
 extern const uint32_t sgx_scene_flat_block[9];
 extern const uint32_t sgx_scene_tex_block9[9];
 extern const uint32_t sgx_scene_tex_block4[4];
+/* Blocks of the colour program (texels times a colour per vertex):
+ * after a flat draw (pixel program in word 5), after a textured one
+ * (3) and after a colour one of another texture (3); and a textured
+ * block after a colour draw (1 and 3). */
+extern const uint32_t sgx_scene_colour_block9[9];
+extern const uint32_t sgx_scene_colour_block7[7];
+extern const uint32_t sgx_scene_colour_block4[4];
+extern const uint32_t sgx_scene_tex_block7[7];
 /* MTE-copy entry: copy and destination words by block size, code. */
-extern const uint32_t sgx_scene_mte_copy[3][3];
+extern const uint32_t sgx_scene_mte_copy[4][3];
 extern const uint32_t sgx_scene_mte_code[8];
 /* Vertex programs: data (stream addresses in words 0 and 2), code. */
 extern const uint32_t sgx_scene_vprog_flat[12];
 extern const uint32_t sgx_scene_vprog_tex[12];
 extern const uint32_t sgx_scene_vprog_code[6];
+/* The colour program's: stream addresses in words 0, 2 and 4. */
+extern const uint32_t sgx_scene_vprog_colour[12];
+extern const uint32_t sgx_scene_vprog_colour_code[8];
 /* Vertex-secondary constants and the descriptor of both secondary
  * programs (address first), and their code. */
 extern const uint32_t sgx_scene_vsec_const[10];
@@ -148,4 +161,10 @@ extern const uint32_t sgx_scene_sec_code[3];
 extern const uint32_t sgx_scene_tex_program[16];
 extern const uint32_t sgx_scene_sampling[2];
 extern const uint32_t sgx_scene_index_list[6];
+/* A colour draw's texture program (as sgx_scene_tex_program), words 4
+ * and 5 of its index list, and the program's code, written at setup. */
+extern const uint32_t sgx_scene_colour_program[16];
+extern const uint32_t sgx_scene_colour_index[2];
+extern const uint32_t sgx_scene_colour_fs[4];
+extern const uint32_t sgx_scene_colour_vs[12];
 #endif

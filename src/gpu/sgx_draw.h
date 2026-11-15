@@ -16,8 +16,9 @@
  * invalidating, and must have cleaned what it wrote of textures.
  *
  * Draws are as recorded: the first is flat, a flat draw after it only
- * after a textured one and without blending, blending of the first only
- * when it is the only flat one; textured draws blend premultiplied
+ * after a textured or coloured one and without blending, blending of the
+ * first only when it is the only flat one; textured and coloured draws
+ * blend premultiplied
  * (colour + target * (1 - alpha)). A texture is width * height texels
  * of bytes R, G, B, A, rows of width * 4 bytes, page aligned; widths a
  * multiple of 32 and neither side a power of two. A tiled one is laid
@@ -32,10 +33,13 @@
 #define SGX_DRAW_MAX_VERTS	2048
 #define SGX_DRAW_MAX_DRAWS	64
 
-enum { SGX_DRAW_FLAT, SGX_DRAW_TEXTURED };
+/* A coloured draw is a textured one whose texels are multiplied by a
+ * colour per vertex, premultiplied, instead of by alpha. */
+enum { SGX_DRAW_FLAT, SGX_DRAW_TEXTURED, SGX_DRAW_COLOURED };
 
 struct sgx_draw {
-	uint32_t verts;		/* GPU address of floats: flat x, y, r, g, b, a; textured x, y, u, v */
+	uint32_t verts;		/* GPU address of floats: flat x, y, r, g, b, a; textured x, y, u, v;
+				 * coloured x, y, u, v, r, g, b, a */
 	uint16_t count;		/* vertices, three a triangle */
 	uint8_t kind;
 	bool blend;
