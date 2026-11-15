@@ -154,7 +154,7 @@ int paint_mode_now(void) { return mode; }
 
 bool paint_gpu_lost(void) { return dead; }
 
-static uint32_t scale8(uint32_t v, uint32_t by)
+static inline uint32_t scale8(uint32_t v, uint32_t by)
 {
 	uint32_t t = v * by + 128;
 	return (t + (t >> 8)) >> 8;
@@ -271,7 +271,7 @@ static bool place(uint32_t w, uint32_t h, uint32_t *x, uint32_t *y)
 static void texel(const struct src *s, const uint8_t *q, uint32_t c, uint32_t r, const uint8_t t[4], uint8_t p[4])
 {
 	if (s->kind == K_COLOR) {
-		memcpy(p, t, 4);
+		__builtin_memcpy(p, t, 4);
 		return;
 	}
 	if (s->kind == K_CORNER || s->kind == K_ALPHA) {
@@ -284,10 +284,10 @@ static void texel(const struct src *s, const uint8_t *q, uint32_t c, uint32_t r,
 		return;
 	}
 	if (s->format == PAINT_RGB) {
-		memcpy(p, q + c * 3, 3);
+		__builtin_memcpy(p, q + c * 3, 3);
 		p[3] = 255;
 	} else {
-		memcpy(p, q + c * 4, 4);
+		__builtin_memcpy(p, q + c * 4, 4);
 		if (s->format == PAINT_RGBA)
 			for (int i = 0; i < 3; i++)
 				p[i] = (uint8_t)scale8(p[i], p[3]);
@@ -304,14 +304,46 @@ static void upload(const struct src *s, uint32_t x, uint32_t y)
 {
 	const uint8_t t[4] = { (uint8_t)s->tint, (uint8_t)(s->tint >> 8), (uint8_t)(s->tint >> 16),
 			       (uint8_t)(s->tint >> 24) };
+	/* Glyphs and premultiplied images, most of what is put in, word by
+	 * word: texel() per texel is most of the cost of a repaint. The
+	 * firmware is built freestanding, so memcpy is a call unless asked
+	 * for as the builtin. */
+	bool coverage = s->kind == K_ALPHA && s->format == PAINT_ALPHA && s->tint == WHITE;
+	bool premul = s->kind == K_IMAGE && s->format == PAINT_RGBA_PREMULTIPLIED && s->tint == WHITE;
+	bool straight = s->kind == K_IMAGE && s->format == PAINT_RGBA && s->tint == WHITE;
 	for (uint32_t r = 0; r < s->h; r++) {
 		volatile uint32_t *d = (volatile uint32_t *)(void *)(atlas.texels + ((y + r) * ATLAS_W + x) * 4);
 		const uint8_t *q = s->data ? s->data + r * s->stride : NULL;
+		if (coverage) {
+			for (uint32_t c = 0; c < s->w; c++)
+				d[c] = q[c] * 0x01010101u;
+			continue;
+		}
+		if (premul) {
+			for (uint32_t c = 0; c < s->w; c++) {
+				uint32_t w;
+				__builtin_memcpy(&w, q + c * 4, 4);
+				d[c] = w >> 24 ? w : 0;
+			}
+			continue;
+		}
+		if (straight) {
+			for (uint32_t c = 0; c < s->w; c++) {
+				uint32_t w, a;
+				__builtin_memcpy(&w, q + c * 4, 4);
+				a = w >> 24;
+				if (a && a != 255)
+					w = scale8(w & 0xff, a) | scale8(w >> 8 & 0xff, a) << 8 | scale8(w >> 16 & 0xff, a) << 16 |
+					    a << 24;
+				d[c] = a ? w : 0;
+			}
+			continue;
+		}
 		for (uint32_t c = 0; c < s->w; c++) {
 			uint8_t p[4];
 			uint32_t w;
 			texel(s, q, c, r, t, p);
-			memcpy(&w, p, 4);
+			__builtin_memcpy(&w, p, 4);
 			d[c] = w;
 		}
 	}
@@ -373,15 +405,28 @@ static const struct slot *lookup(const struct src *s)
 
 /* Texels in the UI heap, such as glyphs rasterised at run time, can be
  * freed and their address reused for others, so those are told apart by
- * a checksum of their contents as well. */
+ * a checksum of their contents as well. Of a texture over 4 KiB only
+ * every eighth row counts: hashing every texel of the images a repaint
+ * draws took longer than painting them. */
 static uint32_t checksum(const uint8_t *data, uint32_t stride, uint32_t bytes, uint32_t height)
 {
 	uint32_t sum = 2166136261u;
 	if ((uintptr_t)data < UI_HEAP_BASE || (uintptr_t)data >= UI_HEAP_BASE + UI_HEAP_SIZE)
 		return 0;
-	for (uint32_t r = 0; r < height; r++)
-		for (uint32_t c = 0; c < bytes; c++)
-			sum = (sum ^ data[r * stride + c]) * 16777619u;
+	uint32_t step = bytes * height > 4096 ? 8 : 1;
+	for (uint32_t i = 0; i * step < height + step - 1; i++) {
+		/* The last row too. */
+		uint32_t r = i * step < height ? i * step : height - 1;
+		const uint8_t *p = data + r * stride;
+		uint32_t c = 0;
+		for (; c + 4 <= bytes; c += 4) {
+			uint32_t w;
+			__builtin_memcpy(&w, p + c, 4);
+			sum = (sum ^ w) * 16777619u;
+		}
+		for (; c < bytes; c++)
+			sum = (sum ^ p[c]) * 16777619u;
+	}
 	return sum;
 }
 
@@ -453,8 +498,8 @@ static void emit(const struct quad *q, uint32_t tex, uint16_t tw, uint16_t th, u
 		put_quad(t, q, tw, th);
 		colour_of(colour, c);
 		for (int i = 0; i < 6; i++) {
-			memcpy(v + i * 8, t + i * 4, 4 * sizeof *v);
-			memcpy(v + i * 8 + 4, c, sizeof c);
+			__builtin_memcpy(v + i * 8, t + i * 4, 4 * sizeof *v);
+			__builtin_memcpy(v + i * 8 + 4, c, sizeof c);
 		}
 	} else
 		put_quad(v, q, tw, th);
