@@ -287,19 +287,20 @@ void rpm_unused_rails_off(void)
 
 #define APCS_CLOCK_SLEEP_ENA_VOTE	GCC(chip->sleep_vote)
 
-/* The APQ8009W's logic (CX, PM8916 S1) and memory (MX, L3) rails at
- * SVS while awake, as the vendor kernel votes them at 400 MHz: after
+/* The APQ8009W's logic (CX, PM8916 S1) and memory (MX, L3) rails while
+ * awake at the vendor kernel's corners, normal and super turbo: after
  * the RPM has lowered them to retention it raises them only to the
  * active votes. The RPM takes the corner less one. */
 #define RPM_KEY_CORNER		0x6e726f63u
 #define CORNER_NONE		1
-#define CORNER_SVS_SOC		4
+#define CORNER_NORMAL		5
+#define CORNER_SUPER_TURBO	7
 
 static void rail_votes(void)
 {
-	static const uint32_t rails[][2] = { { RPM_SMPA, 1 }, { RPM_LDOA, 3 } };
+	static const uint32_t rails[][3] = { { RPM_SMPA, 1, CORNER_NORMAL }, { RPM_LDOA, 3, CORNER_SUPER_TURBO } };
 	for (unsigned i = 0; i < 2; i++) {
-		uint32_t on[3] = { RPM_KEY_CORNER, 4, CORNER_SVS_SOC - CORNER_NONE }, off[3] = { RPM_KEY_CORNER, 4, 0 };
+		uint32_t on[3] = { RPM_KEY_CORNER, 4, rails[i][2] - CORNER_NONE }, off[3] = { RPM_KEY_CORNER, 4, 0 };
 		if (request(RPM_SET_ACTIVE, rails[i][0], rails[i][1], on, 1) ||
 		    request(RPM_SET_SLEEP, rails[i][0], rails[i][1], off, 1))
 			log_printf("rpm: rail corner vote %u not acknowledged\n", i);
