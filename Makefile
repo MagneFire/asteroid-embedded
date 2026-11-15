@@ -55,8 +55,9 @@ SRCS_omap3 := $(addprefix src/soc/omap3/,init.c intc.c timer.c wdt.c clock.c gpi
                detect.c rtc.c hsmmc.c dss.c uart.c) \
         src/board/minnow.c src/gpu/soft.c src/gpu/sgx.c src/gpu/sgx_image.c src/gpu/sgx_draw.c src/gpu/sgx_scene_data.c src/gpu/sgx_compose.c src/gpu/sgx_paint.c src/display/display_minnow.c src/usb/dcd_musb_omap3.c src/usb/port_musb_omap3.c src/bt/ti.c
 CPU_omap3 := cortex-a8
-# Counts what the UI paints, for the paint line in the log.
-UI_CFG_omap3 := --cfg paint_counts
+# Counts what the UI paints, for the paint line in the log, and lets
+# the console set the glyph positions per pixel.
+UI_CFG_omap3 := --cfg paint_counts --cfg glyph_bins --check-cfg cfg(glyph_bins)
 FPU_omap3 := neon
 TUSB_PORT_omap3 := mentor/musb
 # The Mentor driver keeps its endpoint interrupts in 8 bits.

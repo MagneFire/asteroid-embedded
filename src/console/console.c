@@ -1488,6 +1488,15 @@ static void cmd_sgx(const char *args)
 		if (*o)
 			frame_mesh_reuse(!strcmp(o, "keep"));
 		say("mesh %s\n", frame_mesh_reuse_on() ? "kept while it stays" : "built every frame");
+	} else if (!strncmp(args, "bins", 4) && (!args[4] || args[4] == ' ')) {
+		char *end;
+		unsigned long bins = strtoul(skip_spaces(args + 4), &end, 10), min = *end ? strtoul(end, &end, 10) : 0;
+		if ((bins != 1 && bins != 2 && bins != 4) || *skip_spaces(end)) {
+			say("usage: sgx bins <1 | 2 | 4> [from px]\n");
+			return;
+		}
+		ui_glyph_bins(bins, min);
+		say("glyphs at %lu positions per pixel from %lu px\n", bins, min);
 	} else if (!strncmp(args, "paint atlas", 11) && (!args[11] || args[11] == ' ')) {
 		uint32_t w, h, mw, mh;
 		const char *o = skip_spaces(args + 11);
@@ -1546,8 +1555,8 @@ static void cmd_sgx(const char *args)
 		say("in the log\n");
 	} else if (*args)
 		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | "
-		    "overlap [on | off] | atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | ui [on | off] | "
-		    "inval [on | off]]\n");
+		    "overlap [on | off] | atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | bins <1 | 2 | "
+		    "4> [from px] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1611,7 +1620,8 @@ static const struct command commands[] = {
 #ifdef SGX_BASE
 	{ "sgx",
 	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off] | "
-	  "atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | ui [on | off] | inval [on | off]]",
+	  "atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | bins <1 | 2 | 4> [from px] | ui [on | off] | "
+	  "inval [on | off]]",
 	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },

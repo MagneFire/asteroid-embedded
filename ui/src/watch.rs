@@ -1031,3 +1031,11 @@ pub extern "C" fn ui_repaint(panel: u32, gpu: bool) {
         });
     });
 }
+
+/// Text of `min_px` and over placed at `bins` (1, 2 or 4) positions per
+/// pixel, from the next repaint.
+#[cfg(glyph_bins)]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_glyph_bins(bins: u32, min_px: u32) {
+    i_slint_renderer_software::set_subpixel_bins(bins, min_px);
+}

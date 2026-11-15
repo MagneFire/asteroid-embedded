@@ -405,3 +405,30 @@ impl super::GlyphRenderer for VectorFont {
         super::Fixed::from_integer(1)
     }
 }
+
+/// With `cfg(glyph_bins)` text of at least a size can be placed at fewer
+/// positions, 2 or 1 of the bins: fewer bitmaps for text that moves. The
+/// bitmaps keep the quarter-pixel offsets of their bin.
+#[cfg(glyph_bins)]
+static COARSE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(SUBPIXEL_BIN_COUNT as u32);
+
+/// Text of `min_px` and over at `bins` positions per pixel (1, 2 or 4).
+#[cfg(glyph_bins)]
+pub fn set_subpixel_bins(bins: u32, min_px: u32) {
+    let bins = if bins == 1 || bins == 2 { bins } else { SUBPIXEL_BIN_COUNT as u32 };
+    COARSE.store(bins | min_px << 8, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// The positions per pixel for text of `pixel_size`.
+#[cfg(glyph_bins)]
+pub(crate) fn subpixel_bins(pixel_size: i32) -> i32 {
+    let c = COARSE.load(core::sync::atomic::Ordering::Relaxed);
+    if pixel_size >= (c >> 8) as i32 { (c & 0xff) as i32 } else { SUBPIXEL_BIN_COUNT }
+}
+
+/// Without `cfg(glyph_bins)` always all of the bins.
+#[cfg(not(glyph_bins))]
+#[inline(always)]
+pub(crate) const fn subpixel_bins(_pixel_size: i32) -> i32 {
+    SUBPIXEL_BIN_COUNT
+}

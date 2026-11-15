@@ -236,6 +236,10 @@ void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, b
 		  bool profile, bool passive);
 /* The lines at the bottom of the picture the panel does not show. */
 void ui_set_chin(uint32_t px);
+#ifdef SGX_BASE
+/* Text of min_px and over at bins (1, 2 or 4) positions per pixel. */
+void ui_glyph_bins(uint32_t bins, uint32_t min_px);
+#endif
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
 /* Steps today, the goal, what today's steps come to, and the steps of the last n days, oldest
