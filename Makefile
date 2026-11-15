@@ -47,6 +47,8 @@ SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c s
         src/display/display.c src/display/mdp3.c src/display/dsi.c src/soc/charger_smb231.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c src/gpu/soft.c src/gpu/qcom_compose.c \
         src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc_msm.c
 CPU_qcom  := cortex-a7
+# Only the minnow build sets glyph_bins.
+UI_CFG_qcom := --check-cfg cfg(glyph_bins)
 FPU_qcom  := neon-vfpv4
 TUSB_PORT_qcom := chipidea/ci_hs
 TUSB_DEFS_qcom := -DTUP_USBIP_CHIPIDEA_HS -DTUP_DCD_ENDPOINT_MAX=16
