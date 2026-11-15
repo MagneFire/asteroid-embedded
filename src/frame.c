@@ -20,6 +20,13 @@ static int dot_x = -1, dot_y = -1;
 static bool have_ui, have_gpu, gpu_off, woke;
 static uint32_t gpu_frames, gpu_us, gpu_vert_us, gpu_fail;
 static uint32_t mesh_us, layer_us, end_us, flip_us;
+#ifdef SGX_BASE
+static bool mesh_reuse = true;
+static uint32_t mesh_kept;
+
+void frame_mesh_reuse(bool on) { mesh_reuse = on; }
+bool frame_mesh_reuse_on(void) { return mesh_reuse; }
+#endif
 /* How long after the last thing moved the processor may slow down. */
 #define BUSY_MS	300
 static uint32_t waited_us;
@@ -70,7 +77,6 @@ static struct {
 	bool any, damaged[UI_PANELS];
 	uint32_t rect[UI_PANELS][4];
 } later;
-
 static void damage_later(void)
 {
 	if (!later.any)
@@ -101,13 +107,36 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 		vbo = gpu_alloc(FLATMESH_GPU_VERTICES * 32, 64);
 	uint32_t t0 = time_us();
 	mesh_t = t_ms;
+#ifdef SGX_BASE
+	float c, s;
+	rotation_turn(time_ms(), &c, &s);
+	/* The mesh only moves every MESH_STEP_MS, so its vertices are kept
+	 * while it, the view and the colours stay; not when turned, as the
+	 * turn may be applied to them in place. */
+	static struct { uint32_t t, look; unsigned n; bool valid; } kept;
+	bool straight = c == 1.0f && s == 0.0f;
+	unsigned n;
+	if (mesh_reuse && kept.valid && straight && kept.t == t_ms && kept.look == flatmesh_look()) {
+		n = kept.n;
+		mesh_kept++;
+	} else {
+		n = flatmesh_vertices_gpu(vbo, t_ms);
+		kept.t = t_ms;
+		kept.look = flatmesh_look();
+		kept.n = n;
+	}
+	kept.valid = straight;
+#else
 	unsigned n = flatmesh_vertices_gpu(vbo, t_ms);
+#endif
 	struct gpu_target t = { (uint32_t)(uintptr_t)buf, fb.width, fb.height, fb.stride * 4, false };
 	gpu_draw_cpu_sync(buf, fb.stride * fb.height * 4);
 	uint32_t t1 = time_us();
 	gpu_draw_begin(&t);
+#ifndef SGX_BASE
 	float c, s;
 	rotation_turn(time_ms(), &c, &s);
+#endif
 	gpu_draw_turn(c, s);
 	/* The frame-filling quad in front of the mesh stays put. */
 	unsigned fill = n - FLATMESH_GPU_MESH;
@@ -289,8 +318,16 @@ void frame_draw(uint32_t now)
 		ui_us += time_us() - u0;
 		ui_frames++;
 		stack_offset(&sx, &sy);
+#ifdef SGX_BASE
+		/* Set once, so the look only changes when the picture does. */
+		if (!have_gpu || !stack_app_still()) {
+			flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
+			mesh_colors(stack_launcher());
+		}
+#else
 		flatmesh_view(1.1f, (float)sx / fb.width * 0.05f, (float)sy / fb.height * 0.05f, 1.0f - stack_dim());
 		mesh_colors(stack_launcher());
+#endif
 		one_mesh = have_gpu && stack_app_still();
 		if (one_mesh) {
 			flatmesh_view(1.1f, 0.0f, 0.0f, 1.0f);
@@ -346,9 +383,16 @@ uint32_t frame_waited_us(void) { return waited_us; }
 /* The last second's numbers, for the log. */
 void frame_log(void)
 {
+#ifdef SGX_BASE
+	if (gpu_frames)
+		log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices, %lu kept\n", gpu_frames,
+			   gpu_us / gpu_frames, gpu_vert_us / gpu_frames, mesh_kept);
+	mesh_kept = 0;
+#else
 	if (gpu_frames)
 		log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,
 			   gpu_us / gpu_frames, gpu_vert_us / gpu_frames);
+#endif
 	if (gpu_frames)
 		log_printf("frame: mesh %lu, layers %lu, end %lu, flip %lu us\n", mesh_us / gpu_frames, layer_us / gpu_frames,
 			   end_us / gpu_frames, flip_us / gpu_frames);

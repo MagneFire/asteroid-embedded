@@ -18,4 +18,9 @@ void frame_draw(uint32_t now);
 /* How long the last frame_draw slept with nothing to draw. */
 uint32_t frame_waited_us(void);
 void frame_log(void);
+#ifdef SGX_BASE
+/* Keeps the FlatMesh's vertices while the picture stays. */
+void frame_mesh_reuse(bool on);
+bool frame_mesh_reuse_on(void);
+#endif
 #endif

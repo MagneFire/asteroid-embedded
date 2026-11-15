@@ -1470,6 +1470,15 @@ static void cmd_sgx(const char *args)
 		sgx_tex(skip_spaces(args + 3));
 	} else if (!strncmp(args, "copy", 4) && (!args[4] || args[4] == ' ')) {
 		sgx_copy(skip_spaces(args + 4));
+	} else if (!strncmp(args, "mesh", 4) && (!args[4] || args[4] == ' ')) {
+		const char *o = skip_spaces(args + 4);
+		if (*o && strcmp(o, "keep") && strcmp(o, "build")) {
+			say("usage: sgx mesh [keep | build]\n");
+			return;
+		}
+		if (*o)
+			frame_mesh_reuse(!strcmp(o, "keep"));
+		say("mesh %s\n", frame_mesh_reuse_on() ? "kept while it stays" : "built every frame");
 	} else if (!strncmp(args, "paint", 5) && (!args[5] || args[5] == ' ')) {
 		static const char *const modes[] = { [PAINT_MODE_SOFT] = "soft", [PAINT_MODE_GPU] = "gpu",
 						     [PAINT_MODE_NULL] = "null" };
@@ -1513,8 +1522,8 @@ static void cmd_sgx(const char *args)
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | "
-		    "paint [gpu | soft | null | overlap [on | off]] | ui [on | off] | inval [on | off]]\n");
+		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | "
+		    "overlap [on | off]] | mesh [keep | build] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1578,7 +1587,7 @@ static const struct command commands[] = {
 #ifdef SGX_BASE
 	{ "sgx",
 	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off]] | "
-	  "ui [on | off] | inval [on | off]]",
+	  "mesh [keep | build] | ui [on | off] | inval [on | off]]",
 	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },

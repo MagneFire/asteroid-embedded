@@ -16,8 +16,17 @@
 static uint32_t colors[FLATMESH_INDICES / 3], center = DEFAULT_CENTER, outer = DEFAULT_OUTER;
 static float view_scale = 1.0f, view_x, view_y, view_shade = 1.0f;
 
+#ifdef SGX_BASE
+static uint32_t look_gen;
+
+uint32_t flatmesh_look(void) { return look_gen; }
+#endif
+
 void flatmesh_view(float scale, float dx, float dy, float shade)
 {
+#ifdef SGX_BASE
+	look_gen += scale != view_scale || dx != view_x || dy != view_y || shade != view_shade;
+#endif
 	view_scale = scale;
 	view_x = dx;
 	view_y = dy;
@@ -39,6 +48,9 @@ static void prepare(void)
 /* The centre and outer colours, 0xRRGGBB. */
 void flatmesh_colors(uint32_t c, uint32_t o)
 {
+#ifdef SGX_BASE
+	look_gen += c != center || o != outer;
+#endif
 	center = c;
 	outer = o;
 	for (int t = 0; t < FLATMESH_INDICES / 3; t++) {
