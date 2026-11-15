@@ -105,7 +105,7 @@ void settings_changed(void);
 bool cpu_idle_init(void);
 void cpu_idle(bool cluster);
 /* The deepest idle state cpu_idle may use, for testing. */
-enum idle_level { IDLE_WFI, IDLE_CORE, IDLE_CLUSTER };
+enum idle_level { IDLE_WFI, IDLE_CORE, IDLE_GDHS, IDLE_CLUSTER };
 void cpu_idle_limit(enum idle_level level);
 void wake_pin(unsigned pin, bool on, bool high);
 void wake_pin_falling(unsigned pin, bool on);

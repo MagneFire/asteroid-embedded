@@ -62,7 +62,13 @@ static const uint8_t l2_seq_8009[] = {
 	0xb0, 0x50, 0x4e, 0x02, 0x02, 0xc0, 0xd0, 0x12, 0xe0, 0x6b, 0x02, 0x32, 0x50, 0xf0, 0x0f,
 };
 
+#define L2_SEQ_GDHS		4
 #define L2_SEQ_POWER_COLLAPSE	26
+
+/* What the secure world is told the L2 does in a collapse. */
+#define SCM_L2_ON		0
+#define SCM_L2_OFF		1
+#define SCM_L2_GDHS		3
 
 /* The vendor's SAW settings. The APQ8026's kernel sets only the start
  * of a mode in SPM_CTL. The APQ8009W's writes the whole register, and
@@ -70,7 +76,7 @@ static const uint8_t l2_seq_8009[] = {
  * collapse modes, as the RPM is told through the MPM instead. */
 struct spm_chip {
 	uint32_t cpu_cfg;
-	uint32_t ctl_wfi, ctl_pc, ctl_l2_pc;
+	uint32_t ctl_wfi, ctl_pc, ctl_l2_pc, ctl_l2_gdhs;
 	const uint8_t *l2_seq;
 	unsigned l2_len;
 	uint32_t l2_pmic_data[6];
@@ -92,6 +98,7 @@ static const struct spm_chip spm_8009 = {
 	.ctl_wfi = SPM_CTL_START(CPU_SEQ_CLOCK_GATING) | SPM_CTL_EN,
 	.ctl_pc = SPM_CTL_PC_MODE | SPM_CTL_START(CPU_SEQ_POWER_COLLAPSE) | SPM_CTL_EN,
 	.ctl_l2_pc = SPM_CTL_PC_MODE | SPM_CTL_START(L2_SEQ_POWER_COLLAPSE) | SPM_CTL_EN,
+	.ctl_l2_gdhs = SPM_CTL_PC_MODE | SPM_CTL_START(L2_SEQ_GDHS) | SPM_CTL_EN,
 	.l2_seq = l2_seq_8009,
 	.l2_len = sizeof l2_seq_8009,
 	.l2_pmic_data = { 0x05030080, 0x00030000, 0, 0, 0x00010080, 0x00010000 },
@@ -221,10 +228,15 @@ void cpu_idle(bool cluster)
 		__asm__ volatile("cpsie i" ::: "memory");
 		return;
 	}
-	cluster = cluster && cluster_parked && idle_limit == IDLE_CLUSTER && left >= timer_hz() / 50;
+	cluster = cluster && cluster_parked && idle_limit >= IDLE_GDHS && left >= timer_hz() / 50;
+	bool gdhs = cluster && idle_limit == IDLE_GDHS;
+	if (gdhs && !spm->ctl_l2_gdhs)
+		cluster = gdhs = false;
+	/* Only a full collapse goes through the RPM, as the vendor's does. */
 	if (cluster) {
-		mpm_arm(deadline);
-		writel(spm->ctl_l2_pc, SAW_L2 + SAW_SPM_CTL);
+		if (!gdhs)
+			mpm_arm(deadline);
+		writel(gdhs ? spm->ctl_l2_gdhs : spm->ctl_l2_pc, SAW_L2 + SAW_SPM_CTL);
 	}
 	/* Off while the halves change, or one half-written may be past. */
 	writel(0, QTMR_CNTP_CTL);
@@ -233,7 +245,7 @@ void cpu_idle(bool cluster)
 	writel(1, QTMR_CNTP_CTL);
 	ppis = gic_cpu_save();
 	spm_cpu_mode(SPM_POWER_COLLAPSE);
-	if (cpu_suspend(cluster) == 0) {
+	if (cpu_suspend(gdhs ? SCM_L2_GDHS : cluster ? SCM_L2_OFF : SCM_L2_ON) == 0) {
 		if (cluster)
 			cluster_collapses++;
 		else
