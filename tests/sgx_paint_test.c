@@ -656,7 +656,8 @@ int main(void)
 	CHECK(frames_of("after a restart", full, false) == 1 && !paint_gpu_lost(), "the GPU asked for again");
 
 	/* With overlap, the same pixels; the last scene of a repaint renders
-	 * on past paint_finish. */
+	 * on past paint_finish, and starting the atlas over takes the other
+	 * one instead of waiting. */
 	paint_overlap(true);
 	CHECK(frames_of("overlap full", full, false) == 1 && left_rendering, "a repaint left rendering");
 	CHECK(frames_of("overlap partial", partial, true) >= 1, "a partial repaint with overlap");
@@ -664,7 +665,7 @@ int main(void)
 	CHECK(frames_of("overlap left out", left_out, false) == 3, "calls left to the UI with overlap");
 	f = frames_of("overlap many", many, true);
 	CHECK(f >= 2, "many quads with overlap in %u frames", f);
-	CHECK(frames_of("overlap crowded", crowded, false) >= 3, "the atlas started over with overlap");
+	CHECK(frames_of("overlap crowded", crowded, false) >= 3 && atlases_given == 2, "the other atlas");
 	CHECK(frames_of("overlap small", small, true) == 0, "a small repaint with overlap");
 	CHECK(frames_of("overlap cpu rows", cpu_rows, false) == 2, "a sync with overlap");
 

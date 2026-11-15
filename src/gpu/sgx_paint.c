@@ -105,10 +105,12 @@ struct op {
 static int mode = PAINT_MODE_SOFT;
 static bool dead, told;
 
+/* Two with overlap, so that starting over does not wait for the scene
+ * that samples the one in use. */
 static struct atlas {
 	uint8_t *texels;
 	uint32_t gpu, gen, x, y, row_h;
-} atlas_buf, *atlas = &atlas_buf;
+} atlases[2], *atlas = &atlases[0];
 static uint32_t atlas_epoch;
 static struct slot slots[SLOTS];
 static unsigned nslots;
@@ -143,6 +145,7 @@ static struct {
 	bool busy;
 	uint32_t *layer, ticket;
 	struct scene *s;
+	struct atlas *atlas;
 } fl;
 static bool overlap = true;
 
@@ -255,12 +258,17 @@ static void reset_atlas(void)
 	atlas_epoch++;
 }
 
-/* Starts the atlas over, after the GPU has drawn what uses it. */
+/* Starts the atlas over, after the GPU has drawn what uses it, or in
+ * the other one: the scene in flight is the only one not waited for. */
 static void restart(void)
 {
 	if (sc->open && sc->atlas_used)
 		flush_scene(FLUSH_ATLAS);
-	settle();
+	struct atlas *other = &atlases[atlas == &atlases[0]];
+	if (overlap && other->texels && other->gen == sgx_generation() && !(fl.busy && fl.atlas == other))
+		atlas = other;
+	else
+		settle();
 	reset_atlas();
 	st.restarts++;
 }
@@ -729,6 +737,7 @@ static void submit(void)
 		fl.layer = rep.layer;
 		fl.ticket = ticket;
 		fl.s = sc;
+		fl.atlas = atlas;
 		sc = sc == &scenes[0] ? &scenes[1] : &scenes[0];
 		sc->open = false;
 		if (!overlap)
@@ -835,14 +844,23 @@ static bool setup(uint32_t *layer)
 {
 	if (!sgx_draw_setup())
 		return false;
-	if (!atlas->texels || atlas->gen != sgx_generation()) {
+	if (atlas->gen != sgx_generation())
+		atlas = &atlases[0];
+	for (unsigned i = 0; i < 1u + overlap; i++) {
+		struct atlas *a = &atlases[i];
+		if (a->texels && a->gen == sgx_generation())
+			continue;
 		void *cpu;
-		atlas->texels = NULL;
-		if (!(atlas->gpu = sgx_draw_alloc(ATLAS_W * ATLAS_H * 4, &cpu)))
-			return false;
-		atlas->texels = cpu;
-		atlas->gen = sgx_generation();
-		reset_atlas();
+		a->texels = NULL;
+		if (!(a->gpu = sgx_draw_alloc(ATLAS_W * ATLAS_H * 4, &cpu))) {
+			if (!i)
+				return false;
+			break;
+		}
+		a->texels = cpu;
+		a->gen = sgx_generation();
+		if (a == atlas)
+			reset_atlas();
 	}
 	rep.layer_gpu = sgx_draw_map(PHYS(layer), SIZE * PITCH);
 	return rep.layer_gpu != 0;
