@@ -36,7 +36,7 @@ enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_GA
 static uint8_t tx[WRITE_PAD + REPLY_BYTES], rx[WRITE_PAD + REPLY_BYTES + MORE_BYTES];
 static uint8_t payload[NANOHUB_PAYLOAD_MAX];
 static uint32_t seq, errors, events, versions[2];
-static bool present, tilt_on, hr_on, light_on;
+static bool present, tilt_on, hr_on, light_on, screen_off;
 static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
@@ -420,10 +420,17 @@ static void out(uint8_t pin, unsigned v)
 /* What the hub should be doing, sent again after it restarted. */
 static bool want_tilt, want_hr, want_accel, want_light;
 
+/* The steps come once a minute even when they don't change, and every
+ * event wakes the AP: with the screen off the hub holds them back. */
+static uint64_t steps_latency_ns(void)
+{
+	return screen_off ? 600000000000ull : 0;
+}
+
 static void apply_state(void)
 {
 	set_time();
-	if (!configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0))
+	if (!configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns()))
 		log_printf("hub: steps today not enabled\n");
 	/* What the hub logs in band mode: steps and activity, and the heart
 	 * rate if the watch logs it. */
@@ -640,8 +647,13 @@ static void nanohub_sleep(bool asleep)
 /* With the screen off the hub draws the time on its own LCD. */
 static void nanohub_screen(bool on)
 {
-	if (started)
-		set_mode(on ? MODE_NORMAL : MODE_AMBIENT);
+	screen_off = !on;
+	if (!started)
+		return;
+	set_mode(on ? MODE_NORMAL : MODE_AMBIENT);
+	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns());
+	if (on)
+		configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_FLUSH, 0, 0);
 }
 
 /* What the vendor's Essential mode leaves the hub in: its sensors for the
