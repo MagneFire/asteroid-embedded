@@ -11,6 +11,7 @@
 #define SRC_XO			(0u << 8)
 #define SRC_GPLL0		(4u << 8)
 #define SRC_A7_PLL		(5u << 8)
+#define SRC_MASK		(7u << 8)
 #define DIV_2			3u
 #define DIV_1			1u
 #define A7_PLL_MODE		(A7_PLL_BASE + 0x00)
@@ -23,13 +24,24 @@
 #define GCC_GPLL0_STATUS	GCC(chip->gpll0_status)
 #define A7_PLL_LOCKED		BIT(16)
 
+/* GPLL0 stops with the crystal, and the mux cannot change to a source
+ * that is not running. */
+static void gpll0_on(void)
+{
+	writel(readl(GCC_GPLL_ENA_VOTE) | BIT(0), GCC_GPLL_ENA_VOTE);
+	for (int i = 0; i < 100000 && !(readl(GCC_GPLL0_STATUS) & chip->gpll0_ready); i++)
+		;
+}
+
 static void cpu_clock_select(uint32_t cfg)
 {
 	if (readl(APCS_A7_CFG_RCGR) == cfg)
 		return;
-	if ((cfg & SRC_A7_PLL) == SRC_A7_PLL)
+	if ((cfg & SRC_MASK) == SRC_A7_PLL)
 		for (int i = 0; i < 100000 && !(readl(A7_PLL_STATUS) & A7_PLL_LOCKED); i++)
 			;
+	if ((cfg & SRC_MASK) == SRC_GPLL0)
+		gpll0_on();
 	writel(cfg, APCS_A7_CFG_RCGR);
 	writel(readl(APCS_A7_CMD_RCGR) | RCG_UPDATE, APCS_A7_CMD_RCGR);
 	for (int i = 0; i < 100000 && (readl(APCS_A7_CMD_RCGR) & RCG_UPDATE); i++)
@@ -77,16 +89,13 @@ bool cpu_clock_is_slow(void)
 	return slow_now;
 }
 
-/* The APQ8009W runs from GPLL0, not the A7 PLL, so it has nothing to
- * turn off here. */
+/* The vendor kernel takes the cluster down on GPLL0 / 2, never on the
+ * crystal; the APQ8009W leaves its A7 PLL off. */
 void cpu_clock_park(void)
 {
+	cpu_clock_select(SRC_GPLL0 | DIV_2);
 	if (fast_cfg() != (SRC_A7_PLL | DIV_1))
 		return;
-	writel(readl(GCC_GPLL_ENA_VOTE) | BIT(0), GCC_GPLL_ENA_VOTE);
-	for (int i = 0; i < 100000 && !(readl(GCC_GPLL0_STATUS) & chip->gpll0_ready); i++)
-		;
-	cpu_clock_select(SRC_GPLL0 | DIV_2);
 	writel(readl(A7_PLL_MODE) & ~(PLL_OUTCTRL | PLL_BYPASSNL | PLL_RESET_N), A7_PLL_MODE);
 }
 
