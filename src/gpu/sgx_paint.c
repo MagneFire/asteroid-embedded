@@ -44,9 +44,13 @@ extern uintptr_t gpu_host_base;
 
 #define SIZE		SGX_DRAW_SIZE
 #define PITCH		(SIZE * 4)
-#define ATLAS_W		480
-#define ATLAS_H		480
-#define SLOTS		1024
+/* The atlases are allocated atlas_w x atlas_h, or the small size if
+ * that does not fit. They grow in height: the GPU sampled the rows of
+ * a 960 wide one wrong, 480 wide ones of 928 rows right. */
+#define SMALL_W		480
+#define SMALL_H		480
+#define WIDE_MAX	511
+#define SLOTS		2048
 #define MAX_COPY	8
 #define MAX_OPS		256
 #define MAX_QUADS	9
@@ -109,11 +113,11 @@ static bool dead, told;
  * that samples the one in use. */
 static struct atlas {
 	uint8_t *texels;
-	uint32_t gpu, gen, x, y, row_h;
+	uint32_t gpu, gen, x, y, row_h, w, h;
+	struct slot slots[SLOTS];
+	unsigned nslots;
 } atlases[2], *atlas = &atlases[0];
-static uint32_t atlas_epoch;
-static struct slot slots[SLOTS];
-static unsigned nslots;
+static uint32_t atlas_epoch, atlas_w = 480, atlas_h = 928;
 
 /* The repaint. */
 static struct {
@@ -150,7 +154,7 @@ static struct {
 static bool overlap = true;
 
 static struct {
-	uint32_t repaints, small, off, scenes, ta_us, render_us, wait_us, quads, uploads, upload_px, restarts;
+	uint32_t repaints, small, off, scenes, ta_us, render_us, wait_us, quads, uploads, upload_px, restarts, switches;
 	uint32_t rects, textures, rounded, flush[FLUSHES], cpu[CPUS];
 } st;
 
@@ -252,22 +256,33 @@ static bool clip_quad(struct quad *q, const int c[4])
 
 static void reset_atlas(void)
 {
-	memset(slots, 0, sizeof slots);
-	nslots = 0;
+	memset(atlas->slots, 0, sizeof atlas->slots);
+	atlas->nslots = 0;
 	atlas->x = atlas->y = atlas->row_h = 0;
 	atlas_epoch++;
 }
 
-/* Starts the atlas over, after the GPU has drawn what uses it, or in
- * the other one: the scene in flight is the only one not waited for. */
-static void restart(void)
+/* Goes on in the other atlas, which keeps what it holds, unless the
+ * scene in flight samples it; false if it cannot. */
+static bool switch_atlas(void)
 {
 	if (sc->open && sc->atlas_used)
 		flush_scene(FLUSH_ATLAS);
 	struct atlas *other = &atlases[atlas == &atlases[0]];
-	if (overlap && other->texels && other->gen == sgx_generation() && !(fl.busy && fl.atlas == other))
-		atlas = other;
-	else
+	if (!overlap || !other->texels || other->gen != sgx_generation() || (fl.busy && fl.atlas == other))
+		return false;
+	atlas = other;
+	atlas_epoch++;
+	st.switches++;
+	return true;
+}
+
+/* Starts the atlas in use over, after the GPU has drawn what uses it. */
+static void restart(void)
+{
+	if (sc->open && sc->atlas_used)
+		flush_scene(FLUSH_ATLAS);
+	if (fl.busy && fl.atlas == atlas)
 		settle();
 	reset_atlas();
 	st.restarts++;
@@ -275,12 +290,12 @@ static void restart(void)
 
 static bool place(uint32_t w, uint32_t h, uint32_t *x, uint32_t *y)
 {
-	if (atlas->x + w > ATLAS_W) {
+	if (atlas->x + w > atlas->w) {
 		atlas->y += atlas->row_h + 1;
 		atlas->x = 0;
 		atlas->row_h = 0;
 	}
-	if (w > ATLAS_W || atlas->y + h > ATLAS_H)
+	if (w > atlas->w || atlas->y + h > atlas->h)
 		return false;
 	*x = atlas->x;
 	*y = atlas->y;
@@ -334,7 +349,7 @@ static void upload(const struct src *s, uint32_t x, uint32_t y)
 	bool premul = s->kind == K_IMAGE && s->format == PAINT_RGBA_PREMULTIPLIED && s->tint == WHITE;
 	bool straight = s->kind == K_IMAGE && s->format == PAINT_RGBA && s->tint == WHITE;
 	for (uint32_t r = 0; r < s->h; r++) {
-		volatile uint32_t *d = (volatile uint32_t *)(void *)(atlas->texels + ((y + r) * ATLAS_W + x) * 4);
+		volatile uint32_t *d = (volatile uint32_t *)(void *)(atlas->texels + ((y + r) * atlas->w + x) * 4);
 		const uint8_t *q = s->data ? s->data + r * s->stride : NULL;
 		if (coverage) {
 			for (uint32_t c = 0; c < s->w; c++)
@@ -387,7 +402,7 @@ static struct slot *find(const struct src *s, const void *key, bool *hit)
 	uint32_t h = (uint32_t)(uintptr_t)key * 2654435761u ^ s->tint * 40503u ^ s->w << 16 ^ s->h ^ (uint32_t)s->kind << 28;
 	unsigned i = h % SLOTS;
 	for (unsigned n = 0; n < SLOTS; n++, i = (i + 1) % SLOTS) {
-		struct slot *t = &slots[i];
+		struct slot *t = &atlas->slots[i];
 		if (!t->used) {
 			*hit = false;
 			return t;
@@ -401,26 +416,33 @@ static struct slot *find(const struct src *s, const void *key, bool *hit)
 	return NULL;
 }
 
-/* The slot holding s, put there on first use; the atlas starts over
- * once when s does not fit. */
+/* The slot holding s, put there on first use. When s does not fit, the
+ * other atlas is tried before the one in use starts over. */
 static const struct slot *lookup(const struct src *s)
 {
 	const void *key = key_of(s);
-	for (int tries = 0; tries < 2; tries++) {
+	bool switched = false;
+	for (int tries = 0; tries < 3; tries++) {
 		bool hit;
 		uint32_t x, y;
-		struct slot *t = nslots < SLOTS * 3 / 4 ? find(s, key, &hit) : NULL;
+		struct slot *t = atlas->nslots < SLOTS * 3 / 4 ? find(s, key, &hit) : NULL;
 		if (t && hit)
 			return t;
 		if (t && place(s->w, s->h, &x, &y)) {
 			*t = (struct slot){ key,	   s->sum,	   s->tint, (uint16_t)x, (uint16_t)y, (uint16_t)s->w,
 					    (uint16_t)s->h, s->kind, s->format, true };
-			nslots++;
+			atlas->nslots++;
 			upload(s, x, y);
 			return t;
 		}
-		if (!tries)
+		if (tries == 2)
+			break;
+		if (!switched && switch_atlas())
+			switched = true;
+		else {
 			restart();
+			tries = 1;
+		}
 	}
 	return NULL;
 }
@@ -626,7 +648,7 @@ static void close_head(void)
 		}
 		float u = (float)white->x + 0.5f, t = (float)white->y + 0.5f;
 		struct quad q = { sc->copy[i].x0, sc->copy[i].y0, sc->copy[i].x1, sc->copy[i].y1, u, t, u, t, 0 };
-		emit(&q, atlas->gpu, ATLAS_W, ATLAS_H, sc->copy[i].color);
+		emit(&q, atlas->gpu, atlas->w, atlas->h, sc->copy[i].color);
 	}
 }
 
@@ -835,7 +857,7 @@ static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, 
 		r.u1 += (float)t->x;
 		r.v0 += (float)t->y;
 		r.v1 += (float)t->y;
-		emit(&r, atlas->gpu, ATLAS_W, ATLAS_H, colour);
+		emit(&r, atlas->gpu, atlas->w, atlas->h, colour);
 	}
 	return true;
 }
@@ -844,7 +866,7 @@ static bool setup(uint32_t *layer)
 {
 	if (!sgx_draw_setup())
 		return false;
-	if (atlas->gen != sgx_generation())
+	if (!atlas->texels || atlas->gen != sgx_generation())
 		atlas = &atlases[0];
 	for (unsigned i = 0; i < 1u + overlap; i++) {
 		struct atlas *a = &atlases[i];
@@ -852,15 +874,23 @@ static bool setup(uint32_t *layer)
 			continue;
 		void *cpu;
 		a->texels = NULL;
-		if (!(a->gpu = sgx_draw_alloc(ATLAS_W * ATLAS_H * 4, &cpu))) {
-			if (!i)
-				return false;
-			break;
+		a->w = atlas_w;
+		a->h = atlas_h;
+		if (!(a->gpu = sgx_draw_alloc(atlas_w * atlas_h * 4, &cpu))) {
+			a->w = SMALL_W;
+			a->h = SMALL_H;
+			if (!(a->gpu = sgx_draw_alloc(SMALL_W * SMALL_H * 4, &cpu))) {
+				if (!i)
+					return false;
+				break;
+			}
 		}
 		a->texels = cpu;
 		a->gen = sgx_generation();
-		if (a == atlas)
-			reset_atlas();
+		struct atlas *was = atlas;
+		atlas = a;
+		reset_atlas();
+		atlas = was;
 	}
 	rep.layer_gpu = sgx_draw_map(PHYS(layer), SIZE * PITCH);
 	return rep.layer_gpu != 0;
@@ -1013,7 +1043,7 @@ bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_
 	bool scaled = dw != (int)width || dh != (int)height;
 	int why = format < PAINT_RGB || format > PAINT_ALPHA || !width || !height || dw <= 0 || dh <= 0 ? CPU_FORMAT :
 		  scaled && format == PAINT_ALPHA				     ? CPU_SCALED_ALPHA :
-		  width > ATLAS_W || height > ATLAS_H				     ? CPU_BIG :
+		  width > atlas->w || height > atlas->h				     ? CPU_BIG :
 										       -1;
 	if (why < 0) {
 		int r[4] = { dx, dy, dx + dw, dy + dh };
@@ -1169,6 +1199,28 @@ void paint_overlap(bool on)
 
 bool paint_overlap_on(void) { return overlap; }
 
+/* New atlases of w x h from the next repaint on the GPU. The GPU's
+ * memory is not given back, so the old ones stay allocated. */
+bool paint_atlas(uint32_t w, uint32_t h)
+{
+	if (w % 32 || !w || !h || w > WIDE_MAX || h > 2048 || !(w & (w - 1)) || !(h & (h - 1)))
+		return false;
+	settle();
+	atlas_w = w;
+	atlas_h = h;
+	for (unsigned i = 0; i < 2; i++)
+		atlases[i].texels = NULL;
+	return true;
+}
+
+void paint_atlas_size(uint32_t *w, uint32_t *h, uint32_t *now_w, uint32_t *now_h)
+{
+	*w = atlas_w;
+	*h = atlas_h;
+	*now_w = atlases[0].texels ? atlases[0].w : 0;
+	*now_h = atlases[0].texels ? atlases[0].h : 0;
+}
+
 void paint_log(void)
 {
 	soft_paint_log();
@@ -1176,9 +1228,9 @@ void paint_log(void)
 		return;
 	uint32_t n = st.scenes ? st.scenes : 1;
 	log_printf("paint gpu: %lu scenes, %lu repaints (small %lu, off %lu), rect %lu, texture %lu, rounded %lu, quads %lu, "
-		   "uploads %lu (px %lu), restarts %lu, geometry %lu us, render %lu us\n",
+		   "uploads %lu (px %lu), restarts %lu, switches %lu, geometry %lu us, render %lu us\n",
 		   st.scenes, st.repaints, st.small, st.off, st.rects, st.textures, st.rounded, st.quads, st.uploads,
-		   st.upload_px, st.restarts, st.ta_us / n, st.render_us / n);
+		   st.upload_px, st.restarts, st.switches, st.ta_us / n, st.render_us / n);
 	log_printf("paint gpu: wait %lu us%s; flush sync %lu room %lu copy %lu atlas %lu cpu %lu; cpu clip %lu scaled alpha "
 		   "%lu border %lu big %lu format %lu copy clip %lu refused %lu failed %lu\n",
 		   st.wait_us / n, overlap ? " (overlap)" : "", st.flush[FLUSH_SYNC], st.flush[FLUSH_ROOM], st.flush[FLUSH_COPY], st.flush[FLUSH_ATLAS],

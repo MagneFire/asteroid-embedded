@@ -60,4 +60,9 @@ void paint_log(void);
 void paint_overlap(bool on);
 bool paint_overlap_on(void);
 void paint_wait(void);
+/* New atlases of w x h from the next repaint on the GPU, false if the
+ * GPU does not take that size; now_w x now_h is the size in use (0 x 0
+ * when none is allocated). */
+bool paint_atlas(uint32_t w, uint32_t h);
+void paint_atlas_size(uint32_t *w, uint32_t *h, uint32_t *now_w, uint32_t *now_h);
 #endif

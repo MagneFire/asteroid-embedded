@@ -1488,6 +1488,20 @@ static void cmd_sgx(const char *args)
 		if (*o)
 			frame_mesh_reuse(!strcmp(o, "keep"));
 		say("mesh %s\n", frame_mesh_reuse_on() ? "kept while it stays" : "built every frame");
+	} else if (!strncmp(args, "paint atlas", 11) && (!args[11] || args[11] == ' ')) {
+		uint32_t w, h, mw, mh;
+		const char *o = skip_spaces(args + 11);
+		if (*o) {
+			char *end;
+			unsigned long aw = strtoul(o, &end, 10), ah = *end == 'x' ? strtoul(end + 1, &end, 10) : 0;
+			if (*end || !paint_atlas(aw, ah)) {
+				say("usage: sgx paint atlas [<width>x<height>]: a width of a multiple of 32 below 512, "
+				    "neither a power of two\n");
+				return;
+			}
+		}
+		paint_atlas_size(&w, &h, &mw, &mh);
+		say("atlas %lux%lu, in use %lux%lu\n", w, h, mw, mh);
 	} else if (!strncmp(args, "paint", 5) && (!args[5] || args[5] == ' ')) {
 		static const char *const modes[] = { [PAINT_MODE_SOFT] = "soft", [PAINT_MODE_GPU] = "gpu",
 						     [PAINT_MODE_NULL] = "null" };
@@ -1532,7 +1546,8 @@ static void cmd_sgx(const char *args)
 		say("in the log\n");
 	} else if (*args)
 		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | "
-		    "overlap [on | off]] | compose overlap [on | off] | mesh [keep | build] | ui [on | off] | inval [on | off]]\n");
+		    "overlap [on | off] | atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | ui [on | off] | "
+		    "inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1595,8 +1610,8 @@ static const struct command commands[] = {
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
 	{ "sgx",
-	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off]] | "
-	  "compose overlap [on | off] | mesh [keep | build] | ui [on | off] | inval [on | off]]",
+	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off] | "
+	  "atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | ui [on | off] | inval [on | off]]",
 	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },

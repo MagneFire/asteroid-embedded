@@ -26,7 +26,7 @@
 #define ATLAS2_GPU	0x18000000u
 #define LAYER_GPU	0x20000000u
 #define VERT_GPU	0x30000000u
-#define ATLAS_BYTES	(480 * 480 * 4)
+#define ATLAS_BYTES	(480 * 1440 * 4)
 
 static struct {
 	uint32_t layer[SIZE * SIZE] __attribute__((aligned(4096)));
@@ -622,6 +622,8 @@ int main(void)
 	paint_mode(PAINT_MODE_GPU);
 	CHECK(paint_overlap_on(), "overlap on by default");
 	paint_overlap(false);
+	/* The small atlases, which the crowded repaints fill. */
+	CHECK(paint_atlas(480, 480), "the small atlases");
 
 	CHECK(frames_of("full", full, false) == 1, "a full repaint in one frame");
 	CHECK(frames_of("partial", partial, true) >= 1, "a partial repaint on the GPU");
@@ -666,6 +668,17 @@ int main(void)
 	f = frames_of("overlap many", many, true);
 	CHECK(f >= 2, "many quads with overlap in %u frames", f);
 	CHECK(frames_of("overlap crowded", crowded, false) >= 3 && atlases_given == 2, "the other atlas");
+	/* Bigger atlases, from the GPU's next start, take all of them in one
+	 * scene. */
+	CHECK(!paint_atlas(512, 480) && !paint_atlas(500, 480) && !paint_atlas(960, 928), "an atlas the GPU does not take");
+	CHECK(paint_atlas(480, 1440), "a big atlas");
+	generation++;
+	atlases_given = 0;
+	CHECK(frames_of("crowded in big atlases", crowded, false) == 1, "a big atlas started over");
+	CHECK(frames_of("full in big atlases", full, false) == 1, "a full repaint in big atlases");
+	paint_atlas(480, 480);
+	generation++;
+	atlases_given = 0;
 	CHECK(frames_of("overlap small", small, true) == 0, "a small repaint with overlap");
 	CHECK(frames_of("overlap cpu rows", cpu_rows, false) == 2, "a sync with overlap");
 
