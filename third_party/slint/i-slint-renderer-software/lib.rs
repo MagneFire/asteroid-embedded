@@ -3914,7 +3914,7 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
         let global_offset: euclid::Vector2D<f32, PhysicalPx> =
             self.current_state.offset.to_vector().cast() * self.scale_factor;
 
-        const SUBPIXEL_BINS: i32 = fonts::vectorfont::SUBPIXEL_BIN_COUNT;
+        const SUBPIXEL_BINS: i32 = fonts::vectorfont::SUBPIXEL_BIN_COUNT; let bins = fonts::vectorfont::subpixel_bins(font_size.get() as i32);
 
         let color = self.alpha_color(brush.color);
         let text_rgb = [brush.color.red(), brush.color.green(), brush.color.blue()];
@@ -3936,9 +3936,9 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
             // discarded. This keeps inter-glyph spacing even: snapping the pen to a
             // whole pixel (truncate or round) redistributes the sub-pixel advances
             // unevenly between neighboring glyph pairs.
-            let quantized_x = (abs_x * SUBPIXEL_BINS as f32).round() as i32;
-            let dst_int_x = quantized_x.div_euclid(SUBPIXEL_BINS);
-            let subpixel_bin = quantized_x.rem_euclid(SUBPIXEL_BINS) as u8;
+            let quantized_x = (abs_x * bins as f32).round() as i32;
+            let dst_int_x = quantized_x.div_euclid(bins);
+            let subpixel_bin = (quantized_x.rem_euclid(bins) * (SUBPIXEL_BINS / bins)) as u8;
 
             let Some(glyph) = font.render_vector_glyph(
                 id,
@@ -4141,3 +4141,6 @@ fn path_partial_render_stays_in_dirty_region() {
         assert_partial_render_is_identical(screen_size, screen, &region, draw);
     }
 }
+
+#[cfg(glyph_bins)]
+pub use fonts::vectorfont::set_subpixel_bins;
