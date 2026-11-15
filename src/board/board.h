@@ -70,6 +70,8 @@ struct hub_driver {
 	 * watch is off; HUB_NONE until it has said. */
 	uint32_t (*steps_today)(void);
 	void (*sync_steps_today)(uint32_t steps);
+	/* Sends the steps it holds back now. */
+	void (*flush_steps)(void);
 	bool (*activity)(uint32_t v[2]);
 	void (*profile)(const struct hub_profile *p);
 	void (*heart_rate_on)(bool on);

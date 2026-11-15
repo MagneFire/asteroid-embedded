@@ -22,6 +22,7 @@ bool hub_activity(uint32_t v[2]);
 bool hub_has_passive(void);
 uint32_t hub_steps_today(void);
 void hub_sync_steps_today(uint32_t steps);
+void hub_flush_steps(void);
 bool hub_has_timepiece(void);
 bool hub_has_screen(void);
 void hub_timepiece(void);

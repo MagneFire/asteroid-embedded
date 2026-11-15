@@ -101,6 +101,11 @@ void hub_set_time(void)
 }
 uint32_t hub_steps(void) { return HUB(steps) ? board->hub->steps() : HUB_NONE; }
 uint32_t hub_steps_today(void) { return HUB(steps_today) ? board->hub->steps_today() : HUB_NONE; }
+void hub_flush_steps(void)
+{
+	if (HUB(flush_steps))
+		board->hub->flush_steps();
+}
 void hub_sync_steps_today(uint32_t steps)
 {
 	if (HUB(sync_steps_today))

@@ -140,7 +140,7 @@ static bool start_run(uint32_t now)
  * wakeups: asleep it runs when something else wakes the watch. The
  * charger keeps its own 1 s, so it is asked more often than that. */
 static struct sched_task start_task, charger_task, notify_task, cable_task, settings_task, weather_task, steps_task,
-	steps_asleep_task;
+	steps_asleep_task, steps_flush_task;
 
 static bool charger_run(uint32_t now)
 {
@@ -202,6 +202,22 @@ static bool steps_asleep_run(uint32_t now)
 	return false;
 }
 
+/* A minute before midnight, so the steps a hub holds back go into the
+ * day that ends. */
+static uint32_t steps_flush_next_ms(void)
+{
+	uint32_t left = 86400 - rtc_read() % 86400;
+	return (left > 60 ? left - 60 : left + 86400 - 60) * 1000;
+}
+
+static bool steps_flush_run(uint32_t now)
+{
+	if (have_hub && !power_awake())
+		hub_flush_steps();
+	sched_after(&steps_flush_task, now, steps_flush_next_ms());
+	return false;
+}
+
 static void tasks_init(uint32_t now)
 {
 	static const struct { struct sched_task *t; const char *name; bool (*run)(uint32_t); } list[] = {
@@ -224,6 +240,10 @@ static void tasks_init(uint32_t now)
 	steps_task.run = steps_run;
 	sched_add(&steps_task);
 	sched_after(&steps_task, now, steps_next_ms());
+	steps_flush_task.name = "steps flush";
+	steps_flush_task.run = steps_flush_run;
+	sched_add(&steps_flush_task);
+	sched_after(&steps_flush_task, now, steps_flush_next_ms());
 }
 
 /* The hub's tilt wake is on only while the screen sleeps. */

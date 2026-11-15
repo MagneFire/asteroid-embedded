@@ -421,10 +421,16 @@ static void out(uint8_t pin, unsigned v)
 static bool want_tilt, want_hr, want_accel, want_light;
 
 /* The steps come once a minute even when they don't change, and every
- * event wakes the AP: with the screen off the hub holds them back. */
+ * event wakes the AP: with the screen off the hub holds them back for
+ * up to an hour, until the screen turns on or the day ends. */
 static uint64_t steps_latency_ns(void)
 {
-	return screen_off ? 600000000000ull : 0;
+	return screen_off ? 3600000000000ull : 0;
+}
+
+static void nanohub_flush_steps(void)
+{
+	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_FLUSH, 0, 0);
 }
 
 static void apply_state(void)
@@ -658,7 +664,7 @@ static void nanohub_screen(bool on)
 	set_mode(on ? MODE_NORMAL : MODE_AMBIENT);
 	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns());
 	if (on)
-		configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_FLUSH, 0, 0);
+		nanohub_flush_steps();
 }
 
 /* What the vendor's Essential mode leaves the hub in: its sensors for the
@@ -771,6 +777,7 @@ const struct hub_driver hub_nanohub = {
 	.set_time = set_time,
 	.steps_today = nanohub_steps_today,
 	.sync_steps_today = nanohub_sync_steps_today,
+	.flush_steps = nanohub_flush_steps,
 	.heart_rate_on = nanohub_heart_rate_on,
 	.heart_rate = nanohub_heart_rate,
 	.tilted = nanohub_tilted,
