@@ -31,7 +31,7 @@
 #define DOWN_AFTER	3
 #define RETRY_DOWN_MS	60000
 
-enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_GAUGE_FORCE = 8 };
+enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_SUSPEND = 6, MODE_RESUME = 7, MODE_GAUGE_FORCE = 8 };
 
 static uint8_t tx[WRITE_PAD + REPLY_BYTES], rx[WRITE_PAD + REPLY_BYTES + MORE_BYTES];
 static uint8_t payload[NANOHUB_PAYLOAD_MAX];
@@ -642,6 +642,9 @@ static bool nanohub_can_sleep(void)
  * stays low until it is read, the mode ask is a pulse. */
 static void nanohub_sleep(bool asleep)
 {
+	/* As the vendor kernel does at every suspend and resume. */
+	if (present)
+		send_mode(asleep ? MODE_SUSPEND : MODE_RESUME);
 	wake_pin(PINS.mpm, asleep, false);
 	wake_pin_falling(PINS.mode_mpm, asleep);
 }
