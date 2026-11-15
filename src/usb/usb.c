@@ -275,6 +275,13 @@ bool usb_connected(void)
 	return !usb_down && usb_port_connected();
 }
 
+/* Stopped and in low power mode. Anything less still needs the crystal,
+ * as on a wall charger or a bus the host suspended. */
+bool usb_resting(void)
+{
+	return usb_down && usb_port_resting();
+}
+
 
 /* Unplugged, or a controller that got stuck: the stack stops, then the
  * PHY goes to low power mode and the clocks off. */

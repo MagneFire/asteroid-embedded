@@ -282,6 +282,7 @@ bool dcd_stuck(void);
 void usb_pass(void);
 void usb_poll(void);
 bool usb_connected(void);
+bool usb_resting(void);
 bool usb_busy(void);
 void usb_stats(uint32_t *rx, uint32_t *tx);
 

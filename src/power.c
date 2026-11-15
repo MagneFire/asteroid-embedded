@@ -463,7 +463,7 @@ void power_idle(uint32_t app_next_ms)
 	if ((have_display && policy.awake) || haptics_busy() || screenshot_busy() || !timer_ticks() || sched_pending())
 		return;
 	bool quiet = !have_display || policy.awake || display_rest();
-	bool cluster = quiet && !policy.awake && !usb_connected() && bt_can_sleep() && (!have_hub || hub_can_sleep());
+	bool cluster = quiet && !policy.awake && usb_resting() && bt_can_sleep() && (!have_hub || hub_can_sleep());
 	if (!policy.awake)
 		cpu_clock_slow(true);
 	if (cluster) {
