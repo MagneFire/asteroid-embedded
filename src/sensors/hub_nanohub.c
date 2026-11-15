@@ -556,7 +556,9 @@ static void nanohub_poll(void)
 		read_events();
 	}
 	log_poll();
-	poll_gauge();
+	/* With the screen off the charger asks when it needs a reading. */
+	if (!screen_off)
+		poll_gauge();
 }
 
 static bool get_gauge(struct hub_gauge *g)
