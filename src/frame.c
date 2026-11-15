@@ -62,6 +62,33 @@ static void app_background(int x, int y, float alpha)
 	gpu_draw_blend(false);
 }
 
+#ifdef SGX_BASE
+/* With paint overlap the GPU may still paint the damaged layers when
+ * the repaint is done, so the scan of their pixels waits until the
+ * compositor needs it. */
+static struct {
+	bool any, damaged[UI_PANELS];
+	uint32_t rect[UI_PANELS][4];
+} later;
+
+static void damage_later(void)
+{
+	if (!later.any)
+		return;
+	later.any = false;
+	paint_wait();
+	for (unsigned p = 0; p < UI_PANELS; p++) {
+		if (!later.damaged[p])
+			continue;
+		uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4), *r = later.rect[p];
+		stack_damage(p, r[0], r[1], r[2], r[3]);
+		if (have_gpu)
+			for (uint32_t y = r[1]; y < r[1] + r[3]; y++)
+				dcache_clean_range(layer + y * fb.stride + r[0], r[2] * 4);
+	}
+}
+#endif
+
 static uint32_t rgb(struct ui_rgb c)
 {
 	return (uint32_t)c.r << 16 | (uint32_t)c.g << 8 | c.b;
@@ -88,6 +115,9 @@ static void gpu_flatmesh(uint32_t *buf, uint32_t t_ms, bool with_layer)
 	gpu_draw_program(&shader_c_vs, &shader_c_fs);
 	gpu_draw_triangles((uint32_t)(uintptr_t)vbo, 32, 2, (const uint8_t[]){4, 4}, n);
 	uint32_t t2 = time_us();
+#ifdef SGX_BASE
+	damage_later();
+#endif
 	if (with_layer)
 		stack_compose(app_background);
 	uint32_t t3 = time_us();
@@ -227,6 +257,13 @@ void frame_draw(uint32_t now)
 				damaged[p] = repainted = true;
 		if (repainted)
 			paint_finish();
+#ifdef SGX_BASE
+		if (repainted && paint_overlap_on()) {
+			later.any = true;
+			memcpy(later.damaged, damaged, sizeof damaged);
+			memcpy(later.rect, damage, sizeof damage);
+		} else
+#endif
 		for (unsigned p = 0; p < UI_PANELS; p++) {
 			if (!damaged[p])
 				continue;
@@ -298,6 +335,10 @@ void frame_draw(uint32_t now)
 		irq_restore(flags);
 		waited_us = time_us() - w0;
 	}
+#ifdef SGX_BASE
+	damage_later();
+	paint_wait();
+#endif
 }
 
 uint32_t frame_waited_us(void) { return waited_us; }

@@ -66,7 +66,7 @@ enum { FLUSH_END, FLUSH_SYNC, FLUSH_ROOM, FLUSH_COPY, FLUSH_ATLAS, FLUSH_CPU, FL
 enum { CPU_CLIP, CPU_SCALED_ALPHA, CPU_BORDER, CPU_BIG, CPU_FORMAT, CPU_COPY_CLIP, CPU_REFUSED, CPU_FAILED, CPUS };
 enum { OP_RECT, OP_TEXTURE, OP_ROUNDED, OP_CLIP };
 
-/* Texels to find or put in the atlas. */
+/* Texels to find or put in the atlas-> */
 struct src {
 	uint8_t kind, format;
 	const uint8_t *data;
@@ -105,10 +105,11 @@ struct op {
 static int mode = PAINT_MODE_SOFT;
 static bool dead, told;
 
-static struct {
+static struct atlas {
 	uint8_t *texels;
-	uint32_t gpu, gen, x, y, row_h, epoch;
-} atlas;
+	uint32_t gpu, gen, x, y, row_h;
+} atlas_buf, *atlas = &atlas_buf;
+static uint32_t atlas_epoch;
 static struct slot slots[SLOTS];
 static unsigned nslots;
 
@@ -124,7 +125,7 @@ static struct {
 
 /* The scene: while head, only the background's rectangles are known and
  * nothing is written for the GPU yet. */
-static struct {
+struct scene {
 	bool open, head, broken, atlas_used, rclip;
 	unsigned ncopy, nd, nops;
 	struct { int x0, y0, x1, y1; uint32_t color; } copy[MAX_COPY];
@@ -133,17 +134,29 @@ static struct {
 	int y0, y1;
 	float clip[5];
 	struct op ops[MAX_OPS];
-} sc;
+};
+/* With overlap the scene last kicked renders while the next one is
+ * built in the other record; it is kept to be painted again should the
+ * GPU fail it. */
+static struct scene scenes[2], *sc = &scenes[0];
+static struct {
+	bool busy;
+	uint32_t *layer, ticket;
+	struct scene *s;
+} fl;
+static bool overlap = true;
 
 static struct {
-	uint32_t repaints, small, off, scenes, ta_us, render_us, quads, uploads, upload_px, restarts;
+	uint32_t repaints, small, off, scenes, ta_us, render_us, wait_us, quads, uploads, upload_px, restarts;
 	uint32_t rects, textures, rounded, flush[FLUSHES], cpu[CPUS];
 } st;
 
 static void flush_scene(int why);
+static bool settle(void);
 
 void paint_mode(int m)
 {
+	settle();
 	mode = m;
 	paint_null(m == PAINT_MODE_NULL);
 	if (m == PAINT_MODE_GPU)
@@ -181,16 +194,16 @@ static void add_rows(int *lo, int *hi, int y0, int y1)
 	*hi = max_i(*hi, y1);
 }
 
-static void clean_rows(int y0, int y1)
+static void clean_rows(uint32_t *layer, int y0, int y1)
 {
 	if (y0 < y1)
-		dcache_clean_range(rep.layer + y0 * SIZE, (uint32_t)(y1 - y0) * PITCH);
+		dcache_clean_range(layer + y0 * SIZE, (uint32_t)(y1 - y0) * PITCH);
 }
 
-static void invalidate_rows(int y0, int y1)
+static void invalidate_rows(uint32_t *layer, int y0, int y1)
 {
 	if (y0 < y1)
-		dcache_invalidate_range(rep.layer + y0 * SIZE, (uint32_t)(y1 - y0) * PITCH);
+		dcache_invalidate_range(layer + y0 * SIZE, (uint32_t)(y1 - y0) * PITCH);
 }
 
 /* As soft.c clips: to the clip, the layer and the rounded clip's box. */
@@ -238,33 +251,34 @@ static void reset_atlas(void)
 {
 	memset(slots, 0, sizeof slots);
 	nslots = 0;
-	atlas.x = atlas.y = atlas.row_h = 0;
-	atlas.epoch++;
+	atlas->x = atlas->y = atlas->row_h = 0;
+	atlas_epoch++;
 }
 
 /* Starts the atlas over, after the GPU has drawn what uses it. */
 static void restart(void)
 {
-	if (sc.open && sc.atlas_used)
+	if (sc->open && sc->atlas_used)
 		flush_scene(FLUSH_ATLAS);
+	settle();
 	reset_atlas();
 	st.restarts++;
 }
 
 static bool place(uint32_t w, uint32_t h, uint32_t *x, uint32_t *y)
 {
-	if (atlas.x + w > ATLAS_W) {
-		atlas.y += atlas.row_h + 1;
-		atlas.x = 0;
-		atlas.row_h = 0;
+	if (atlas->x + w > ATLAS_W) {
+		atlas->y += atlas->row_h + 1;
+		atlas->x = 0;
+		atlas->row_h = 0;
 	}
-	if (w > ATLAS_W || atlas.y + h > ATLAS_H)
+	if (w > ATLAS_W || atlas->y + h > ATLAS_H)
 		return false;
-	*x = atlas.x;
-	*y = atlas.y;
-	atlas.x += w + 1;
-	if (h > atlas.row_h)
-		atlas.row_h = h;
+	*x = atlas->x;
+	*y = atlas->y;
+	atlas->x += w + 1;
+	if (h > atlas->row_h)
+		atlas->row_h = h;
 	return true;
 }
 
@@ -312,7 +326,7 @@ static void upload(const struct src *s, uint32_t x, uint32_t y)
 	bool premul = s->kind == K_IMAGE && s->format == PAINT_RGBA_PREMULTIPLIED && s->tint == WHITE;
 	bool straight = s->kind == K_IMAGE && s->format == PAINT_RGBA && s->tint == WHITE;
 	for (uint32_t r = 0; r < s->h; r++) {
-		volatile uint32_t *d = (volatile uint32_t *)(void *)(atlas.texels + ((y + r) * ATLAS_W + x) * 4);
+		volatile uint32_t *d = (volatile uint32_t *)(void *)(atlas->texels + ((y + r) * ATLAS_W + x) * 4);
 		const uint8_t *q = s->data ? s->data + r * s->stride : NULL;
 		if (coverage) {
 			for (uint32_t c = 0; c < s->w; c++)
@@ -461,12 +475,12 @@ static void put_quad(float *v, const struct quad *q, float tw, float th)
 /* Whether n more atlas quads fit in the scene. */
 static bool room(unsigned n)
 {
-	if (sc.vbytes + n * CQUAD_BYTES > SGX_SCENE_VERTICES_SIZE)
+	if (sc->vbytes + n * CQUAD_BYTES > SGX_SCENE_VERTICES_SIZE)
 		return false;
-	const struct sgx_draw *d = sc.nd ? &sc.draws[sc.nd - 1] : NULL;
+	const struct sgx_draw *d = sc->nd ? &sc->draws[sc->nd - 1] : NULL;
 	unsigned left = d && d->kind == SGX_DRAW_COLOURED ? DRAW_QUADS - d->count / 6u : 0;
 	unsigned more = n > left ? (n - left + DRAW_QUADS - 1) / DRAW_QUADS : 0;
-	return sc.nd + more <= SGX_DRAW_MAX_DRAWS;
+	return sc->nd + more <= SGX_DRAW_MAX_DRAWS;
 }
 
 /* A quad onto the last draw while it is of the same kind and texture:
@@ -474,21 +488,21 @@ static bool room(unsigned n)
  * room hands out its bytes in order, so a draw's quads stay together. */
 static void emit(const struct quad *q, uint32_t tex, uint16_t tw, uint16_t th, uint32_t colour)
 {
-	uint8_t kind = tex == atlas.gpu ? SGX_DRAW_COLOURED : SGX_DRAW_TEXTURED;
+	uint8_t kind = tex == atlas->gpu ? SGX_DRAW_COLOURED : SGX_DRAW_TEXTURED;
 	uint32_t bytes = kind == SGX_DRAW_COLOURED ? CQUAD_BYTES : QUAD_BYTES;
-	struct sgx_draw *d = sc.nd ? &sc.draws[sc.nd - 1] : NULL;
+	struct sgx_draw *d = sc->nd ? &sc->draws[sc->nd - 1] : NULL;
 	if (!d || d->kind != kind || d->tex != tex || d->count + 6 > DRAW_QUADS * 6) {
-		if (sc.nd == SGX_DRAW_MAX_DRAWS) {
-			sc.broken = true;
+		if (sc->nd == SGX_DRAW_MAX_DRAWS) {
+			sc->broken = true;
 			return;
 		}
-		d = &sc.draws[sc.nd++];
+		d = &sc->draws[sc->nd++];
 		*d = (struct sgx_draw){ .kind = kind, .blend = true, .tex = tex, .width = tw, .height = th, .alpha = 255 };
 	}
 	uint32_t g;
 	float *v = sgx_draw_vertices(bytes, &g);
 	if (!v || (d->count && g != d->verts + d->count / 6u * bytes)) {
-		sc.broken = true;
+		sc->broken = true;
 		return;
 	}
 	if (!d->count)
@@ -504,28 +518,28 @@ static void emit(const struct quad *q, uint32_t tex, uint16_t tw, uint16_t th, u
 	} else
 		put_quad(v, q, tw, th);
 	d->count += 6;
-	sc.vbytes += bytes;
-	sc.atlas_used |= tex == atlas.gpu;
+	sc->vbytes += bytes;
+	sc->atlas_used |= tex == atlas->gpu;
 	st.quads++;
 }
 
 static void scene_start(void)
 {
-	sc.open = sc.head = true;
-	sc.broken = sc.atlas_used = false;
-	sc.ncopy = sc.nd = sc.nops = 0;
-	sc.vbytes = 0;
-	sc.y0 = SIZE;
-	sc.y1 = 0;
-	sc.rclip = rep.rclip;
-	memcpy(sc.clip, rep.clip, sizeof sc.clip);
+	sc->open = sc->head = true;
+	sc->broken = sc->atlas_used = false;
+	sc->ncopy = sc->nd = sc->nops = 0;
+	sc->vbytes = 0;
+	sc->y0 = SIZE;
+	sc->y1 = 0;
+	sc->rclip = rep.rclip;
+	memcpy(sc->clip, rep.clip, sizeof sc->clip);
 }
 
 static void keep(const struct op *o)
 {
-	sc.ops[sc.nops++] = *o;
+	sc->ops[sc->nops++] = *o;
 	if (o->op != OP_CLIP)
-		add_rows(&sc.y0, &sc.y1, o->clip[1], o->clip[3]);
+		add_rows(&sc->y0, &sc->y1, o->clip[1], o->clip[3]);
 }
 
 /* The layer onto itself outside the background's rectangles, band by
@@ -536,9 +550,9 @@ static void self_copy(void)
 	unsigned ny = 0;
 	ys[ny++] = 0;
 	ys[ny++] = SIZE;
-	for (unsigned i = 0; i < sc.ncopy; i++) {
-		ys[ny++] = sc.copy[i].y0;
-		ys[ny++] = sc.copy[i].y1;
+	for (unsigned i = 0; i < sc->ncopy; i++) {
+		ys[ny++] = sc->copy[i].y0;
+		ys[ny++] = sc->copy[i].y1;
 	}
 	for (unsigned i = 1; i < ny; i++)
 		for (unsigned j = i; j && ys[j - 1] > ys[j]; j--) {
@@ -551,16 +565,16 @@ static void self_copy(void)
 		unsigned n = 0;
 		if (a == z)
 			continue;
-		for (unsigned i = 0; i < sc.ncopy; i++) {
-			if (sc.copy[i].y0 > a || sc.copy[i].y1 < z)
+		for (unsigned i = 0; i < sc->ncopy; i++) {
+			if (sc->copy[i].y0 > a || sc->copy[i].y1 < z)
 				continue;
 			unsigned j = n++;
-			for (; j && xs[j - 1][0] > sc.copy[i].x0; j--) {
+			for (; j && xs[j - 1][0] > sc->copy[i].x0; j--) {
 				xs[j][0] = xs[j - 1][0];
 				xs[j][1] = xs[j - 1][1];
 			}
-			xs[j][0] = sc.copy[i].x0;
-			xs[j][1] = sc.copy[i].x1;
+			xs[j][0] = sc->copy[i].x0;
+			xs[j][1] = sc->copy[i].x1;
 		}
 		int x = 0;
 		for (unsigned i = 0; i <= n; i++) {
@@ -580,48 +594,48 @@ static void self_copy(void)
  * colours. */
 static void close_head(void)
 {
-	sc.head = false;
+	sc->head = false;
 	const struct slot *white = lookup(&(struct src){ .kind = K_COLOR, .w = 1, .h = 1, .tint = WHITE });
 	sgx_draw_discard();
 	uint32_t g;
 	float *v = sgx_draw_vertices(3 * 24, &g);
 	if (!v) {
-		sc.broken = true;
+		sc->broken = true;
 		return;
 	}
 	for (int i = 0; i < 18; i++)
 		v[i] = 0.0f;
-	sc.draws[0] = (struct sgx_draw){ .verts = g, .count = 3, .kind = SGX_DRAW_FLAT };
-	sc.nd = 1;
-	sc.vbytes = FLAT_BYTES;
+	sc->draws[0] = (struct sgx_draw){ .verts = g, .count = 3, .kind = SGX_DRAW_FLAT };
+	sc->nd = 1;
+	sc->vbytes = FLAT_BYTES;
 	self_copy();
-	for (unsigned i = 0; i < sc.ncopy; i++) {
-		if (!sc.copy[i].color)
+	for (unsigned i = 0; i < sc->ncopy; i++) {
+		if (!sc->copy[i].color)
 			continue;
 		if (!white) {
-			sc.broken = true;
+			sc->broken = true;
 			return;
 		}
 		float u = (float)white->x + 0.5f, t = (float)white->y + 0.5f;
-		struct quad q = { sc.copy[i].x0, sc.copy[i].y0, sc.copy[i].x1, sc.copy[i].y1, u, t, u, t, 0 };
-		emit(&q, atlas.gpu, ATLAS_W, ATLAS_H, sc.copy[i].color);
+		struct quad q = { sc->copy[i].x0, sc->copy[i].y0, sc->copy[i].x1, sc->copy[i].y1, u, t, u, t, 0 };
+		emit(&q, atlas->gpu, ATLAS_W, ATLAS_H, sc->copy[i].color);
 	}
 }
 
 static void ensure_scene(void)
 {
-	if (!sc.open)
+	if (!sc->open)
 		scene_start();
-	if (sc.head)
+	if (sc->head)
 		close_head();
 }
 
-/* The scene's calls painted by the CPU instead. */
-static void replay(void)
+/* A scene's calls painted by the CPU instead. */
+static void replay(const struct scene *s)
 {
-	soft_paint_rounded_clip(sc.rclip ? sc.clip : NULL);
-	for (unsigned i = 0; i < sc.nops; i++) {
-		const struct op *o = &sc.ops[i];
+	soft_paint_rounded_clip(s->rclip ? s->clip : NULL);
+	for (unsigned i = 0; i < s->nops; i++) {
+		const struct op *o = &s->ops[i];
 		if (o->op == OP_RECT)
 			soft_paint_rect(o->f[0], o->f[1], o->f[2], o->f[3], o->clip, o->c0, o->flag);
 		else if (o->op == OP_TEXTURE)
@@ -633,35 +647,92 @@ static void replay(void)
 			soft_paint_rounded_clip(o->flag ? o->f : NULL);
 	}
 	soft_paint_rounded_clip(rep.rclip ? rep.clip : NULL);
-	add_rows(&rep.cpu_y0, &rep.cpu_y1, sc.y0, sc.y1);
+}
+
+/* The open scene painted by the CPU, into the repaint's own rows. */
+static void replay_open(void)
+{
+	replay(sc);
+	add_rows(&rep.cpu_y0, &rep.cpu_y1, sc->y0, sc->y1);
+}
+
+/* The render of the scene in flight waited for. When the GPU failed it
+ * is halted and the CPU paints that scene again, into its own layer. */
+static bool settle(void)
+{
+	if (!fl.busy)
+		return true;
+	fl.busy = false;
+	struct sgx_times t = { 0, 0 };
+	uint32_t t0 = time_us();
+	bool ok = sgx_draw_finish(fl.ticket, &t);
+	st.wait_us += time_us() - t0;
+	/* What the GPU wrote is in no cache line: the CPU's own were cleaned. */
+	invalidate_rows(fl.layer, fl.s->y0, fl.s->y1);
+	if (ok) {
+		st.render_us += t.render_us;
+		return true;
+	}
+	st.cpu[CPU_FAILED]++;
+	log_printf("paint: %s; the CPU paints until sgx paint gpu\n", sgx_draw_failure());
+	sgx_log_state();
+	sgx_halt();
+	dead = true;
+	bool other = fl.layer != rep.layer;
+	if (other)
+		soft_paint_begin(fl.layer, SIZE, SIZE, SIZE);
+	replay(fl.s);
+	clean_rows(fl.layer, fl.s->y0, fl.s->y1);
+	if (other && rep.layer) {
+		soft_paint_begin(rep.layer, SIZE, SIZE, SIZE);
+		soft_paint_rounded_clip(rep.rclip ? rep.clip : NULL);
+	}
+	return false;
+}
+
+/* Before the CPU writes the repaint's layer. */
+static void cpu_touch(void)
+{
+	if (fl.busy && fl.layer == rep.layer)
+		settle();
 }
 
 static void submit(void)
 {
-	clean_rows(rep.cpu_y0, rep.cpu_y1);
+	clean_rows(rep.layer, rep.cpu_y0, rep.cpu_y1);
 	rep.cpu_y0 = SIZE;
 	rep.cpu_y1 = 0;
-	if (sc.broken) {
+	if (!settle() || dead) {
+		replay_open();
+		return;
+	}
+	if (sc->broken) {
 		st.cpu[CPU_REFUSED]++;
 		if (!told)
 			log_printf("paint: a scene with no room for its draws, painted by the CPU\n");
 		told = true;
-		replay();
+		replay_open();
 		return;
 	}
 	uint32_t was = sgx_draw_get_target();
-	const struct sgx_frame f = { 0, sc.draws, sc.nd };
+	const struct sgx_frame f = { 0, sc->draws, sc->nd };
 	struct sgx_times t;
 	sgx_draw_rows_format(ROWS_PAINT);
 	sgx_draw_target(rep.layer_gpu);
-	bool ok = sgx_draw_frame(&f, &t);
+	uint32_t ticket = sgx_draw_kick(&f, &t);
 	sgx_draw_rows_format(ROWS_COMPOSE);
 	sgx_draw_target(was);
-	if (ok) {
-		invalidate_rows(sc.y0, sc.y1);
+	if (ticket) {
 		st.scenes++;
 		st.ta_us += t.ta_us;
-		st.render_us += t.render_us;
+		fl.busy = true;
+		fl.layer = rep.layer;
+		fl.ticket = ticket;
+		fl.s = sc;
+		sc = sc == &scenes[0] ? &scenes[1] : &scenes[0];
+		sc->open = false;
+		if (!overlap)
+			settle();
 		return;
 	}
 	if (sgx_draw_refused()) {
@@ -677,22 +748,21 @@ static void submit(void)
 		dead = true;
 		rep.gpu = false;
 	}
-	/* What the GPU wrote is in no cache line: the CPU's own were cleaned. */
-	invalidate_rows(sc.y0, sc.y1);
-	replay();
+	invalidate_rows(rep.layer, sc->y0, sc->y1);
+	replay_open();
 }
 
 static void flush_scene(int why)
 {
-	if (!sc.open)
+	if (!sc->open)
 		return;
-	if (sc.head && !sc.ncopy) {
-		sc.open = false;
+	if (sc->head && !sc->ncopy) {
+		sc->open = false;
 		return;
 	}
-	if (sc.head)
+	if (sc->head)
 		close_head();
-	sc.open = false;
+	sc->open = false;
 	st.flush[why]++;
 	submit();
 }
@@ -703,46 +773,48 @@ static void decide(void)
 	if (rep.decided)
 		return;
 	rep.decided = true;
-	if (!sc.open || !sc.head || !sc.ncopy)
+	if (!sc->open || !sc->head || !sc->ncopy)
 		return;
 	uint32_t area = 0;
-	for (unsigned i = 0; i < sc.ncopy; i++)
-		area += (uint32_t)((sc.copy[i].x1 - sc.copy[i].x0) * (sc.copy[i].y1 - sc.copy[i].y0));
+	for (unsigned i = 0; i < sc->ncopy; i++)
+		area += (uint32_t)((sc->copy[i].x1 - sc->copy[i].x0) * (sc->copy[i].y1 - sc->copy[i].y0));
 	if (area >= SMALL_PX)
 		return;
-	sc.open = false;
+	sc->open = false;
 	rep.gpu = false;
 	st.small++;
-	replay();
+	cpu_touch();
+	replay_open();
 }
 
 /* The call goes to the CPU, after what the GPU has of the repaint. */
 static void to_cpu(int why, const int32_t clip[4])
 {
 	flush_scene(FLUSH_CPU);
+	cpu_touch();
 	st.cpu[why]++;
 	add_rows(&rep.cpu_y0, &rep.cpu_y1, clip[1], clip[3]);
 }
 
 /* A call's quads drawn from the texels of ns srcs, or false if they do
- * not fit in the atlas. */
+ * not fit in the atlas-> */
 static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, unsigned ns, uint32_t colour,
 			const struct op *o)
 {
 	const struct slot *slot[5];
 	ensure_scene();
 	for (int tries = 0;; tries++) {
-		uint32_t epoch = atlas.epoch;
+		uint32_t epoch = atlas_epoch;
 		for (unsigned i = 0; i < ns; i++)
 			if (!(slot[i] = lookup(&s[i])))
 				return false;
-		if (epoch == atlas.epoch)
+		if (epoch == atlas_epoch)
 			break;
 		if (tries)
 			return false;
 	}
 	ensure_scene();
-	if (sc.nops == MAX_OPS || !room(nq)) {
+	if (sc->nops == MAX_OPS || !room(nq)) {
 		flush_scene(FLUSH_ROOM);
 		ensure_scene();
 	}
@@ -754,7 +826,7 @@ static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, 
 		r.u1 += (float)t->x;
 		r.v0 += (float)t->y;
 		r.v1 += (float)t->y;
-		emit(&r, atlas.gpu, ATLAS_W, ATLAS_H, colour);
+		emit(&r, atlas->gpu, ATLAS_W, ATLAS_H, colour);
 	}
 	return true;
 }
@@ -763,13 +835,13 @@ static bool setup(uint32_t *layer)
 {
 	if (!sgx_draw_setup())
 		return false;
-	if (!atlas.texels || atlas.gen != sgx_generation()) {
+	if (!atlas->texels || atlas->gen != sgx_generation()) {
 		void *cpu;
-		atlas.texels = NULL;
-		if (!(atlas.gpu = sgx_draw_alloc(ATLAS_W * ATLAS_H * 4, &cpu)))
+		atlas->texels = NULL;
+		if (!(atlas->gpu = sgx_draw_alloc(ATLAS_W * ATLAS_H * 4, &cpu)))
 			return false;
-		atlas.texels = cpu;
-		atlas.gen = sgx_generation();
+		atlas->texels = cpu;
+		atlas->gen = sgx_generation();
 		reset_atlas();
 	}
 	rep.layer_gpu = sgx_draw_map(PHYS(layer), SIZE * PITCH);
@@ -780,11 +852,13 @@ static bool setup(uint32_t *layer)
 
 bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stride_px)
 {
+	if (fl.busy && fl.layer == layer)
+		settle();
 	soft_paint_begin(layer, width, height, stride_px);
 	memset(&rep, 0, sizeof rep);
 	rep.layer = layer;
 	rep.cpu_y0 = SIZE;
-	sc.open = false;
+	sc->open = false;
 	if (mode != PAINT_MODE_GPU)
 		return true;
 	st.repaints++;
@@ -808,9 +882,9 @@ void paint_rounded_clip(const float *clip)
 		float w = (float)(rep.rx1 - rep.rx0), h = (float)(rep.ry1 - rep.ry0), most = (w < h ? w : h) * 0.5f;
 		rep.radius = clip[4] < 0.0f ? 0.0f : clip[4] > most ? most : clip[4];
 	}
-	if (!sc.open)
+	if (!sc->open)
 		return;
-	if (sc.nops == MAX_OPS) {
+	if (sc->nops == MAX_OPS) {
 		flush_scene(FLUSH_ROOM);
 		return;
 	}
@@ -827,27 +901,29 @@ static void copy_rect(float fx0, float fy0, float fx1, float fy1, const int32_t 
 		decide();
 		if (rep.gpu)
 			to_cpu(CPU_COPY_CLIP, clip);
+		cpu_touch();
 		soft_paint_rect(fx0, fy0, fx1, fy1, clip, color, true);
 		return;
 	}
 	int r[4] = { round_px(fx0), round_px(fy0), round_px(fx1), round_px(fy1) };
 	if (!cut(r, clip))
 		return;
-	if (sc.open && (!sc.head || sc.ncopy == MAX_COPY)) {
+	if (sc->open && (!sc->head || sc->ncopy == MAX_COPY)) {
 		decide();
 		if (!rep.gpu) {
+			cpu_touch();
 			soft_paint_rect(fx0, fy0, fx1, fy1, clip, color, true);
 			return;
 		}
 		flush_scene(FLUSH_COPY);
 	}
-	if (!sc.open)
+	if (!sc->open)
 		scene_start();
-	sc.copy[sc.ncopy].x0 = r[0];
-	sc.copy[sc.ncopy].y0 = r[1];
-	sc.copy[sc.ncopy].x1 = r[2];
-	sc.copy[sc.ncopy].y1 = r[3];
-	sc.copy[sc.ncopy++].color = color;
+	sc->copy[sc->ncopy].x0 = r[0];
+	sc->copy[sc->ncopy].y0 = r[1];
+	sc->copy[sc->ncopy].x1 = r[2];
+	sc->copy[sc->ncopy].y1 = r[3];
+	sc->copy[sc->ncopy++].color = color;
 	struct op o = { .op = OP_RECT, .flag = true, .c0 = color, .f = { fx0, fy0, fx1, fy1 } };
 	memcpy(o.clip, clip, sizeof o.clip);
 	keep(&o);
@@ -863,6 +939,7 @@ void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4
 	if (rep.gpu)
 		decide();
 	if (!rep.gpu) {
+		cpu_touch();
 		soft_paint_rect(fx0, fy0, fx1, fy1, clip, color, copy);
 		return;
 	}
@@ -911,8 +988,10 @@ bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_
 {
 	if (rep.gpu)
 		decide();
-	if (!rep.gpu)
+	if (!rep.gpu) {
+		cpu_touch();
 		return soft_paint_texture(data, stride, width, height, format, dx, dy, dw, dh, clip, tint, colorize);
+	}
 	bool scaled = dw != (int)width || dh != (int)height;
 	int why = format < PAINT_RGB || format > PAINT_ALPHA || !width || !height || dw <= 0 || dh <= 0 ? CPU_FORMAT :
 		  scaled && format == PAINT_ALPHA				     ? CPU_SCALED_ALPHA :
@@ -941,8 +1020,10 @@ bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii
 {
 	if (rep.gpu)
 		decide();
-	if (!rep.gpu)
+	if (!rep.gpu) {
+		cpu_touch();
 		return soft_paint_rounded(fx0, fy0, fx1, fy1, radii, border, clip, fill, edge);
+	}
 	if (border > 0.0f) {
 		to_cpu(CPU_BORDER, clip);
 		return soft_paint_rounded(fx0, fy0, fx1, fy1, radii, border, clip, fill, edge);
@@ -1035,6 +1116,7 @@ void paint_sync(void)
 		decide();
 	if (rep.gpu)
 		flush_scene(FLUSH_SYNC);
+	cpu_touch();
 }
 
 void paint_end(void)
@@ -1044,13 +1126,30 @@ void paint_end(void)
 	if (rep.gpu)
 		flush_scene(FLUSH_END);
 	if (rep.layer && mode == PAINT_MODE_GPU)
-		clean_rows(rep.cpu_y0, rep.cpu_y1);
+		clean_rows(rep.layer, rep.cpu_y0, rep.cpu_y1);
 	rep.gpu = false;
 	rep.layer = NULL;
 	soft_paint_end();
 }
 
-void paint_finish(void) { soft_paint_finish(); }
+/* With overlap a repaint's last scene renders on until the compositor
+ * or the next CPU write to its layer needs it: paint_wait. */
+void paint_finish(void)
+{
+	soft_paint_finish();
+	if (!overlap)
+		settle();
+}
+
+void paint_wait(void) { settle(); }
+
+void paint_overlap(bool on)
+{
+	settle();
+	overlap = on;
+}
+
+bool paint_overlap_on(void) { return overlap; }
 
 void paint_log(void)
 {
@@ -1062,9 +1161,9 @@ void paint_log(void)
 		   "uploads %lu (px %lu), restarts %lu, geometry %lu us, render %lu us\n",
 		   st.scenes, st.repaints, st.small, st.off, st.rects, st.textures, st.rounded, st.quads, st.uploads,
 		   st.upload_px, st.restarts, st.ta_us / n, st.render_us / n);
-	log_printf("paint gpu: flush sync %lu room %lu copy %lu atlas %lu cpu %lu; cpu clip %lu scaled alpha %lu border %lu "
-		   "big %lu format %lu copy clip %lu refused %lu failed %lu\n",
-		   st.flush[FLUSH_SYNC], st.flush[FLUSH_ROOM], st.flush[FLUSH_COPY], st.flush[FLUSH_ATLAS],
+	log_printf("paint gpu: wait %lu us%s; flush sync %lu room %lu copy %lu atlas %lu cpu %lu; cpu clip %lu scaled alpha "
+		   "%lu border %lu big %lu format %lu copy clip %lu refused %lu failed %lu\n",
+		   st.wait_us / n, overlap ? " (overlap)" : "", st.flush[FLUSH_SYNC], st.flush[FLUSH_ROOM], st.flush[FLUSH_COPY], st.flush[FLUSH_ATLAS],
 		   st.flush[FLUSH_CPU], st.cpu[CPU_CLIP], st.cpu[CPU_SCALED_ALPHA], st.cpu[CPU_BORDER], st.cpu[CPU_BIG],
 		   st.cpu[CPU_FORMAT], st.cpu[CPU_COPY_CLIP], st.cpu[CPU_REFUSED], st.cpu[CPU_FAILED]);
 	memset(&st, 0, sizeof st);

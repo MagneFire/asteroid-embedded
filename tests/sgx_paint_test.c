@@ -23,6 +23,7 @@
 #define SIZE		SGX_DRAW_SIZE
 #define PITCH		(SIZE * 4)
 #define ATLAS_GPU	0x10000000u
+#define ATLAS2_GPU	0x18000000u
 #define LAYER_GPU	0x20000000u
 #define VERT_GPU	0x30000000u
 #define ATLAS_BYTES	(480 * 480 * 4)
@@ -34,7 +35,7 @@ static struct {
 uintptr_t gpu_host_base;
 
 static uint32_t dram[SIZE * SIZE], tile[SIZE * SIZE], snap[SIZE * SIZE];
-static uint8_t atlas_mem[ATLAS_BYTES] __attribute__((aligned(4096)));
+static uint8_t atlas_mem[ATLAS_BYTES] __attribute__((aligned(4096))), atlas2_mem[ATLAS_BYTES] __attribute__((aligned(4096)));
 static float vmem[SGX_SCENE_VERTICES_SIZE / 4];
 
 static int failures;
@@ -99,7 +100,7 @@ static bool running = true, failed, frame_ok = true, refuse, refused;
 static uint32_t generation = 1, target, vused, layer_phys;
 static uint8_t rows_format = 0x0d;
 static unsigned frames, halts, max_draws;
-static bool atlas_given;
+static unsigned atlases_given;
 
 bool gpu_ready(void) { return running; }
 void sgx_halt(void)
@@ -123,12 +124,12 @@ uint32_t sgx_draw_map(uint32_t phys, uint32_t size)
 
 uint32_t sgx_draw_alloc(uint32_t size, void **cpu)
 {
-	if (atlas_given || size > sizeof atlas_mem)
+	if (atlases_given == 2 || size > sizeof atlas_mem)
 		return 0;
-	atlas_given = true;
-	memset(atlas_mem, 0, sizeof atlas_mem);
-	*cpu = atlas_mem;
-	return ATLAS_GPU;
+	uint8_t *a = atlases_given++ ? atlas2_mem : atlas_mem;
+	memset(a, 0, sizeof atlas_mem);
+	*cpu = a;
+	return a == atlas_mem ? ATLAS_GPU : ATLAS2_GPU;
 }
 
 void *sgx_draw_vertices(uint32_t bytes, uint32_t *gpu)
@@ -155,6 +156,8 @@ static const uint8_t *texels(uint32_t gpu)
 {
 	if (gpu == ATLAS_GPU)
 		return atlas_mem;
+	if (gpu == ATLAS2_GPU)
+		return atlas2_mem;
 	if (gpu == LAYER_GPU)
 		return (const uint8_t *)snap;
 	return NULL;
@@ -276,8 +279,38 @@ static void triangle(const float *v0, const float *v1, const float *v2, unsigned
 		}
 }
 
-bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
+/* The scene as the GPU has it once kicked: its draws and their vertices
+ * (the geometry is done), and what rendering it from the memory of then
+ * gives, which its render at sgx_draw_finish must match: nothing it
+ * samples or the layer may change in between. */
+static struct {
+	bool busy;
+	uint32_t ticket;
+	unsigned n;
+	struct sgx_draw draws[SGX_DRAW_MAX_DRAWS];
+	uint32_t at_kick[SIZE * SIZE], layer[SIZE * SIZE];
+} kicked;
+static float kicked_v[SGX_SCENE_VERTICES_SIZE / 4];
+static uint32_t tickets;
+static bool finish_ok = true;
+static unsigned finishes;
+
+static void render(void)
 {
+	memcpy(snap, dram, sizeof snap);
+	memset(tile, 0, sizeof tile);
+	for (unsigned i = 0; i < kicked.n; i++) {
+		const struct sgx_draw *d = &kicked.draws[i];
+		unsigned floats = d->kind == SGX_DRAW_FLAT ? 6 : d->kind == SGX_DRAW_COLOURED ? 8 : 4;
+		const float *v = kicked_v + (d->verts - VERT_GPU) / 4;
+		for (unsigned k = 0; k + 2 < d->count; k += 3)
+			triangle(v + k * floats, v + (k + 1) * floats, v + (k + 2) * floats, floats, d);
+	}
+}
+
+uint32_t sgx_draw_kick(const struct sgx_frame *f, struct sgx_times *t)
+{
+	CHECK(!kicked.busy, "a frame kicked while another renders");
 	frames++;
 	const char *why = invalid(f);
 	CHECK(!why, "%s", why);
@@ -289,20 +322,42 @@ bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
 	refused = refuse;
 	if (why || refuse || !frame_ok) {
 		vused = 0;
-		return false;
+		return 0;
 	}
-	memcpy(snap, dram, sizeof snap);
-	memset(tile, 0, sizeof tile);
-	for (unsigned i = 0; i < f->n; i++) {
-		const struct sgx_draw *d = &f->draws[i];
-		unsigned floats = d->kind == SGX_DRAW_FLAT ? 6 : d->kind == SGX_DRAW_COLOURED ? 8 : 4;
-		const float *v = vmem + (d->verts - VERT_GPU) / 4;
-		for (unsigned k = 0; k + 2 < d->count; k += 3)
-			triangle(v + k * floats, v + (k + 1) * floats, v + (k + 2) * floats, floats, d);
-	}
-	memcpy(dram, tile, sizeof dram);
+	kicked.busy = true;
+	kicked.ticket = ++tickets;
+	kicked.n = f->n;
+	memcpy(kicked.draws, f->draws, f->n * sizeof *f->draws);
+	memcpy(kicked_v, vmem, vused);
 	vused = 0;
+	render();
+	memcpy(kicked.at_kick, tile, sizeof tile);
+	memcpy(kicked.layer, mem.layer, sizeof mem.layer);
+	return kicked.ticket;
+}
+
+bool sgx_draw_finish(uint32_t ticket, struct sgx_times *t)
+{
+	if (!kicked.busy || ticket != kicked.ticket)
+		return ticket && ticket <= tickets;
+	kicked.busy = false;
+	finishes++;
+	t->render_us = 100;
+	CHECK(!memcmp(kicked.layer, mem.layer, sizeof mem.layer), "the CPU wrote a layer the GPU was painting");
+	if (!finish_ok)
+		return false;
+	render();
+	CHECK(!memcmp(kicked.at_kick, tile, sizeof tile), "what a rendering scene samples changed under it");
+	memcpy(dram, tile, sizeof dram);
 	return true;
+}
+
+bool sgx_draw_busy(void) { return kicked.busy; }
+
+bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
+{
+	uint32_t ticket = sgx_draw_kick(f, t);
+	return ticket && sgx_draw_finish(ticket, t);
 }
 
 /* --- what the calls are given */
@@ -513,6 +568,8 @@ static void layer_fill(uint32_t *buf, bool noise)
 	seed = s;
 }
 
+static bool left_rendering;
+
 /* Painted by the CPU alone into ref, then by the GPU into the layer, from
  * the same start: the same pixels, the same answers. */
 static void same(const char *name, void (*paint)(const struct api *, uint32_t *), bool noise)
@@ -527,6 +584,10 @@ static void same(const char *name, void (*paint)(const struct api *, uint32_t *)
 	unsigned n = nreturned;
 	nreturned = 0;
 	paint(&gpu_api, mem.layer);
+	paint_finish();
+	left_rendering = sgx_draw_busy();
+	paint_wait();
+	CHECK(!sgx_draw_busy(), "%s: a scene still rendering after paint_wait", name);
 	CHECK(n == nreturned && !memcmp(soft_ret, returned, n), "%s: answers differ from the CPU's", name);
 	CHECK(rows_format == 0x0d, "%s: rows format left at %02x", name, rows_format);
 	unsigned diff = 0, first = 0;
@@ -559,6 +620,8 @@ int main(void)
 	gpu_host_base = (uintptr_t)&mem;
 	fill_inputs();
 	paint_mode(PAINT_MODE_GPU);
+	CHECK(paint_overlap_on(), "overlap on by default");
+	paint_overlap(false);
 
 	CHECK(frames_of("full", full, false) == 1, "a full repaint in one frame");
 	CHECK(frames_of("partial", partial, true) >= 1, "a partial repaint on the GPU");
@@ -589,8 +652,37 @@ int main(void)
 	CHECK(frames_of("after a failure", full, false) == 0 && paint_gpu_lost(), "the GPU after a failure");
 	reset_gpu();
 	generation++;
-	atlas_given = false;
+	atlases_given = 0;
 	CHECK(frames_of("after a restart", full, false) == 1 && !paint_gpu_lost(), "the GPU asked for again");
+
+	/* With overlap, the same pixels; the last scene of a repaint renders
+	 * on past paint_finish. */
+	paint_overlap(true);
+	CHECK(frames_of("overlap full", full, false) == 1 && left_rendering, "a repaint left rendering");
+	CHECK(frames_of("overlap partial", partial, true) >= 1, "a partial repaint with overlap");
+	CHECK(frames_of("overlap rounded clip", rounded_clip, true) >= 3, "a rounded clip with overlap");
+	CHECK(frames_of("overlap left out", left_out, false) == 3, "calls left to the UI with overlap");
+	f = frames_of("overlap many", many, true);
+	CHECK(f >= 2, "many quads with overlap in %u frames", f);
+	CHECK(frames_of("overlap crowded", crowded, false) >= 3, "the atlas started over with overlap");
+	CHECK(frames_of("overlap small", small, true) == 0, "a small repaint with overlap");
+	CHECK(frames_of("overlap cpu rows", cpu_rows, false) == 2, "a sync with overlap");
+
+	/* A failure found only when the scene is waited for: the CPU paints
+	 * it again and the GPU is halted. */
+	finish_ok = false;
+	logs[0] = 0;
+	unsigned h0 = halts;
+	same("failed at the wait", full, false);
+	CHECK(halts == h0 + 1 && strstr(logs, "the CPU paints until") && paint_gpu_lost(), "a failure at the wait: %s",
+	      logs);
+	finish_ok = true;
+	reset_gpu();
+	generation++;
+	atlases_given = 0;
+	CHECK(frames_of("overlap after a restart", full, false) == 1, "the GPU asked for again with overlap");
+	paint_overlap(false);
+	CHECK(frames_of("overlap off", full, false) == 1 && !left_rendering, "a repaint waited for without overlap");
 
 	/* Off, soft or null: no frames. */
 	running = false;

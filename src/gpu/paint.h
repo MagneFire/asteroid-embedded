@@ -54,4 +54,10 @@ void paint_null(bool on);
 bool paint_null_on(void);
 void paint_refused(uint32_t kind);
 void paint_log(void);
+/* With overlap on (the default), a repaint's last scene is not waited
+ * for by paint_finish but by paint_wait, or by the next CPU write to
+ * its layer. */
+void paint_overlap(bool on);
+bool paint_overlap_on(void);
+void paint_wait(void);
 #endif

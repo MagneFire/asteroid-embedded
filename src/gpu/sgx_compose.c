@@ -142,8 +142,10 @@ bool sgx_compose(bool on)
 	if (on && lost)
 		log_printf("sgx: frames are drawn without the compositor since a lost frame\n");
 	wanted = on && !lost && turn_on();
-	if (!on)
+	if (!on) {
+		paint_wait();
 		sgx_stop();
+	}
 	return wanted;
 }
 
@@ -370,6 +372,9 @@ static bool end(void)
 	}
 	struct sgx_frame f = { 0xff000000u, draws, ndraws };
 	struct sgx_times t;
+	/* A layer still being painted is waited for by paint.h, which then
+	 * also hears of a failure of its own. */
+	paint_wait();
 	sgx_draw_target(target_gpu);
 	if (!sgx_draw_frame(&f, &t)) {
 		if (sgx_draw_refused()) {
@@ -429,6 +434,7 @@ static void keep_layer(uint8_t what, uint32_t tex, uint32_t width, uint32_t heig
 /* The frame drawn again, by the CPU. */
 static bool replay(void)
 {
+	paint_wait();
 	soft_draw_begin(&target);
 	for (unsigned i = 0; i < nops; i++) {
 		const struct op *o = &ops[i];
@@ -460,6 +466,7 @@ bool gpu_selftest(void) { return soft_selftest(); }
 
 void gpu_suspend(void)
 {
+	paint_wait();
 	sgx_stop();
 	soft_suspend();
 }
@@ -471,10 +478,12 @@ void *gpu_alloc(uint32_t size, uint32_t align) { return soft_alloc(size, align);
 void gpu_draw_begin(const struct gpu_target *t)
 {
 	on_gpu = wanted && sgx_running();
-	if (on_gpu)
+	if (on_gpu) {
 		begin(t);
-	else
+	} else {
+		paint_wait();
 		soft_draw_begin(t);
+	}
 }
 
 bool gpu_draw_program(struct gpu_shader *vs, struct gpu_shader *fs) { return true; }

@@ -50,6 +50,8 @@ static int failures;
 
 static unsigned nlogs;
 void rotation_buffer(uint32_t *buf, uint32_t stride) {}
+static unsigned paint_waits;
+void paint_wait(void) { paint_waits++; }
 uint32_t time_ms(void) { return 0; }
 uint32_t time_us(void)
 {

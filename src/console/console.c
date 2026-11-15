@@ -1475,15 +1475,27 @@ static void cmd_sgx(const char *args)
 						     [PAINT_MODE_NULL] = "null" };
 		const char *m = skip_spaces(args + 5);
 		unsigned i = 0;
+		if (!strncmp(m, "overlap", 7) && (!m[7] || m[7] == ' ')) {
+			const char *o = skip_spaces(m + 7);
+			if (*o && strcmp(o, "on") && strcmp(o, "off")) {
+				say("usage: sgx paint overlap [on | off]\n");
+				return;
+			}
+			if (*o)
+				paint_overlap(!strcmp(o, "on"));
+			say("overlap %s\n", paint_overlap_on() ? "on" : "off");
+			return;
+		}
 		while (*m && i < ARRAY_SIZE(modes) && strcmp(m, modes[i]))
 			i++;
 		if (i == ARRAY_SIZE(modes)) {
-			say("usage: sgx paint [gpu | soft | null]\n");
+			say("usage: sgx paint [gpu | soft | null | overlap [on | off]]\n");
 			return;
 		}
 		if (*m)
 			paint_mode((int)i);
-		say("paint %s%s\n", modes[paint_mode_now()], paint_gpu_lost() ? ", the CPU since a failed scene" : "");
+		say("paint %s%s%s\n", modes[paint_mode_now()], paint_overlap_on() ? ", overlap" : "",
+		    paint_gpu_lost() ? ", the CPU since a failed scene" : "");
 	} else if (!strcmp(args, "off")) {
 		sgx_compose(false);
 		say("off\n");
@@ -1501,8 +1513,8 @@ static void cmd_sgx(const char *args)
 		sgx_log_state();
 		say("in the log\n");
 	} else if (*args)
-		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null] | "
-		    "ui [on | off] | inval [on | off]]\n");
+		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | "
+		    "paint [gpu | soft | null | overlap [on | off]] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1565,8 +1577,8 @@ static const struct command commands[] = {
 	{ "uibench", "<panel> <gpu> [times]", cmd_uibench },
 #ifdef SGX_BASE
 	{ "sgx",
-	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null] | ui [on | off] | "
-	  "inval [on | off]]",
+	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off]] | "
+	  "ui [on | off] | inval [on | off]]",
 	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
