@@ -21,9 +21,10 @@
  * own byte order, and only the vertices' colours are swapped.
  *
  * A call the GPU cannot paint ends the scene; the CPU paints the call
- * and the next scene's self-copy keeps it. Each scene waits for its
- * render; the rows it changed are then invalidated, and rows the CPU
- * wrote are cleaned before the next. A scene is kept as its calls, so
+ * and the next scene's self-copy keeps it. A scene renders on until the
+ * next scene, a CPU write to its layer or the compositor waits for it;
+ * the rows it changed are then invalidated, and rows the CPU wrote are
+ * cleaned before the next. A scene is kept as its calls, so
  * that when the GPU refuses or fails it the CPU paints it again; after a
  * failure the GPU is halted and the CPU paints until sgx paint gpu. */
 #include <string.h>
@@ -1076,7 +1077,7 @@ void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4
 			note(n);
 		/* What a copy covers in whole pixels is replaced. */
 		int w[4] = { ceil_px(fx0), ceil_px(fy0), floor_px(fx1), floor_px(fy1) };
-		if (copy && cut(w, clip))
+		if (copy && !rep.rclip && cut(w, clip))
 			note_clear(w);
 	}
 	if (rep.gpu && copy) {
