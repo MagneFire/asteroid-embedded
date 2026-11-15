@@ -59,7 +59,7 @@ static bool bits_wait(uint32_t addr, uint32_t mask, uint32_t want)
 	return true;
 }
 
-static bool controller_init(void)
+static bool controller_init(bool select)
 {
 	writel(readl(GCC_USB_HS_AHB_CBCR) | 1, GCC_USB_HS_AHB_CBCR);
 	writel(readl(GCC_USB_HS_SYSTEM_CBCR) | 1, GCC_USB_HS_SYSTEM_CBCR);
@@ -67,14 +67,14 @@ static bool controller_init(void)
 	writel(0x00080002, USB_USBCMD);
 	delay_ms(2);
 	bool ok = bits_wait(USB_USBCMD, 2, 0);
-	if (phy_select())
+	if (select && phy_select())
 		ok = false;
 	writel(0, USB_SBUSCFG);
 	writel(0x08, USB_AHB_MODE);
 	return ok;
 }
 
-bool usb_port_init(void) { return controller_init(); }
+bool usb_port_init(void) { return controller_init(true); }
 
 const char *usb_port_attach(void) { return phy_select() ? "phy select" : NULL; }
 
@@ -210,10 +210,20 @@ const char *usb_port_restore(void)
 	writel(readl(USB_AHB_MODE) & ~AHB2AHB_BYPASS, USB_AHB_MODE);
 	usb_clocks_gate();
 	writel(1, GCC_USB_HS_BCR);
+	/* The APQ8009W's PHY and its ULPI bridge have a reset of their own,
+	 * which the vendor gives them inside the block reset. */
+	if (chip->usb_bridge_bcr) {
+		writel(1, GCC(chip->usb_bridge_bcr));
+		delay_us(10);
+		writel(0, GCC(chip->usb_bridge_bcr));
+		delay_us(80);
+	}
 	delay_ms(1);
 	writel(0, GCC_USB_HS_BCR);
 	delay_us(1);
-	if (!controller_init())
+	/* No ULPI access before the PHY is reset: a PHY that lost its clock
+	 * does not answer until then. */
+	if (!controller_init(false))
 		return "controller reset";
 	delay_ms(100);
 	phy_reset();
@@ -221,5 +231,5 @@ const char *usb_port_restore(void)
 		if (ulpi_write((uint8_t)(ULPI_PHY_OVERRIDE + i), board->usb_phy_init[i]))
 			return "phy overrides";
 	phy_reset();
-	return NULL;
+	return phy_select() ? "phy select" : NULL;
 }
