@@ -10,6 +10,12 @@
  * with the GPU off; false if the GPU cannot be used. */
 bool sgx_compose(bool on);
 bool sgx_compose_on(void);
+/* With overlap on, gpu_draw_end only starts the frame's render, and
+ * sgx_compose_settle waits for it before the frame is shown, drawing it
+ * on the CPU if the GPU failed; false if the frame is lost. */
+void sgx_compose_overlap(bool on);
+bool sgx_compose_overlap_on(void);
+bool sgx_compose_settle(void);
 
 /* Memory the addresses the drawing calls are given lie in, which the GPU
  * maps: on the watch the frame buffers, the layers and soft_alloc's

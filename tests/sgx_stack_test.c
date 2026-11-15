@@ -228,7 +228,9 @@ static void refusals(void)
 		CHECK(refused(), "refused frame %d", i);
 	CHECK(kicks == 2 && !halts && gpu_ready() && nlogs == 1, "after the refused frames: %u kicks, %u logs", kicks, nlogs);
 	CHECK(supported() && kicks == 4 && !halts, "a GPU frame after them: %u kicks, %u halts", kicks, halts);
-	/* Refused by the driver itself, without a kick. */
+	/* Refused by the driver itself, without a kick, once the frame left
+	 * rendering is done. */
+	CHECK(sgx_compose_settle(), "the last frame");
 	*P(SGX_SCENE_DETAILS_ACCESS) = 1;
 	for (int i = 0; i < 300; i++)
 		CHECK(supported(), "frame %d the driver refuses", i);

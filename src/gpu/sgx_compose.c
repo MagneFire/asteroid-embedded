@@ -46,6 +46,12 @@ static unsigned nregions;
 static struct { uint32_t addr, size, gpu; } maps[3];
 static unsigned nmaps;
 static bool wanted, on_gpu, by_hand = !AT_BOOT, lost, untouched;
+/* With overlap a frame's render is not waited for by gpu_draw_end but
+ * by sgx_compose_settle, once the display is done with the frame
+ * before. */
+static bool overlap = true, pending;
+static uint32_t ticket;
+static uint32_t stat_wait;
 static uint32_t aux_gpu, *aux, gen;
 static char told[8][64];
 static unsigned ntold;
@@ -143,6 +149,7 @@ bool sgx_compose(bool on)
 		log_printf("sgx: frames are drawn without the compositor since a lost frame\n");
 	wanted = on && !lost && turn_on();
 	if (!on) {
+		sgx_compose_settle();
 		paint_wait();
 		sgx_stop();
 	}
@@ -376,7 +383,14 @@ static bool end(void)
 	 * also hears of a failure of its own. */
 	paint_wait();
 	sgx_draw_target(target_gpu);
-	if (!sgx_draw_frame(&f, &t)) {
+	bool ok;
+	if (overlap) {
+		ticket = sgx_draw_kick(&f, &t);
+		ok = pending = ticket != 0;
+		t.render_us = 0;
+	} else
+		ok = sgx_draw_frame(&f, &t);
+	if (!ok) {
 		if (sgx_draw_refused()) {
 			tell(sgx_draw_failure());
 			return false;
@@ -390,10 +404,10 @@ static bool end(void)
 	stat_ta += t.ta_us;
 	stat_3d += t.render_us;
 	if (time_ms() - stat_t >= LOG_MS) {
-		log_printf("sgx: %lu frames, geometry %lu us, render %lu us\n", stat_frames, stat_ta / stat_frames,
-			   stat_3d / stat_frames);
+		log_printf("sgx: %lu frames, geometry %lu us, render %lu us, wait %lu us%s\n", stat_frames,
+			   stat_ta / stat_frames, stat_3d / stat_frames, stat_wait / stat_frames, overlap ? " (overlap)" : "");
 		stat_t = time_ms();
-		stat_frames = stat_ta = stat_3d = 0;
+		stat_frames = stat_ta = stat_3d = stat_wait = 0;
 	}
 	return true;
 }
@@ -466,6 +480,7 @@ bool gpu_selftest(void) { return soft_selftest(); }
 
 void gpu_suspend(void)
 {
+	sgx_compose_settle();
 	paint_wait();
 	sgx_stop();
 	soft_suspend();
@@ -477,6 +492,7 @@ void *gpu_alloc(uint32_t size, uint32_t align) { return soft_alloc(size, align);
 
 void gpu_draw_begin(const struct gpu_target *t)
 {
+	sgx_compose_settle();
 	on_gpu = wanted && sgx_running();
 	if (on_gpu) {
 		begin(t);
@@ -596,6 +612,41 @@ bool gpu_draw_untouched(void) { return untouched; }
 
 void gpu_draw_submit(void) {}
 bool gpu_draw_wait(void) { return true; }
+
+/* The render gpu_draw_end left running waited for. When the GPU failed
+ * it, the CPU draws the frame again: the layers it reads are as they
+ * were, as nothing paints before the frame is shown. */
+bool sgx_compose_settle(void)
+{
+	if (!pending)
+		return true;
+	pending = false;
+	struct sgx_times t = { 0, 0 };
+	uint32_t t0 = time_us();
+	bool ok = sgx_draw_finish(ticket, &t);
+	stat_wait += time_us() - t0;
+	stat_3d += t.render_us;
+	if (ok)
+		return true;
+	log_printf("sgx: %s; the CPU draws until sgx ui on\n", sgx_draw_failure());
+	wanted = false;
+	sgx_halt();
+	untouched = false;
+	if (kept && replay())
+		return true;
+	log_printf("sgx: a frame lost; the GPU stays off\n");
+	lost = true;
+	sgx_stop();
+	return false;
+}
+
+void sgx_compose_overlap(bool on)
+{
+	sgx_compose_settle();
+	overlap = on;
+}
+
+bool sgx_compose_overlap_on(void) { return overlap; }
 
 bool gpu_draw_end(void)
 {

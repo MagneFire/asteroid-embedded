@@ -1470,6 +1470,15 @@ static void cmd_sgx(const char *args)
 		sgx_tex(skip_spaces(args + 3));
 	} else if (!strncmp(args, "copy", 4) && (!args[4] || args[4] == ' ')) {
 		sgx_copy(skip_spaces(args + 4));
+	} else if (!strncmp(args, "compose overlap", 15) && (!args[15] || args[15] == ' ')) {
+		const char *o = skip_spaces(args + 15);
+		if (*o && strcmp(o, "on") && strcmp(o, "off")) {
+			say("usage: sgx compose overlap [on | off]\n");
+			return;
+		}
+		if (*o)
+			sgx_compose_overlap(!strcmp(o, "on"));
+		say("compose overlap %s\n", sgx_compose_overlap_on() ? "on" : "off");
 	} else if (!strncmp(args, "mesh", 4) && (!args[4] || args[4] == ' ')) {
 		const char *o = skip_spaces(args + 4);
 		if (*o && strcmp(o, "keep") && strcmp(o, "build")) {
@@ -1523,7 +1532,7 @@ static void cmd_sgx(const char *args)
 		say("in the log\n");
 	} else if (*args)
 		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | "
-		    "overlap [on | off]] | mesh [keep | build] | ui [on | off] | inval [on | off]]\n");
+		    "overlap [on | off]] | compose overlap [on | off] | mesh [keep | build] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1587,7 +1596,7 @@ static const struct command commands[] = {
 #ifdef SGX_BASE
 	{ "sgx",
 	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off]] | "
-	  "mesh [keep | build] | ui [on | off] | inval [on | off]]",
+	  "compose overlap [on | off] | mesh [keep | build] | ui [on | off] | inval [on | off]]",
 	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },

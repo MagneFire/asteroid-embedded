@@ -224,6 +224,36 @@ bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
 	return frame_ok && !refuse;
 }
 
+/* A kicked frame is captured as sgx_draw_frame would; whether it went
+ * well is only known at sgx_draw_finish. */
+static unsigned kicks, finishes;
+static bool kicked;
+
+uint32_t sgx_draw_kick(const struct sgx_frame *f, struct sgx_times *t)
+{
+	kicks++;
+	bool ok = frame_ok;
+	frame_ok = true;
+	bool took = sgx_draw_frame(f, t);
+	frame_ok = ok;
+	if (!took)
+		return 0;
+	kicked = true;
+	t->render_us = 0;
+	return 7;
+}
+
+bool sgx_draw_finish(uint32_t ticket, struct sgx_times *t)
+{
+	finishes++;
+	if (ticket != 7 || !kicked)
+		snprintf(cap.bad, sizeof cap.bad, "a finish of ticket %u, kicked %d", ticket, kicked);
+	kicked = false;
+	t->ta_us = 0;
+	t->render_us = 100;
+	return frame_ok;
+}
+
 /* --- what the calls are given */
 
 static uint32_t rnd(void)
@@ -376,6 +406,8 @@ static bool same_as_soft(bool (*frame)(const struct api *, const struct gpu_targ
 
 static void setup(void)
 {
+	CHECK(sgx_compose_overlap_on(), "overlap on by default");
+	sgx_compose_overlap(false);
 	uint32_t size;
 	void *pool = soft_pool(&size);
 	const struct sgx_region r[] = { { ADDR(mem.frame), sizeof mem.frame }, { ADDR(mem.layer), sizeof mem.layer },
@@ -716,6 +748,43 @@ static void sync(void)
 	CHECK(same_as_soft(full, &t, &ret) && ret && !gpu_draw_untouched(), "a frame with the GPU off");
 }
 
+/* With overlap the render is waited for by sgx_compose_settle; a failure
+ * found there has the CPU draw the frame instead. */
+static void overlapping(void)
+{
+	setup();
+	CHECK(boot(), "boot, then on");
+	struct gpu_target t = frame_target();
+	sgx_compose_overlap(true);
+	CHECK(full(&gpu_api, &t) && kicks == 1 && !finishes && gpu_draw_untouched(), "a kicked frame: %u kicks, %u finishes",
+	      kicks, finishes);
+	CHECK(sgx_compose_settle() && finishes == 1 && gpu_draw_untouched() && !cap.bad[0], "settled: %s", cap.bad);
+	check_gpu("with overlap");
+	CHECK(sgx_compose_settle() && finishes == 1, "a second settle waited again");
+	/* The next frame waits for one left running. */
+	CHECK(full(&gpu_api, &t) && kicks == 2, "a frame left running");
+	CHECK(full(&gpu_api, &t) && kicks == 3 && finishes == 2 && !cap.bad[0], "the next one: %s", cap.bad);
+	gpu_suspend();
+	CHECK(finishes == 3 && !cap.bad[0], "sleep waited for the frame: %u finishes", finishes);
+	CHECK(gpu_init() && gpu_ready(), "wake");
+	/* A failure found at the wait: the CPU draws the frame. */
+	frame_ok = false;
+	bool ret;
+	struct gpu_target r = t;
+	r.base = ADDR(mem.ref);
+	fill_frame(mem.frame);
+	fill_frame(mem.ref);
+	full(&soft_api, &r);
+	ret = full(&gpu_api, &t);
+	CHECK(ret && gpu_draw_untouched(), "a frame that fails later");
+	CHECK(sgx_compose_settle() && halts == 1 && !gpu_draw_untouched() && !gpu_ready(), "settle after a failure: %u halts",
+	      halts);
+	CHECK(!memcmp(mem.frame, mem.ref, sizeof mem.frame), "the CPU's frame differs from soft's");
+	CHECK(strstr(lastlog, "fake failure"), "log line: %s", lastlog);
+	frame_ok = true;
+	CHECK(same_as_soft(full, &t, &ret) && ret && kicks == 4, "the next frame on the CPU: %u kicks", kicks);
+}
+
 /* Each in a process of its own: the compositor's state is static. */
 static void run(const char *name, void (*fn)(void))
 {
@@ -755,6 +824,7 @@ int main(void)
 	run("what the GPU does not take", odd);
 	run("calls too many to keep", unkept);
 	run("cache sync", sync);
+	run("overlap", overlapping);
 	if (failures)
 		return 1;
 	printf("sgx_compose_test: ok\n");

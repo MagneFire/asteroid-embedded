@@ -7,6 +7,9 @@
 #include "gpu/draw.h"
 #include "gpu/paint.h"
 #include "gpu/shaders.h"
+#ifdef SGX_BASE
+#include "gpu/sgx_compose.h"
+#endif
 #include "ui/ui.h"
 #include "ui/stack.h"
 #include "ui/rotation.h"
@@ -340,6 +343,21 @@ void frame_draw(uint32_t now)
 		bool untouched = false;
 		if (have_gpu) {
 			gpu_flatmesh(buf, step * MESH_STEP_MS, have_ui);
+#ifdef SGX_BASE
+			/* The render runs on while the display sends the frame before. */
+			if (sgx_compose_overlap_on()) {
+				uint32_t w0 = time_us();
+				display_wait_idle();
+				uint32_t w1 = time_us();
+				if (!sgx_compose_settle()) {
+					if (gpu_fail++ == 0)
+						log_printf("gpu: draw did not complete\n");
+					have_gpu = false;
+				}
+				flip_us += w1 - w0;
+				end_us += time_us() - w1;
+			}
+#endif
 			untouched = gpu_draw_untouched();
 		} else {
 			flatmesh_render(buf, step * MESH_STEP_MS);
@@ -373,6 +391,7 @@ void frame_draw(uint32_t now)
 		waited_us = time_us() - w0;
 	}
 #ifdef SGX_BASE
+	sgx_compose_settle();
 	damage_later();
 	paint_wait();
 #endif
