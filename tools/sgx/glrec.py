@@ -31,6 +31,9 @@ FS = "varying lowp vec4 v; void main(){ gl_FragColor=v; }"
 VS_TEX = "attribute vec2 p; attribute vec2 t; varying mediump vec2 u; void main(){ u=t; gl_Position=vec4(p,0.,1.); }"
 FS_TEX = "uniform sampler2D s; varying mediump vec2 u; void main(){ gl_FragColor=texture2D(s,u); }"
 FS_ALPHA = "uniform sampler2D s; uniform lowp float a; varying mediump vec2 u; void main(){ gl_FragColor=texture2D(s,u)*a; }"
+VS_TEXC = ("attribute vec2 p; attribute vec2 t; attribute vec4 c; varying mediump vec2 u; varying lowp vec4 v; "
+           "void main(){ u=t; v=c; gl_Position=vec4(p,0.,1.); }")
+FS_TEXC = "uniform sampler2D s; varying mediump vec2 u; varying lowp vec4 v; void main(){ gl_FragColor=texture2D(s,u)*v; }"
 FS_A8 = ("uniform sampler2D s; uniform lowp vec4 c; varying mediump vec2 u; "
          "void main(){ gl_FragColor=c*texture2D(s,u).a; }")
 
@@ -353,7 +356,19 @@ def mesh_scene(s, ntri=172, draw_tri=None, extra_buffer=False, readback=True):
         s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
 
 
-def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=None, frames=1, reuse_uniform=False):
+def colour_quad(y0, y1, cols):
+    """band_quad with a colour per vertex: {x, y, u, v, r, g, b, a}, cols the four corners' colours."""
+    q = band_quad(y0, y1)
+    a, b, c, d = cols
+    return [q[0] + a, q[1] + b, q[2] + c, q[3] + c, q[4] + b, q[5] + d]
+
+
+COLOURS = {"C": ((1.0, 0.5, 0.25, 1.0),) * 4, "C2": ((0.25, 0.5, 1.0, 0.5),) * 4,
+           "C3": ((1.0, 0.0, 0.0, 1.0), (0.0, 1.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0), (1.0, 1.0, 1.0, 0.5))}
+
+
+def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=None, frames=1, reuse_uniform=False,
+              colour=False, colours=COLOURS):
     """The firmware's frame: the mesh (flat program, blending off), then textured draws with the alpha
     program and premultiplied blending: A = band 0..80 with texture TA, alpha 1.0; B = band 80..160 with tex_b,
     alpha_b; B2 = band 160..240 like B; P = 64-segment round panel with TA, alpha 0.75.  Every variant creates
@@ -364,6 +379,11 @@ def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=
     tex = build_program(s, VS_TEX, FS_ALPHA, ["p", "t"])
     s.g("glUniform1i", s.g("glGetUniformLocation", tex, s.cstr("s")), 0)
     loc_a = s.g("glGetUniformLocation", tex, s.cstr("a"))
+    if colour:
+        texc = build_program(s, VS_TEXC, FS_TEXC, ["p", "t", "c"])
+        s.g("glUseProgram", texc)
+        s.g("glUniform1i", s.g("glGetUniformLocation", texc, s.cstr("s")), 0)
+        s.g("glUseProgram", tex)
     mv = [x for v in mesh_vertices(172) for x in v]
     mbo = s.out32()
     s.g("glGenBuffers", 1, mbo)
@@ -375,6 +395,16 @@ def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=
         first[k] = (len(tv), len(geoms[k]))
         tv += geoms[k]
     tf = [x for v in tv for x in v]
+    if colour:
+        # in the same buffer, after the textured vertices, so that no allocation moves
+        cgeoms = {"C": colour_quad(240, 320, colours["C"]), "C2": colour_quad(0, 80, colours["C2"]),
+                  "C3": colour_quad(160, 240, colours["C3"])}
+        cbase = 4 * len(tf)
+        cv = []
+        for k in ("C", "C2", "C3"):
+            first[k] = (len(cv), len(cgeoms[k]))
+            cv += cgeoms[k]
+        tf += [x for v in cv for x in v]
     qbo = s.out32()
     s.g("glGenBuffers", 1, qbo)
     s.g("glBindBuffer", 0x8892, s.u32(qbo))
@@ -403,15 +433,27 @@ def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=
             return
         cur[0] = kind
         if kind == "flat":
+            if colour:
+                s.g("glDisableVertexAttribArray", 2)
             s.g("glDisable", 0x0BE2)
             s.g("glUseProgram", flat)
             s.g("glBindBuffer", 0x8892, s.u32(mbo))
             s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 24, 0)
             s.g("glVertexAttribPointer", 1, 4, 0x1406, 0, 24, 8)
+        elif kind == "texc":
+            s.g("glEnable", 0x0BE2)
+            s.g("glUseProgram", texc)
+            s.g("glBindBuffer", 0x8892, s.u32(qbo))
+            s.g("glEnableVertexAttribArray", 2)
+            s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 32, cbase)
+            s.g("glVertexAttribPointer", 1, 2, 0x1406, 0, 32, cbase + 8)
+            s.g("glVertexAttribPointer", 2, 4, 0x1406, 0, 32, cbase + 16)
         else:
             s.g("glEnable", 0x0BE2)
             s.g("glUseProgram", tex)
             s.g("glBindBuffer", 0x8892, s.u32(qbo))
+            if colour:
+                s.g("glDisableVertexAttribArray", 2)
             s.g("glVertexAttribPointer", 0, 2, 0x1406, 0, 16, 0)
             s.g("glVertexAttribPointer", 1, 2, 0x1406, 0, 16, 8)
 
@@ -448,6 +490,14 @@ def mix_scene(s, draws=("mesh", "A", "B", "P"), alpha_b=0.5, tex_b="TB", tex_b2=
                 textured("B2", tex_b2 or tex_b, alpha_b)
             elif d == "P":
                 textured("P", "TA", 0.75)
+            elif d in ("C", "C2", "C3"):
+                use("texc")
+                tn = "TB" if d == "C2" and tex_b2 else "TA"
+                if bound[0] != tn:
+                    s.g("glBindTexture", 0x0DE1, texs[tn])
+                    bound[0] = tn
+                f, n = first[d]
+                s.g("glDrawArrays", 4, f, n)
         s.g("glFinish")
         s.g("glReadPixels", 0, 0, 1, 1, 0x1908, 0x1401, s.arena.alloc(16, 4))
 
@@ -493,6 +543,17 @@ SCENARIOS.update({
     "mix_same": lambda s: mix_scene(s, draws=("mesh", "A", "B", "B2", "P"), reuse_uniform=True),
     "mix_back": lambda s: mix_scene(s, draws=("mesh", "A", "M2", "B", "P")),
     "mix2": lambda s: mix_scene(s, frames=2),
+    # the colour-per-vertex program (VS_TEXC, FS_TEXC) compiled third
+    "mixc_none": lambda s: mix_scene(s, colour=True),
+    "mixc": lambda s: mix_scene(s, draws=("mesh", "A", "C", "B", "P"), colour=True),
+    "mixc_end": lambda s: mix_scene(s, draws=("mesh", "A", "B", "P", "C"), colour=True),
+    "mixc_two": lambda s: mix_scene(s, draws=("mesh", "A", "C", "C2", "B", "P"), colour=True),
+    "mixc_tex": lambda s: mix_scene(s, draws=("mesh", "A", "C", "C2", "B", "P"), colour=True, tex_b2="TB"),
+    "mixc_col": lambda s: mix_scene(s, draws=("mesh", "A", "C", "B", "P"), colour=True,
+                                    colours=dict(COLOURS, C=((0.5, 0.25, 1.0, 0.75),) * 4)),
+    "mixc_grad": lambda s: mix_scene(s, draws=("mesh", "A", "C3", "B", "P"), colour=True),
+    "mixc_back": lambda s: mix_scene(s, draws=("mesh", "C", "M2", "C2", "P"), colour=True),
+    "mixc_only": lambda s: mix_scene(s, draws=("mesh", "C", "C2"), colour=True),
 })
 SCENARIOS["tri_tq"] = lambda s: tri_scene(s)        # `tri` with the gralloc transfer context created: the baseline for quad_*
 # The tri scenes under the same conditions: they have the addresses of the mix scenes (the native scene's).
@@ -698,6 +759,13 @@ def main():
                     help="start the General heap this many bytes later (moves the render target); output NAME_gap")
     a = ap.parse_args()
     for name in a.scenarios:
+        if name.startswith("mixq_") and name not in SCENARIOS:
+            # mixq_<draw>_<draw>...: a mix scene with the colour program and these draws; "tb" makes C2 use
+            # TB, "x2" draws two frames
+            parts = name.split("_")[1:]
+            SCENARIOS[name] = lambda s, d=tuple(p for p in parts if p not in ("tb", "x2")), t="tb" in parts, \
+                f=2 if "x2" in parts else 1: mix_scene(s, draws=d, colour=True, tex_b2="TB" if t else None, frames=f)
+            TRANSFER_SCENARIOS.add(name)
         out = os.path.join(a.out, name + ("_gap" if a.general_gap else ""))
         s = run(name, out, a.shift, a.verbose, a.general_gap)
         print(name, "done:", len(s.kernel.allocs), "allocations,", len(s.kernel.kicks), "kicks")
