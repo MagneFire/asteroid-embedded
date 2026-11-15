@@ -6,9 +6,10 @@
 """Read a Qualcomm watch's memory in crash dump mode (USB 05c6:900e), which
 its boot chain enters after a reset while download mode is armed: print the
 persistent log and fault record from it, check the image the bootloader
-loaded against the build, or save whole regions. Only reads: it answers
-the Sahara hello in memory debug mode and sends memory reads, never a reset.
-The watch stays in that mode until a long press of the power key."""
+loaded against the build, or save whole regions. It answers the Sahara
+hello in memory debug mode and sends memory reads; only --reset restarts
+the watch. Otherwise it stays in that mode until a long press of the power
+key."""
 import argparse, os, struct, sys
 
 import libusb_package, usb.core, usb.util
@@ -103,6 +104,12 @@ class Sahara:
             out += got
         return bytes(out)
 
+    def reset(self):
+        """Ask the device to restart; it answers before it does."""
+        self.out.write(struct.pack("<2I", 0x07, 8))
+        pkt = self.read(64, 2000)
+        return len(pkt) >= 8 and struct.unpack_from("<I", pkt)[0] == 0x08
+
     def regions(self):
         t = self.mem(*self.table)
         out = []
@@ -134,6 +141,7 @@ def main():
     p.add_argument("--tail", type=int, default=60, help="log lines to show")
     p.add_argument("--image", action="store_true", help="check the loaded image against build/asteroid.bin")
     p.add_argument("--save", metavar="DIR", help="save the regions named after it (all if none) into DIR")
+    p.add_argument("--reset", action="store_true", help="restart the watch once the rest is done")
     p.add_argument("names", nargs="*", help="regions to save, by file name (DDRCS0.BIN, OCIMEM.BIN, ...)")
     a = p.parse_args()
     s = Sahara()
@@ -154,6 +162,8 @@ def main():
             path = os.path.join(a.save, name)
             open(path, "wb").write(s.mem(base, length))
             print("saved %s (%d bytes)" % (path, length))
+    if a.reset:
+        print("restarting" if s.reset() else "no answer to the reset, the watch may not restart")
 
 if __name__ == "__main__":
     main()
