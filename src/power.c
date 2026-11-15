@@ -267,6 +267,9 @@ static void ambient_draw(void)
 			/* The GPU may have painted it: wait for that before the
 			 * layer is scanned and copied, as frame_draw does. */
 			paint_finish();
+#ifdef SGX_BASE
+			paint_wait();
+#endif
 			stack_damage(p, x, y, w, h);
 			for (uint32_t r = y; r < y + h; r++)
 				dcache_clean_range(layer + r * fb.stride + x, w * 4);
