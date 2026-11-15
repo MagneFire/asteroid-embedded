@@ -172,7 +172,7 @@ static const char *invalid(const struct sgx_frame *f)
 	for (unsigned i = 0; i < f->n; i++) {
 		const struct sgx_draw *d = &f->draws[i];
 		bool flat = d->kind == SGX_DRAW_FLAT;
-		uint32_t bytes = d->count * (flat ? 24u : 16u);
+		uint32_t bytes = d->count * (flat ? 24u : d->kind == SGX_DRAW_COLOURED ? 32u : 16u);
 		snprintf(why, sizeof why, "draw %u of %u", i, f->n);
 		if (!d->count || d->count % 3 || d->count > SGX_DRAW_MAX_VERTS || d->verts < VERT_GPU ||
 		    d->verts - VERT_GPU + bytes > vused || flat != !i || (flat && d->blend))
@@ -223,7 +223,7 @@ static void triangle(const float *v0, const float *v1, const float *v2, unsigned
 		area = -area;
 	}
 	const double *a = p[o[0]], *b = p[o[1]], *c = p[o[2]];
-	const uint8_t *tex = d->kind == SGX_DRAW_TEXTURED ? texels(d->tex) : NULL;
+	const uint8_t *tex = d->kind != SGX_DRAW_FLAT ? texels(d->tex) : NULL;
 	for (int y = 0; y < SIZE; y++)
 		for (int x = 0; x < SIZE; x++) {
 			double px = x + 0.5, py = y + 0.5;
@@ -253,7 +253,17 @@ static void triangle(const float *v0, const float *v1, const float *v2, unsigned
 				tx = tx < 0 ? 0 : tx >= d->width ? d->width - 1 : tx;
 				ty = ty < 0 ? 0 : ty >= d->height ? d->height - 1 : ty;
 				memcpy(s, tex + ((uint32_t)ty * d->width + (uint32_t)tx) * 4, 4);
-				if (d->alpha != 255)
+				if (d->kind == SGX_DRAW_COLOURED) {
+					/* The shader's red lands in the third byte, so the
+					 * first texel byte meets blue. */
+					static const int ch[4] = { 2, 1, 0, 3 };
+					for (int k = 0; k < 4; k++) {
+						double c = 0;
+						for (int j = 0; j < 3; j++)
+							c += w[j] * src[j][4 + ch[k]];
+						s[k] = (uint8_t)scale8(s[k], (uint32_t)(c * 255.0 + 0.5));
+					}
+				} else if (d->alpha != 255)
 					for (int k = 0; k < 4; k++)
 						s[k] = (uint8_t)scale8(s[k], d->alpha);
 			}
@@ -285,7 +295,7 @@ bool sgx_draw_frame(const struct sgx_frame *f, struct sgx_times *t)
 	memset(tile, 0, sizeof tile);
 	for (unsigned i = 0; i < f->n; i++) {
 		const struct sgx_draw *d = &f->draws[i];
-		unsigned floats = d->kind == SGX_DRAW_FLAT ? 6 : 4;
+		unsigned floats = d->kind == SGX_DRAW_FLAT ? 6 : d->kind == SGX_DRAW_COLOURED ? 8 : 4;
 		const float *v = vmem + (d->verts - VERT_GPU) / 4;
 		for (unsigned k = 0; k + 2 < d->count; k += 3)
 			triangle(v + k * floats, v + (k + 1) * floats, v + (k + 2) * floats, floats, d);

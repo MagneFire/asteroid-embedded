@@ -1,7 +1,7 @@
 /* The UI's painting of paint.h on minnow: on the SGX530 (sgx_draw.c)
- * with the two programs its scene has, flat and textured, or on the CPU
- * (soft.c) while the GPU is off, for repaints too small to pay for a
- * scene, and for any call the GPU cannot paint.
+ * with the programs its scene has, or on the CPU (soft.c) while the GPU
+ * is off, for repaints too small to pay for a scene, and for any call the
+ * GPU cannot paint.
  *
  * A scene draws into the layer itself, and the GPU clears its whole
  * target and stores every tile of it. So after the flat draw the scene
@@ -9,16 +9,16 @@
  * everywhere but where the repaint's background goes: Slint first fills
  * the dirty region, as paint_rect with copy, and those rectangles stay at
  * the clear's 0, over which blending the copy's colour gives the colour.
- * Everything else is textured quads from one RGBA atlas, sampled nearest
- * at texel centres: images, premultiplied on the way in; glyphs and alpha
- * maps already times their colour; a texel for each plain colour; and
- * the corners of rounded rectangles as soft.c's coverage times colour.
- * Quads batch into one draw until the draw's alpha byte, an image's
- * opacity, changes.
+ * Everything else is quads of texels times a colour per vertex, from one
+ * RGBA atlas sampled nearest at texel centres: images, premultiplied on
+ * the way in; glyphs and alpha maps as white of their coverage; a white
+ * texel for plain colours; and the corners of rounded rectangles as
+ * soft.c's coverage. So texels go in the atlas once whatever their
+ * colour, and all quads of the atlas batch into one draw.
  *
  * The layer's bytes are R, G, B, A; with the rows format 0x0c a texel's
  * bytes land in the target as they are, so the atlas holds the layer's
- * own byte order and nothing is swapped.
+ * own byte order, and only the vertices' colours are swapped.
  *
  * A call the GPU cannot paint ends the scene; the CPU paints the call
  * and the next scene's self-copy keeps it. Each scene waits for its
@@ -51,6 +51,8 @@ extern uintptr_t gpu_host_base;
 #define MAX_OPS		256
 #define MAX_QUADS	9
 #define QUAD_BYTES	(6 * 16)
+#define CQUAD_BYTES	(6 * 32)
+#define WHITE		0xffffffffu
 #define DRAW_QUADS	(SGX_DRAW_MAX_VERTS / 6)
 #define FLAT_BYTES	80
 /* Below this many pixels of background a repaint costs the CPU less
@@ -385,6 +387,17 @@ static uint32_t checksum(const uint8_t *data, uint32_t stride, uint32_t bytes, u
 
 /* --- the scene */
 
+/* A colour as the coloured program's vertices have it: the target takes
+ * the shader's red as its third byte, and the texels' first byte (the
+ * layer's red, format 0x0c) comes in as blue. */
+static void colour_of(uint32_t c, float f[4])
+{
+	f[0] = (float)(c >> 16 & 0xff) / 255.0f;
+	f[1] = (float)(c >> 8 & 0xff) / 255.0f;
+	f[2] = (float)(c & 0xff) / 255.0f;
+	f[3] = (float)(c >> 24) / 255.0f;
+}
+
 static void put_quad(float *v, const struct quad *q, float tw, float th)
 {
 	const float k = 2.0f / SIZE;
@@ -400,43 +413,53 @@ static void put_quad(float *v, const struct quad *q, float tw, float th)
 			v[i * 4 + j] = c[i][j];
 }
 
-/* Whether n more quads at alpha fit in the scene. */
-static bool room(unsigned n, uint8_t alpha)
+/* Whether n more atlas quads fit in the scene. */
+static bool room(unsigned n)
 {
-	if (sc.vbytes + n * QUAD_BYTES > SGX_SCENE_VERTICES_SIZE)
+	if (sc.vbytes + n * CQUAD_BYTES > SGX_SCENE_VERTICES_SIZE)
 		return false;
 	const struct sgx_draw *d = sc.nd ? &sc.draws[sc.nd - 1] : NULL;
-	unsigned left = d && d->tex == atlas.gpu && d->alpha == alpha ? DRAW_QUADS - d->count / 6u : 0;
+	unsigned left = d && d->kind == SGX_DRAW_COLOURED ? DRAW_QUADS - d->count / 6u : 0;
 	unsigned more = n > left ? (n - left + DRAW_QUADS - 1) / DRAW_QUADS : 0;
 	return sc.nd + more <= SGX_DRAW_MAX_DRAWS;
 }
 
-/* A quad onto the last draw while it is of the same texture and alpha;
- * the vertex room hands out its bytes in order, so a draw's quads stay
- * together. */
-static void emit(const struct quad *q, uint32_t tex, uint16_t tw, uint16_t th, uint8_t alpha)
+/* A quad onto the last draw while it is of the same kind and texture:
+ * atlas quads, whatever their colour, are one coloured draw. The vertex
+ * room hands out its bytes in order, so a draw's quads stay together. */
+static void emit(const struct quad *q, uint32_t tex, uint16_t tw, uint16_t th, uint32_t colour)
 {
+	uint8_t kind = tex == atlas.gpu ? SGX_DRAW_COLOURED : SGX_DRAW_TEXTURED;
+	uint32_t bytes = kind == SGX_DRAW_COLOURED ? CQUAD_BYTES : QUAD_BYTES;
 	struct sgx_draw *d = sc.nd ? &sc.draws[sc.nd - 1] : NULL;
-	if (!d || d->kind != SGX_DRAW_TEXTURED || d->tex != tex || d->alpha != alpha || d->count + 6 > DRAW_QUADS * 6) {
+	if (!d || d->kind != kind || d->tex != tex || d->count + 6 > DRAW_QUADS * 6) {
 		if (sc.nd == SGX_DRAW_MAX_DRAWS) {
 			sc.broken = true;
 			return;
 		}
 		d = &sc.draws[sc.nd++];
-		*d = (struct sgx_draw){ .kind = SGX_DRAW_TEXTURED, .blend = true, .tex = tex, .width = tw, .height = th,
-					.alpha = alpha };
+		*d = (struct sgx_draw){ .kind = kind, .blend = true, .tex = tex, .width = tw, .height = th, .alpha = 255 };
 	}
 	uint32_t g;
-	float *v = sgx_draw_vertices(QUAD_BYTES, &g);
-	if (!v || (d->count && g != d->verts + d->count * 16u)) {
+	float *v = sgx_draw_vertices(bytes, &g);
+	if (!v || (d->count && g != d->verts + d->count / 6u * bytes)) {
 		sc.broken = true;
 		return;
 	}
 	if (!d->count)
 		d->verts = g;
-	put_quad(v, q, tw, th);
+	if (kind == SGX_DRAW_COLOURED) {
+		float t[24], c[4];
+		put_quad(t, q, tw, th);
+		colour_of(colour, c);
+		for (int i = 0; i < 6; i++) {
+			memcpy(v + i * 8, t + i * 4, 4 * sizeof *v);
+			memcpy(v + i * 8 + 4, c, sizeof c);
+		}
+	} else
+		put_quad(v, q, tw, th);
 	d->count += 6;
-	sc.vbytes += QUAD_BYTES;
+	sc.vbytes += bytes;
 	sc.atlas_used |= tex == atlas.gpu;
 	st.quads++;
 }
@@ -499,7 +522,7 @@ static void self_copy(void)
 			int x0 = i < n ? xs[i][0] : SIZE;
 			if (x0 > x) {
 				struct quad q = { x, a, x0, z, (float)x, (float)a, (float)x0, (float)z, 0 };
-				emit(&q, rep.layer_gpu, SIZE, SIZE, 255);
+				emit(&q, rep.layer_gpu, SIZE, SIZE, WHITE);
 			}
 			if (i < n && xs[i][1] > x)
 				x = xs[i][1];
@@ -512,21 +535,8 @@ static void self_copy(void)
  * colours. */
 static void close_head(void)
 {
-	const struct slot *color[MAX_COPY];
 	sc.head = false;
-	for (int tries = 0;; tries++) {
-		uint32_t epoch = atlas.epoch;
-		for (unsigned i = 0; i < sc.ncopy; i++)
-			color[i] = sc.copy[i].color ? lookup(&(struct src){ .kind = K_COLOR, .w = 1, .h = 1,
-									     .tint = sc.copy[i].color })
-						    : NULL;
-		if (epoch == atlas.epoch)
-			break;
-		if (tries) {
-			sc.broken = true;
-			return;
-		}
-	}
+	const struct slot *white = lookup(&(struct src){ .kind = K_COLOR, .w = 1, .h = 1, .tint = WHITE });
 	sgx_draw_discard();
 	uint32_t g;
 	float *v = sgx_draw_vertices(3 * 24, &g);
@@ -543,13 +553,13 @@ static void close_head(void)
 	for (unsigned i = 0; i < sc.ncopy; i++) {
 		if (!sc.copy[i].color)
 			continue;
-		if (!color[i]) {
+		if (!white) {
 			sc.broken = true;
 			return;
 		}
-		float u = (float)color[i]->x + 0.5f, t = (float)color[i]->y + 0.5f;
+		float u = (float)white->x + 0.5f, t = (float)white->y + 0.5f;
 		struct quad q = { sc.copy[i].x0, sc.copy[i].y0, sc.copy[i].x1, sc.copy[i].y1, u, t, u, t, 0 };
-		emit(&q, atlas.gpu, ATLAS_W, ATLAS_H, 255);
+		emit(&q, atlas.gpu, ATLAS_W, ATLAS_H, sc.copy[i].color);
 	}
 }
 
@@ -671,7 +681,7 @@ static void to_cpu(int why, const int32_t clip[4])
 
 /* A call's quads drawn from the texels of ns srcs, or false if they do
  * not fit in the atlas. */
-static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, unsigned ns, uint8_t alpha,
+static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, unsigned ns, uint32_t colour,
 			const struct op *o)
 {
 	const struct slot *slot[5];
@@ -687,7 +697,7 @@ static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, 
 			return false;
 	}
 	ensure_scene();
-	if (sc.nops == MAX_OPS || !room(nq, alpha)) {
+	if (sc.nops == MAX_OPS || !room(nq)) {
 		flush_scene(FLUSH_ROOM);
 		ensure_scene();
 	}
@@ -699,7 +709,7 @@ static bool paint_quads(const struct quad *q, unsigned nq, const struct src *s, 
 		r.u1 += (float)t->x;
 		r.v0 += (float)t->y;
 		r.v1 += (float)t->y;
-		emit(&r, atlas.gpu, ATLAS_W, ATLAS_H, alpha);
+		emit(&r, atlas.gpu, ATLAS_W, ATLAS_H, colour);
 	}
 	return true;
 }
@@ -815,11 +825,11 @@ void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4
 	if (!cut(r, clip) || !color)
 		return;
 	if (clear_of_corners(r)) {
-		const struct src s = { .kind = K_COLOR, .w = 1, .h = 1, .tint = color };
+		const struct src s = { .kind = K_COLOR, .w = 1, .h = 1, .tint = WHITE };
 		const struct quad q = { r[0], r[1], r[2], r[3], 0.5f, 0.5f, 0.5f, 0.5f, 0 };
 		struct op o = { .op = OP_RECT, .c0 = color, .f = { fx0, fy0, fx1, fy1 } };
 		memcpy(o.clip, clip, sizeof o.clip);
-		if (paint_quads(&q, 1, &s, 1, 255, &o)) {
+		if (paint_quads(&q, 1, &s, 1, color, &o)) {
 			st.rects++;
 			return;
 		}
@@ -833,30 +843,19 @@ void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4
 static int gpu_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
 		       int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize, const int r[4])
 {
-	struct src s = { .data = data, .stride = stride, .w = width, .h = height, .format = (uint8_t)format, .tint = tint };
-	uint8_t alpha = 255;
-	if (format == PAINT_ALPHA || colorize) {
-		s.kind = K_ALPHA;
-		if (!tint)
-			return -1;
-	} else {
-		s.kind = K_IMAGE;
-		/* An opacity alone is the draw's alpha, so an image fading in
-		 * and out is put in the atlas once. */
-		if (tint != 0xffffffffu && tint == (tint & 0xff) * 0x01010101u) {
-			alpha = (uint8_t)tint;
-			s.tint = 0xffffffffu;
-			if (!alpha)
-				return -1;
-		}
-	}
+	/* The texels go in the atlas as they are, glyphs and alpha maps as
+	 * white of their coverage, and the tint is the vertices' colour. */
+	struct src s = { .data = data, .stride = stride, .w = width, .h = height, .format = (uint8_t)format, .tint = WHITE,
+			 .kind = format == PAINT_ALPHA || colorize ? K_ALPHA : K_IMAGE };
+	if (!tint)
+		return -1;
 	s.sum = checksum(data, stride, width * (format == PAINT_ALPHA ? 1 : format == PAINT_RGB ? 3 : 4), height);
 	struct quad q = { dx, dy, dx + dw, dy + dh, 0.0f, 0.0f, (float)width, (float)height, 0 };
 	clip_quad(&q, r);
 	struct op o = { .op = OP_TEXTURE, .format = (int8_t)format, .flag = colorize, .data = data, .stride = stride,
 			.width = width, .height = height, .c0 = tint, .dx = dx, .dy = dy, .dw = dw, .dh = dh };
 	memcpy(o.clip, clip, sizeof o.clip);
-	if (!paint_quads(&q, 1, &s, 1, alpha, &o))
+	if (!paint_quads(&q, 1, &s, 1, tint, &o))
 		return CPU_BIG;
 	st.textures++;
 	return -1;
@@ -909,7 +908,7 @@ bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii
 		return true;
 	float w = (float)(x1 - x0), h = (float)(y1 - y0), most = (w < h ? w : h) * 0.5f, r[4];
 	int cols[4], rows[4];
-	struct src s[5] = { { .kind = K_COLOR, .w = 1, .h = 1, .tint = fill } };
+	struct src s[5] = { { .kind = K_COLOR, .w = 1, .h = 1, .tint = WHITE } };
 	uint8_t which[4] = { 0 };
 	unsigned ns = 1, nq = 0;
 	for (int k = 0; k < 4; k++) {
@@ -924,7 +923,7 @@ bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii
 		while (j < ns && s[j].r != r[k])
 			j++;
 		if (j == ns)
-			s[ns++] = (struct src){ .kind = K_CORNER, .w = (uint32_t)cols[k], .h = (uint32_t)rows[k], .tint = fill,
+			s[ns++] = (struct src){ .kind = K_CORNER, .w = (uint32_t)cols[k], .h = (uint32_t)rows[k], .tint = WHITE,
 						.r = r[k] };
 		which[k] = (uint8_t)j;
 	}
@@ -969,7 +968,7 @@ bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii
 	struct op o = { .op = OP_ROUNDED, .c0 = fill, .c1 = edge, .f = { fx0, fy0, fx1, fy1 }, .border = border };
 	memcpy(o.radii, radii, sizeof o.radii);
 	memcpy(o.clip, clip, sizeof o.clip);
-	if (n && !paint_quads(q, n, s, ns, 255, &o)) {
+	if (n && !paint_quads(q, n, s, ns, fill, &o)) {
 		to_cpu(CPU_BIG, clip);
 		return soft_paint_rounded(fx0, fy0, fx1, fy1, radii, border, clip, fill, edge);
 	}
