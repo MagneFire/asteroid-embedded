@@ -78,7 +78,6 @@ const struct qcom_chip chip_8009 = {
 	.gpll0_ready = BIT(30),
 	.blsp_vote = 0x45004,
 	.blsp_vote_bit = BIT(10),
-	.sleep_vote = 0x45008,
 	.gpll0_khz = 800000,
 	.qup1 = IO(0x078b5000),
 	.qup_i2c_rcgr = { 0x0200c, 0x03000, 0x04000, 0x05000, 0x06000, 0x07000 },

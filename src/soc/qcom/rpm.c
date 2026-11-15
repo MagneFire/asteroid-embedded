@@ -299,5 +299,6 @@ void rpm_sleep_votes(void)
 		if (request(RPM_SET_SLEEP, bus[i].type, bus[i].id, khz, 1))
 			log_printf("rpm: sleep vote for bus %u not acknowledged\n", i);
 	}
-	writel(0, APCS_CLOCK_SLEEP_ENA_VOTE);
+	if (chip->sleep_vote)
+		writel(0, APCS_CLOCK_SLEEP_ENA_VOTE);
 }
