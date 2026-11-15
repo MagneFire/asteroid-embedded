@@ -251,7 +251,9 @@ void rpm_bus_votes(void)
 
 /* Requests in the sleep set apply while the CPU cluster is powered down
  * with the RPM's help; without one the active set request stays in
- * force. Dropping the vote for the crystal lets the RPM turn it off. */
+ * force. The crystal is voted on in the active set only, as the vendor
+ * kernels do, so the RPM can turn it off and turns it back on for the
+ * wake-up. */
 #define RPM_CLK0		0x306b6c63u
 #define RPM_KEY_ENABLE		0x62616e45u
 
@@ -292,8 +294,10 @@ void rpm_sleep_votes(void)
 	static const struct { uint32_t type, id, khz; } bus[] = {
 		{ RPM_CLK2, 0, 100 }, { RPM_CLK1, 1, 100 }, { RPM_CLK1, 0, 100 }, { RPM_CLK1, 2, 0 },
 	};
-	uint32_t kvp[3] = { RPM_KEY_ENABLE, 4, 0 };
-	request(RPM_SET_SLEEP, RPM_CLK0, 0, kvp, 1);
+	uint32_t on[3] = { RPM_KEY_ENABLE, 4, 1 }, off[3] = { RPM_KEY_ENABLE, 4, 0 };
+	if (request(RPM_SET_ACTIVE, RPM_CLK0, 0, on, 1))
+		log_printf("rpm: crystal vote not acknowledged\n");
+	request(RPM_SET_SLEEP, RPM_CLK0, 0, off, 1);
 	for (unsigned i = 0; i < (chip->cnoc ? 4u : 3u); i++) {
 		uint32_t khz[3] = { RPM_KEY_KHZ, 4, bus[i].khz };
 		if (request(RPM_SET_SLEEP, bus[i].type, bus[i].id, khz, 1))
