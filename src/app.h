@@ -13,6 +13,8 @@ void app_open(int app);
 void app_sensors(uint32_t now);
 void app_flashlight(uint32_t now);
 void app_touch(uint32_t now);
+/* Each pass: its time and its slowest part, for the gesture line. */
+void app_pass(uint32_t now, uint32_t us, const char *part, uint32_t woke_ms);
 void app_cable(uint32_t now);
 void app_key(uint32_t now, bool irq);
 void app_tick(uint32_t now);

@@ -48,6 +48,12 @@ static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch
 static uint32_t shown_bpm, key_down_t, down_t;
 static unsigned seen_readings;
 static int down_x, down_y, last_x, last_y;
+/* For the gesture line: how the reports and the passes kept up while the
+ * finger was down, to tell a stall in the touch reports from one in the
+ * main loop. */
+static uint32_t drag_errors, drag_reports, drag_last_ms, drag_gap_ms, drag_gap_at, drag_burst, drag_pass_us, drag_woke_ms;
+static const char *drag_pass_part;
+static bool drag_silent;
 static struct orient orient;
 
 static void tasks_init(uint32_t now);
@@ -365,7 +371,10 @@ void app_touch(uint32_t now)
 {
 	struct touch t;
 	bool palm = false;
+	uint32_t drained = 0;
 	while (have_touch && touch_poll(&t)) {
+		if (down_seen && ++drained > drag_burst)
+			drag_burst = drained;
 		if (t.event == TOUCH_PALM) {
 			log_printf("touch: palm\n");
 			if (power_awake()) {
@@ -406,15 +415,47 @@ void app_touch(uint32_t now)
 			down_y = t.y;
 			down_t = now;
 			down_seen = true;
-		} else if (t.event == TOUCH_UP && down_seen) {
+			drag_reports = drag_gap_ms = drag_gap_at = drag_burst = drag_pass_us = 0;
+			uint32_t att;
+			touch_stats(&att, &drag_errors);
+			drag_last_ms = t.ms;
+			drag_silent = false;
+		} else if (down_seen && t.ms - drag_last_ms > drag_gap_ms) {
+			drag_gap_ms = t.ms - drag_last_ms;
+			drag_gap_at = drag_last_ms - down_t;
+		}
+		drag_reports++;
+		drag_last_ms = t.ms;
+		if (t.event == TOUCH_UP && down_seen) {
 			down_seen = false;
 			int dx = t.x - down_x, dy = t.y - down_y;
 			const char *g = "tap";
 			if (dx * dx + dy * dy > 40 * 40)
 				g = (dx * dx > dy * dy) ? (dx > 0 ? "swipe right" : "swipe left") : (dy > 0 ? "swipe down" : "swipe up");
-			log_printf("gesture: %s (%d,%d -> %d,%d in %lu ms)\n", g, down_x, down_y, t.x, t.y, now - down_t);
+			uint32_t att, err;
+			touch_stats(&att, &err);
+			log_printf("gesture: %s (%d,%d -> %d,%d in %lu ms), %lu ms after wake, %lu reports, %lu touch errors, "
+				   "longest gap %lu ms at %lu ms, up to %lu in a pass, slowest pass %lu us (%s)\n",
+				   g, down_x, down_y, t.x, t.y, now - down_t, down_t - drag_woke_ms, drag_reports, err - drag_errors,
+				   drag_gap_ms, drag_gap_at, drag_burst, drag_pass_us, drag_pass_part ? drag_pass_part : "-");
 		}
 		frame_touch_dot(t.down ? t.x : -1, t.y);
+	}
+}
+
+void app_pass(uint32_t now, uint32_t us, const char *part, uint32_t woke_ms)
+{
+	drag_woke_ms = woke_ms;
+	if (!down_seen)
+		return;
+	if (us > drag_pass_us) {
+		drag_pass_us = us;
+		drag_pass_part = part;
+	}
+	if (!drag_silent && now - drag_last_ms >= 1000) {
+		drag_silent = true;
+		log_printf("gesture: no touch report for 1 s while down, %lu reports, slowest pass %lu us (%s)\n", drag_reports,
+			   drag_pass_us, drag_pass_part ? drag_pass_part : "-");
 	}
 }
 

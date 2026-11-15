@@ -35,7 +35,7 @@
 #define LAG_WINDOW_MS 3000
 #define LAG_SLOW_US 50000
 enum { LAG_START, LAG_SCHED, LAG_SENSORS, LAG_EVENTS, LAG_UPDATE, LAG_CHANGED, LAG_CLOCK, LAG_FRAME, LAG_MARKS };
-static uint32_t lag_t[LAG_MARKS], lag_wake[LAG_MARKS], lag_worst[LAG_MARKS], lag_woke, lag_slow;
+static uint32_t lag_t[LAG_MARKS], lag_wake[LAG_MARKS], lag_worst[LAG_MARKS], lag_woke, lag_slow, lag_ticks;
 static bool lag_open;
 
 static void lag_mark(unsigned i) { lag_t[i] = time_us(); }
@@ -55,28 +55,38 @@ static void lag_say(const char *what, const uint32_t *p)
 		   p[LAG_FRAME]);
 }
 
+static const char *const lag_parts[LAG_MARKS] = { "", "sched", "sensors", "events", "power", "woke", "clock", "frame" };
+
 static void lag_pass(uint32_t now, bool woke)
 {
+	uint32_t pass[LAG_MARKS];
+	lag_take(pass);
+	unsigned most = 1;
+	for (unsigned i = 2; i < LAG_MARKS; i++)
+		if (pass[i] > pass[most])
+			most = i;
+	app_pass(now, pass[0], lag_parts[most], woke ? now : lag_woke);
 	if (woke) {
 		lag_open = true;
 		lag_woke = now;
 		lag_slow = 0;
-		lag_take(lag_wake);
+		lag_ticks = timer_ticks();
+		memcpy(lag_wake, pass, sizeof pass);
 		memset(lag_worst, 0, sizeof lag_worst);
 		return;
 	}
 	if (!lag_open)
 		return;
-	uint32_t total = lag_t[LAG_FRAME] - lag_t[LAG_START] - frame_waited_us();
-	lag_slow += total >= LAG_SLOW_US;
-	if (total > lag_worst[0])
-		lag_take(lag_worst);
+	lag_slow += pass[0] >= LAG_SLOW_US;
+	if (pass[0] > lag_worst[0])
+		memcpy(lag_worst, pass, sizeof pass);
 	if (now - lag_woke < LAG_WINDOW_MS && power_awake())
 		return;
 	lag_open = false;
 	lag_say("wake pass", lag_wake);
 	lag_say("slowest after", lag_worst);
-	log_printf("lag: %lu passes over %u ms\n", lag_slow, LAG_SLOW_US / 1000);
+	log_printf("lag: %lu passes over %u ms, %lu ticks in %lu ms\n", lag_slow, LAG_SLOW_US / 1000, timer_ticks() - lag_ticks,
+		   now - lag_woke);
 }
 
 extern void wdt_bark_handler(void);
