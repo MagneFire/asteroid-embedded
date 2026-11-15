@@ -75,26 +75,74 @@ static void app_background(int x, int y, float alpha)
 #ifdef SGX_BASE
 /* With paint overlap the GPU may still paint the damaged layers when
  * the repaint is done, so the scan of their pixels waits until the
- * compositor needs it. */
+ * compositor needs it. With bands from what was painted (paint_bounds)
+ * only the bands the UI wrote itself are scanned, and no wait is needed
+ * without them. */
 static struct {
 	bool any, damaged[UI_PANELS];
 	uint32_t rect[UI_PANELS][4];
 } later;
+static int bands_mode = FRAME_BANDS_PAINTED;
+static uint32_t bands_checked, bands_outside, bands_waits;
+
+void frame_bands(int mode) { bands_mode = mode; }
+int frame_bands_now(void) { return bands_mode; }
+
+struct known {
+	bool ok;
+	struct paint_bounds b;
+};
+
+/* Whether the damage of a panel needs its pixels read. */
+static bool needs_pixels(const struct known *k, const uint32_t *r)
+{
+	if (!bands_mode || !k->ok || bands_mode == FRAME_BANDS_VERIFY)
+		return true;
+	for (uint32_t b = r[1] / PAINT_BAND; b < PAINT_BANDS && b * PAINT_BAND < r[1] + r[3]; b++)
+		if (k->b.scan >> b & 1)
+			return true;
+	return false;
+}
+
+static void damage_panel(unsigned p, const uint32_t *r, const struct known *k)
+{
+	uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4);
+	if (bands_mode && k->ok) {
+		unsigned checked = 0;
+		bands_outside += stack_damage_known(p, r[0], r[1], r[2], r[3], &k->b, bands_mode == FRAME_BANDS_VERIFY,
+						    &checked);
+		bands_checked += checked;
+	} else
+		stack_damage(p, r[0], r[1], r[2], r[3]);
+	if (have_gpu)
+		for (uint32_t y = r[1]; y < r[1] + r[3]; y++)
+			dcache_clean_range(layer + y * fb.stride + r[0], r[2] * 4);
+}
+
+static void known_of(unsigned p, struct known *k)
+{
+	k->ok = paint_bounds(layers + p * (UI_LAYER_STRIDE / 4), &k->b);
+}
+
 static void damage_later(void)
 {
 	if (!later.any)
 		return;
 	later.any = false;
-	paint_wait();
-	for (unsigned p = 0; p < UI_PANELS; p++) {
-		if (!later.damaged[p])
-			continue;
-		uint32_t *layer = layers + p * (UI_LAYER_STRIDE / 4), *r = later.rect[p];
-		stack_damage(p, r[0], r[1], r[2], r[3]);
-		if (have_gpu)
-			for (uint32_t y = r[1]; y < r[1] + r[3]; y++)
-				dcache_clean_range(layer + y * fb.stride + r[0], r[2] * 4);
+	static struct known k[UI_PANELS];
+	bool wait = false;
+	for (unsigned p = 0; p < UI_PANELS; p++)
+		if (later.damaged[p]) {
+			known_of(p, &k[p]);
+			wait |= needs_pixels(&k[p], later.rect[p]);
+		}
+	if (wait) {
+		paint_wait();
+		bands_waits++;
 	}
+	for (unsigned p = 0; p < UI_PANELS; p++)
+		if (later.damaged[p])
+			damage_panel(p, later.rect[p], &k[p]);
 }
 #endif
 
@@ -274,7 +322,11 @@ void frame_draw(uint32_t now)
 	uint32_t *buf = display_backbuffer(), step = (now - start_ms) / MESH_STEP_MS;
 	bool frame = !have_ui || woke || step != shown_step;
 	if (have_ui) {
+#ifdef SGX_BASE
+		uint32_t u0 = time_us();
+#else
 		uint32_t u0 = time_us(), x, y, w, h;
+#endif
 		bool repainted = false;
 		int sx, sy;
 		stack_update(now);
@@ -294,8 +346,16 @@ void frame_draw(uint32_t now)
 			later.any = true;
 			memcpy(later.damaged, damaged, sizeof damaged);
 			memcpy(later.rect, damage, sizeof damage);
-		} else
-#endif
+		} else {
+			for (unsigned p = 0; p < UI_PANELS; p++) {
+				if (!damaged[p])
+					continue;
+				struct known k;
+				known_of(p, &k);
+				damage_panel(p, damage[p], &k);
+			}
+		}
+#else
 		for (unsigned p = 0; p < UI_PANELS; p++) {
 			if (!damaged[p])
 				continue;
@@ -306,6 +366,7 @@ void frame_draw(uint32_t now)
 				for (uint32_t r = y; r < y + h; r++)
 					dcache_clean_range(layer + r * fb.stride + x, w * 4);
 		}
+#endif
 		bool moving = repainted || stack_animating(now) || rotation_animating(now) || stack_moving();
 		frame |= repainted || stack_animating(now) || rotation_animating(now);
 		if (moving || woke)
@@ -406,7 +467,11 @@ void frame_log(void)
 	if (gpu_frames)
 		log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices, %lu kept\n", gpu_frames,
 			   gpu_us / gpu_frames, gpu_vert_us / gpu_frames, mesh_kept);
-	mesh_kept = 0;
+	if (bands_checked || bands_waits)
+		log_printf("bands: %s, %lu waits, %lu checked, %lu outside\n",
+			   bands_mode == FRAME_BANDS_VERIFY ? "verify" : bands_mode ? "painted" : "scan", bands_waits,
+			   bands_checked, bands_outside);
+	mesh_kept = bands_checked = bands_outside = bands_waits = 0;
 #else
 	if (gpu_frames)
 		log_printf("gpu: %lu frames, %lu us submit to idle, %lu us vertices\n", gpu_frames,

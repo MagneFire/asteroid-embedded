@@ -26,6 +26,9 @@
 #include "gpu/draw.h"
 #include "ui/ui.h"
 #include "ui/stack.h"
+#ifdef SGX_BASE
+#include "gpu/paint.h"
+#endif
 
 #define SWIPE_PX	40
 #define LOCK_PX		8
@@ -41,6 +44,9 @@ static int edge_px = 40, chin;
 static bool round_panel;
 #define BAND		16
 #define BANDS		32
+#ifdef SGX_BASE
+_Static_assert(BAND == PAINT_BAND && BANDS == PAINT_BANDS, "paint.h's bands are not the stack's");
+#endif
 
 enum { IDLE, PENDING, SCROLL, SWIPE };
 enum { LEFT, RIGHT, UP, DOWN };
@@ -496,6 +502,72 @@ void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h
 		bands[panel][b].x1 = x1;
 	}
 }
+
+#ifdef SGX_BASE
+static void scan_band(const uint32_t *px, uint32_t r0, uint32_t r1, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+		      int *x0, int *x1)
+{
+	for (uint32_t r = r0 > y ? r0 : y; r < r1 && r < y + h; r++) {
+		const uint32_t *row = px + r * fb.stride;
+		for (uint32_t c = x; c < x + w && (int)c < *x0; c++)
+			if (row[c]) {
+				*x0 = c;
+				break;
+			}
+		for (uint32_t c = x + w; c > x && (int)c > *x1; c--)
+			if (row[c - 1]) {
+				*x1 = c;
+				break;
+			}
+	}
+}
+
+/* As stack_damage, but each band's content is known from what was
+ * painted: its painted columns, and the old ones unless a background
+ * replaced all of them; the bands in the scan mask are scanned. With
+ * verify every band is scanned and that kept, and the bands with
+ * content outside what was known are counted. */
+unsigned stack_damage_known(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+			    const struct paint_bounds *k, bool verify, unsigned *checked)
+{
+	const uint32_t *px = layers + panel * layer_px;
+	unsigned outside = 0;
+	for (uint32_t b = y / BAND; b < BANDS && b * BAND < y + h && b * BAND < (uint32_t)H; b++) {
+		uint32_t r0 = b * BAND, r1 = r0 + BAND < (uint32_t)H ? r0 + BAND : (uint32_t)H;
+		int o0 = bands[panel][b].x0, o1 = bands[panel][b].x1, x0 = W, x1 = 0;
+		if (verify || k->scan >> b & 1) {
+			bool whole = x == 0 && w >= (uint32_t)W && y <= r0 && y + h >= r1;
+			scan_band(px, r0, r1, x, y, w, h, &x0, &x1);
+			if (!whole && o0 < o1) {
+				x0 = o0 < x0 ? o0 : x0;
+				x1 = o1 > x1 ? o1 : x1;
+			}
+		}
+		if (!(k->scan >> b & 1)) {
+			int k0 = k->x0[b], k1 = k->x1[b];
+			if (o0 < o1 && !(k->c0[b] <= o0 && k->c1[b] >= o1)) {
+				k0 = k0 < k1 && k0 < o0 ? k0 : o0;
+				k1 = k0 < k1 && k1 > o1 ? k1 : o1;
+			}
+			if (verify) {
+				static unsigned told;
+				bool out = x0 < x1 && (k0 >= k1 || x0 < k0 || x1 > k1);
+				if (out && told++ < 8)
+					log_printf("bands: panel %u band %lu has %d..%d, known %d..%d (painted %d..%d, cleared %d..%d)\n",
+						   panel, b, x0, x1, k0, k1, k->x0[b], k->x1[b], k->c0[b], k->c1[b]);
+				(*checked)++;
+				outside += out;
+			} else {
+				x0 = k0;
+				x1 = k1;
+			}
+		}
+		bands[panel][b].x0 = x0;
+		bands[panel][b].x1 = x1;
+	}
+	return outside;
+}
+#endif
 
 bool stack_overlay_frozen(void)
 {

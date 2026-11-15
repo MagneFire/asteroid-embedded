@@ -119,6 +119,17 @@ static struct atlas {
 } atlases[2], *atlas = &atlases[0];
 static uint32_t atlas_epoch, atlas_w = 480, atlas_h = 928;
 
+/* What each layer's repaints drew since paint_bounds last asked, by
+ * band of PAINT_BAND rows: the columns that may hold content now, the
+ * columns a background replaced in all of the band's rows, and the
+ * bands with rows the UI wrote itself, which only a scan knows. */
+#define BOUNDS 8
+static struct bounds {
+	const uint32_t *layer;
+	int16_t x0[PAINT_BANDS], x1[PAINT_BANDS], c0[PAINT_BANDS], c1[PAINT_BANDS];
+	uint32_t scan;
+} bounds[BOUNDS], *bnd;
+
 /* The repaint. */
 static struct {
 	bool gpu, decided, rclip;
@@ -188,6 +199,12 @@ static int ceil_px(float v)
 	return (float)i < v ? i + 1 : i;
 }
 
+static int floor_px(float v)
+{
+	int i = (int)v;
+	return (float)i > v ? i - 1 : i;
+}
+
 static int min_i(int a, int b) { return a < b ? a : b; }
 static int max_i(int a, int b) { return a > b ? a : b; }
 
@@ -214,6 +231,78 @@ static void invalidate_rows(uint32_t *layer, int y0, int y1)
 }
 
 /* As soft.c clips: to the clip, the layer and the rounded clip's box. */
+static void note(const int r[4])
+{
+	if (!bnd || r[0] >= r[2] || r[1] >= r[3])
+		return;
+	for (int b = r[1] / PAINT_BAND; b <= (r[3] - 1) / PAINT_BAND && b < PAINT_BANDS; b++) {
+		if (r[0] < bnd->x0[b])
+			bnd->x0[b] = (int16_t)r[0];
+		if (r[2] > bnd->x1[b])
+			bnd->x1[b] = (int16_t)r[2];
+	}
+}
+
+/* A background over r: what it covers in whole bands is replaced. */
+static void note_clear(const int r[4])
+{
+	if (!bnd || r[0] >= r[2] || r[1] >= r[3])
+		return;
+	for (int b = (r[1] + PAINT_BAND - 1) / PAINT_BAND; (b + 1) * PAINT_BAND <= r[3] && b < PAINT_BANDS; b++) {
+		bool joins = bnd->c0[b] < bnd->c1[b] && r[0] <= bnd->c1[b] && r[2] >= bnd->c0[b];
+		if (joins || r[2] - r[0] > bnd->c1[b] - bnd->c0[b]) {
+			bnd->c0[b] = (int16_t)(joins && bnd->c0[b] < r[0] ? bnd->c0[b] : r[0]);
+			bnd->c1[b] = (int16_t)(joins && bnd->c1[b] > r[2] ? bnd->c1[b] : r[2]);
+		}
+	}
+}
+
+static void note_rows(uint32_t y0, uint32_t y1)
+{
+	if (!bnd)
+		return;
+	for (uint32_t b = y0 / PAINT_BAND; b < PAINT_BANDS && b * PAINT_BAND < y1; b++)
+		bnd->scan |= 1u << b;
+}
+
+static void bounds_begin(const uint32_t *layer)
+{
+	struct bounds *free = NULL;
+	for (bnd = bounds; bnd < bounds + BOUNDS; bnd++) {
+		if (bnd->layer == layer)
+			return;
+		if (!bnd->layer && !free)
+			free = bnd;
+	}
+	bnd = free;
+	if (!bnd)
+		return;
+	bnd->layer = layer;
+	bnd->scan = 0;
+	for (int b = 0; b < PAINT_BANDS; b++) {
+		bnd->x0[b] = bnd->c0[b] = SIZE;
+		bnd->x1[b] = bnd->c1[b] = 0;
+	}
+}
+
+bool paint_bounds(const uint32_t *layer, struct paint_bounds *out)
+{
+	for (struct bounds *b = bounds; b < bounds + BOUNDS; b++) {
+		if (b->layer != layer)
+			continue;
+		memcpy(out->x0, b->x0, sizeof b->x0);
+		memcpy(out->x1, b->x1, sizeof b->x1);
+		memcpy(out->c0, b->c0, sizeof b->c0);
+		memcpy(out->c1, b->c1, sizeof b->c1);
+		out->scan = b->scan;
+		b->layer = NULL;
+		if (bnd == b)
+			bnd = NULL;
+		return true;
+	}
+	return false;
+}
+
 static bool cut(int r[4], const int32_t clip[4])
 {
 	r[0] = max_i(max_i(r[0], clip[0]), 0);
@@ -903,6 +992,7 @@ bool paint_begin(uint32_t *layer, uint32_t width, uint32_t height, uint32_t stri
 	if (fl.busy && fl.layer == layer)
 		settle();
 	soft_paint_begin(layer, width, height, stride_px);
+	bounds_begin(layer);
 	memset(&rep, 0, sizeof rep);
 	rep.layer = layer;
 	rep.cpu_y0 = SIZE;
@@ -980,6 +1070,15 @@ static void copy_rect(float fx0, float fy0, float fx1, float fy1, const int32_t 
 
 void paint_rect(float fx0, float fy0, float fx1, float fy1, const int32_t clip[4], uint32_t color, bool copy)
 {
+	int n[4] = { floor_px(fx0), floor_px(fy0), ceil_px(fx1), ceil_px(fy1) };
+	if (cut(n, clip)) {
+		if (color)
+			note(n);
+		/* What a copy covers in whole pixels is replaced. */
+		int w[4] = { ceil_px(fx0), ceil_px(fy0), floor_px(fx1), floor_px(fy1) };
+		if (copy && cut(w, clip))
+			note_clear(w);
+	}
 	if (rep.gpu && copy) {
 		copy_rect(fx0, fy0, fx1, fy1, clip, color);
 		return;
@@ -1034,6 +1133,11 @@ static int gpu_texture(const uint8_t *data, uint32_t stride, uint32_t width, uin
 bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_t height, int format, int dx, int dy,
 		   int dw, int dh, const int32_t clip[4], uint32_t tint, bool colorize)
 {
+	if (tint) {
+		int n[4] = { dx, dy, dx + dw, dy + dh };
+		if (cut(n, clip))
+			note(n);
+	}
 	if (rep.gpu)
 		decide();
 	if (!rep.gpu) {
@@ -1066,6 +1170,11 @@ bool paint_texture(const uint8_t *data, uint32_t stride, uint32_t width, uint32_
 bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii[4], float border, const int32_t clip[4],
 		   uint32_t fill, uint32_t edge)
 {
+	if (fill || (edge && border > 0.0f)) {
+		int n[4] = { floor_px(fx0), floor_px(fy0), ceil_px(fx1), ceil_px(fy1) };
+		if (cut(n, clip))
+			note(n);
+	}
 	if (rep.gpu)
 		decide();
 	if (!rep.gpu) {
@@ -1152,6 +1261,7 @@ bool paint_rounded(float fx0, float fy0, float fx1, float fy1, const float radii
 
 void paint_cpu(uint32_t y0, uint32_t y1)
 {
+	note_rows(y0, y1);
 	soft_paint_cpu(y0, y1);
 	if (rep.gpu)
 		add_rows(&rep.cpu_y0, &rep.cpu_y1, (int)y0, (int)y1);

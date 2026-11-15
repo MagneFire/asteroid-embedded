@@ -57,4 +57,9 @@ float stack_dim(void);
 float stack_launcher(void);
 bool stack_overlay_frozen(void);
 void stack_damage(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+#ifdef SGX_BASE
+struct paint_bounds;
+unsigned stack_damage_known(unsigned panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+			    const struct paint_bounds *k, bool verify, unsigned *checked);
+#endif
 #endif

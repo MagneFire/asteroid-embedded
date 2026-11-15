@@ -65,4 +65,16 @@ void paint_wait(void);
  * when none is allocated). */
 bool paint_atlas(uint32_t w, uint32_t h);
 void paint_atlas_size(uint32_t *w, uint32_t *h, uint32_t *now_w, uint32_t *now_h);
+/* What the layer's repaints drew since the last call, per band of
+ * PAINT_BAND rows: the columns x0..x1 that may hold content (x0 >= x1
+ * for none), the columns c0..c1 whose pixels a copy replaced in all of
+ * the band's rows, and in scan the bands whose rows the UI wrote
+ * itself; false if not known. */
+#define PAINT_BAND 16
+#define PAINT_BANDS 32
+struct paint_bounds {
+	int16_t x0[PAINT_BANDS], x1[PAINT_BANDS], c0[PAINT_BANDS], c1[PAINT_BANDS];
+	uint32_t scan;
+};
+bool paint_bounds(const uint32_t *layer, struct paint_bounds *b);
 #endif

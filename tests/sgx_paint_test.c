@@ -596,6 +596,22 @@ static void same(const char *name, void (*paint)(const struct api *, uint32_t *)
 			first = (unsigned)i;
 	CHECK(!diff, "%s: %u pixels differ, first %u,%u: %08x, the CPU %08x", name, diff, first % SIZE, first / SIZE,
 	      mem.layer[first], mem.ref[first]);
+	/* What was painted holds every pixel with content, but in the bands
+	 * the UI wrote itself. */
+	struct paint_bounds k;
+	CHECK(paint_bounds(mem.layer, &k), "%s: no bounds", name);
+	CHECK(!paint_bounds(mem.layer, &k), "%s: the bounds were not taken", name);
+	for (int y = 0; y < SIZE && !noise; y++) {
+		int b = y / PAINT_BAND;
+		if (k.scan >> b & 1)
+			continue;
+		for (int x = 0; x < SIZE; x++)
+			if (mem.layer[y * SIZE + x] && (x < k.x0[b] || x >= k.x1[b])) {
+				CHECK(false, "%s: content at %d,%d outside band %d's %d..%d", name, x, y, b, k.x0[b], k.x1[b]);
+				y = SIZE;
+				break;
+			}
+	}
 	/* frame.c cleans the damaged rows once it has scanned them. */
 	memcpy(dram, mem.layer, sizeof dram);
 }

@@ -19,6 +19,11 @@ void frame_draw(uint32_t now);
 uint32_t frame_waited_us(void);
 void frame_log(void);
 #ifdef SGX_BASE
+/* Where the content of damaged layer bands comes from: a scan of their
+ * pixels, what was painted, or both, counting where they disagree. */
+enum { FRAME_BANDS_SCAN, FRAME_BANDS_PAINTED, FRAME_BANDS_VERIFY };
+void frame_bands(int mode);
+int frame_bands_now(void);
 /* Keeps the FlatMesh's vertices while the picture stays. */
 void frame_mesh_reuse(bool on);
 bool frame_mesh_reuse_on(void);

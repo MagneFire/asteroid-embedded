@@ -1479,6 +1479,20 @@ static void cmd_sgx(const char *args)
 		if (*o)
 			sgx_compose_overlap(!strcmp(o, "on"));
 		say("compose overlap %s\n", sgx_compose_overlap_on() ? "on" : "off");
+	} else if (!strncmp(args, "bands", 5) && (!args[5] || args[5] == ' ')) {
+		static const char *const kinds[] = { [FRAME_BANDS_SCAN] = "scan", [FRAME_BANDS_PAINTED] = "painted",
+						     [FRAME_BANDS_VERIFY] = "verify" };
+		const char *o = skip_spaces(args + 5);
+		unsigned i = 0;
+		while (*o && i < ARRAY_SIZE(kinds) && strcmp(o, kinds[i]))
+			i++;
+		if (i == ARRAY_SIZE(kinds)) {
+			say("usage: sgx bands [scan | painted | verify]\n");
+			return;
+		}
+		if (*o)
+			frame_bands((int)i);
+		say("bands %s\n", kinds[frame_bands_now()]);
 	} else if (!strncmp(args, "mesh", 4) && (!args[4] || args[4] == ' ')) {
 		const char *o = skip_spaces(args + 4);
 		if (*o && strcmp(o, "keep") && strcmp(o, "build")) {
@@ -1555,8 +1569,8 @@ static void cmd_sgx(const char *args)
 		say("in the log\n");
 	} else if (*args)
 		say("usage: sgx [off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | "
-		    "overlap [on | off] | atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | bins <1 | 2 | "
-		    "4> [from px] | ui [on | off] | inval [on | off]]\n");
+		    "overlap [on | off] | atlas [WxH]] | compose overlap [on | off] | bands [scan | painted | verify] | "
+		    "mesh [keep | build] | bins <1 | 2 | 4> [from px] | ui [on | off] | inval [on | off]]\n");
 	else if (!sgx_start() || !sgx_query(&i))
 		say("failed, see the log\n");
 	else
@@ -1620,8 +1634,8 @@ static const struct command commands[] = {
 #ifdef SGX_BASE
 	{ "sgx",
 	  "[off | state | tri [rrggbb] | tex [format] | copy [format] | paint [gpu | soft | null | overlap [on | off] | "
-	  "atlas [WxH]] | compose overlap [on | off] | mesh [keep | build] | bins <1 | 2 | 4> [from px] | ui [on | off] | "
-	  "inval [on | off]]",
+	  "atlas [WxH]] | compose overlap [on | off] | bands [scan | painted | verify] | mesh [keep | build] | bins <1 | "
+	  "2 | 4> [from px] | ui [on | off] | inval [on | off]]",
 	  cmd_sgx },
 #endif
 	{ "echo", "<text>", cmd_echo },
