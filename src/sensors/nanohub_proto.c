@@ -224,6 +224,65 @@ bool nanohub_event(const uint8_t *p, unsigned n, struct nanohub_event *ev)
 	return true;
 }
 
+/* The raw accelerometer comes as int16 triples under its raw type; the
+ * accelerometer's own type then only brings its bias, as floats. */
+unsigned nanohub_sample_step(uint8_t type)
+{
+	switch (type) {
+	case NANOHUB_SENSOR_ACCEL_RAW:
+		return 4 + 6;
+	case NANOHUB_SENSOR_ACCEL:
+	case NANOHUB_SENSOR_GYRO:
+	case NANOHUB_SENSOR_MAG:
+	case NANOHUB_SENSOR_HEART_RATE:
+		return 4 + 12;
+	case NANOHUB_SENSOR_LIGHT:
+	case NANOHUB_SENSOR_STEP_COUNTER:
+	case NANOHUB_SENSOR_STEPS_TODAY:
+	case NANOHUB_SENSOR_HAND_UP:
+		return 4 + 4;
+	default:
+		return 0;
+	}
+}
+
+bool nanohub_next_event(const uint8_t *p, unsigned n, struct nanohub_walk *w, struct nanohub_event *ev)
+{
+	if (w->off >= n)
+		return false;
+	unsigned left = n - w->off;
+	if (!nanohub_event(p + w->off, left, ev)) {
+		w->off = n;
+		return false;
+	}
+	/* Only sensor events share an answer: anything after the first that
+	 * is not a whole one means the sizes went wrong, and is dropped
+	 * rather than taken for an event. */
+	if (w->off && (ev->kind != NANOHUB_EV_SENSOR || !ev->sensor.header ||
+		       (!ev->sensor.samples && !ev->sensor.flushes))) {
+		w->bad++;
+		w->off = n;
+		return false;
+	}
+	unsigned size = left;
+	if (ev->kind == NANOHUB_EV_SENSOR && ev->sensor.header) {
+		unsigned s = nanohub_sample_step(ev->sensor.type);
+		/* A flush alone still has its first-sample word. */
+		unsigned want = !s ? left : SENSOR_HEADER + (ev->sensor.samples ? ev->sensor.samples * s : 4);
+		if (!s)
+			w->unknown++;
+		if (want > size) {
+			if (w->off)
+				w->bad++;
+			want = size;
+		}
+		size = want;
+		ev->sensor.size = size - SENSOR_HEADER;
+	}
+	w->off += size;
+	return true;
+}
+
 bool nanohub_sample(const struct nanohub_event *ev, unsigned i, unsigned data_size, uint64_t *ns, const uint8_t **data)
 {
 	if (ev->kind != NANOHUB_EV_SENSOR || !ev->sensor.header || i >= ev->sensor.samples)

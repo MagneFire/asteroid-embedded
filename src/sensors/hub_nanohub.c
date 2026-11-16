@@ -37,7 +37,7 @@ enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_SU
 
 static uint8_t tx[WRITE_PAD + REPLY_BYTES], rx[WRITE_PAD + REPLY_BYTES + MORE_BYTES];
 static uint8_t payload[NANOHUB_PAYLOAD_MAX];
-static uint32_t seq, errors, events, versions[2];
+static uint32_t seq, errors, events, batched, unknown, bad, versions[2];
 static bool present, tilt_on, hr_on, accel_on, light_on, screen_off;
 static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
@@ -257,8 +257,31 @@ static void sensor_event(const struct nanohub_event *ev)
 static void log_event(const struct nanohub_event *ev);
 static bool flash_cmd(uint8_t sub, uint8_t arg);
 
+static void handle_event(const struct nanohub_event *ev)
+{
+	events++;
+	if (ev->kind == NANOHUB_EV_APP)
+		log_event(ev);
+	if (ev->kind == NANOHUB_EV_SENSOR)
+		sensor_event(ev);
+	else if (ev->kind == NANOHUB_EV_FUEL_GAUGE) {
+		gauge_t = time_ms();
+		gauge = (struct hub_gauge){ ev->gauge.mv, ev->gauge.percent, -ev->gauge.current_ma * 1000, ev->gauge.temp_dc,
+					    gauge_t };
+		have_gauge = true;
+		gauge_asked_t = 0;
+	} else if (ev->kind == NANOHUB_EV_LOG) {
+		char line[96];
+		unsigned k = ev->log.size < sizeof line - 1 ? ev->log.size : sizeof line - 1;
+		memcpy(line, ev->log.text, k);
+		line[k] = 0;
+		log_printf("hub: %c %s\n", ev->log.level, line);
+	}
+}
+
 /* Fetches events until the hub has none, a few per pass, and then
- * clears its two data-pending bits so it lets its line go. */
+ * clears its two data-pending bits so it lets its line go. One answer
+ * can hold several sensor events, a hand-up behind the steps. */
 static void read_events(void)
 {
 	for (unsigned i = 0; i < READS_PER_POLL; i++) {
@@ -271,24 +294,16 @@ static void read_events(void)
 			exchange(NANOHUB_CLR_GET_INTR, clear, sizeof clear);
 			break;
 		}
-		events++;
-		if (ev.kind == NANOHUB_EV_APP)
-			log_event(&ev);
-		if (ev.kind == NANOHUB_EV_SENSOR)
-			sensor_event(&ev);
-		else if (ev.kind == NANOHUB_EV_FUEL_GAUGE) {
-			gauge_t = time_ms();
-			gauge = (struct hub_gauge){ ev.gauge.mv, ev.gauge.percent, -ev.gauge.current_ma * 1000, ev.gauge.temp_dc,
-						    gauge_t };
-			have_gauge = true;
-			gauge_asked_t = 0;
-		} else if (ev.kind == NANOHUB_EV_LOG) {
-			char line[96];
-			unsigned k = ev.log.size < sizeof line - 1 ? ev.log.size : sizeof line - 1;
-			memcpy(line, ev.log.text, k);
-			line[k] = 0;
-			log_printf("hub: %c %s\n", ev.log.level, line);
+		struct nanohub_walk w = { 0 };
+		unsigned k = 0;
+		while (nanohub_next_event(payload, (unsigned)len, &w, &ev)) {
+			handle_event(&ev);
+			k++;
 		}
+		if (k > 1)
+			batched++;
+		unknown += w.unknown;
+		bad += w.bad;
 	}
 }
 
@@ -761,8 +776,10 @@ static int nanohub_mode(unsigned code)
 
 static void nanohub_status(void (*say)(const char *fmt, ...))
 {
-	say("hub: nanohub hw %08lx fw %08lx, %s, mode %u, %lu events, %lu errors, steps %ld, gauge %s %lu mV %lu%%\n",
-	    versions[0], versions[1], present ? "up" : "not up", mode, events, errors, (long)steps_today,
+	say("hub: nanohub hw %08lx fw %08lx, %s, mode %u, %lu events (%lu answers with more, %lu unknown sizes, %lu cut "
+	    "short), %lu errors, steps %ld, gauge %s %lu mV %lu%%\n",
+	    versions[0], versions[1], present ? "up" : "not up", mode, events, batched, unknown, bad, errors,
+	    (long)steps_today,
 	    have_gauge ? "" : "none", gauge.mv, gauge.percent);
 }
 

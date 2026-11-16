@@ -192,6 +192,75 @@ int main(void)
 	CHECK(nanohub_event(e, 4, &ev) && ev.kind == NANOHUB_EV_SENSOR && ev.sensor.type == NANOHUB_SENSOR_HAND_UP && !ev.sensor.header);
 	CHECK(!nanohub_sample(&ev, 0, 4, &ns, &d));
 
+	/* One answer with the steps of today, a flush of the light sensor and
+	 * a hand-up behind them, then a sensor with an unknown sample size,
+	 * which takes the rest. */
+	uint8_t m[160];
+	memset(m, 0, sizeof(m));
+	put32(m, 0x25a);
+	m[12] = 1;
+	put32(m + 16, 2255);
+	put32(m + 20, 0x20c);
+	m[33] = 1;
+	put32(m + 36, 0x24b);
+	put32(m + 40, 7000);
+	m[48] = 1;
+	m[51] = 1;
+	put32(m + 56, 0x230);
+	m[68] = 5;
+	struct nanohub_walk w = { 0 };
+	CHECK(nanohub_next_event(m, 80, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_STEPS_TODAY && w.off == 20);
+	CHECK(nanohub_sample(&ev, 0, 4, &ns, &d) && d[0] == (2255 & 0xff) && ev.sensor.size == 8);
+	CHECK(nanohub_next_event(m, 80, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_LIGHT && w.off == 36);
+	CHECK(ev.sensor.samples == 0 && ev.sensor.flushes == 1);
+	CHECK(nanohub_next_event(m, 80, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_HAND_UP && ev.sensor.wake);
+	CHECK(w.off == 56 && ev.sensor.ref_ns == 7000);
+	CHECK(nanohub_next_event(m, 80, &w, &ev) && ev.sensor.type == 0x30 && w.off == 80 && w.unknown == 1);
+	CHECK(!nanohub_next_event(m, 80, &w, &ev) && !w.bad);
+
+	/* Two raw accelerometer samples (10 bytes each), the accelerometer's
+	 * bias (16), a heart rate (16), then a hand-up. */
+	memset(m, 0, sizeof(m));
+	put32(m, 0x220);
+	m[12] = 2;
+	m[16] = 7;
+	m[26] = 9;
+	put32(m + 32, 0x201);
+	m[44] = 1;
+	put32(m + 60, 0x210);
+	m[72] = 1;
+	put32(m + 76, 0x42a00000);
+	put32(m + 88, 0x24b);
+	m[100] = 1;
+	w = (struct nanohub_walk){ 0 };
+	CHECK(nanohub_next_event(m, 108, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_ACCEL_RAW && w.off == 32);
+	CHECK(nanohub_sample(&ev, 1, 6, &ns, &d) && d[0] == 9 && !nanohub_sample(&ev, 2, 6, &ns, &d));
+	CHECK(nanohub_next_event(m, 108, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_ACCEL && w.off == 60);
+	CHECK(nanohub_next_event(m, 108, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_HEART_RATE && w.off == 88);
+	CHECK(nanohub_sample(&ev, 0, 12, &ns, &d) && d[3] == 0x42);
+	CHECK(nanohub_next_event(m, 108, &w, &ev) && ev.sensor.type == NANOHUB_SENSOR_HAND_UP && w.off == 108);
+	CHECK(!nanohub_next_event(m, 108, &w, &ev) && !w.bad && !w.unknown);
+
+	/* Bytes after an event that are no whole event are dropped, even when
+	 * they start like a hand-up. */
+	w = (struct nanohub_walk){ 0 };
+	CHECK(nanohub_next_event(m, 96, &w, &ev) && nanohub_next_event(m, 96, &w, &ev) && nanohub_next_event(m, 96, &w, &ev));
+	CHECK(w.off == 88 && !nanohub_next_event(m, 96, &w, &ev) && w.bad == 1);
+	/* A count of samples past the end stops at the end. */
+	w = (struct nanohub_walk){ 0 };
+	m[12] = 200;
+	CHECK(nanohub_next_event(m, 80, &w, &ev) && w.off == 80 && !nanohub_next_event(m, 80, &w, &ev));
+	/* So does one in a later event, counted as cut short. */
+	w = (struct nanohub_walk){ 0 };
+	m[12] = 2;
+	m[44] = 9;
+	CHECK(nanohub_next_event(m, 80, &w, &ev) && nanohub_next_event(m, 80, &w, &ev) && w.off == 80 && w.bad == 1);
+	/* An answer with one log line is that line. */
+	w = (struct nanohub_walk){ 0 };
+	put32(m, 0x3b474f4c);
+	CHECK(nanohub_next_event(m, 30, &w, &ev) && ev.kind == NANOHUB_EV_LOG && w.off == 30);
+	CHECK(!nanohub_next_event(m, 30, &w, &ev));
+
 	/* A log line. */
 	put32(e, 0x3b474f4c);
 	e[4] = 'I';

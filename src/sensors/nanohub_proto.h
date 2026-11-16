@@ -41,6 +41,8 @@
 #define NANOHUB_HZ(hz)		((uint32_t)(hz) * 1024u)
 
 #define NANOHUB_SENSOR_ACCEL		1
+#define NANOHUB_SENSOR_GYRO		6
+#define NANOHUB_SENSOR_MAG		8
 #define NANOHUB_SENSOR_LIGHT		0x0c
 #define NANOHUB_SENSOR_HEART_RATE	0x10
 #define NANOHUB_SENSOR_STEP_COUNTER	0x16
@@ -130,6 +132,18 @@ unsigned nanohub_sensor_config(uint8_t *out, uint8_t type, uint8_t cmd, uint32_t
 unsigned nanohub_time_config(uint8_t *out, uint64_t utc, int32_t gmtoff, bool h24);
 /* Parses the payload of a READ answer; false for one that is bad. */
 bool nanohub_event(const uint8_t *p, unsigned n, struct nanohub_event *ev);
+/* The bytes of one sample of a sensor event, its time delta included;
+ * 0 for a type whose size is not known. */
+unsigned nanohub_sample_step(uint8_t type);
+/* Where nanohub_next_event is in a READ answer, and what it gave up on. */
+struct nanohub_walk {
+	unsigned off;
+	unsigned unknown;	/* a sensor of unknown size took the rest */
+	unsigned bad;		/* the rest did not look like a sensor event */
+};
+/* The next event of a READ answer, false after the last. The hub puts
+ * several sensor events in one answer, one after the other. */
+bool nanohub_next_event(const uint8_t *p, unsigned n, struct nanohub_walk *w, struct nanohub_event *ev);
 /* Sample i of a sensor event of data_size bytes per sample: its time (the reference plus the deltas up to it) and data. */
 bool nanohub_sample(const struct nanohub_event *ev, unsigned i, unsigned data_size, uint64_t *ns, const uint8_t **data);
 
