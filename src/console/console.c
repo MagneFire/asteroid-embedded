@@ -28,6 +28,9 @@
 #include "ui/rotation.h"
 #include "power.h"
 #include "console.h"
+#ifdef SOC_AP_LINK
+#include "companion/companion.h"
+#endif
 
 #define LINE_LEN	128
 #define PROMPT		"> "
@@ -1760,6 +1763,13 @@ static void cmd_sgx(const char *args)
 }
 #endif
 
+#ifdef SOC_AP_LINK
+static void cmd_link(const char *args)
+{
+	companion_status(say);
+}
+#endif
+
 static void cmd_echo(const char *args)
 {
 	say("%s\n", args);
@@ -1830,6 +1840,9 @@ static const struct command commands[] = {
 	  "atlas [WxH]] | compose overlap [on | off] | bands [scan | painted | verify] | mesh [keep | build] | bins <1 | "
 	  "2 | 4> [from px] | ui [on | off] | inval [on | off]]",
 	  cmd_sgx },
+#endif
+#ifdef SOC_AP_LINK
+	{ "link", "", cmd_link },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };

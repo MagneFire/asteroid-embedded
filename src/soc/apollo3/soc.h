@@ -100,6 +100,9 @@
 #define SOC_NO_EMMC		1
 #define PROF_SAMPLES		1024
 
+/* A link to the application processor (src/companion). */
+#define SOC_AP_LINK		1
+
 /* Smaller records than the eMMC store's: a slot is one flash page. */
 #define KV_SLOT_SIZE		0x2000u
 
