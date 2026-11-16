@@ -2,12 +2,14 @@
  * GPIOs, low while pressed. The battery is only its voltage on the ADC:
  * the charger and the gauge belong to the application processor's PMIC,
  * so the charge is read off a Li-ion resting voltage curve, averaged over
- * the last readings, and there is no charging state. */
+ * the last readings, and there is no charging state. A charge from the
+ * application processor's gauge is used instead while it is recent. */
 #include "asteroid.h"
 
 #define KEY		(board->key_gpio[0])
 #define READ_MS		60000u
 #define AVERAGE		4
+#define AP_FRESH_MS	(30u * 60 * 1000)
 
 static volatile bool key_edge;
 
@@ -43,7 +45,7 @@ static const struct { uint16_t mv; uint8_t pct; } curve[] = {
 	{ 3900, 60 }, { 3980, 70 }, { 4060, 80 }, { 4150, 90 }, { 4300, 100 },
 };
 
-static uint32_t mv_avg, readings[AVERAGE], last_read;
+static uint32_t mv_avg, readings[AVERAGE], last_read, ap_percent, ap_t;
 static unsigned count;
 
 static uint32_t percent_of(uint32_t mv)
@@ -80,12 +82,20 @@ static void adc_poll(void)
 }
 
 static uint32_t adc_next_ms(void) { return last_read ? ms_left(last_read, READ_MS, time_ms()) : 1; }
-static uint32_t adc_percent(void) { return mv_avg ? percent_of(mv_avg) : 50; }
+static bool ap_fresh(void) { return ap_t && time_ms() - ap_t < AP_FRESH_MS; }
+
+void battery_from_ap(unsigned percent)
+{
+	ap_percent = percent;
+	ap_t = time_ms() | 1;
+}
+
+static uint32_t adc_percent(void) { return ap_fresh() ? ap_percent : mv_avg ? percent_of(mv_avg) : 50; }
 static bool no(void) { return false; }
 static void nothing(void) {}
 static uint32_t adc_mv(void) { return mv_avg; }
 static int32_t no_current(void) { return 0; }
-static const char *adc_status(void) { return mv_avg ? "voltage only" : "no reading"; }
+static const char *adc_status(void) { return ap_fresh() ? "from the AP" : mv_avg ? "voltage only" : "no reading"; }
 
 const struct battery_driver battery_adc = {
 	.init = adc_init, .poll = adc_poll, .next_ms = adc_next_ms, .percent = adc_percent, .charging = no, .cable = no,

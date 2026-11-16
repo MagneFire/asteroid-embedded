@@ -2,6 +2,7 @@
  * on, interrupts, time and the pads. Without an MMU or a data cache in
  * front of SRAM there is no memory map to set up and no cache to keep. */
 #include "asteroid.h"
+#include "companion/companion.h"
 
 #define CACHECFG		(CACHECTRL_BASE + 0x00)
 #define CACHE_ENABLE		BIT(0)
@@ -60,6 +61,7 @@ void soc_board_init(void)
 	for (const struct board_mcu_pad *p = board->mcu_pads; p && p->func != 0xff; p++)
 		pad_set(p);
 	log_printf("boot: %s\n", boot_reason());
+	companion_boot();
 }
 
 /* No PMIC of its own: the application processor's has the charger and

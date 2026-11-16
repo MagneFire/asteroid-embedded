@@ -124,6 +124,8 @@ bool wire_unwrap(const uint8_t *p, unsigned n, struct wire_msg *m)
 	return true;
 }
 
+uint16_t wire_reply_chan(uint16_t chan) { return chan <= WIRE_CHAN_DATA ? chan : WIRE_CHAN_DATA; }
+
 unsigned wire_wrap(uint8_t *out, unsigned cap, uint16_t chan, uint16_t id, const uint8_t *body, unsigned len)
 {
 	if (len > WIRE_PAYLOAD_MAX - 8 || cap < 8 + len)

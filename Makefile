@@ -78,7 +78,7 @@ SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer
         src/frame_mcu.c src/board/beluga.c src/display/display_rm69090.c src/input/touch_tma525.c \
         src/input/haptics_aw8624.c src/sensors/hub_lsm6dso.c src/storage/store_flash.c src/storage/none.c \
         src/bt/bleif.c src/bt/bleif_hci.c src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c \
-        src/companion/wire.c src/companion/link.c
+        src/companion/wire.c src/companion/link.c src/companion/proto.c src/companion/companion.c
 CPU_apollo3 := cortex-m4
 FPU_apollo3 := fpv4-sp-d16
 ISA_apollo3 := -mthumb
@@ -410,9 +410,10 @@ $(BUILD)/test/bleif_test: tests/bleif_test.c src/bt/bleif_proto.c src/bt/apollo3
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c -o $@
 
-$(BUILD)/test/companion_test: tests/companion_test.c src/companion/wire.c src/companion/wire.h
+COMPANION := src/companion/wire.c src/companion/proto.c src/companion/link.c src/companion/companion.c
+$(BUILD)/test/companion_test: tests/companion_test.c $(COMPANION) $(wildcard src/companion/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/companion/wire.c -o $@
+	$(HOSTCC) $(subst -I src/soc/qcom,-I src/soc/apollo3,$(HOST_CFLAGS)) $< $(COMPANION) -o $@
 
 $(BUILD)/test/swd_test: tests/swd_test.c tools/beluga/swd.c tools/beluga/swd.h
 	@mkdir -p $(dir $@)

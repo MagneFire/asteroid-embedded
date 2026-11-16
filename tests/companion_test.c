@@ -1,8 +1,17 @@
 /* The framing of beluga's AP link: the AP's side of it is played here
- * as deamonserver does it, its writes and its reads. */
+ * as deamonserver does it, its writes and its reads. Then the link and
+ * the work modes run against a played AP, with the hardware and the
+ * rest of the firmware stubbed out. */
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "companion/wire.h"
+#include "companion/proto.h"
+#include "companion/link.h"
+#include "companion/companion.h"
+#include "board/board.h"
+#include "sched.h"
 
 static int failures;
 #define CHECK(x) do { if (!(x)) { printf("%s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
@@ -72,6 +81,299 @@ static void roundtrip_read(unsigned len)
 	struct wire_header h;
 	CHECK(wire_header_get(got, &h) == WIRE_OK && h.len == len && h.seq == 3 && h.flags == WIRE_FLAG_RESYNC);
 	CHECK(wire_sum(got + WIRE_HEADER, h.len) == h.sum);
+}
+
+/* The AsteroidOS backend's parse of 377: varints, one nested time with
+ * the time in field 2 and the zone in field 3. */
+struct ap_reply { int mode, last_mode, reboot; int64_t time; int zone; };
+
+static uint64_t ap_varint(const uint8_t *p, unsigned n, unsigned *i)
+{
+	uint64_t v = 0;
+	for (unsigned shift = 0; *i < n && shift < 64; shift += 7) {
+		uint8_t b = p[(*i)++];
+		v |= (uint64_t)(b & 0x7f) << shift;
+		if (!(b & 0x80))
+			break;
+	}
+	return v;
+}
+
+static void ap_parse(const uint8_t *p, unsigned n, struct ap_reply *r)
+{
+	memset(r, 0, sizeof *r);
+	for (unsigned i = 0; i < n;) {
+		uint64_t key = ap_varint(p, n, &i), v = ap_varint(p, n, &i);
+		if ((key & 7) == 2) {
+			if ((key >> 3) == 4)
+				for (unsigned j = i; j < i + v;) {
+					uint64_t k = ap_varint(p, i + v, &j), w = ap_varint(p, i + v, &j);
+					if ((k >> 3) == 2)
+						r->time = (int32_t)w;
+					else if ((k >> 3) == 3)
+						r->zone = (int32_t)((uint32_t)w >> 1 ^ -((uint32_t)w & 1));
+				}
+			i += v;
+		} else if ((key >> 3) == 1)
+			r->mode = (int)v;
+		else if ((key >> 3) == 3)
+			r->last_mode = (int)v;
+		else if ((key >> 3) == 5)
+			r->reboot = (int)v;
+	}
+}
+
+enum { UP_INT = 29, DN_INT = 30, DN_ACK = 31, UP_ACK = 33, PINS = 64 };
+static const struct board test_board = { .ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK } };
+const struct board *board = &test_board;
+
+static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, darks;
+static unsigned levels[PINS];
+static bool irq_on[PINS], display_lent, touch_lent, haptics_held, power_lent, key_down;
+static void (*irq_fn[PINS])(unsigned);
+static void (*ios_fn)(uint32_t);
+static uint8_t lram[120], staged[256];
+static unsigned staged_n;
+static int kv_mode = -1;
+static int32_t kv_zone;
+
+uint32_t time_ms(void) { return now_ms; }
+uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
+uint32_t irq_save(void) { return 0; }
+void irq_restore(uint32_t s) {}
+bool sched_add(struct sched_task *t) { return true; }
+void sched_post(const struct sched_task *t) {}
+void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
+unsigned gpio_get(unsigned n) { return levels[n]; }
+void gpio_set(unsigned n, unsigned v) { levels[n] = v; }
+void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n)) { irq_fn[n] = fn; }
+void gpio_irq_enable(unsigned n, bool on) { irq_on[n] = on; }
+void ios_init(void (*fn)(uint32_t status)) { ios_fn = fn; }
+uint32_t ios_interrupts(void) { return 0; }
+void ios_read(unsigned off, uint8_t *p, unsigned n) { memcpy(p, lram + off, n); }
+void ios_stage(const uint8_t *direct, unsigned dn, const uint8_t *fifo, unsigned fn)
+{
+	memcpy(staged, direct, dn);
+	memcpy(staged + dn, fifo, fn);
+	staged_n = dn + fn;
+}
+int kv_get(const char *key, void *buf, unsigned size)
+{
+	if (!strcmp(key, "ap.mode") && kv_mode >= 0) {
+		*(uint8_t *)buf = (uint8_t)kv_mode;
+		return 1;
+	}
+	return -2;
+}
+int kv_set(const char *key, const void *val, unsigned len)
+{
+	kv_sets++;
+	if (!strcmp(key, "ap.mode"))
+		kv_mode = *(const uint8_t *)val;
+	else if (!strcmp(key, "ap.zone"))
+		memcpy(&kv_zone, val, sizeof kv_zone);
+	return 0;
+}
+void log_printf(const char *fmt, ...)
+{
+	if (!getenv("VERBOSE"))
+		return;
+	va_list ap;
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+}
+const char *log_previous_record(void) { return NULL; }
+uint32_t reset_status(void) { return reset_bits; }
+uint32_t rtc_read(void) { return rtc_last; }
+bool rtc_valid(void) { return rtc_writes != 0; }
+void rtc_write(uint32_t secs)
+{
+	rtc_writes++;
+	rtc_last = secs;
+}
+void battery_from_ap(unsigned percent) {}
+void hub_set_time(void) {}
+void display_lend(bool to_ap) { display_lent = to_ap; }
+void display_start_lent(void) { display_lent = true; }
+void touch_lend(bool to_ap) { touch_lent = to_ap; }
+void touch_start_lent(void) { touch_lent = true; }
+void haptics_hold(bool on) { haptics_held = on; }
+void power_lend_display(bool on) { power_lent = on; }
+void power_dark_until_wake(void) { darks++; }
+void power_wake(const char *cause) { wakes++; }
+bool power_key(void) { return key_down; }
+
+static void fire(unsigned pin)
+{
+	if (irq_on[pin] && irq_fn[pin])
+		irq_fn[pin](pin);
+}
+
+static uint16_t ap_seq = 100;
+
+/* deamonserver's write: dn_int up, the parts once dn_ack is up, and
+ * dn_ack low again for a good packet. */
+static void ap_write(uint16_t chan, uint16_t id, const uint8_t *body, unsigned len)
+{
+	uint8_t env[WIRE_PAYLOAD_MAX], parts[5][121];
+	unsigned n = wire_wrap(env, sizeof env, chan, id, body, len);
+	unsigned k = ap_write_parts(env, n, ap_seq++, parts);
+	levels[DN_INT] = 1;
+	fire(DN_INT);
+	CHECK(levels[DN_ACK] == 1);
+	for (unsigned i = 0; i < k; i++) {
+		memcpy(lram, parts[i], sizeof lram);
+		ios_fn(IOS_WRITTEN);
+	}
+	CHECK(levels[DN_ACK] == 0);
+	levels[DN_INT] = 0;
+}
+
+/* The AP reads what up_int offers and answers with a short pulse. */
+static bool ap_take(struct wire_msg *m, uint8_t *copy)
+{
+	if (!levels[UP_INT])
+		return false;
+	struct wire_header h;
+	CHECK(wire_header_get(staged, &h) == WIRE_OK && h.len + WIRE_HEADER <= staged_n);
+	memcpy(copy, staged + WIRE_HEADER, h.len);
+	CHECK(wire_sum(copy, h.len) == h.sum);
+	CHECK(wire_unwrap(copy, h.len, m) && m->framework);
+	levels[UP_ACK] = 1;
+	fire(UP_ACK);
+	extra_us += 1000;
+	levels[UP_ACK] = 0;
+	fire(UP_ACK);
+	extra_us = 0;
+	CHECK(!levels[UP_INT]);
+	return true;
+}
+
+static void wait_ms(uint32_t ms)
+{
+	now_ms += ms;
+	companion_pass();
+}
+
+/* A work mode message answered and acknowledged. */
+static void mode_message(uint16_t id, const uint8_t *body, unsigned len, struct ap_reply *a)
+{
+	ap_write(1, id, body, len);
+	companion_pass();
+	struct wire_msg m;
+	uint8_t copy[WIRE_PAYLOAD_MAX];
+	CHECK(ap_take(&m, copy) && m.id == PROTO_REPLY && m.chan == 1);
+	ap_parse(m.body, m.len, a);
+	companion_pass();
+}
+
+static void companion_scenario(void)
+{
+	static const uint8_t m375[] = { 0x08, 0x01, 0x12, 0x09, 0x08, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xd7, 0x04 };
+	static const uint8_t m374[] = { 0x08, 0x02 };
+	struct ap_reply a;
+	struct wire_msg m;
+	uint8_t copy[WIRE_PAYLOAD_MAX];
+	now_ms = 1000;
+
+	/* Reset by the debugger in the normal mode: the AP keeps the panel. */
+	kv_mode = PROTO_MODE_NORMAL;
+	reset_bits = 1u << 5;
+	companion_boot();
+	CHECK(display_lent && touch_lent && haptics_held);
+	companion_init();
+	CHECK(power_lent && irq_on[DN_INT]);
+
+	/* A truncated 375 changes nothing and gets no 377. */
+	ap_write(1, 375, m375, sizeof m375 - 1);
+	companion_pass();
+	CHECK(!levels[UP_INT] && !rtc_writes && display_lent);
+	wait_ms(5000);
+	CHECK(!levels[UP_INT] && !kv_sets && display_lent);
+
+	/* A 373 without a time, on a channel past the framework's: an empty
+	 * 377 on channel 1. */
+	ap_write(7, 373, NULL, 0);
+	companion_pass();
+	CHECK(ap_take(&m, copy) && m.id == PROTO_REPLY && m.chan == 1 && m.len == 0);
+	companion_pass();
+	CHECK(display_lent && !kv_sets);
+
+	/* 375: the panel comes back a second after the 377, the store waits
+	 * for the end of the boot burst and a quiet link. */
+	mode_message(375, m375, sizeof m375, &a);
+	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL && a.reboot == PROTO_REBOOT_DEBUG);
+	CHECK(rtc_writes == 1 && rtc_last == 1700000000u - 300 * 60);
+	CHECK(display_lent && power_lent);
+	CHECK(companion_next_ms() > 0 && companion_next_ms() <= 1000);
+	wait_ms(999);
+	CHECK(display_lent);
+	wait_ms(1);
+	CHECK(!display_lent && !touch_lent && !haptics_held && !power_lent && wakes == 1 && !kv_sets);
+	ap_write(1, PROTO_OOBE, NULL, 0);
+	companion_pass();
+	wait_ms(2999);
+	CHECK(!kv_sets);
+	wait_ms(1);
+	CHECK(kv_sets == 2 && kv_mode == PROTO_MODE_WRISTBAND && kv_zone == -300);
+
+	/* A 377 the AP never reads: no panel for the AP, no mode stored. */
+	ap_write(1, 373, NULL, 0);
+	companion_pass();
+	CHECK(levels[UP_INT]);
+	wait_ms(LINK_TX_MS);
+	CHECK(!levels[UP_INT]);
+	wait_ms(150);
+	CHECK(levels[UP_INT]);
+	wait_ms(LINK_TX_MS);
+	CHECK(!levels[UP_INT]);
+	wait_ms(11000);
+	wait_ms(1);
+	CHECK(!display_lent && !power_lent && kv_sets == 2);
+
+	/* 373, then 374: taken back without waking. */
+	mode_message(373, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
+	CHECK(display_lent && touch_lent && haptics_held && power_lent);
+	mode_message(374, m374, sizeof m374, &a);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF && display_lent);
+	wait_ms(1000);
+	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1);
+
+	/* The power key held for 5 s takes the panel back from an AP that
+	 * does not answer, and power off is stored at once. */
+	mode_message(373, NULL, 0, &a);
+	CHECK(display_lent);
+	unsigned sets = kv_sets;
+	key_down = true;
+	wait_ms(10);
+	CHECK(companion_next_ms() <= 5000);
+	wait_ms(4999);
+	CHECK(display_lent);
+	wait_ms(1);
+	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF);
+	key_down = false;
+
+	/* dn_int edges without a packet: ignored after three until the AP
+	 * writes. */
+	for (int i = 0; i < LINK_UNFINISHED_MAX; i++) {
+		levels[DN_INT] = 1;
+		fire(DN_INT);
+		CHECK(levels[DN_ACK] == 1);
+		levels[DN_INT] = 0;
+		wait_ms(LINK_RX_MS);
+		CHECK(levels[DN_ACK] == 0);
+	}
+	CHECK(!irq_on[DN_INT]);
+	ios_fn(IOS_WRITTEN);
+	CHECK(irq_on[DN_INT]);
+	ap_write(1, PROTO_OOBE, NULL, 0);
+
+	/* Nothing over what one read's direct bytes carry. */
+	uint8_t big[LINK_SEND_MAX + 1] = { 0 };
+	CHECK(!link_send(big, sizeof big));
+	CHECK(link_send(big, LINK_SEND_MAX));
 }
 
 int main(void)
@@ -157,6 +459,80 @@ int main(void)
 	q.seq = 0xffff, q.flags = 0;
 	s.expect = 0xffff;
 	CHECK(wire_seq_take(&s, &q) && s.expect == 0);
+
+	/* The zone is a sint32 in minutes. */
+	CHECK(proto_zigzag(0) == 0 && proto_zigzag(-1) == 1 && proto_zigzag(1) == 2 && proto_zigzag(120) == 240);
+	CHECK(proto_zigzag(-300) == 599 && proto_zigzag(INT32_MIN) == 0xffffffffu);
+	static const int32_t zones[] = { 0, 60, -60, 330, -570, 840, INT32_MAX, INT32_MIN };
+	for (unsigned i = 0; i < sizeof zones / sizeof zones[0]; i++)
+		CHECK(proto_unzigzag(proto_zigzag(zones[i])) == zones[i]);
+
+	/* 373 as the backend writes it: mode 0 left out, the time at UTC+2. */
+	static const uint8_t m373[] = { 0x12, 0x09, 0x08, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xf0, 0x01 };
+	unsigned mode = 9;
+	struct proto_time t;
+	CHECK(proto_work_mode(m373, sizeof m373, &mode, &t) && mode == PROTO_MODE_NORMAL);
+	CHECK(t.time == 1700000000 && t.zone_min == 120);
+	CHECK(proto_mode_of(373) == PROTO_MODE_NORMAL && proto_mode_of(375) == PROTO_MODE_WRISTBAND &&
+	      proto_mode_of(374) == PROTO_MODE_POWER_OFF && proto_mode_of(372) == -1);
+	/* 375 at UTC-5. */
+	static const uint8_t m375[] = { 0x08, 0x01, 0x12, 0x09, 0x08, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xd7, 0x04 };
+	CHECK(proto_work_mode(m375, sizeof m375, &mode, &t) && mode == PROTO_MODE_WRISTBAND);
+	CHECK(t.time == 1700000000 && t.zone_min == -300);
+	CHECK(!proto_work_mode(m375, sizeof m375 - 1, &mode, &t));
+	/* A time whose own fields are cut short, inside a whole message. */
+	static const uint8_t cut[] = { 0x08, 0x01, 0x12, 0x02, 0x08, 0x80 };
+	CHECK(!proto_work_mode(cut, sizeof cut, &mode, &t));
+	static const uint8_t cut386[] = { 0x1a, 0x02, 0x08, 0x80 };
+	CHECK(!proto_boot(cut386, sizeof cut386, &t));
+	static const uint8_t m374[] = { 0x08, 0x02, 0x12, 0x00 };
+	CHECK(proto_work_mode(m374, sizeof m374, &mode, &t) && mode == PROTO_MODE_POWER_OFF && !t.time && !t.zone_min);
+
+	/* 372: capacity 100 behind cmd 17; another cmd is not a battery. */
+	CHECK(proto_battery(body372, sizeof body372) == 100);
+	static const uint8_t b0[] = { 0x08, 0x11, 0x7a, 0x00 };
+	CHECK(proto_battery(b0, sizeof b0) == 0);
+	static const uint8_t other[] = { 0x08, 0x10, 0x7a, 0x02, 0x10, 0x64 };
+	CHECK(proto_battery(other, sizeof other) == -1);
+	CHECK(proto_battery(body372, 1) == -1);
+	static const uint8_t cut372[] = { 0x08, 0x11, 0x7a, 0x02, 0x10, 0x80 };
+	CHECK(proto_battery(cut372, sizeof cut372) == -1);
+
+	/* 386: type, OOBE, then the time. */
+	static const uint8_t m386[] = { 0x08, 0x02, 0x12, 0x02, 0x08, 0x01, 0x1a, 0x09,
+					0x08, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xf0, 0x01 };
+	CHECK(proto_boot(m386, sizeof m386, &t) && t.time == 1700000000 && t.zone_min == 120);
+
+	/* 377 as the backend reads it. */
+	struct proto_reply r = { PROTO_MODE_WRISTBAND, PROTO_MODE_NORMAL, PROTO_REBOOT_FAULT, { 1700000000, -300 } };
+	uint8_t out[64];
+	int n = proto_reply_put(out, sizeof out, &r);
+	static const uint8_t m377[] = { 0x08, 0x01, 0x22, 0x09, 0x10, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xd7, 0x04, 0x28, 0x02 };
+	CHECK(n == sizeof m377 && !memcmp(out, m377, sizeof m377));
+	struct ap_reply a;
+	ap_parse(out, n, &a);
+	CHECK(a.mode == 1 && a.last_mode == 0 && a.reboot == 2 && a.time == 1700000000 && a.zone == -300);
+	r = (struct proto_reply){ PROTO_MODE_NORMAL, PROTO_MODE_POWER_OFF, PROTO_REBOOT_DEBUG, { 0, 0 } };
+	n = proto_reply_put(out, sizeof out, &r);
+	CHECK(n == 2 && out[0] == 0x18 && out[1] == 0x02);
+	ap_parse(out, n, &a);
+	CHECK(a.mode == 0 && a.last_mode == 2 && a.reboot == 0 && a.time == 0);
+	CHECK(proto_reply_put(out, 1, &r) == -1);
+	/* Every field at 0 is an empty body, not a failure. */
+	r = (struct proto_reply){ PROTO_MODE_NORMAL, PROTO_MODE_NORMAL, PROTO_REBOOT_DEBUG, { 0, 0 } };
+	CHECK(proto_reply_put(out, sizeof out, &r) == 0);
+
+	/* The reboot reason from RSTGEN's status. */
+	CHECK(proto_reboot_reason(1u << 5 | 1u << 6, false) == PROTO_REBOOT_DEBUG);
+	CHECK(proto_reboot_reason(1u << 6, false) == PROTO_REBOOT_FAULT);
+	CHECK(proto_reboot_reason(1u << 4, true) == PROTO_REBOOT_FAULT);
+	CHECK(proto_reboot_reason(1u << 0, false) == PROTO_REBOOT_PIN);
+	CHECK(proto_reboot_reason(1u << 0 | 1u << 1, false) == PROTO_REBOOT_OTHER);
+	CHECK(proto_reboot_reason(1u << 4, false) == PROTO_REBOOT_OTHER);
+	CHECK(proto_powered_up(1u << 1) && proto_powered_up(1u << 2 | 1u << 0));
+	CHECK(!proto_powered_up(1u << 0) && !proto_powered_up(1u << 3) && !proto_powered_up(1u << 5 | 1u << 6));
+
+	companion_scenario();
 
 	if (failures)
 		printf("companion_test: %d failures\n", failures);

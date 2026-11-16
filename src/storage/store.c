@@ -27,6 +27,8 @@ static int resolve_partition(void)
 	return 0;
 }
 
+bool store_quiet(void) { return true; }
+
 int store_open(void)
 {
 	if (store.open && emmc_card()->ready && emmc_card()->generation == store_gen)

@@ -81,6 +81,6 @@ void settings_flush(void)
 
 void settings_poll(uint32_t now)
 {
-	if (dirty && now - last_set >= FLUSH_MS)
+	if (dirty && now - last_set >= FLUSH_MS && store_quiet())
 		settings_flush();
 }

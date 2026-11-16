@@ -161,6 +161,10 @@ int flash_program(uint32_t addr, const uint32_t *words, uint32_t n);
 
 /* The battery's voltage from the ADC, in mV, or 0 without a reading. */
 uint32_t adc_battery_mv(void);
+/* The charge the application processor's gauge reports. */
+void battery_from_ap(unsigned percent);
+/* RSTGEN's status bits at the start. */
+uint32_t reset_status(void);
 
 void gpio_init(void);
 void wdt_irq_init(void);

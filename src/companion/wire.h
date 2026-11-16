@@ -22,6 +22,7 @@
 /* Lets the receiver take any sequence number. */
 #define WIRE_FLAG_RESYNC	0x01
 
+#define WIRE_CHAN_DATA		1
 #define WIRE_CHAN_FACTORY	2
 #define WIRE_CHAN_GPS		3
 #define WIRE_CHAN_SENSORS	4
@@ -80,6 +81,9 @@ struct wire_msg {
 	const uint8_t *body;
 };
 bool wire_unwrap(const uint8_t *p, unsigned n, struct wire_msg *m);
+/* The channel for an answer to a message on chan: one of the
+ * framework's two. */
+uint16_t wire_reply_chan(uint16_t chan);
 /* A framework message in its envelope; 0 if it does not fit. */
 unsigned wire_wrap(uint8_t *out, unsigned cap, uint16_t chan, uint16_t id, const uint8_t *body, unsigned len);
 #endif

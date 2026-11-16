@@ -1,20 +1,30 @@
 /* What the application processors have and this chip has not: no USB,
  * no eMMC to read vendor files from, no GPU and no screenshots, and no
- * UART in use. The console goes over SWD instead (swdbox.c). */
+ * UART in use. The console goes over SWD instead (swdbox.c), and the
+ * USB calls of the main loop serve the link to the application
+ * processor. */
 #include "asteroid.h"
+#include "storage/storage.h"
 #include "console/console.h"
 #include "screenshot/screenshot.h"
 #include "gpu/a3xx.h"
+#include "companion/companion.h"
 
-void usb_init(const char *serialno) {}
+void usb_init(const char *serialno) { companion_init(); }
 void usb_cable(bool present, bool edge) {}
-uint32_t usb_next_ms(void) { return UINT32_MAX; }
+uint32_t usb_next_ms(void) { return companion_next_ms(); }
 bool dcd_stuck(void) { return false; }
-void usb_pass(void) {}
-void usb_poll(void) { swdbox_poll(); }
+void usb_pass(void) { companion_pass(); }
+
+void usb_poll(void)
+{
+	swdbox_poll();
+	companion_poll();
+}
 bool usb_connected(void) { return false; }
-bool usb_resting(void) { return true; }
-bool usb_busy(void) { return false; }
+bool usb_resting(void) { return companion_resting(); }
+bool usb_busy(void) { return companion_next_ms() == 0; }
+bool store_quiet(void) { return companion_store_ok(); }
 void usb_stats(uint32_t *rx, uint32_t *tx) { *rx = *tx = 0; }
 
 void screenshot_poll(void) {}

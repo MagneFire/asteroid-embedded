@@ -13,6 +13,7 @@
 bool reboot_to_bootloader;
 static bool power_off;
 static char reason[64] = "unknown";
+static uint32_t status;
 
 void power_off_arm(void) { power_off = true; }
 
@@ -22,7 +23,7 @@ const char *boot_reason(void)
 	if (!read) {
 		static const char *const bits[] = { "external pin", "power-on", "brown-out", "software POR",
 						    "software POI", "debugger", "watchdog" };
-		uint32_t st = readl(RSTGEN_STAT);
+		uint32_t st = status = readl(RSTGEN_STAT);
 		size_t len = 0;
 		for (unsigned i = 0; i < ARRAY_SIZE(bits) && len < sizeof reason - 1; i++)
 			if (st & BIT(i)) {
@@ -57,6 +58,12 @@ static void sleep_off(void)
 	writel(readl(SCB_SCR) | BIT(2), SCB_SCR);
 	while (!key || !(readl(NVIC_ISPR(0)) & BIT(IRQ_GPIO)))
 		wfi();
+}
+
+uint32_t reset_status(void)
+{
+	boot_reason();
+	return status;
 }
 
 static void __attribute__((noreturn)) reset_now(void)

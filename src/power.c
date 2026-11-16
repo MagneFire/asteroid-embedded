@@ -22,6 +22,7 @@
 #include "sensors/tsl2584.h"
 #include "sensors/auto_brightness.h"
 #include "screenshot/screenshot.h"
+#include "storage/storage.h"
 #include "clockapps.h"
 #include "power.h"
 #include "sched.h"
@@ -54,7 +55,7 @@ static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 #endif
 static const char *wake_cause;
-static bool lit_pending, lent;
+static bool lit_pending, lent, dark;
 static enum { LUX_IDLE, LUX_READING, LUX_WATCHING, LUX_DONE } lux_state;
 static uint32_t lux_t;
 static int32_t lux_seen = -1;
@@ -114,6 +115,11 @@ void power_lend_display(bool on)
 	lent = on;
 }
 
+void power_dark_until_wake(void)
+{
+	dark = true;
+}
+
 void power_keep_awake(bool on)
 {
 	policy.keep_awake = on;
@@ -143,7 +149,7 @@ bool power_nightstand(void)
 
 static enum screen_state screen_wanted(uint32_t now)
 {
-	if (!have_ui || lent)
+	if (!have_ui || lent || dark)
 		return SCREEN_OFF;
 	bool aod = power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD));
 	return power_policy_screen(aod, power_policy_peeking(&policy, now), policy.peek_light);
@@ -519,7 +525,8 @@ enum power_change power_update(uint32_t *now_p)
 		/* Before the always-on face reads the sensor its own way. */
 		light_follow(false, now);
 		clockapps_sleep();
-		settings_flush();
+		if (store_quiet())
+			settings_flush();
 		screen = screen_wanted(now);
 		if (screen == SCREEN_OFF)
 			display_sleep();
@@ -539,6 +546,7 @@ enum power_change power_update(uint32_t *now_p)
 		log_printf("sleep\n");
 		change = POWER_SLEPT;
 	} else if (step == POWER_STEP_WAKE) {
+		dark = false;
 		cpu_clock_slow(false);
 		if (have_hub)
 			hub_asleep(false);

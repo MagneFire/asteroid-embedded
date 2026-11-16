@@ -30,6 +30,9 @@ int store_open(void);
 const struct store_info *store_info(void);
 int store_read(uint32_t off, void *buf, uint32_t len);
 int store_write(uint32_t off, const void *buf, uint32_t len);
+/* Whether a write that can mask interrupts for long may go now; the
+ * ones that can wait hold off while it is false. */
+bool store_quiet(void);
 
 #ifndef KV_SLOT_SIZE
 #define KV_SLOT_SIZE		(16u * 1024)

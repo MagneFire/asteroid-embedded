@@ -39,4 +39,6 @@ void power_backlight_fix(const struct backlight *b);
 /* While the application processor has the panel the watch stays
  * asleep with the screen off. */
 void power_lend_display(bool lent);
+/* The screen stays off until the next wake. */
+void power_dark_until_wake(void);
 #endif
