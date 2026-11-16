@@ -57,7 +57,7 @@ struct bt_status {
 	enum bt_host_state state;
 	bool synced, connected, encrypted, authenticated, bonded;
 	uint8_t peer[6], peer_type;
-	uint16_t interval, mtu;
+	uint16_t interval, latency, timeout, mtu;
 	unsigned bonds;
 	uint8_t bond_addr[4][6], bond_type[4];
 	uint32_t resets, next_ms;
@@ -69,6 +69,14 @@ int bt_host_start(void);
 void bt_host_stop(void);
 bool bt_host_running(void);
 void bt_host_status(struct bt_status *s);
+
+/* The connection parameters asked of the phone, in 1.25 ms and 10 ms
+ * units; itvl_max 0 asks for nothing. */
+struct bt_params {
+	uint16_t itvl_min, itvl_max, latency, timeout;
+};
+void bt_host_params(const struct bt_params *p);
+void bt_host_get_params(struct bt_params *p);
 bool bt_host_connected(void);
 void bt_host_disconnect(void);
 void bt_poll(void);

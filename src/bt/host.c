@@ -30,6 +30,67 @@ static unsigned char crypto_heap[32768];
 
 static void advertise(void);
 
+/* Asked for once the link is encrypted. The phone picks a 30-50 ms
+ * interval and no latency, so the controller listens every interval even
+ * when nothing is sent; with latency 4 it may skip four of every five
+ * events while it has nothing to send. What the phone sends then waits up
+ * to 250 ms; what the watch sends goes at the next event. */
+static struct bt_params params = { 24, 40, 4, 500 };
+
+/* A refused or busy request, or the phone going back to its own
+ * parameters later, is asked again a few times per connection. */
+#define PARAMS_RETRY_MS	5000
+#define PARAMS_TRIES	3
+static uint32_t params_at;
+static unsigned params_tries;
+
+static void params_again(void)
+{
+	if (params.itvl_max && params_tries < PARAMS_TRIES) {
+		params_tries++;
+		params_at = (time_ms() + PARAMS_RETRY_MS) | 1;
+	}
+}
+
+static void request_params(uint16_t c)
+{
+	if (!params.itvl_max)
+		return;
+	struct ble_gap_upd_params p = { .itvl_min = params.itvl_min,
+					.itvl_max = params.itvl_max,
+					.latency = params.latency,
+					.supervision_timeout = params.timeout };
+	int rc = ble_gap_update_params(c, &p);
+	if (rc) {
+		log_printf("bt: connection update not asked: %d\n", rc);
+		params_again();
+	}
+}
+
+static int mtu_done(uint16_t c, const struct ble_gatt_error *error, uint16_t m, void *arg)
+{
+	(void)c;
+	(void)arg;
+	(void)m;
+	if (error->status)
+		log_printf("bt: mtu exchange failed: %u\n", error->status);
+	return 0;
+}
+
+void bt_host_params(const struct bt_params *p)
+{
+	params = *p;
+	params_tries = 0;
+	params_at = 0;
+	if (host_on && conn != BLE_HS_CONN_HANDLE_NONE)
+		request_params(conn);
+}
+
+void bt_host_get_params(struct bt_params *p)
+{
+	*p = params;
+}
+
 static void log_addr(const char *what, const ble_addr_t *a)
 {
 	log_printf("bt: %s %02x:%02x:%02x:%02x:%02x:%02x (type %u)\n", what, a->val[5], a->val[4], a->val[3], a->val[2],
@@ -108,18 +169,26 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 			log_printf("bt: interval %u x 1.25 ms, latency %u, timeout %u x 10 ms\n", d.conn_itvl, d.conn_latency,
 				   d.supervision_timeout);
 		}
+		/* The phone may not ask for more than the default 23 bytes, which
+		 * splits every longer write and notification into many packets. */
+		if (ble_gattc_exchange_mtu(conn, mtu_done, NULL))
+			log_printf("bt: mtu exchange not started\n");
 		break;
 	case BLE_GAP_EVENT_DISCONNECT:
 		passkey = -1;
 		comparing = false;
 		log_printf("bt: disconnected, reason %04x\n", ev->disconnect.reason);
 		conn = BLE_HS_CONN_HANDLE_NONE;
+		params_at = 0;
 		advertise();
 		break;
 	case BLE_GAP_EVENT_CONN_UPDATE:
-		if (!ble_gap_conn_find(ev->conn_update.conn_handle, &d))
+		if (!ble_gap_conn_find(ev->conn_update.conn_handle, &d)) {
 			log_printf("bt: connection update %d, interval %u, latency %u, timeout %u\n", ev->conn_update.status,
 				   d.conn_itvl, d.conn_latency, d.supervision_timeout);
+			if (d.sec_state.encrypted && (ev->conn_update.status || d.conn_latency < params.latency))
+				params_again();
+		}
 		break;
 	case BLE_GAP_EVENT_ADV_COMPLETE:
 		if (conn == BLE_HS_CONN_HANDLE_NONE)
@@ -133,6 +202,11 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 				   ev->enc_change.status, d.sec_state.encrypted, d.sec_state.authenticated,
 				   d.sec_state.bonded, d.sec_state.key_size);
 			log_addr("peer identity", &d.peer_id_addr);
+		}
+		if (!ev->enc_change.status) {
+			params_tries = 0;
+			params_at = 0;
+			request_params(ev->enc_change.conn_handle);
 		}
 		break;
 	case BLE_GAP_EVENT_PASSKEY_ACTION:
@@ -286,6 +360,10 @@ void bt_poll(void)
 		state = BT_HOST_FAILED;
 		return;
 	}
+	if (params_at && conn != BLE_HS_CONN_HANDLE_NONE && (int32_t)(time_ms() - params_at) >= 0) {
+		params_at = 0;
+		request_params(conn);
+	}
 	if (conn != BLE_HS_CONN_HANDLE_NONE && time_ms() - battery_t >= BATTERY_CHECK_MS) {
 		battery_t = time_ms();
 		bt_gatt_battery_check();
@@ -298,7 +376,14 @@ uint32_t bt_idle_ms(void)
 		return UINT32_MAX;
 	if (!ble_npl_eventq_is_empty(nimble_port_get_dflt_eventq()))
 		return 0;
-	return bt_npl_next_ms();
+	uint32_t next = bt_npl_next_ms();
+	if (params_at && conn != BLE_HS_CONN_HANDLE_NONE) {
+		int32_t left = (int32_t)(params_at - time_ms());
+		uint32_t at = left > 0 ? (uint32_t)left : 0;
+		if (at < next)
+			next = at;
+	}
+	return next;
 }
 
 bool bt_host_running(void)
@@ -337,6 +422,8 @@ void bt_host_status(struct bt_status *s)
 		s->authenticated = d.sec_state.authenticated;
 		s->bonded = d.sec_state.bonded;
 		s->interval = d.conn_itvl;
+		s->latency = d.conn_latency;
+		s->timeout = d.supervision_timeout;
 		s->mtu = mtu;
 	}
 	if (initialised && !ble_store_util_bonded_peers(peers, &n, (int)ARRAY_SIZE(peers))) {

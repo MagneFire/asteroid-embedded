@@ -506,8 +506,9 @@ static void bt_status_say(void)
 	    s.synced ? " (synced)" : "", s.resets);
 	if (s.connected) {
 		say_addr("peer ", s.peer, s.peer_type);
-		say("encrypted %u, authenticated %u, bonded %u, interval %u x 1.25 ms, mtu %u\n", s.encrypted,
-		    s.authenticated, s.bonded, s.interval, s.mtu);
+		say("encrypted %u, authenticated %u, bonded %u, interval %u x 1.25 ms, latency %u, timeout %u x 10 ms, "
+		    "mtu %u\n",
+		    s.encrypted, s.authenticated, s.bonded, s.interval, s.latency, s.timeout, s.mtu);
 	}
 	say("bonded peers %u, key store \"%s\"\n", s.bonds, s.kv);
 	for (unsigned i = 0; i < s.bonds && i < ARRAY_SIZE(s.bond_addr); i++)
@@ -527,6 +528,37 @@ static void cmd_bt(const char *args)
 		bt_status_say();
 		return;
 	}
+	if (!strncmp(args, "params", 6) && (!args[6] || args[6] == ' ')) {
+		struct bt_params p;
+		const char *a = skip_spaces(args + 6);
+		uint32_t v[4];
+		if (!strcmp(a, "off")) {
+			memset(&p, 0, sizeof p);
+			bt_host_params(&p);
+		} else if (*a) {
+			bool ok = true;
+			for (unsigned i = 0; i < 4 && ok; i++)
+				ok = parse_num(&a, 10, &v[i]) && v[i] <= 0xffff;
+			/* The ranges of the Bluetooth spec, and a timeout longer than
+			 * two of the longest gaps latency allows. */
+			if (!ok || v[0] < 6 || v[0] > v[1] || v[1] > 3200 || v[2] > 499 || v[3] < 10 || v[3] > 3200 ||
+			    v[3] * 4 <= (1 + v[2]) * v[1]) {
+				say("usage: bt params [<itvl_min> <itvl_max> <latency> <timeout> | off]\n"
+				    "  intervals 6-3200 x 1.25 ms, latency 0-499, timeout 10-3200 x 10 ms and over\n"
+				    "  2 x (1 + latency) x itvl_max\n");
+				return;
+			}
+			p = (struct bt_params){ (uint16_t)v[0], (uint16_t)v[1], (uint16_t)v[2], (uint16_t)v[3] };
+			bt_host_params(&p);
+		}
+		bt_host_get_params(&p);
+		if (p.itvl_max)
+			say("bt: asks for interval %u-%u x 1.25 ms, latency %u, timeout %u x 10 ms\n", p.itvl_min, p.itvl_max,
+			    p.latency, p.timeout);
+		else
+			say("bt: asks for no connection parameters\n");
+		return;
+	}
 	if (!strcmp(args, "forget")) {
 		say(bt_store_clear() ? "bt: could not clear the bonds\n" : "bt: bonds cleared\n");
 		return;
@@ -539,7 +571,7 @@ static void cmd_bt(const char *args)
 	}
 	if (*args) {
 		if (!parse_bdaddr(args, addr)) {
-			say("usage: bt [off | status | forget | <bd_addr>]\n");
+			say("usage: bt [off | status | forget | params ... | <bd_addr>]\n");
 			return;
 		}
 		have_addr = true;
@@ -1609,7 +1641,7 @@ static const struct command commands[] = {
 	{ "gpio", "<pin> [= 0|1]", cmd_gpio },
 	{ "ldo", "<n> <uV> | off", cmd_ldo },
 	{ "gauge", "<reg>...", cmd_gauge },
-	{ "bt", "[off | status | forget | <bd_addr>]", cmd_bt },
+	{ "bt", "[off | status | forget | params ... | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
 	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
