@@ -10,7 +10,9 @@
 #include "companion/proto.h"
 #include "companion/link.h"
 #include "companion/companion.h"
+#include "companion/sensors.h"
 #include "board/board.h"
+#include "sensors/hub.h"
 #include "sched.h"
 
 static int failures;
@@ -136,6 +138,8 @@ static uint8_t lram[120], staged[256];
 static unsigned staged_n;
 static int kv_mode = -1;
 static int32_t kv_zone;
+static uint32_t steps = HUB_NONE, tilts, clock_from_ms;
+static bool accel_shared;
 
 uint32_t time_ms(void) { return now_ms; }
 uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
@@ -203,6 +207,17 @@ void power_lend_display(bool on) { power_lent = on; }
 void power_dark_until_wake(void) { darks++; }
 void power_wake(const char *cause) { wakes++; }
 bool power_key(void) { return key_down; }
+void hub_accel_share(bool on) { accel_shared = on; }
+bool hub_accel(int16_t v[3])
+{
+	v[0] = 0, v[1] = -1000, v[2] = 500;
+	return accel_shared;
+}
+uint32_t hub_steps(void) { return steps; }
+uint32_t hub_tilts(void) { return tilts; }
+/* The MCU's clock in µs, which starts over at a reset. */
+uint64_t timer_count(void) { return (uint64_t)(now_ms - clock_from_ms) * 1000; }
+uint32_t timer_hz(void) { return 1000000; }
 
 static void fire(unsigned pin)
 {
@@ -214,10 +229,9 @@ static uint16_t ap_seq = 100;
 
 /* deamonserver's write: dn_int up, the parts once dn_ack is up, and
  * dn_ack low again for a good packet. */
-static void ap_write(uint16_t chan, uint16_t id, const uint8_t *body, unsigned len)
+static void ap_write_env(const uint8_t *env, unsigned n)
 {
-	uint8_t env[WIRE_PAYLOAD_MAX], parts[5][121];
-	unsigned n = wire_wrap(env, sizeof env, chan, id, body, len);
+	uint8_t parts[5][121];
 	unsigned k = ap_write_parts(env, n, ap_seq++, parts);
 	levels[DN_INT] = 1;
 	fire(DN_INT);
@@ -230,16 +244,29 @@ static void ap_write(uint16_t chan, uint16_t id, const uint8_t *body, unsigned l
 	levels[DN_INT] = 0;
 }
 
+static void ap_write(uint16_t chan, uint16_t id, const uint8_t *body, unsigned len)
+{
+	uint8_t env[WIRE_PAYLOAD_MAX];
+	ap_write_env(env, wire_wrap(env, sizeof env, chan, id, body, len));
+}
+
+static void ap_write_sensors(const uint8_t *body, unsigned len)
+{
+	uint8_t env[WIRE_PAYLOAD_MAX];
+	ap_write_env(env, wire_wrap_raw(env, sizeof env, WIRE_CHAN_SENSORS, body, len));
+	companion_pass();
+}
+
 /* The AP reads what up_int offers and answers with a short pulse. */
-static bool ap_take(struct wire_msg *m, uint8_t *copy)
+static unsigned ap_receive(struct wire_msg *m, uint8_t *copy)
 {
 	if (!levels[UP_INT])
-		return false;
+		return 0;
 	struct wire_header h;
 	CHECK(wire_header_get(staged, &h) == WIRE_OK && h.len + WIRE_HEADER <= staged_n);
 	memcpy(copy, staged + WIRE_HEADER, h.len);
 	CHECK(wire_sum(copy, h.len) == h.sum);
-	CHECK(wire_unwrap(copy, h.len, m) && m->framework);
+	CHECK(wire_unwrap(copy, h.len, m));
 	levels[UP_ACK] = 1;
 	fire(UP_ACK);
 	extra_us += 1000;
@@ -247,6 +274,14 @@ static bool ap_take(struct wire_msg *m, uint8_t *copy)
 	fire(UP_ACK);
 	extra_us = 0;
 	CHECK(!levels[UP_INT]);
+	return h.len;
+}
+
+static bool ap_take(struct wire_msg *m, uint8_t *copy)
+{
+	if (!ap_receive(m, copy))
+		return false;
+	CHECK(m->framework);
 	return true;
 }
 
@@ -508,6 +543,174 @@ static void sensor_tests(void)
 	CHECK(wire_wrap_raw(env, n + 3, WIRE_CHAN_SENSORS, out, n) == 0);
 }
 
+static unsigned put_le(uint8_t *p, uint64_t v, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++, v >>= 8)
+		p[i] = (uint8_t)v;
+	return n;
+}
+
+/* The HAL's commands, as in sensor_tests. */
+static void ap_activate(uint32_t handle, bool on, uint64_t time_ns)
+{
+	uint8_t b[20] = { 0x08, 0x03, 0x2a, 0x10, 0x0d };
+	put_le(b + 5, handle, 4);
+	b[9] = 0x10, b[10] = on, b[11] = 0x19;
+	put_le(b + 12, time_ns, 8);
+	ap_write_sensors(b, sizeof b);
+}
+
+static void ap_batch(uint32_t handle, uint64_t period_ns, uint64_t latency_ns)
+{
+	uint8_t b[27] = { 0x08, 0x07, 0x22, 0x17, 0x0d };
+	put_le(b + 5, handle, 4);
+	b[9] = 0x11;
+	put_le(b + 10, period_ns, 8);
+	b[18] = 0x19;
+	put_le(b + 19, latency_ns, 8);
+	ap_write_sensors(b, sizeof b);
+}
+
+static void ap_flush(uint32_t handle)
+{
+	uint8_t b[9] = { 0x08, 0x02, 0x1a, 0x05, 0x0d };
+	put_le(b + 5, handle, 4);
+	ap_write_sensors(b, sizeof b);
+}
+
+/* What the AP has read of the sensor channel so far. */
+static struct {
+	struct ap_event ev[256];
+	unsigned events, reports, most, longest;
+	uint64_t last_time;
+	bool backwards;
+} got;
+
+/* Reads each report as it comes, for ms milliseconds. */
+static void ap_sensors(uint32_t ms)
+{
+	for (uint32_t i = 0; i < ms; i++) {
+		wait_ms(1);
+		struct wire_msg m;
+		uint8_t copy[WIRE_PAYLOAD_MAX];
+		unsigned n = ap_receive(&m, copy);
+		if (!n)
+			continue;
+		CHECK(!m.framework && m.chan == WIRE_CHAN_SENSORS);
+		struct ap_event e[PROTO_SNS_EVENTS];
+		unsigned field1;
+		int k = ap_events(m.body, m.len, e, PROTO_SNS_EVENTS, &field1);
+		CHECK(k > 0 && field1 == 1);
+		for (int j = 0; j < k && got.events < 256; j++) {
+			if (e[j].id != PROTO_SNS_META) {
+				got.backwards |= e[j].time <= got.last_time;
+				got.last_time = e[j].time;
+			}
+			got.ev[got.events++] = e[j];
+		}
+		got.reports++;
+		got.most = (unsigned)k > got.most ? (unsigned)k : got.most;
+		got.longest = n > got.longest ? n : got.longest;
+	}
+}
+
+static void sensor_scenario(void)
+{
+	struct ap_reply a;
+	/* The OOBE and the empty payload the last scenario left. */
+	companion_pass();
+	CHECK(levels[UP_INT]);
+	levels[UP_ACK] = 1;
+	fire(UP_ACK);
+	levels[UP_ACK] = 0;
+	fire(UP_ACK);
+	companion_pass();
+
+	/* The most events in what link_send takes, from the encoder. */
+	struct proto_sns_event e[PROTO_SNS_EVENTS] = { 0 };
+	uint8_t body[PROTO_SNS_REPORT_MAX];
+	unsigned fit = 0;
+	while (fit < PROTO_SNS_EVENTS && 4 + proto_sns_report(body, sizeof body, e, fit + 1) <= LINK_SEND_MAX)
+		fit++;
+	CHECK(fit >= 1 && fit < PROTO_SNS_EVENTS);
+
+	/* 50 Hz asked with a second of latency: the hub's 26 Hz, and the
+	 * full queue of nine goes out in reports that each fit. */
+	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);
+	ap_activate(PROTO_SNS_ACCEL, true, 5000000000ull);
+	CHECK(accel_shared);
+	memset(&got, 0, sizeof got);
+	ap_sensors(8 * 39 - 10);
+	CHECK(got.reports == 0);
+	ap_sensors(20);
+	CHECK(got.events == PROTO_SNS_EVENTS && got.reports == (PROTO_SNS_EVENTS + fit - 1) / fit);
+	CHECK(got.most == fit && got.longest <= LINK_SEND_MAX);
+	CHECK(got.ev[0].id == PROTO_SNS_ACCEL && got.ev[0].time >= 5000000000ull && got.ev[0].words == 4);
+	CHECK(bits_float(got.ev[0].w[1]) == -1000 * 0.00980665f && bits_float(got.ev[0].w[2]) == 500 * 0.00980665f);
+	CHECK(got.ev[1].time - got.ev[0].time == 39000000 && !got.backwards);
+
+	/* A flush is answered after the events queued before it. */
+	memset(&got, 0, sizeof got);
+	ap_sensors(100);
+	CHECK(got.reports == 0);
+	ap_flush(PROTO_SNS_ACCEL);
+	ap_sensors(5);
+	CHECK(got.events >= 3 && got.longest <= LINK_SEND_MAX);
+	CHECK(got.ev[got.events - 1].id == PROTO_SNS_META && got.ev[got.events - 1].w[0] == PROTO_SNS_ACCEL);
+	for (unsigned i = 0; i + 1 < got.events; i++)
+		CHECK(got.ev[i].id == PROTO_SNS_ACCEL);
+
+	/* Without latency every sample goes out on its own; the step
+	 * counter on activation and when it changes. */
+	ap_batch(PROTO_SNS_ACCEL, 20000000, 0);
+	steps = 100;
+	ap_activate(PROTO_SNS_STEP_COUNTER, true, 0);
+	memset(&got, 0, sizeof got);
+	ap_sensors(1000);
+	unsigned counted = 0;
+	for (unsigned i = 0; i < got.events; i++)
+		if (got.ev[i].id == PROTO_SNS_STEP_COUNTER) {
+			counted++;
+			CHECK(bits_float(got.ev[i].w[0]) == 100.0f);
+		}
+	CHECK(counted == 1 && got.events >= 1000 / 39 && got.reports >= got.events - 1);
+	CHECK(companion_next_ms() > 1 && companion_next_ms() <= 39);
+
+	/* A warm reset with the AP keeping the panel keeps the
+	 * subscriptions, and the times go on from the last one sent. */
+	uint64_t last = got.last_time;
+	clock_from_ms = now_ms;
+	sns_start(true);
+	memset(&got, 0, sizeof got);
+	got.last_time = last;
+	ap_sensors(200);
+	CHECK(got.events >= 4 && !got.backwards);
+	/* Any other start drops them. */
+	sns_start(false);
+	CHECK(!accel_shared);
+	memset(&got, 0, sizeof got);
+	ap_sensors(2000);
+	CHECK(got.reports == 0);
+
+	/* Power off drops them once the AP has the 377. */
+	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);
+	ap_activate(PROTO_SNS_ACCEL, true, 0);
+	CHECK(accel_shared);
+	mode_message(374, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF && !accel_shared);
+	memset(&got, 0, sizeof got);
+	ap_sensors(2000);
+	CHECK(got.reports == 0);
+
+	/* The AP's boot drops them too. */
+	ap_activate(PROTO_SNS_ACCEL, true, 0);
+	CHECK(accel_shared);
+	ap_sensors(1);
+	ap_write(1, PROTO_BOOT, NULL, 0);
+	companion_pass();
+	CHECK(!accel_shared);
+}
+
 int main(void)
 {
 	sensor_tests();
@@ -667,6 +870,7 @@ int main(void)
 	CHECK(!proto_powered_up(1u << 0) && !proto_powered_up(1u << 3) && !proto_powered_up(1u << 5 | 1u << 6));
 
 	companion_scenario();
+	sensor_scenario();
 
 	if (failures)
 		printf("companion_test: %d failures\n", failures);

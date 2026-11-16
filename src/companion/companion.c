@@ -14,6 +14,7 @@
 #include "companion/companion.h"
 #include "companion/link.h"
 #include "companion/proto.h"
+#include "companion/sensors.h"
 #include "companion/wire.h"
 
 #define KV_MODE		"ap.mode"
@@ -33,11 +34,12 @@ static bool reply_pending, burst, key_held;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason, reply_mode;
 static int32_t zone_min;
 static uint32_t take_t, burst_t, key_t;
-static uint8_t reply_buf[REPLY_MAX];
+static uint8_t reply_buf[REPLY_MAX], report_buf[LINK_SEND_MAX];
 static unsigned reply_len;
 static int battery = -1;
 static struct {
-	uint32_t messages, work_modes, battery, boot, other, sensors, unknown, bad, replies_lost, replies_failed, escapes;
+	uint32_t messages, work_modes, battery, boot, other, sensors, batch, unknown, bad, replies_lost, replies_failed,
+		escapes;
 } count;
 
 static const char *const mode_names[] = { "normal", "wristband", "power off" };
@@ -67,6 +69,7 @@ void companion_init(void)
 	if (!board->ap_link.up_int)
 		return;
 	link_init();
+	sns_start(boot_lent);
 	ready = true;
 	if (boot_lent) {
 		ap_has_panel = want_ap = true;
@@ -132,17 +135,25 @@ static void enter(unsigned to)
 		mode = to;
 		save_mode = true;
 	}
+	if (to == PROTO_MODE_POWER_OFF)
+		sns_reset();
 	want_ap = to == PROTO_MODE_NORMAL;
 	wake_on_take = to == PROTO_MODE_WRISTBAND;
 	switching = want_ap != ap_has_panel;
 	take_t = time_ms();
 }
 
-/* Where the sensor channels will be served; their layouts are not
- * known yet. */
-static void sensor_data(const struct wire_msg *m)
+/* Channel 5's layout is not known. */
+static void raw_data(const struct wire_msg *m)
 {
-	count.sensors++;
+	if (m->chan == WIRE_CHAN_SENSORS) {
+		count.sensors++;
+		if (!sns_command(m->body, m->len))
+			count.bad++;
+	} else if (m->chan == WIRE_CHAN_BATCH)
+		count.batch++;
+	else
+		count.other++;
 }
 
 static void message(const uint8_t *p, unsigned n)
@@ -155,7 +166,7 @@ static void message(const uint8_t *p, unsigned n)
 		return;
 	}
 	if (!m.framework) {
-		sensor_data(&m);
+		raw_data(&m);
 		return;
 	}
 	int to = proto_mode_of(m.id);
@@ -171,6 +182,7 @@ static void message(const uint8_t *p, unsigned n)
 			count.bad++;
 	} else if (m.id == PROTO_BOOT) {
 		count.boot++;
+		sns_reset();
 		if (proto_boot(m.body, m.len, &t))
 			set_time(&t);
 		else
@@ -224,6 +236,7 @@ static void escape(uint32_t now)
 		kv_set(KV_MODE, &m, 1);
 		save_mode = false;
 	}
+	sns_reset();
 	want_ap = false;
 	wake_on_take = switching = true;
 	take_t = now - TAKE_DELAY_MS;
@@ -262,23 +275,8 @@ void companion_poll(void)
 		link_poll();
 }
 
-void companion_pass(void)
+static void settle(uint32_t now)
 {
-	if (!ready)
-		return;
-	uint32_t now = time_ms();
-	link_poll();
-	uint8_t buf[WIRE_PAYLOAD_MAX];
-	unsigned n;
-	while ((n = link_recv(buf, sizeof buf)))
-		message(buf, n);
-	if (reply_len && link_send(reply_buf, reply_len)) {
-		reply_len = 0;
-		link_poll();
-	}
-	watch_key(now);
-	if (!link_idle())
-		return;
 	if (reply_pending) {
 		reply_pending = false;
 		if (link_sent() == LINK_SENT)
@@ -303,6 +301,32 @@ void companion_pass(void)
 	}
 }
 
+void companion_pass(void)
+{
+	if (!ready)
+		return;
+	uint32_t now = time_ms();
+	link_poll();
+	uint8_t buf[WIRE_PAYLOAD_MAX];
+	unsigned n;
+	while ((n = link_recv(buf, sizeof buf)))
+		message(buf, n);
+	if (reply_len && link_send(reply_buf, reply_len)) {
+		reply_len = 0;
+		link_poll();
+	}
+	watch_key(now);
+	/* A report is queued after these, so that reports do not keep
+	 * them waiting. */
+	if (link_idle())
+		settle(now);
+	sns_pass();
+	if (link_idle() && sns_due() && (n = sns_report(report_buf, sizeof report_buf)) && link_send(report_buf, n)) {
+		sns_sent();
+		link_poll();
+	}
+}
+
 static uint32_t sooner(uint32_t a, uint32_t b) { return a < b ? a : b; }
 
 uint32_t companion_next_ms(void)
@@ -322,7 +346,7 @@ uint32_t companion_next_ms(void)
 	}
 	if (key_held)
 		next = sooner(next, ms_left(key_t, ESCAPE_MS, now));
-	return next;
+	return sooner(next, sns_next_ms(link_idle()));
 }
 
 void companion_status(void (*say)(const char *fmt, ...))
@@ -334,9 +358,10 @@ void companion_status(void (*say)(const char *fmt, ...))
 	say("companion: %s mode, %s before, the %s has the panel%s, zone %ld min, reboot reason %u\n", mode_names[mode],
 	    mode_names[last_mode], ap_has_panel ? "AP" : "watch", boot_lent ? " (kept at the start)" : "", (long)zone_min,
 	    reboot_reason);
-	say("companion: %lu messages: %lu work mode, %lu battery (%d %%), %lu boot, %lu other, %lu sensor, %lu unknown, "
-	    "%lu bad; %lu replies replaced, %lu not taken; %lu taken back with the key\n",
+	say("companion: %lu messages: %lu work mode, %lu battery (%d %%), %lu boot, %lu other, %lu sensor, %lu batch, "
+	    "%lu unknown, %lu bad; %lu replies replaced, %lu not taken; %lu taken back with the key\n",
 	    count.messages, count.work_modes, count.battery, battery, count.boot, count.other, count.sensors,
-	    count.unknown, count.bad, count.replies_lost, count.replies_failed, count.escapes);
+	    count.batch, count.unknown, count.bad, count.replies_lost, count.replies_failed, count.escapes);
+	sns_status(say);
 	link_status(say);
 }

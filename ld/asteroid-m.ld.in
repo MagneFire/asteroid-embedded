@@ -1,13 +1,14 @@
 /* A Cortex-M image: code and constants in flash from IMG_BASE, where the
  * boot loader jumps through the vector table, data copied to SRAM by
- * start.S. SRAM from the bss up holds the UI heap and the stack; the log
- * region above DRAM0_END is never cleared. The Makefile runs this
+ * start.S. SRAM from the bss up holds the UI heap and the stack; the
+ * .kept section and the log region above DRAM0_END are never cleared. The Makefile runs this
  * through the C preprocessor. */
 #include "memmap.h"
 MEMORY
 {
     FLASH (rx)  : ORIGIN = IMG_BASE, LENGTH = IMG_END - IMG_BASE
     SRAM (rwx)  : ORIGIN = SRAM_BASE, LENGTH = DRAM0_END - SRAM_BASE
+    KEPT (rw)   : ORIGIN = KEPT_BASE, LENGTH = KEPT_SIZE
 }
 ENTRY(_start)
 SECTIONS
@@ -45,5 +46,6 @@ SECTIONS
         __stack_svc_top = .;
     } > SRAM
     __ram_end = .;
+    .kept (NOLOAD) : { *(.kept*) } > KEPT
     /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
 }
