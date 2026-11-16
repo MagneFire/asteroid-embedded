@@ -473,6 +473,13 @@ struct board {
 
 	/* The speaker amplifier, addr 0 if there is none. */
 	struct board_i2c speaker;
+
+	/* A microcontroller's link to the application processor beside it:
+	 * the request and acknowledge lines up to the AP and down from it,
+	 * up_int 0 for none. */
+	struct {
+		uint8_t up_int, up_ack, dn_int, dn_ack;
+	} ap_link;
 };
 
 /* The charger limits have to land on a register step: 10 mV from 3.24 V
