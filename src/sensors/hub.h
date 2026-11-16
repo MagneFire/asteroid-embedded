@@ -35,10 +35,15 @@ void hub_profile(const struct hub_profile *p);
 void hub_heart_rate_on(bool on);
 uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);
 bool hub_tilted(void);
+/* The tilts hub_tilted has returned so far, for another reader. */
+uint32_t hub_tilts(void);
 /* Tilt detection, off with the screen on as the vendor has it; false
  * if the hub did not take it, to be tried again. */
 bool hub_tilt_on(bool on);
 void hub_accel_on(bool on);
+/* A second user of the readings: the accelerometer is on while either
+ * wants it. */
+void hub_accel_share(bool on);
 bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);

@@ -153,16 +153,34 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings)
 {
 	return HUB(heart_rate) ? board->hub->heart_rate(status, readings) : HUB_NONE;
 }
-bool hub_tilted(void) { return HUB(tilted) && board->hub->tilted(); }
+static uint32_t tilts;
+bool hub_tilted(void)
+{
+	bool t = HUB(tilted) && board->hub->tilted();
+	tilts += t;
+	return t;
+}
+uint32_t hub_tilts(void) { return tilts; }
 bool hub_tilt_on(bool on)
 {
 	return !HUB(tilt_on) || board->hub->tilt_on(on);
 }
 
-void hub_accel_on(bool on)
+static bool accel_own, accel_shared;
+static void accel_apply(void)
 {
 	if (HUB(accel_on))
-		board->hub->accel_on(on);
+		board->hub->accel_on(accel_own || accel_shared);
+}
+void hub_accel_on(bool on)
+{
+	accel_own = on;
+	accel_apply();
+}
+void hub_accel_share(bool on)
+{
+	accel_shared = on;
+	accel_apply();
 }
 bool hub_accel(int16_t v[3]) { return HUB(accel) && board->hub->accel(v); }
 bool hub_can_sleep(void) { return !HUB(can_sleep) || board->hub->can_sleep(); }

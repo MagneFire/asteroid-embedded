@@ -338,9 +338,10 @@ void app_sensors(uint32_t now)
 		 * the launcher's OrientationSensor turns it, the sensor on
 		 * while the screen is; the always-on face keeps the turn. */
 		bool turn = have_ui && setting_get(SETTING_NIGHTSTAND_ROTATE) && power_nightstand();
-		hub_accel_on(turn && power_awake());
+		bool turning = turn && power_awake();
+		hub_accel_on(turning);
 		int16_t g[3];
-		if (hub_accel(g))
+		if (turning && hub_accel(g))
 			orient_update(&orient, g, now);
 		if (!turn)
 			orient_reset(&orient);
