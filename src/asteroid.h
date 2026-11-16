@@ -225,6 +225,8 @@ bool batt_cable_irq(void);
 uint32_t batt_mv(void);
 int32_t batt_ua(void);
 int32_t batt_avg_ua(void);
+bool batt_ua_aged(void);
+uint32_t batt_ua_age_ms(void);
 const char *batt_status(void);
 bool gauge_model_load(void);
 /* The watch's light sensor (board->light): light_finish gives the lux

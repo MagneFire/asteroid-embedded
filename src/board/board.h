@@ -148,6 +148,8 @@ struct battery_driver {
 	uint32_t (*mv)(void);
 	int32_t (*ua)(void);
 	int32_t (*avg_ua)(void);
+	/* Without avg_ua: how old the ua reading is, UINT32_MAX for none. */
+	uint32_t (*ua_age_ms)(void);
 	const char *(*status)(void);
 };
 

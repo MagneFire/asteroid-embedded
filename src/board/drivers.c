@@ -38,6 +38,8 @@ bool batt_cable_irq(void) { return BATT(cable_irq) && board->battery_driver->cab
 uint32_t batt_mv(void) { return BATT(mv) ? board->battery_driver->mv() : 0; }
 int32_t batt_ua(void) { return BATT(ua) ? board->battery_driver->ua() : 0; }
 int32_t batt_avg_ua(void) { return BATT(avg_ua) ? board->battery_driver->avg_ua() : 0; }
+bool batt_ua_aged(void) { return BATT(ua_age_ms); }
+uint32_t batt_ua_age_ms(void) { return BATT(ua_age_ms) ? board->battery_driver->ua_age_ms() : 0; }
 const char *batt_status(void) { return BATT(status) ? board->battery_driver->status() : "no battery driver"; }
 
 void light_init(void)

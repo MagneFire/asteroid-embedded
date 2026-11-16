@@ -20,12 +20,30 @@ void stats_init(uint32_t start)
 	frames0 = display_frames();
 }
 
+/* A gauge without an average of its own gives a reading that can be
+ * minutes old while asleep, so the line says how old it is. */
+static const char *current(bool now_too)
+{
+	static char s[64];
+	if (!batt_ua_aged()) {
+		if (now_too)
+			snprintf(s, sizeof s, "battery %ld mA, %ld mA average", batt_ua() / 1000, batt_avg_ua() / 1000);
+		else
+			snprintf(s, sizeof s, "%ld mA average", batt_avg_ua() / 1000);
+	} else if (batt_ua_age_ms() == UINT32_MAX) {
+		snprintf(s, sizeof s, "no battery current yet");
+	} else {
+		snprintf(s, sizeof s, "battery %ld mA read %lu s ago", batt_ua() / 1000, batt_ua_age_ms() / 1000);
+	}
+	return s;
+}
+
 static void asleep_line(uint32_t now)
 {
 	uint32_t pc, pcc, pcb;
 	cpu_idle_stats(&pc, &pcc, &pcb);
-	log_printf("power: asleep %lu s, %lu wakeups, %lu/%lu/%lu collapses, %ld mA average\n", (now - last) / 1000,
-		   power_wakeups(), pc, pcc, pcb, batt_avg_ua() / 1000);
+	log_printf("power: asleep %lu s, %lu wakeups, %lu/%lu/%lu collapses, %s\n", (now - last) / 1000, power_wakeups(), pc,
+		   pcc, pcb, current(false));
 	last = now;
 }
 
@@ -51,9 +69,9 @@ void stats_poll(uint32_t now, bool awake)
 		uint32_t slept = power_slept_ms(now);
 		uint32_t pc, pcc, pcb;
 		cpu_idle_stats(&pc, &pcc, &pcb);
-		log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, battery %ld mA, %ld mA average\n",
+		log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, %s\n",
 			   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, power_wakeups(), pc, pcc, pcb,
-			   batt_ua() / 1000, batt_avg_ua() / 1000);
+			   current(true));
 		frame_log();
 #if defined(TEST_HANG)
 		if (now - start_ms >= 2000) {

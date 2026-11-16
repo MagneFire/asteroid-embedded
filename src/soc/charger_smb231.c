@@ -307,6 +307,12 @@ static int32_t smb231_ua(void)
 	return gauge(&g) ? g.ua : 0;
 }
 
+static uint32_t smb231_ua_age_ms(void)
+{
+	struct hub_gauge g;
+	return gauge(&g) ? time_ms() - g.t_ms : UINT32_MAX;
+}
+
 static const char *smb231_status(void)
 {
 	static char s[96];
@@ -331,6 +337,6 @@ const struct battery_driver battery_smb231 = {
 	.cable_irq = smb231_cable_irq,
 	.mv = smb231_mv,
 	.ua = smb231_ua,
-	.avg_ua = smb231_ua,
+	.ua_age_ms = smb231_ua_age_ms,
 	.status = smb231_status,
 };
