@@ -169,9 +169,9 @@ int main(void)
 	CHECK(nanohub_sample(&ev, 0, 4, &ns, &d) && ns == ev.sensor.ref_ns && d[0] == 0x92 && d[1] == 0x10);
 	CHECK(!nanohub_sample(&ev, 1, 4, &ns, &d));
 
-	/* Three accelerometer samples, raw int16, 20 ms (39062 << 9 ns, the low bit is a flag) between. */
+	/* Three accelerometer samples, raw int16 under the raw type, 20 ms (39062 << 9 ns, the low bit is a flag) between. */
 	memset(e, 0, sizeof(e));
-	put32(e, 0x201);
+	put32(e, 0x220);
 	put32(e + 4, 5000);
 	e[12] = 3;
 	e[15] = 1;
@@ -180,7 +180,7 @@ int main(void)
 	e[26] = 2;
 	put32(e + 32, 39062);
 	e[36] = 3;
-	CHECK(nanohub_event(e, 42, &ev) && ev.sensor.type == NANOHUB_SENSOR_ACCEL && ev.sensor.wake && ev.sensor.samples == 3);
+	CHECK(nanohub_event(e, 42, &ev) && ev.sensor.type == NANOHUB_SENSOR_ACCEL_RAW && ev.sensor.wake && ev.sensor.samples == 3);
 	CHECK(nanohub_sample(&ev, 0, 6, &ns, &d) && ns == 5000 && d[0] == 1);
 	CHECK(nanohub_sample(&ev, 1, 6, &ns, &d) && ns == 5000 + ((39062ull & ~1ull) << 9) && d[0] == 2);
 	CHECK(nanohub_sample(&ev, 2, 6, &ns, &d) && ns == 5000 + 2 * ((39062ull & ~1ull) << 9) && d[0] == 3);

@@ -243,7 +243,7 @@ static void sensor_event(const struct nanohub_event *ev)
 			lux = v >= 0 ? (int32_t)(v + 0.5f) : -1;
 		}
 		break;
-	case NANOHUB_SENSOR_ACCEL:
+	case NANOHUB_SENSOR_ACCEL_RAW:
 		if (ev->sensor.header && nanohub_sample(ev, last, 6, &ns, &d)) {
 			memcpy(accel_v, d, 6);
 			have_accel = true;
