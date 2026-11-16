@@ -159,6 +159,12 @@ static void test_weather_media(void)
 	media_write(0x7001, (const uint8_t *)"Title", 5);
 	media_write(0x7006, (const uint8_t *)"\xff", 1);
 	CHECK(!strcmp(media_get()->title, "Title") && media_get()->volume == 100);
+	uint32_t serial = media_serial();
+	media_write(0x7001, (const uint8_t *)"Title", 5);
+	media_write(0x7006, (const uint8_t *)"\x64", 1);
+	CHECK(media_serial() == serial);
+	media_write(0x7001, (const uint8_t *)"Titl", 4);
+	CHECK(media_serial() != serial && !strcmp(media_get()->title, "Titl"));
 	for (int round = 0; round < 20000; round++) {
 		uint8_t p[200];
 		unsigned n = rnd() % sizeof p;

@@ -22,8 +22,11 @@ static void text(char *out, unsigned size, const uint8_t *p, unsigned n)
 	out[k] = 0;
 }
 
+/* The phone can send the same state many times a second while a video
+ * plays; only a change wakes the UI. */
 void media_write(uint16_t chr, const uint8_t *p, unsigned n)
 {
+	struct media was = state;
 	switch (chr) {
 	case 0x7001:
 		text(state.title, sizeof state.title, p, n);
@@ -47,6 +50,9 @@ void media_write(uint16_t chr, const uint8_t *p, unsigned n)
 	default:
 		return;
 	}
+	if (!strcmp(was.title, state.title) && !strcmp(was.album, state.album) && !strcmp(was.artist, state.artist) &&
+	    was.playing == state.playing && was.volume == state.volume)
+		return;
 	serial++;
 	log_printf("media: \"%s\" by \"%s\", %s, volume %d\n", state.title, state.artist, state.playing ? "playing" : "paused",
 		   state.volume);
