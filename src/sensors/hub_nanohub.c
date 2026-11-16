@@ -43,6 +43,7 @@ static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
 static uint32_t steps_today = HUB_NONE, heart_rate = HUB_NONE;
+static unsigned heart_readings;
 /* The other two fields of a heart rate event, not yet understood:
  * logged when they change. */
 static float hr_y, hr_z;
@@ -220,7 +221,7 @@ static void sensor_event(const struct nanohub_event *ev)
 			memcpy(&steps_today, d, 4);
 		break;
 	case NANOHUB_SENSOR_HEART_RATE:
-		if (ev->sensor.header && nanohub_sample(ev, last, 12, &ns, &d)) {
+		for (unsigned i = 0; ev->sensor.header && nanohub_sample(ev, i, 12, &ns, &d); i++) {
 			float bpm;
 			memcpy(&bpm, d, 4);
 			float y, z;
@@ -231,6 +232,8 @@ static void sensor_event(const struct nanohub_event *ev)
 			hr_y = y;
 			hr_z = z;
 			heart_rate = bpm > 0 ? (uint32_t)(bpm + 0.5f) : HUB_NONE;
+			if (heart_rate != HUB_NONE)
+				heart_readings++;
 		}
 		break;
 	case NANOHUB_SENSOR_LIGHT:
@@ -592,6 +595,7 @@ static void nanohub_heart_rate_on(bool on)
 	if (on == hr_on)
 		return;
 	heart_rate = HUB_NONE;
+	heart_readings = 0;
 	if (configure(NANOHUB_SENSOR_HEART_RATE, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, 0))
 		hr_on = on;
 	else
@@ -603,7 +607,7 @@ static uint32_t nanohub_heart_rate(uint8_t *status, unsigned *readings)
 	if (status)
 		*status = 0;
 	if (readings)
-		*readings = heart_rate != HUB_NONE;
+		*readings = hr_on ? heart_readings : 0;
 	return heart_rate;
 }
 
