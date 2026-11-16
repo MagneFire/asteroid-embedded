@@ -26,6 +26,7 @@
 #define SPI_HZ		10000000
 #define GAUGE_MS	60000
 #define LIGHT_RETRY_MS	5000
+#define ACCEL_RETRY_MS	5000
 #define GAUGE_FORCE_MS	20000
 #define READS_PER_POLL	8
 #define LEVEL_MS	100
@@ -37,7 +38,7 @@ enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_SU
 static uint8_t tx[WRITE_PAD + REPLY_BYTES], rx[WRITE_PAD + REPLY_BYTES + MORE_BYTES];
 static uint8_t payload[NANOHUB_PAYLOAD_MAX];
 static uint32_t seq, errors, events, versions[2];
-static bool present, tilt_on, hr_on, light_on, screen_off;
+static bool present, tilt_on, hr_on, accel_on, light_on, screen_off;
 static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
@@ -452,8 +453,7 @@ static void apply_state(void)
 		log_printf("hub: steps row not set\n");
 	tilt_on = want_tilt && configure(NANOHUB_SENSOR_HAND_UP, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
-	if (want_accel)
-		configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_ENABLE, NANOHUB_HZ(10), 0);
+	accel_on = want_accel && configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_ENABLE, NANOHUB_HZ(10), 0);
 	light_on = want_light && configure(NANOHUB_SENSOR_LIGHT, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 }
 
@@ -625,18 +625,32 @@ static bool nanohub_tilt_on(bool on)
 	return true;
 }
 
+/* Asked each pass: a refused change waits ACCEL_RETRY_MS before the
+ * next try, as each one blocks on the hub. */
 static void nanohub_accel_on(bool on)
 {
+	static uint32_t refused_t;
+	static bool refused;
 	want_accel = on;
+	if (on == accel_on)
+		return;
+	uint32_t now = time_ms();
+	if (refused && now - refused_t < ACCEL_RETRY_MS)
+		return;
 	have_accel = false;
-	configure(NANOHUB_SENSOR_ACCEL, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_HZ(10), 0);
+	refused = !configure(NANOHUB_SENSOR_ACCEL, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_HZ(10), 0);
+	refused_t = now;
+	if (!refused)
+		accel_on = on;
 }
 
 static bool nanohub_accel(int16_t v[3])
 {
-	if (have_accel)
-		memcpy(v, accel_v, sizeof accel_v);
-	return have_accel;
+	if (!accel_on || !have_accel)
+		return false;
+	memcpy(v, accel_v, sizeof accel_v);
+	have_accel = false;
+	return true;
 }
 
 /* Not with events waiting: in WFI only a new edge would wake the CPU. */
@@ -677,6 +691,7 @@ static void nanohub_timepiece(void)
 	if (!started)
 		return;
 	want_tilt = want_hr = want_accel = false;
+	tilt_on = hr_on = accel_on = false;
 	if (present) {
 		configure(NANOHUB_SENSOR_HAND_UP, NANOHUB_CMD_DISABLE, 0, 0);
 		configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_DISABLE, 0, 0);
