@@ -77,7 +77,8 @@ SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer
                flash.c adc.c detect.c swdbox.c power_mcu.c absent.c ios.c) \
         src/frame_mcu.c src/board/beluga.c src/display/display_rm69090.c src/input/touch_tma525.c \
         src/input/haptics_aw8624.c src/sensors/hub_lsm6dso.c src/storage/store_flash.c src/storage/none.c \
-        src/bt/bleif.c src/bt/bleif_hci.c src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c
+        src/bt/bleif.c src/bt/bleif_hci.c src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c \
+        src/companion/wire.c src/companion/link.c
 CPU_apollo3 := cortex-m4
 FPU_apollo3 := fpv4-sp-d16
 ISA_apollo3 := -mthumb
@@ -409,6 +410,10 @@ $(BUILD)/test/bleif_test: tests/bleif_test.c src/bt/bleif_proto.c src/bt/apollo3
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c -o $@
 
+$(BUILD)/test/companion_test: tests/companion_test.c src/companion/wire.c src/companion/wire.h
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< src/companion/wire.c -o $@
+
 $(BUILD)/test/swd_test: tests/swd_test.c tools/beluga/swd.c tools/beluga/swd.h
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(filter-out -fno-builtin -include tests/host.h,$(HOST_CFLAGS)) $< tools/beluga/swd.c -o $@
@@ -425,7 +430,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/companion_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -470,6 +475,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/sgx_paint_test
 	$(BUILD)/test/swd_test
 	$(BUILD)/test/bleif_test
+	$(BUILD)/test/companion_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb $(BUILD)/dory.dtb $(BUILD)/catfish.dtb $(BUILD)/swift.dtb
 	$(PYTHON) tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test
