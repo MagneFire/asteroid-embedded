@@ -17,6 +17,7 @@
 #define DCS_COLUMNS	0x2a
 #define DCS_ROWS	0x2b
 #define DCS_WRITE	0x2c
+#define DCS_TEAR_ON	0x35
 #define DCS_IDLE_OFF	0x38
 #define DCS_IDLE_ON	0x39
 #define DCS_PIXELS	0x3a
@@ -34,7 +35,7 @@ struct fb fb;
 
 static uint8_t chunk[2][CHUNK] __attribute__((aligned(4)));
 static unsigned fill, filled;
-static bool started, panel_on, panel_asleep, idle, lost;
+static bool started, panel_on, panel_asleep, idle, lost, lent;
 static uint8_t level = 0xff;
 static uint32_t frames, waits, timeouts, errors;
 static uint16_t win_x, win_y, win_w, win_h, next_y;
@@ -132,9 +133,38 @@ static void stop(void)
 void display_read_id(uint8_t id[3])
 {
 	for (unsigned i = 0; i < 3; i++)
-		if (query((uint8_t)(0xda + i), &id[i], 1))
+		if (lent || query((uint8_t)(0xda + i), &id[i], 1))
 			id[i] = 0;
 }
+
+static void let_go(unsigned pad)
+{
+	if (pad)
+		gpio_config(pad, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+}
+
+static void let_go_lines(void)
+{
+	iom_stop(BUS);
+	let_go(DC);
+	let_go(board->panel.te_gpio);
+	let_go(board->panel.reset_gpio);
+	for (unsigned i = 0; i < ARRAY_SIZE(board->panel.spi_pads); i++)
+		let_go(board->panel.spi_pads[i]);
+}
+
+/* At the start the enables are let go of rather than driven low: the
+ * AP's panel is on. */
+static void let_go_all(void)
+{
+	let_go_lines();
+	for (unsigned i = 0; i < ARRAY_SIZE(board->panel.enable_gpio); i++)
+		let_go(board->panel.enable_gpio[i]);
+}
+
+void display_start_lent(void) { lent = true; }
+
+static void window(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 
 bool display_init(void)
 {
@@ -146,6 +176,12 @@ bool display_init(void)
 	fb.height = fb.panel_height = board->panel.height;
 	fb.stride = 0;
 	fb.buf[0] = fb.buf[1] = NULL;
+	if (lent) {
+		let_go_all();
+		started = panel_asleep = true;
+		log_printf("display: %lux%lu on spi%u, left to the AP\n", fb.width, fb.height, BUS);
+		return true;
+	}
 	uint32_t t0 = time_ms();
 	start();
 	uint8_t id[3];
@@ -290,7 +326,7 @@ void display_sleep(void)
 /* On, but dark until display_show, so a new picture is there first. */
 void display_wake_hidden(void)
 {
-	if (!panel_on) {
+	if (!panel_on && !lent) {
 		uint8_t keep = level;
 		level = 0;
 		start();
@@ -332,6 +368,42 @@ bool display_rest(void)
 }
 
 void display_active(void) {}
+
+/* As the vendor's firmware hands the panel back: the AP's pixel format,
+ * and C4 00 against the C4 80 of the start. */
+static const struct dcs_step handback[] = {
+	{ DCS_PIXELS, 1, 0, { 0x77 } },
+	{ DCS_TEAR_ON, 1, 0, { 0x00 } },
+	{ 0xc4, 1, 0, { 0x00 } },
+};
+
+/* Idle mode and the last window are ours, not the vendor's: undone
+ * first. */
+void display_lend(bool to_ap)
+{
+	if (to_ap == lent)
+		return;
+	lent = to_ap;
+	if (to_ap) {
+		iom_spi_wait(BUS);
+		if (panel_on) {
+			command(DCS_IDLE_OFF, NULL, 0);
+			idle = false;
+			window(0, 0, (uint16_t)fb.width, (uint16_t)fb.height);
+			run(handback, ARRAY_SIZE(handback));
+		}
+		power(false);
+		let_go_lines();
+		panel_on = false;
+		panel_asleep = true;
+		return;
+	}
+	for (const struct board_mcu_pad *p = board->mcu_pads; p && p->func != 0xff; p++)
+		for (unsigned i = 0; i < ARRAY_SIZE(board->panel.spi_pads); i++)
+			if (p->pad == board->panel.spi_pads[i])
+				pad_set(p);
+	iom_spi_init(BUS, board->panel.spi_hz, board->panel.spi_mode);
+}
 
 /* No frame buffer to draw the console into. */
 void fbcon_init(void) {}

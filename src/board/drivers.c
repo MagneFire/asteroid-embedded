@@ -65,10 +65,17 @@ void light_keep(bool on)
 int32_t light_finish(void) { return LIGHT(finish) ? board->light->finish() : -1; }
 
 static const struct touch_driver *touch;
+static bool start_lent;
+
+void touch_start_lent(void) { start_lent = true; }
 
 bool touch_init(void)
 {
 	touch = board->touch;
+	if (start_lent && TOUCH(lend)) {
+		touch->lend(true);
+		return true;
+	}
 	if (TOUCH(init) && touch->init())
 		return true;
 	touch = board->touch_alt;
@@ -84,6 +91,11 @@ void touch_sleep(bool on, bool wakes)
 {
 	if (TOUCH(sleep))
 		touch->sleep(on, wakes);
+}
+void touch_lend(bool to_ap)
+{
+	if (TOUCH(lend))
+		touch->lend(to_ap);
 }
 uint32_t touch_next_ms(void) { return TOUCH(next_ms) ? touch->next_ms() : UINT32_MAX; }
 void touch_stats(uint32_t *attentions, uint32_t *errors)

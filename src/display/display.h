@@ -36,6 +36,13 @@ void display_active(void);
 /* Without a frame buffer: true once after the panel lost its picture, as
  * it does when turned off, so that the next draw is of all of it. */
 bool display_lost(void);
+/* The application processor takes the panel (on): it is handed over as
+ * the AP expects it, its lines let go of, and nothing here drives it
+ * until it is given back (off). */
+void display_lend(bool to_ap);
+/* Before display_init: the AP has the panel already, so nothing is
+ * driven until display_lend(false). */
+void display_start_lent(void);
 
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n);
 /* Commands go out in low power mode while on, as a panel fresh from reset

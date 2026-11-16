@@ -148,6 +148,8 @@ bool haptics_init(void);
 void haptics_play(const uint16_t *on_off_ms, unsigned n);
 void haptics_poll(void);
 bool haptics_busy(void);
+/* Silent while on, as while another processor has the motor's bus. */
+void haptics_hold(bool on);
 void i2c_poll(unsigned bus);
 /* SPI master on a QUP block, mode 0-3 (bit 1 CPOL, bit 0 CPHA), the clock the
  * nearest rate not above hz; pins are mosi, miso, clk. Chip select is the

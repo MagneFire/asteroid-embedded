@@ -36,4 +36,7 @@ uint32_t power_slept_ms(uint32_t now);
  * light that every peek uses in place of the one for the room. */
 int32_t power_backlight_seen(struct backlight *b);
 void power_backlight_fix(const struct backlight *b);
+/* While the application processor has the panel the watch stays
+ * asleep with the screen off. */
+void power_lend_display(bool lent);
 #endif

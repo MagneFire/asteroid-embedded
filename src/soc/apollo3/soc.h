@@ -139,6 +139,8 @@ int iom_spi_read(unsigned bus, unsigned cs, void *p, unsigned n, bool cont);
 int iom_spi_write_start(unsigned bus, unsigned cs, const void *p, unsigned n);
 bool iom_spi_busy(unsigned bus);
 int iom_spi_wait(unsigned bus);
+/* Powers an IOM down; iom_spi_init or i2c_init starts it again. */
+void iom_stop(unsigned bus);
 
 /* The IO slave (ios.c): fn gets the interrupt status, IOS_WRITTEN for a
  * host write of the direct area, IOS_READ for a host read that reached

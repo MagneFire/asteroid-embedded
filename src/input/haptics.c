@@ -2,20 +2,37 @@
  * from the main loop on the watch's motor driver (board->motor). */
 #include "asteroid.h"
 
-static bool ready;
+static bool ready, held, started;
 static const uint16_t *pattern;
 static unsigned steps, step;
 static uint32_t step_t;
 
+/* Held from the start, the driver starts when it is let go. */
 bool haptics_init(void)
 {
+	if (held)
+		return board->motor != NULL;
+	started = true;
 	ready = board->motor && board->motor->init();
 	return ready;
 }
 
+void haptics_hold(bool on)
+{
+	if (on && pattern) {
+		pattern = NULL;
+		board->motor->set(false);
+	}
+	held = on;
+	if (!on && !started && board->motor) {
+		started = true;
+		ready = board->motor->init();
+	}
+}
+
 void haptics_play(const uint16_t *on_off_ms, unsigned n)
 {
-	if (!ready)
+	if (!ready || held)
 		return;
 	if (pattern)
 		board->motor->set(false);

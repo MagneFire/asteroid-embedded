@@ -20,6 +20,12 @@ void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms);
  * more slowly and report only a wake gesture while the screen is off.
  * Without wakes a touch need not wake the watch at all. */
 void touch_sleep(bool on, bool wakes);
+/* The application processor takes the controller (on) or gives it
+ * back (off). */
+void touch_lend(bool to_ap);
+/* Before touch_init: the AP has the controller already, so touch_init
+ * leaves it alone until touch_lend(false). */
+void touch_start_lent(void);
 /* How long until the driver has its own work to do, if it has any. */
 uint32_t touch_next_ms(void);
 #endif

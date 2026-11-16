@@ -54,7 +54,7 @@ static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 #endif
 static const char *wake_cause;
-static bool lit_pending;
+static bool lit_pending, lent;
 static enum { LUX_IDLE, LUX_READING, LUX_WATCHING, LUX_DONE } lux_state;
 static uint32_t lux_t;
 static int32_t lux_seen = -1;
@@ -109,6 +109,11 @@ void power_activity(uint32_t now)
 	frame_busy(now);
 }
 
+void power_lend_display(bool on)
+{
+	lent = on;
+}
+
 void power_keep_awake(bool on)
 {
 	policy.keep_awake = on;
@@ -138,7 +143,7 @@ bool power_nightstand(void)
 
 static enum screen_state screen_wanted(uint32_t now)
 {
-	if (!have_ui)
+	if (!have_ui || lent)
 		return SCREEN_OFF;
 	bool aod = power_policy_aod(power_nightstand(), setting_get(SETTING_NIGHTSTAND_AOD), setting_get(SETTING_AOD));
 	return power_policy_screen(aod, power_policy_peeking(&policy, now), policy.peek_light);
@@ -504,6 +509,10 @@ enum power_change power_update(uint32_t *now_p)
 		wakeups++;
 		/* Keeps the time the cable left, whatever else is asleep. */
 		power_nightstand();
+	}
+	if (lent) {
+		policy.wake_request = policy.charger_wake = policy.peeking = false;
+		policy.sleep_request = policy.awake;
 	}
 	enum power_step step = power_policy_step(&policy, have_display, now);
 	if (step == POWER_STEP_SLEEP) {

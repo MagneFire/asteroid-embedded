@@ -334,6 +334,16 @@ bool iom_spi_busy(unsigned n)
 	return n < BUSES && buses[n].dma && !idle(n);
 }
 
+void iom_stop(unsigned n)
+{
+	if (n >= BUSES || !buses[n].on)
+		return;
+	iom_spi_wait(n);
+	wait_idle(n, 100000);
+	buses[n].on = false;
+	periph_power(PWR_IOM(n), false);
+}
+
 int iom_spi_wait(unsigned n)
 {
 	if (n >= BUSES || !buses[n].dma)

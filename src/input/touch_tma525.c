@@ -20,7 +20,7 @@
 #define BOOT_WAIT_MS	200
 
 static volatile bool attention;
-static bool was_down, asleep;
+static bool was_down, asleep, lent;
 static int last_x, last_y;
 static uint32_t attentions, errors;
 static struct touch pending;
@@ -88,6 +88,8 @@ static bool decode(const uint8_t *r, unsigned n, struct touch *t)
 
 static bool tma_poll(struct touch *t)
 {
+	if (lent)
+		return false;
 	if (have_pending) {
 		*t = pending;
 		have_pending = false;
@@ -120,10 +122,29 @@ static void tma_sleep(bool on, bool wakes)
 	asleep = on;
 }
 
+/* As the vendor's firmware lets go of it: reset and interrupt lines
+ * undriven and without pull. */
+static void tma_lend(bool to_ap)
+{
+	if (to_ap == lent)
+		return;
+	lent = to_ap;
+	if (!to_ap) {
+		tma_init();
+		return;
+	}
+	gpio_irq_enable(GPIO_IRQ, false);
+	gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	gpio_config(GPIO_IRQ, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	attention = have_pending = was_down = false;
+}
+
 static void tma_stats(uint32_t *att, uint32_t *err)
 {
 	*att = attentions;
 	*err = errors;
 }
 
-const struct touch_driver touch_tma525 = { .init = tma_init, .poll = tma_poll, .sleep = tma_sleep, .stats = tma_stats };
+const struct touch_driver touch_tma525 = {
+	.init = tma_init, .poll = tma_poll, .sleep = tma_sleep, .stats = tma_stats, .lend = tma_lend,
+};

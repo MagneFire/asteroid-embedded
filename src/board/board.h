@@ -55,6 +55,9 @@ struct touch_driver {
 	void (*inject)(int x0, int y0, int x1, int y1, uint32_t ms);
 	void (*sleep)(bool on, bool wakes);
 	uint32_t (*next_ms)(void);
+	/* Lets go of the controller for the application processor, or
+	 * takes it back. */
+	void (*lend)(bool to_ap);
 };
 
 struct hub_profile;
@@ -259,6 +262,9 @@ struct board {
 		 * column its picture starts at and the bytes its ID reads. */
 		uint8_t spi_bus, spi_cs, spi_mode, dc_gpio, enable_gpio[2];
 		uint32_t spi_hz;
+		/* The bus's pads, let go of while the application processor
+		 * has the panel. */
+		uint8_t spi_pads[4];
 		uint16_t col_offset;
 		uint8_t id[3];
 	} panel;
