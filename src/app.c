@@ -51,7 +51,7 @@ static int down_x, down_y, last_x, last_y;
 /* For the gesture line: how the reports and the passes kept up while the
  * finger was down, to tell a stall in the touch reports from one in the
  * main loop. */
-static uint32_t drag_errors, drag_reports, drag_last_ms, drag_gap_ms, drag_gap_at, drag_burst, drag_pass_us, drag_woke_ms;
+static uint32_t drag_errors, drag_reports, drag_down_ms, drag_last_ms, drag_gap_ms, drag_gap_at, drag_burst, drag_pass_us, drag_woke_ms;
 static const char *drag_pass_part;
 static bool drag_silent;
 static struct orient orient;
@@ -418,11 +418,11 @@ void app_touch(uint32_t now)
 			drag_reports = drag_gap_ms = drag_gap_at = drag_burst = drag_pass_us = 0;
 			uint32_t att;
 			touch_stats(&att, &drag_errors);
-			drag_last_ms = t.ms;
+			drag_down_ms = drag_last_ms = t.ms;
 			drag_silent = false;
 		} else if (down_seen && t.ms - drag_last_ms > drag_gap_ms) {
 			drag_gap_ms = t.ms - drag_last_ms;
-			drag_gap_at = drag_last_ms - down_t;
+			drag_gap_at = drag_last_ms - drag_down_ms;
 		}
 		drag_reports++;
 		drag_last_ms = t.ms;
@@ -436,7 +436,7 @@ void app_touch(uint32_t now)
 			touch_stats(&att, &err);
 			log_printf("gesture: %s (%d,%d -> %d,%d in %lu ms), %lu ms after wake, %lu reports, %lu touch errors, "
 				   "longest gap %lu ms at %lu ms, up to %lu in a pass, slowest pass %lu us (%s)\n",
-				   g, down_x, down_y, t.x, t.y, now - down_t, down_t - drag_woke_ms, drag_reports, err - drag_errors,
+				   g, down_x, down_y, t.x, t.y, t.ms - drag_down_ms, down_t - drag_woke_ms, drag_reports, err - drag_errors,
 				   drag_gap_ms, drag_gap_at, drag_burst, drag_pass_us, drag_pass_part ? drag_pass_part : "-");
 		}
 		frame_touch_dot(t.down ? t.x : -1, t.y);
@@ -452,7 +452,9 @@ void app_pass(uint32_t now, uint32_t us, const char *part, uint32_t woke_ms)
 		drag_pass_us = us;
 		drag_pass_part = part;
 	}
-	if (!drag_silent && now - drag_last_ms >= 1000) {
+	/* Reports are stamped when they come in, which can be after the
+	 * pass began. */
+	if (!drag_silent && (int32_t)(now - drag_last_ms) >= 1000) {
 		drag_silent = true;
 		log_printf("gesture: no touch report for 1 s while down, %lu reports, slowest pass %lu us (%s)\n", drag_reports,
 			   drag_pass_us, drag_pass_part ? drag_pass_part : "-");
