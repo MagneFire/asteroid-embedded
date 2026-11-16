@@ -86,4 +86,6 @@ bool wire_unwrap(const uint8_t *p, unsigned n, struct wire_msg *m);
 uint16_t wire_reply_chan(uint16_t chan);
 /* A framework message in its envelope; 0 if it does not fit. */
 unsigned wire_wrap(uint8_t *out, unsigned cap, uint16_t chan, uint16_t id, const uint8_t *body, unsigned len);
+/* The same for a body on a channel without message ids. */
+unsigned wire_wrap_raw(uint8_t *out, unsigned cap, uint16_t chan, const uint8_t *body, unsigned len);
 #endif

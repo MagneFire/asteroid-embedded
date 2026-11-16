@@ -137,3 +137,13 @@ unsigned wire_wrap(uint8_t *out, unsigned cap, uint16_t chan, uint16_t id, const
 	memcpy(out + 8, body, len);
 	return 8 + len;
 }
+
+unsigned wire_wrap_raw(uint8_t *out, unsigned cap, uint16_t chan, const uint8_t *body, unsigned len)
+{
+	if (len > WIRE_PAYLOAD_MAX - 4 || cap < 4 + len)
+		return 0;
+	put16(out, chan);
+	put16(out + 2, len);
+	memcpy(out + 4, body, len);
+	return 4 + len;
+}

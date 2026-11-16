@@ -53,4 +53,41 @@ int proto_reply_put(uint8_t *out, unsigned cap, const struct proto_reply *r);
 unsigned proto_reboot_reason(uint32_t reset_status, bool faulted);
 /* Whether the reset status bits say power-on or brown-out. */
 bool proto_powered_up(uint32_t reset_status);
+
+/* The sensor channel: a RequestBody from the AP's sensor HAL, with
+ * fixed32 handles (the Android types) and fixed64 times in ns, and a
+ * ResponseBody of events for it. */
+enum proto_sns_handle {
+	PROTO_SNS_META = 0,
+	PROTO_SNS_ACCEL = 1,
+	PROTO_SNS_STEP_DETECTOR = 18,
+	PROTO_SNS_STEP_COUNTER = 19,
+	PROTO_SNS_WRIST_TILT = 26,
+};
+enum proto_sns_op { PROTO_SNS_FLUSH = 2, PROTO_SNS_ACTIVATE = 3, PROTO_SNS_BATCH = 7 };
+#define PROTO_SNS_EVENTS	9
+#define PROTO_SNS_EVENT_LEN	40u
+#define PROTO_SNS_REPORT_MAX	(2 + PROTO_SNS_EVENTS * PROTO_SNS_EVENT_LEN)
+
+/* time_ns is the AP's elapsedRealtimeNano at an activate. */
+struct proto_sns_cmd {
+	unsigned op;
+	uint32_t handle;
+	bool enable;
+	uint64_t time_ns, period_ns, latency_ns;
+};
+/* False for something malformed or without a payload. */
+bool proto_sns_cmd(const uint8_t *p, unsigned n, struct proto_sns_cmd *c);
+
+/* The HAL copies the four words as they are: x, y and z as floats and
+ * the accuracy, or a scalar in the first. A flush is completed by a
+ * PROTO_SNS_META event with the handle in its first word. */
+struct proto_sns_event {
+	uint32_t handle;
+	uint64_t time_ns;
+	uint32_t word[4];
+};
+uint32_t proto_float_bits(float f);
+/* Its length, 0 if cap is too small. */
+unsigned proto_sns_report(uint8_t *out, unsigned cap, const struct proto_sns_event *e, unsigned n);
 #endif

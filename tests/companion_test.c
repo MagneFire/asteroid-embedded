@@ -376,8 +376,142 @@ static void companion_scenario(void)
 	CHECK(link_send(big, LINK_SEND_MAX));
 }
 
+static uint64_t le(const uint8_t *p, unsigned n)
+{
+	uint64_t v = 0;
+	while (n--)
+		v = v << 8 | p[n];
+	return v;
+}
+
+/* The HAL's decode of a ResponseBody: field 1 a varint, field 2 the
+ * repeated SensorsEvtT (1 fixed32 id, 2 fixed64 time, 3 SensorsRawData
+ * whose field 1 is SensorsVecT, four fixed32). Every field is checked
+ * for its wire type; -1 for anything else. */
+struct ap_event { uint32_t id; uint64_t time; uint32_t w[4]; unsigned words; };
+
+static int ap_vec(const uint8_t *p, unsigned n, struct ap_event *e)
+{
+	for (unsigned i = 0; i < n; i += 5) {
+		unsigned k = p[i] >> 3;
+		if (i + 5 > n || (p[i] & 7) != 5 || k < 1 || k > 4)
+			return -1;
+		e->w[k - 1] = (uint32_t)le(p + i + 1, 4);
+		e->words++;
+	}
+	return 0;
+}
+
+static int ap_events(const uint8_t *p, unsigned n, struct ap_event *ev, unsigned max, unsigned *field1)
+{
+	unsigned count = 0;
+	*field1 = 0;
+	for (unsigned i = 0; i < n;) {
+		uint64_t key = ap_varint(p, n, &i), v = ap_varint(p, n, &i);
+		if (key == (1 << 3 | 0)) {
+			*field1 = (unsigned)v;
+			continue;
+		}
+		if (key != (2 << 3 | 2) || i + v > n || count == max)
+			return -1;
+		struct ap_event *e = &ev[count++];
+		memset(e, 0, sizeof *e);
+		const uint8_t *q = p + i;
+		unsigned m = (unsigned)v, j = 0;
+		i += m;
+		if (m < 14 || q[0] != (1 << 3 | 5) || q[5] != (2 << 3 | 1))
+			return -1;
+		e->id = (uint32_t)le(q + 1, 4);
+		e->time = le(q + 6, 8);
+		j = 14;
+		uint64_t k3 = ap_varint(q, m, &j), l3 = ap_varint(q, m, &j);
+		if (k3 != (3 << 3 | 2) || j + l3 != m)
+			return -1;
+		const uint8_t *r = q + j;
+		unsigned rn = (unsigned)l3, t = 0;
+		uint64_t k1 = ap_varint(r, rn, &t), l1 = ap_varint(r, rn, &t);
+		if (k1 != (1 << 3 | 2) || t + l1 != rn || ap_vec(r + t, (unsigned)l1, e))
+			return -1;
+	}
+	return (int)count;
+}
+
+static float bits_float(uint32_t u)
+{
+	float f;
+	memcpy(&f, &u, sizeof f);
+	return f;
+}
+
+static void sensor_tests(void)
+{
+	/* The HAL's commands, from the spec's templates. */
+	static const uint8_t enable[] = { 0x08, 0x03, 0x2a, 0x10, 0x0d, 0x01, 0x00, 0x00, 0x00, 0x10, 0x01,
+					  0x19, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x00 };
+	struct proto_sns_cmd c;
+	CHECK(proto_sns_cmd(enable, sizeof enable, &c) && c.op == PROTO_SNS_ACTIVATE && c.handle == 1 && c.enable &&
+	      c.time_ns == 0x0066554433221100ull);
+	static const uint8_t disable[] = { 0x08, 0x03, 0x2a, 0x10, 0x0d, 0x13, 0x00, 0x00, 0x00, 0x10, 0x00,
+					   0x19, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	CHECK(proto_sns_cmd(disable, sizeof disable, &c) && c.op == PROTO_SNS_ACTIVATE && c.handle == 19 &&
+	      !c.enable && c.time_ns == 1);
+	/* 20 ms (0x1312d00 ns) a sample, 1 s (0x3b9aca00 ns) of latency. */
+	static const uint8_t batch[] = { 0x08, 0x07, 0x22, 0x17, 0x0d, 0x1a, 0x00, 0x00, 0x00,
+					 0x11, 0x00, 0x2d, 0x31, 0x01, 0x00, 0x00, 0x00, 0x00,
+					 0x19, 0x00, 0xca, 0x9a, 0x3b, 0x00, 0x00, 0x00, 0x00 };
+	CHECK(proto_sns_cmd(batch, sizeof batch, &c) && c.op == PROTO_SNS_BATCH && c.handle == 26 &&
+	      c.period_ns == 20000000 && c.latency_ns == 1000000000 && !c.time_ns);
+	static const uint8_t flush[] = { 0x08, 0x02, 0x1a, 0x05, 0x0d, 0x24, 0x00, 0x01, 0x00 };
+	CHECK(proto_sns_cmd(flush, sizeof flush, &c) && c.op == PROTO_SNS_FLUSH && c.handle == 65572);
+	CHECK(!proto_sns_cmd(flush, sizeof flush - 1, &c));
+	static const uint8_t no_payload[] = { 0x08, 0x02 };
+	CHECK(!proto_sns_cmd(no_payload, sizeof no_payload, &c));
+
+	/* A report of an accelerometer sample, a step count and a flush. */
+	struct proto_sns_event e[3] = {
+		{ PROTO_SNS_ACCEL, 0x0102030405060708ull,
+		  { proto_float_bits(0.5f), proto_float_bits(-9.80665f), proto_float_bits(1.25f), 3 } },
+		{ PROTO_SNS_STEP_COUNTER, 5000000000ull, { proto_float_bits(1234.0f), 0, 0, 0 } },
+		{ PROTO_SNS_META, 7, { PROTO_SNS_ACCEL, 0, 0, 0 } },
+	};
+	uint8_t out[PROTO_SNS_REPORT_MAX];
+	unsigned n = proto_sns_report(out, sizeof out, e, 3);
+	CHECK(n == 2 + 3 * PROTO_SNS_EVENT_LEN);
+	static const uint8_t head[] = { 0x08, 0x01, 0x12, 0x26, 0x0d, 0x01, 0x00, 0x00, 0x00,
+					0x11, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+					0x1a, 0x16, 0x0a, 0x14, 0x0d, 0x00, 0x00, 0x00, 0x3f, 0x15 };
+	CHECK(!memcmp(out, head, sizeof head));
+	struct ap_event a[PROTO_SNS_EVENTS];
+	unsigned field1;
+	CHECK(ap_events(out, n, a, PROTO_SNS_EVENTS, &field1) == 3 && field1 == 1);
+	CHECK(a[0].id == 1 && a[0].time == 0x0102030405060708ull && a[0].words == 4);
+	CHECK(bits_float(a[0].w[0]) == 0.5f && bits_float(a[0].w[1]) == -9.80665f && bits_float(a[0].w[2]) == 1.25f &&
+	      a[0].w[3] == 3);
+	CHECK(a[1].id == 19 && a[1].time == 5000000000ull && (uint64_t)bits_float(a[1].w[0]) == 1234);
+	CHECK(a[2].id == 0 && a[2].w[0] == 1 && a[2].words == 4);
+
+	/* Nine events fit, in what the HAL reads at once with the envelope. */
+	struct proto_sns_event nine[PROTO_SNS_EVENTS];
+	for (unsigned i = 0; i < PROTO_SNS_EVENTS; i++)
+		nine[i] = e[0];
+	n = proto_sns_report(out, sizeof out, nine, PROTO_SNS_EVENTS);
+	CHECK(n == PROTO_SNS_REPORT_MAX && n + 4 <= 512 && n + 4 <= WIRE_PAYLOAD_MAX);
+	CHECK(ap_events(out, n, a, PROTO_SNS_EVENTS, &field1) == PROTO_SNS_EVENTS);
+	CHECK(proto_sns_report(out, sizeof out - 1, nine, PROTO_SNS_EVENTS) == 0);
+
+	/* On channel 4 the body follows the channel and its length. */
+	uint8_t env[4 + PROTO_SNS_REPORT_MAX];
+	unsigned k = wire_wrap_raw(env, sizeof env, WIRE_CHAN_SENSORS, out, n);
+	struct wire_msg m;
+	CHECK(k == 4 + n && env[0] == 4 && env[1] == 0 && env[2] == (uint8_t)n && env[3] == n >> 8);
+	CHECK(wire_unwrap(env, k, &m) && !m.framework && m.chan == 4 && m.len == n && !memcmp(m.body, out, n));
+	CHECK(wire_wrap_raw(env, n + 3, WIRE_CHAN_SENSORS, out, n) == 0);
+}
+
 int main(void)
 {
+	sensor_tests();
+
 	/* The battery preference of the AsteroidOS backend, capacity 100,
 	 * on channel 1 behind id 372. */
 	static const uint8_t body372[] = { 0x08, 0x11, 0x7a, 0x02, 0x10, 0x64 };
