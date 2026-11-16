@@ -35,7 +35,7 @@
 #define LAG_WINDOW_MS 3000
 #define LAG_SLOW_US 50000
 enum { LAG_START, LAG_SCHED, LAG_SENSORS, LAG_EVENTS, LAG_UPDATE, LAG_CHANGED, LAG_CLOCK, LAG_FRAME, LAG_MARKS };
-static uint32_t lag_t[LAG_MARKS], lag_wake[LAG_MARKS], lag_worst[LAG_MARKS], lag_woke, lag_slow, lag_ticks;
+static uint32_t lag_t[LAG_MARKS], lag_wake[LAG_MARKS], lag_worst[LAG_MARKS], lag_woke, lag_slow, lag_ticks, lag_waited;
 static bool lag_open;
 
 static void lag_mark(unsigned i) { lag_t[i] = time_us(); }
@@ -44,8 +44,8 @@ static void lag_take(uint32_t *to)
 {
 	for (unsigned i = 1; i < LAG_MARKS; i++)
 		to[i] = lag_t[i] - lag_t[i - 1];
-	to[LAG_FRAME] -= frame_waited_us();
-	to[0] = lag_t[LAG_FRAME] - lag_t[LAG_START] - frame_waited_us();
+	to[LAG_FRAME] -= lag_waited;
+	to[0] = lag_t[LAG_FRAME] - lag_t[LAG_START] - lag_waited;
 }
 
 static void lag_say(const char *what, const uint32_t *p)
@@ -217,8 +217,11 @@ void main(uint32_t machtype, const void *fdt)
 		lag_mark(LAG_CHANGED);
 		present_clock(now);
 		lag_mark(LAG_CLOCK);
-		if (have_display && power_awake())
+		lag_waited = 0;
+		if (have_display && power_awake()) {
 			frame_draw(now);
+			lag_waited = frame_waited_us();
+		}
 		lag_mark(LAG_FRAME);
 		lag_pass(now, change == POWER_WOKE);
 		bool awake = power_awake();
