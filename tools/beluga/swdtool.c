@@ -68,12 +68,31 @@ enum { FREE, TAKEN, FLASHING };
 static int dev = -1;
 static volatile sig_atomic_t taken, stop;
 static struct termios tty_saved;
-static bool tty_raw, box_attached;
+static bool tty_raw, box_attached, debug_set;
+
+/* While the core is in deep sleep the debug port answers WAIT (EBUSY);
+ * the access is tried again until it wakes. A reconnect is never used
+ * for this: the driver pin-resets the MCU when it finds the port
+ * silent. */
+#define LINK_TRIES	500
+#define LINK_RETRY_US	20000
+
+static int link_xfer(unsigned long cmd, struct mem_arg *a)
+{
+	for (int i = 0; i < LINK_TRIES; i++) {
+		if (ioctl(dev, cmd, a) >= 0)
+			return 0;
+		if (errno != EBUSY)
+			return -1;
+		usleep(LINK_RETRY_US);
+	}
+	return -1;
+}
 
 static int link_read(void *ctx, uint32_t addr, uint32_t *val)
 {
 	struct mem_arg a = { addr, 0 };
-	if (ioctl(dev, MEM_READ, &a) < 0)
+	if (link_xfer(MEM_READ, &a))
 		return -1;
 	*val = a.val;
 	return 0;
@@ -82,7 +101,7 @@ static int link_read(void *ctx, uint32_t addr, uint32_t *val)
 static int link_write(void *ctx, uint32_t addr, uint32_t val)
 {
 	struct mem_arg a = { addr, val };
-	return ioctl(dev, MEM_WRITE, &a) < 0 ? -1 : 0;
+	return link_xfer(MEM_WRITE, &a);
 }
 
 static void link_sleep(void *ctx, uint32_t us) { usleep(us); }
@@ -145,6 +164,8 @@ static int hard_reset(void)
 
 static void cleanup(void)
 {
+	if (debug_set && !taken)
+		swd_write(&swd, 0xe000edf0u, 0xa05f0000u);
 	if (box_attached)
 		swd_write(&swd, SWD_BOX_BASE + 40, 0);
 	if (tty_raw)
@@ -555,10 +576,25 @@ static int read_zone(uint32_t addr, uint32_t bytes, bool ring, FILE *out)
 	return refuse("the log kept changing while it was read");
 }
 
+/* Our firmware stays out of deep sleep while debug is on, as the
+ * vendor's does, so the reads keep working; it is turned off again at
+ * exit. */
+static int debug_on(void)
+{
+	/* A halt request wakes a core asleep in WFI; let go, it sees debug
+	 * on before it sleeps again. */
+	uint32_t v;
+	if (swd_write(&swd, 0xe000edf0u, 0xa05f0003u) || swd_write(&swd, 0xe000edf0u, 0xa05f0001u) ||
+	    swd_read(&swd, 0xe000edf0u, &v) || !(v & 1))
+		return fail("could not turn debug on");
+	debug_set = true;
+	return 0;
+}
+
 static int cmd_log(void)
 {
 	struct box b;
-	if (box_read(&b))
+	if (debug_on() || box_read(&b))
 		return 1;
 	if (read_zone(LOG_BASE, LOG_CONSOLE, true, stdout))
 		return 1;
@@ -603,7 +639,7 @@ static int drain_out(void)
 static int cmd_shell(void)
 {
 	struct box b;
-	if (box_read(&b))
+	if (debug_on() || box_read(&b))
 		return 1;
 	if (!tcgetattr(0, &tty_saved)) {
 		struct termios raw = tty_saved;
