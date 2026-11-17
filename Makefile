@@ -155,6 +155,8 @@ $(BUILD)/%.S.o: %.S
 
 THIRD_PARTY_CFLAGS ?= -w
 $(BUILD)/$(NIMBLE)/%.c.o $(BUILD)/$(MBEDTLS)/%.c.o: CFLAGS += $(THIRD_PARTY_CFLAGS)
+# Included from -isystem headers, which -MMD leaves out of the .d files.
+$(OBJS): $(wildcard src/bt/port/*.h src/bt/port/*/*.h)
 
 $(BUILD)/src/version.c.o $(BUILD)/src/soc/apollo3/ramtest.c.o: $(BUILD)/gitrev.h
 $(BUILD)/src/%.c.o: CFLAGS += -Werror
