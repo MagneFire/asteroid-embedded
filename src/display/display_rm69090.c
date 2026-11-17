@@ -21,7 +21,6 @@
 #define DCS_IDLE_OFF	0x38
 #define DCS_IDLE_ON	0x39
 #define DCS_PIXELS	0x3a
-#define DCS_CONTINUE	0x3c
 #define DCS_BRIGHTNESS	0x51
 #define PIXELS_RGB565	0x75
 #define CHUNK		4092u
@@ -221,18 +220,22 @@ static void window(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 
 static bool open_window, first_chunk;
 
-/* Each chunk goes behind its command with the select held, a memory
- * write for the first of a window and a continue for the rest. */
-static void send(void)
+/* A window is one memory write: its command, then every chunk with the
+ * select held to the last, so the panel takes it as one stream. A chunk
+ * goes out when the next pixel does not fit, so more always follows
+ * it. */
+static void send(bool more)
 {
 	if (!filled)
 		return;
 	iom_spi_wait(BUS);
-	gpio_set(DC, 0);
-	uint8_t cmd = first_chunk ? DCS_WRITE : DCS_CONTINUE;
-	iom_spi_write(BUS, CS, &cmd, 1, true);
-	gpio_set(DC, 1);
-	if (iom_spi_write_start(BUS, CS, chunk[fill], filled))
+	if (first_chunk) {
+		gpio_set(DC, 0);
+		uint8_t cmd = DCS_WRITE;
+		iom_spi_write(BUS, CS, &cmd, 1, true);
+		gpio_set(DC, 1);
+	}
+	if (iom_spi_write_start(BUS, CS, chunk[fill], filled, more))
 		errors++;
 	first_chunk = false;
 	fill ^= 1;
@@ -256,7 +259,7 @@ void ui_draw_begin(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 
 static void begin_run(uint16_t x, uint16_t y, uint16_t w)
 {
-	send();
+	send(false);
 	iom_spi_wait(BUS);
 	win_x = x;
 	win_y = next_y = y;
@@ -272,11 +275,26 @@ void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *px)
 		return;
 	if (!open_window || x != win_x || w != win_w || y != next_y)
 		begin_run((uint16_t)x, (uint16_t)y, (uint16_t)w);
-	for (uint32_t i = 0; i < w; i++) {
+	/* The panel takes each pixel high byte first: two at a time are
+	 * swapped in one word. */
+	for (uint32_t i = 0; i < w;) {
 		if (filled + 2 > CHUNK)
-			send();
-		chunk[fill][filled++] = (uint8_t)(px[i] >> 8);
-		chunk[fill][filled++] = (uint8_t)px[i];
+			send(true);
+		uint8_t *buf = chunk[fill];
+		uint32_t f = filled, n = (CHUNK - f) / 2;
+		if (n > w - i)
+			n = w - i;
+		uint32_t end = i + n;
+		if (!(f & 3))
+			for (; i + 1 < end; i += 2, f += 4) {
+				uint32_t v = px[i] | (uint32_t)px[i + 1] << 16;
+				*(uint32_t *)(buf + f) = (v & 0x00ff00ffu) << 8 | (v >> 8 & 0x00ff00ffu);
+			}
+		for (; i < end; i++, f += 2) {
+			buf[f] = (uint8_t)(px[i] >> 8);
+			buf[f + 1] = (uint8_t)px[i];
+		}
+		filled = f;
 	}
 	next_y = (uint16_t)(y + 1);
 }
@@ -285,7 +303,7 @@ void ui_draw_end(void)
 {
 	if (!panel_on || panel_asleep)
 		return;
-	send();
+	send(false);
 	frames++;
 }
 

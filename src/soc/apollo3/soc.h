@@ -139,7 +139,7 @@ void delay_cycles(uint32_t n);
 int iom_spi_init(unsigned bus, uint32_t hz, unsigned mode);
 int iom_spi_write(unsigned bus, unsigned cs, const void *p, unsigned n, bool cont);
 int iom_spi_read(unsigned bus, unsigned cs, void *p, unsigned n, bool cont);
-int iom_spi_write_start(unsigned bus, unsigned cs, const void *p, unsigned n);
+int iom_spi_write_start(unsigned bus, unsigned cs, const void *p, unsigned n, bool cont);
 bool iom_spi_busy(unsigned bus);
 int iom_spi_wait(unsigned bus);
 /* Powers an IOM down; iom_spi_init or i2c_init starts it again. */

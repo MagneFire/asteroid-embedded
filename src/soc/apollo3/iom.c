@@ -314,7 +314,7 @@ int iom_spi_read(unsigned n, unsigned cs, void *p, unsigned len, bool cont)
 	return xfer(n, cs, 0, 0, 0, true, p, len, cont);
 }
 
-int iom_spi_write_start(unsigned n, unsigned cs, const void *p, unsigned len)
+int iom_spi_write_start(unsigned n, unsigned cs, const void *p, unsigned len, bool cont)
 {
 	if (n >= BUSES || !buses[n].spi || !len || len > MAX_TSIZE || iom_spi_wait(n))
 		return -1;
@@ -324,7 +324,7 @@ int iom_spi_write_start(unsigned n, unsigned cs, const void *p, unsigned len)
 	writel(len, IOM(n, DMATOTCOUNT));
 	writel((uint32_t)(uintptr_t)p, IOM(n, DMATARGADDR));
 	writel(DMA_HIGH | DMA_M2P | DMA_EN, IOM(n, DMACFG));
-	writel(CMD_WRITE | CMD_TSIZE(len) | CMD_CS(cs), IOM(n, CMD));
+	writel(CMD_WRITE | CMD_TSIZE(len) | CMD_CS(cs) | (cont ? CMD_CONT : 0), IOM(n, CMD));
 	buses[n].dma = true;
 	return 0;
 }
