@@ -3246,6 +3246,9 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         }
 
         let color = self.alpha_color(text.color().color());
+        if color.alpha() == 0 {
+            return;
+        }
         let max_size = (geom.size.cast() * self.scale_factor).cast();
 
         // Clip glyphs not only against the global clip but also against the Text's geometry to avoid drawing outside
