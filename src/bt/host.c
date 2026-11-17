@@ -184,7 +184,10 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		mtu = BLE_ATT_MTU_DFLT;
 		state = BT_HOST_CONNECTED;
 		if (!ble_gap_conn_find(conn, &d)) {
+			struct ble_store_key_sec k = { .peer_addr = d.peer_id_addr };
+			struct ble_store_value_sec v;
 			log_addr("connected to", &d.peer_ota_addr);
+			log_addr(ble_store_read_peer_sec(&k, &v) ? "no keys for" : "keys kept for", &d.peer_id_addr);
 			log_printf("bt: interval %u x 1.25 ms, latency %u, timeout %u x 10 ms\n", d.conn_itvl, d.conn_latency,
 				   d.supervision_timeout);
 		}

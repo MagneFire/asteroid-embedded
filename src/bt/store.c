@@ -147,7 +147,10 @@ static int persist(void)
 {
 	bonds.magic = BONDS_MAGIC;
 	bonds.size = sizeof bonds;
-	return backend()->save(KEY_BONDS, &bonds, sizeof bonds) ? BLE_HS_ESTORE_FAIL : 0;
+	if (!backend()->save(KEY_BONDS, &bonds, sizeof bonds))
+		return 0;
+	log_printf("bt: bonds not saved in \"%s\"\n", backend()->name);
+	return BLE_HS_ESTORE_FAIL;
 }
 
 static bool any_addr(const ble_addr_t *a)
@@ -296,6 +299,11 @@ void bt_store_init(void)
 	ble_hs_cfg.store_delete_cb = bond_delete;
 	ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 	log_printf("bt: key store \"%s\", %lu bonds\n", backend()->name, bonds.n_peer);
+	for (uint32_t i = 0; i < bonds.n_peer; i++) {
+		const uint8_t *a = bonds.peer[i].peer_addr.val;
+		log_printf("bt: bond %02x:%02x:%02x:%02x:%02x:%02x (type %u)%s\n", a[5], a[4], a[3], a[2], a[1], a[0],
+			   bonds.peer[i].peer_addr.type, bonds.peer[i].irk_present ? ", irk" : "");
+	}
 }
 
 int bt_store_clear(void)
