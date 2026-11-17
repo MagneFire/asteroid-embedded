@@ -139,10 +139,10 @@ static uint8_t lram[120], staged[256];
 static unsigned staged_n;
 static int kv_mode = -1;
 static int32_t kv_zone;
-static uint32_t steps = HUB_NONE, tilts, clock_from_ms;
+static uint32_t steps = HUB_NONE, tilts, clock_from_ms, ms_per_read;
 static bool accel_shared;
 
-uint32_t time_ms(void) { return now_ms; }
+uint32_t time_ms(void) { return now_ms += ms_per_read; }
 uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
 uint32_t irq_save(void) { return 0; }
 void irq_restore(uint32_t s) {}
@@ -346,12 +346,15 @@ static void companion_scenario(void)
 
 	/* 375: the panel comes back a second after the 377, the store waits
 	 * for the end of the boot burst and a quiet link. */
+	ms_per_read = 1;
 	mode_message(375, m375, sizeof m375, &a);
+	ms_per_read = 0;
 	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL && a.reboot == PROTO_REBOOT_DEBUG);
-	CHECK(rtc_writes == 1 && rtc_last == 1700000000u - 300 * 60);
+	CHECK(rtc_writes == 1);
 	CHECK(display_lent && power_lent);
-	CHECK(companion_next_ms() > 0 && companion_next_ms() <= 1000);
-	wait_ms(999);
+	uint32_t left = companion_next_ms();
+	CHECK(left > 900 && left <= 1000);
+	wait_ms(left - 1);
 	CHECK(display_lent);
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !haptics_held && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);

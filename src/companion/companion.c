@@ -188,7 +188,7 @@ static void work_mode(const struct wire_msg *m, unsigned to)
 }
 
 /* Takes effect once the AP has the 377. */
-static void enter(unsigned to)
+static void enter(unsigned to, uint32_t now)
 {
 	if (to != mode) {
 		last_mode = mode;
@@ -201,7 +201,7 @@ static void enter(unsigned to)
 	want_ap = to == PROTO_MODE_NORMAL;
 	wake_on_take = to == PROTO_MODE_WRISTBAND;
 	switching = want_ap != ap_has_panel;
-	take_t = time_ms();
+	take_t = now;
 }
 
 /* Channel 5's layout is not known. */
@@ -352,7 +352,7 @@ static void settle(uint32_t now)
 	if (reply_pending) {
 		reply_pending = false;
 		if (link_sent() == LINK_SENT)
-			enter(reply_mode);
+			enter(reply_mode, now);
 		else {
 			count.replies_failed++;
 			log_printf("companion: the AP did not take the 377, staying in %s mode\n", mode_names[mode]);
