@@ -1595,6 +1595,7 @@ const G_MASK: u16 = 0b0000_0111_1110_0000;
 const B_MASK: u16 = 0b0000_0000_0001_1111;
 
 impl TargetPixel for Rgb565Pixel {
+    #[inline(always)]
     fn blend(&mut self, color: PremultipliedRgbaColor) {
         let a = (u8::MAX - color.alpha) as u32;
         // convert to 5 bits
