@@ -578,14 +578,12 @@ static int read_zone(uint32_t addr, uint32_t bytes, bool ring, FILE *out)
 
 /* Our firmware stays out of deep sleep while debug is on, as the
  * vendor's does, so the reads keep working; it is turned off again at
- * exit. */
+ * exit. Never a halt: one still pending when the tool gives up lands at
+ * the core's next wake, with nobody left to resume it. */
 static int debug_on(void)
 {
-	/* A halt request wakes a core asleep in WFI; let go, it sees debug
-	 * on before it sleeps again. */
 	uint32_t v;
-	if (swd_write(&swd, 0xe000edf0u, 0xa05f0003u) || swd_write(&swd, 0xe000edf0u, 0xa05f0001u) ||
-	    swd_read(&swd, 0xe000edf0u, &v) || !(v & 1))
+	if (swd_write(&swd, 0xe000edf0u, 0xa05f0001u) || swd_read(&swd, 0xe000edf0u, &v) || !(v & 1))
 		return fail("could not turn debug on");
 	debug_set = true;
 	return 0;
