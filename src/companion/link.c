@@ -259,8 +259,7 @@ void link_poll(void)
 {
 	if (!ready)
 		return;
-	uint32_t now = time_ms(), flags = irq_save();
-	uint32_t gone = now - state_ms;
+	uint32_t flags = irq_save(), now = time_ms(), gone = now - state_ms;
 	if (deaf && now - deaf_ms >= deaf_wait)
 		hear(true);
 	if (state == RX && gone >= LINK_RX_MS) {
@@ -330,9 +329,11 @@ uint32_t link_quiet_ms(void)
 {
 	if (!ready)
 		return UINT32_MAX;
+	uint32_t flags = irq_save(), quiet = time_ms() - active_ms;
 	if (state != IDLE || rx_ready || tx_queued || dn_waiting || (!deaf && gpio_get(DN_INT)))
-		return 0;
-	return time_ms() - active_ms;
+		quiet = 0;
+	irq_restore(flags);
+	return quiet;
 }
 
 static uint32_t state_next_ms(uint32_t now)
@@ -361,11 +362,12 @@ uint32_t link_next_ms(void)
 		return UINT32_MAX;
 	if (rx_ready)
 		return 0;
-	uint32_t now = time_ms(), next = state_next_ms(now);
+	uint32_t flags = irq_save(), now = time_ms(), next = state_next_ms(now);
 	if (deaf) {
 		uint32_t d = ms_left(deaf_ms, deaf_wait, now);
 		next = d < next ? d : next;
 	}
+	irq_restore(flags);
 	return next;
 }
 

@@ -4,6 +4,7 @@
  * goes on and the wake-up lines need nothing of their own. */
 #include "asteroid.h"
 #include "sched.h"
+#include "companion/link.h"
 
 #define SCR_SLEEPDEEP	BIT(2)
 #define MCUCTRL_SIMOBUCK1	(MCUCTRL_BASE + 0x350)
@@ -50,6 +51,9 @@ void cpu_idle(bool deep)
 		kept_light++;
 	}
 	__asm__ volatile("cpsid i" ::: "memory");
+	/* The main loop's tick can be a second away, past the link's
+	 * deadlines. */
+	timer_wake_within(link_next_ms());
 	if (!sched_pending()) {
 		if (deep) {
 			buck_lift();

@@ -627,6 +627,8 @@ static void companion_scenario(void)
 	for (int i = 0; i < LINK_UNFINISHED_MAX; i++) {
 		ap_request();
 		CHECK(levels[DN_ACK] == 1);
+		/* The deadline a light sleep wakes for. */
+		CHECK(link_next_ms() == LINK_RX_MS);
 		levels[DN_INT] = 0;
 		wait_ms(LINK_RX_MS);
 		CHECK(levels[DN_ACK] == 0);

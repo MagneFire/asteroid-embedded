@@ -113,6 +113,16 @@ void timer_set_period(uint32_t ms) { period = ms ? ms : 1; }
 
 void timer_next(uint32_t ms) { compare_in(tick_count(ms)); }
 
+void timer_wake_within(uint32_t ms)
+{
+	if (ms == UINT32_MAX)
+		return;
+	uint32_t n = tick_count(ms), flags = irq_save();
+	if ((int32_t)(readl(SCMPR(0)) - readl(STTMR)) > (int32_t)n)
+		compare_in(n);
+	irq_restore(flags);
+}
+
 static void stimer_irq(void)
 {
 	uint32_t st = readl(STMINTSTAT);

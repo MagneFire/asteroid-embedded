@@ -138,6 +138,8 @@ void pad_set(const struct board_mcu_pad *p);
 void periph_power(uint32_t bits, bool on);
 /* Spins for at least that many core cycles. */
 void delay_cycles(uint32_t n);
+/* Brings the next tick forward to within ms, never later. */
+void timer_wake_within(uint32_t ms);
 
 /* SPI masters on the IOMs: the bus at its rate and SPI mode, then
  * transfers to a chip select of it, the bytes of each call one burst
