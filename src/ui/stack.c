@@ -705,6 +705,9 @@ static unsigned ind_edges(void)
 	return 0;
 }
 
+unsigned stack_edges(void) { return ind_edges(); }
+bool stack_waiting(void) { return pending; }
+
 static void indicators(void)
 {
 	static uint32_t *tex[2];

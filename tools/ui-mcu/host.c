@@ -40,8 +40,8 @@
 static uint16_t frame[H][W];
 static uint32_t now_ms;
 static uint32_t box[4];
-/* What frame_mcu.c would draw under the UI. */
-static struct backdrop backdrop;
+/* What frame_mcu.c would draw around the UI. */
+static struct backdrop backdrop = { .pending = true };
 
 #ifdef EMU
 volatile uint32_t heap_size;
@@ -195,7 +195,8 @@ static void run(uint32_t panel, uint32_t ms)
 	for (uint32_t t = 0; t <= ms; t += 16) {
 		now_ms += 16;
 		ui_tick();
-		flatmesh_mcu_draw(ui_modal() ? UI_PANEL_OVERLAY : panel, &backdrop, false);
+		backdrop.modal = ui_modal();
+		flatmesh_mcu_draw(backdrop.modal ? UI_PANEL_OVERLAY : panel, &backdrop, false);
 	}
 }
 
@@ -248,7 +249,10 @@ static void shot(uint32_t panel, const char *name)
 	emu_screen(name);
 #endif
 	ui_set_screen(panel == UI_PANEL_APP ? UI_PANEL_FACE : panel);
+	/* The edges stack.c gives each screen. */
 	backdrop.screen = panel;
+	backdrop.edges = panel == UI_PANEL_FACE ? 0xf : panel == UI_PANEL_LEFT ? ui_notes_edges() & 0xf
+		: panel == UI_PANEL_RIGHT ? 1 : panel == UI_PANEL_TOP ? 8 : panel == UI_PANEL_BOTTOM ? ui_launcher_edges() & 0xf : 1 | 4;
 	run(panel, 1500);
 	if (!drawn(panel))
 		fail_on("blank", name);
@@ -416,8 +420,11 @@ int main(int argc, char **argv)
 	/* The next minute, moved against burn-in as power.c would at High. */
 	ui_set_clock(10, 9, 30, 3, 12, 11, 2026, 1000060);
 	ui_set_shift(-31, 17);
+	backdrop.dx = 9;
+	backdrop.dy = -4;
 	shot(UI_PANEL_FACE, "aod-minute");
 	ui_set_shift(0, 0);
+	backdrop.dx = backdrop.dy = 0;
 	ui_set_ambient(false);
 	backdrop.ambient = false;
 	ui_set_face(1, false, false);

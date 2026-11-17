@@ -15,6 +15,11 @@
  * screen over and 40 % darker, in 1/256. */
 #define MOVE_PCT	5
 #define DIMMED		154
+#define IND_LOW_W	7.2f
+#define IND_HIGH_W	12.0f
+#define IND_LOW_A	0.6f
+#define IND_HIGH_A	0.8f
+#define IND_FAR		12
 
 typedef uint32_t __attribute__((may_alias)) word;
 
@@ -32,6 +37,12 @@ static struct view {
 	int dx, dy;
 	unsigned shade;
 } view;
+
+struct ind {
+	float x, y, w, a;
+};
+static struct ind inds[4];
+static unsigned n_inds;
 
 void flatmesh_mcu_init(uint32_t width, uint32_t height)
 {
@@ -152,6 +163,74 @@ void ui_line_under(uint32_t y, uint32_t x, uint32_t w, uint16_t *rgb565)
 		fill(rgb565, (int)w, 0);
 }
 
+/* AsteroidOS's indicator: a white square turned 45 degrees, w wide,
+ * its edges smoothed over a pixel, at opacity a. */
+static void ind_line(uint16_t *px, int y, int x0, int w, const struct ind *d)
+{
+	float h = d->w * 0.70710678f, dy = (float)y + 0.5f - d->y;
+	if (dy < 0)
+		dy = -dy;
+	if (dy >= h + 0.5f)
+		return;
+	int from = (int)(d->x - h - 1.0f), to = (int)(d->x + h + 2.0f);
+	if (from < x0)
+		from = x0;
+	if (to > x0 + w)
+		to = x0 + w;
+	for (int x = from; x < to; x++) {
+		float dx = (float)x + 0.5f - d->x;
+		float c = h - ((dx < 0 ? -dx : dx) + dy) + 0.5f;
+		if (c <= 0)
+			continue;
+		unsigned a = (unsigned)((c > 1 ? 1 : c) * d->a * 255.0f + 0.5f), p = px[x - x0];
+		unsigned r = p >> 11, g = p >> 5 & 63, b = p & 31;
+		r += ((31 - r) * a + 127) / 255;
+		g += ((63 - g) * a + 127) / 255;
+		b += ((31 - b) * a + 127) / 255;
+		px[x - x0] = (uint16_t)(r << 11 | g << 5 | b);
+	}
+}
+
+void ui_line_over(uint32_t y, uint32_t x, uint32_t w, uint16_t *rgb565)
+{
+	for (unsigned i = 0; i < n_inds; i++)
+		ind_line(rgb565, (int)y, (int)x, (int)w, &inds[i]);
+}
+
+static void ind_dirty(const struct ind *d)
+{
+	int r = (int)(d->w * 0.70710678f) + 2, x = (int)d->x - r, y = (int)d->y - r;
+	int x1 = x + 2 * r, y1 = y + 2 * r;
+	x = x < 0 ? 0 : x;
+	y = y < 0 ? 0 : y;
+	x1 = x1 > screen_w ? screen_w : x1;
+	y1 = y1 > screen_h ? screen_h : y1;
+	if (x < x1 && y < y1)
+		ui_mark_dirty((uint32_t)x, (uint32_t)y, (uint32_t)(x1 - x), (uint32_t)(y1 - y));
+}
+
+static unsigned indicators(const struct backdrop *b, struct ind *out)
+{
+	unsigned n = 0;
+	if (b->ambient) {
+		if (b->pending)
+			out[n++] = (struct ind){ (float)(IND_FAR + b->dx), (float)(screen_h / 2 + b->dy), IND_HIGH_W, IND_HIGH_A };
+		return n;
+	}
+	if (b->modal)
+		return 0;
+	for (unsigned e = 0; e < 4; e++) {
+		if (!(b->edges & 1u << e))
+			continue;
+		bool kept = e == 0 && b->pending && b->screen == UI_PANEL_FACE;
+		float in = kept ? IND_FAR : 0.0f;
+		out[n++] = (struct ind){ e == 0 ? in : e == 1 ? (float)screen_w - in : (float)(screen_w / 2),
+					 e == 2 ? in : e == 3 ? (float)screen_h - in : (float)(screen_h / 2),
+					 kept ? IND_HIGH_W : IND_LOW_W, kept ? IND_HIGH_A : IND_LOW_A };
+	}
+	return n;
+}
+
 bool flatmesh_mcu_draw(unsigned panel, const struct backdrop *b, bool whole)
 {
 	int mx = screen_w * MOVE_PCT / 100, my = screen_h * MOVE_PCT / 100;
@@ -168,5 +247,19 @@ bool flatmesh_mcu_draw(unsigned panel, const struct backdrop *b, bool whole)
 		n_crossing = next = 0;
 		whole = true;
 	}
+	struct ind now[4];
+	unsigned n = indicators(b, now);
+	bool same = n == n_inds;
+	for (unsigned i = 0; i < n && same; i++)
+		same = now[i].x == inds[i].x && now[i].y == inds[i].y && now[i].w == inds[i].w && now[i].a == inds[i].a;
+	if (!same && !whole) {
+		for (unsigned i = 0; i < n_inds; i++)
+			ind_dirty(&inds[i]);
+		for (unsigned i = 0; i < n; i++)
+			ind_dirty(&now[i]);
+	}
+	for (unsigned i = 0; i < n; i++)
+		inds[i] = now[i];
+	n_inds = n;
 	return ui_draw(panel, whole);
 }

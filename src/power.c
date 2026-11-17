@@ -289,6 +289,7 @@ static void ambient_draw(void)
 	int b = board->panel.lcd ? 0 : setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
 	int range = (setting_get(SETTING_WATCHFACE) ? (ns ? 24 : 14) : (ns ? 20 : 54)) * m / 4;
 	int dx = burn_in_shift(&seed, range), dy = burn_in_shift(&seed, range);
+	int ix = m ? burn_in_shift(&seed, FIN_PX) + FIN_PX : 0, iy = m ? burn_in_shift(&seed, 2 * FIN_PX) : 0;
 #if UI_LAYER_SIZE
 	uint32_t x, y, w, h, *buf = display_backbuffer();
 	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
@@ -307,7 +308,6 @@ static void ambient_draw(void)
 				dcache_clean_range(layer + r * fb.stride + x, w * 4);
 		}
 	}
-	int ix = m ? burn_in_shift(&seed, FIN_PX) + FIN_PX : 0, iy = m ? burn_in_shift(&seed, 2 * FIN_PX) : 0;
 	memset(buf, 0, fb.stride * fb.height * 4);
 	ui_render(buf, fb.stride, dx, dy);
 	stack_indicators_cpu(buf, fb.stride, ix, iy);
@@ -315,7 +315,7 @@ static void ambient_draw(void)
 	display_flip();
 #else
 	ui_set_shift(dx, dy);
-	frame_ambient();
+	frame_ambient(ix, iy);
 #endif
 	if (board->backlight_aod_code)
 		ambient_backlight();

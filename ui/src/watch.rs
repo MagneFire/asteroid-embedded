@@ -1169,6 +1169,8 @@ unsafe extern "C" {
     fn ui_draw_end();
     #[cfg(feature = "mcu")]
     fn ui_line_under(y: u32, x: u32, w: u32, rgb565: *mut u16);
+    #[cfg(feature = "mcu")]
+    fn ui_line_over(y: u32, x: u32, w: u32, rgb565: *mut u16);
 }
 
 /// The display as Slint's line buffer: each run of a line goes out as it is drawn.
@@ -1193,7 +1195,10 @@ impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_>
     fn process_line(&mut self, line: usize, range: core::ops::Range<usize>, render_fn: impl FnOnce(&mut [Self::TargetPixel])) {
         let px = &mut self.line[..range.len()];
         render_fn(px);
-        unsafe { ui_draw_line(line as u32, range.start as u32, px.len() as u32, px.as_ptr() as *const u16) };
+        unsafe {
+            ui_line_over(line as u32, range.start as u32, px.len() as u32, px.as_mut_ptr() as *mut u16);
+            ui_draw_line(line as u32, range.start as u32, px.len() as u32, px.as_ptr() as *const u16);
+        }
     }
 
     fn fill_background(line: usize, start: usize, buffer: &mut [Self::TargetPixel]) -> bool {
@@ -1226,6 +1231,13 @@ fn mark_dirty(window: &MinimalSoftwareWindow, x: u32, y: u32, w: u32, h: u32) {
     ));
     window.renderer().mark_dirty_region(region);
     window.request_redraw();
+}
+
+/// Has the next ui_draw draw this box again, for what the display draws over the UI.
+#[cfg(feature = "mcu")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_mark_dirty(x: u32, y: u32, w: u32, h: u32) {
+    with_ui(|ui| mark_dirty(&ui.panels[0].window, x, y, w, h));
 }
 
 /// Draws what changed on panel, or all of it if whole, straight to the display, showing panel

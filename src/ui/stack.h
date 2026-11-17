@@ -48,6 +48,10 @@ void stack_set_launcher(unsigned layout);
 void stack_indicators(void);
 void stack_pending(bool on);
 void stack_indicators_cpu(uint32_t *buf, uint32_t stride, int dx, int dy);
+/* The edges with an indicator on screen (left, right, top, bottom as
+ * bits 0-3) and whether notifications are waiting. */
+unsigned stack_edges(void);
+bool stack_waiting(void);
 unsigned stack_screen(void);
 bool stack_moving(void);
 bool stack_app_still(void);

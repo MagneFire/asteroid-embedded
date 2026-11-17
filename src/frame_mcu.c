@@ -43,8 +43,9 @@ void frame_draw(uint32_t now)
 			power_activity(now);
 		ui_tick();
 		uint32_t t0 = time_us();
-		struct backdrop b = { .screen = stack_screen() };
-		drawn = flatmesh_mcu_draw(ui_modal() ? UI_PANEL_OVERLAY : b.screen, &b, display_lost());
+		bool modal = ui_modal();
+		struct backdrop b = { .screen = stack_screen(), .modal = modal, .edges = stack_edges(), .pending = stack_waiting() };
+		drawn = flatmesh_mcu_draw(modal ? UI_PANEL_OVERLAY : b.screen, &b, display_lost());
 		if (drawn) {
 			draws++;
 			draw_us += time_us() - t0;
@@ -60,9 +61,9 @@ void frame_draw(uint32_t now)
 	}
 }
 
-void frame_ambient(void)
+void frame_ambient(int dx, int dy)
 {
-	struct backdrop b = { .screen = UI_PANEL_FACE, .ambient = true };
+	struct backdrop b = { .screen = UI_PANEL_FACE, .ambient = true, .pending = stack_waiting(), .dx = dx, .dy = dy };
 	flatmesh_mcu_draw(UI_PANEL_FACE, &b, display_lost());
 }
 

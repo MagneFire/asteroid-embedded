@@ -15,8 +15,9 @@ void frame_wake(void);
 /* Leaves what is on the panel there for a while, for a test picture. */
 void frame_hold(uint32_t ms);
 void frame_draw(uint32_t now);
-/* Without layers: draws the always-on face. */
-void frame_ambient(void);
+/* Without layers: draws the always-on face, the waiting-notification
+ * indicator moved by (dx, dy). */
+void frame_ambient(int dx, int dy);
 /* How long the last frame_draw slept with nothing to draw. */
 uint32_t frame_waited_us(void);
 void frame_log(void);
