@@ -125,6 +125,7 @@ __attribute__((weak)) void ui_app_peek(int px) {}
 __attribute__((weak)) void ui_app_peek_end(bool back) {}
 __attribute__((weak)) int ui_app_depth(void) { return 0; }
 __attribute__((weak)) void ui_set_screen(unsigned panel) {}
+__attribute__((weak)) bool ui_has_panel(unsigned panel) { return true; }
 __attribute__((weak)) unsigned ui_launcher_edges(void) { return 0; }
 __attribute__((weak)) unsigned ui_notes_edges(void) { return 0; }
 __attribute__((weak)) void ui_set_app(int app) {}

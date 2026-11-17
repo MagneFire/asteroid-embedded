@@ -30,6 +30,8 @@ void ui_touch(uint32_t panel, int kind, int x, int y)
 }
 void ui_set_screen(unsigned panel) { screen_set = panel; }
 void ui_set_app(int app) { app_set = app; }
+static bool no_launcher;
+bool ui_has_panel(unsigned panel) { return !(no_launcher && panel == UI_PANEL_BOTTOM); }
 /* Both lists at their start: a swipe back is a swipe, not a scroll. */
 unsigned ui_notes_edges(void) { return 16 | 0xf; }
 static unsigned launcher_edges = 16 | 0xf;
@@ -225,6 +227,42 @@ static void test_app(void)
 	CHECK(stack_screen() == UI_PANEL_FACE);
 }
 
+/* A build without the launcher (the Cortex-M one): a swipe up stays on
+ * the watchface without moving it, the others still go, and an app sent
+ * back from its left edge closes onto the watchface. */
+static void test_no_launcher(void)
+{
+	no_launcher = true;
+	stack_init(W, H, layers[0], W * H);
+	stack_update(stub_ms);
+	touch(UI_TOUCH_DOWN, 200, 350);
+	for (int i = 1; i <= 4; i++) {
+		stub_ms += 10;
+		touch(UI_TOUCH_MOVE, 200, 350 - 50 * i);
+		int x, y;
+		stack_offset(&x, &y);
+		CHECK(x == 0 && y == 0);
+	}
+	stub_ms += 10;
+	touch(UI_TOUCH_UP, 200, 150);
+	settle();
+	CHECK(stack_screen() == UI_PANEL_FACE && screen_set == UI_PANEL_FACE);
+	drag(200, 50, 200, 250, 4);
+	settle();
+	CHECK(stack_screen() == UI_PANEL_TOP);
+	drag(200, 350, 200, 150, 4);
+	settle();
+	CHECK(stack_screen() == UI_PANEL_FACE);
+	stack_open_app();
+	settle();
+	app_set = 1;
+	drag(10, 200, 300, 200, 4);
+	settle();
+	CHECK(app_set == -1 && stack_screen() == UI_PANEL_FACE);
+	no_launcher = false;
+	stack_init(W, H, layers[0], W * H);
+}
+
 static void test_damage(void)
 {
 	uint32_t *face = layers[UI_PANEL_FACE];
@@ -309,6 +347,7 @@ int main(void)
 {
 	test_swipes();
 	test_app();
+	test_no_launcher();
 	test_app_round();
 	test_damage();
 	test_chin();

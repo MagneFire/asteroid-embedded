@@ -31,8 +31,10 @@ const SCREENS: usize = 7;
 #[cfg(feature = "mcu")]
 const SCREENS: usize = 1;
 const NOTES: usize = 1;
+const TODAY: usize = 2;
 const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
+const QUICK: usize = 5;
 const APP: usize = 6;
 
 struct Static<T>(UnsafeCell<T>);
@@ -725,6 +727,34 @@ pub extern "C" fn ui_notes_edges() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_launcher_edges() -> u32 {
     with_ui(|ui| ui.screen(LAUNCHER).global::<Face>().get_launcher_edges() as u32).unwrap_or(4)
+}
+
+mod parts {
+    #![allow(dead_code)]
+    include!(concat!(env!("OUT_DIR"), "/parts.rs"));
+}
+use parts::*;
+
+/// Whether the build has panel's screen.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_has_panel(panel: u32) -> bool {
+    match panel as usize {
+        NOTES => BUILD_NOTES,
+        TODAY => BUILD_TODAY,
+        LAUNCHER => BUILD_LAUNCHER,
+        QUICK => BUILD_QUICK,
+        p => p <= APP,
+    }
+}
+
+/// Whether the build has app.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_has_app(app: i32) -> bool {
+    const APPS: [bool; 12] = [
+        BUILD_MUSIC, BUILD_SETTINGS, BUILD_ALARM, BUILD_TIMER, BUILD_STOPWATCH, BUILD_WEATHER, BUILD_HEART, BUILD_FLASHLIGHT,
+        BUILD_CALCULATOR, BUILD_DIAMONDS, BUILD_AGENDA, BUILD_ACTIVITY,
+    ];
+    usize::try_from(app).ok().and_then(|a| APPS.get(a)).copied().unwrap_or(false)
 }
 
 /// Which panel the stack has on screen, under any app.

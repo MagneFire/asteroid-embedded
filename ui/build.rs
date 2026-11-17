@@ -203,8 +203,8 @@ const MCU_LEAVE_OUT: &[&str] = &[
 ];
 
 /// build.slint: a `Build` global with whether the build has each of PARTS, which the UI checks
-/// where it shows the part; a part left out folds away with its code. Only the Cortex-M build
-/// leaves any out.
+/// where it shows the part; a part left out folds away with its code. parts.rs: the same as Rust
+/// constants (BUILD_MUSIC), for the firmware to ask. Only the Cortex-M build leaves any out.
 fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
     println!("cargo:rerun-if-env-changed=UI_LEAVE_OUT");
     let leave_out: Vec<String> = match std::env::var("UI_LEAVE_OUT") {
@@ -216,11 +216,15 @@ fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
         assert!(PARTS.contains(&part.as_str()), "UI_LEAVE_OUT: no part {part}");
     }
     let mut slint = String::from("export global Build {\n");
+    let mut rust = String::new();
     for part in PARTS {
-        writeln!(slint, "    out property <bool> {part}: {};", !leave_out.iter().any(|p| p == part)).unwrap();
+        let has = !leave_out.iter().any(|p| p == part);
+        writeln!(slint, "    out property <bool> {part}: {has};").unwrap();
+        writeln!(rust, "pub const BUILD_{}: bool = {has};", part.to_uppercase().replace('-', "_")).unwrap();
     }
     slint.push_str("}\n");
     std::fs::write(out.join("build.slint"), slint).unwrap();
+    std::fs::write(out.join("parts.rs"), rust).unwrap();
     leave_out
 }
 

@@ -65,6 +65,7 @@ static int down_x, down_y, prev_x, prev_y, moves, depth;
 static uint32_t anim_t0, fade_t;
 static float fade, vx, vy;
 static struct { int x0, x1; } bands[UI_PANELS][BANDS];
+static bool has[UI_PANELS];
 
 static int rest_x(unsigned s) { return s == UI_PANEL_LEFT ? W : s == UI_PANEL_RIGHT ? -W : 0; }
 static int rest_y(unsigned s) { return s == UI_PANEL_BOTTOM ? -H : s == UI_PANEL_TOP ? H : 0; }
@@ -92,6 +93,8 @@ void stack_init(uint32_t width, uint32_t height, const uint32_t *layer_base, uin
 	H = height;
 	layers = layer_base;
 	layer_px = panel_px;
+	for (unsigned p = 0; p < UI_PANELS; p++)
+		has[p] = ui_has_panel(p);
 	stack_home();
 }
 
@@ -131,10 +134,10 @@ void stack_wake(uint32_t now_ms)
 }
 
 /* The screen an app leaves to: the watchface when closed from the top,
- * the launcher when sent back from the left. */
+ * the launcher when sent back from the left, if the build has one. */
 static void app_under(void)
 {
-	screen = app_top ? UI_PANEL_FACE : UI_PANEL_BOTTOM;
+	screen = app_top || !has[UI_PANEL_BOTTOM] ? UI_PANEL_FACE : UI_PANEL_BOTTOM;
 	fx = rest_x(screen);
 	fy = rest_y(screen);
 }
@@ -199,7 +202,7 @@ static void swipe(int dir)
 	else if ((screen == UI_PANEL_LEFT && dir == LEFT) || (screen == UI_PANEL_RIGHT && dir == RIGHT) ||
 		 (screen == UI_PANEL_BOTTOM && dir == DOWN) || (screen == UI_PANEL_TOP && dir == UP))
 		s = UI_PANEL_FACE;
-	slide_to(s);
+	slide_to(has[s] ? s : screen);
 }
 
 static void drag(int dx, int dy)
@@ -210,8 +213,8 @@ static void drag(int dx, int dy)
 		dx = 0;
 	switch (screen) {
 	case UI_PANEL_FACE:
-		dx = clampi(dx, -W, W);
-		dy = clampi(dy, -H, H);
+		dx = clampi(dx, has[UI_PANEL_RIGHT] ? -W : 0, has[UI_PANEL_LEFT] ? W : 0);
+		dy = clampi(dy, has[UI_PANEL_BOTTOM] ? -H : 0, has[UI_PANEL_TOP] ? H : 0);
 		break;
 	case UI_PANEL_TOP:
 		dx = 0;

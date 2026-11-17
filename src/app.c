@@ -70,6 +70,8 @@ void app_init(const struct app_caps *c)
 
 void app_open(int app)
 {
+	if (!ui_has_app(app))
+		return;
 	struct ui_colors c;
 	frame_app_colors(ui_app_colors(app, &c) ? &c : NULL);
 	/* The calculator starts over each time, as the app does. */
