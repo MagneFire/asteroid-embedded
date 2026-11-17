@@ -14,7 +14,7 @@ linked into the image.
 
     make                # build/asteroid.img for the APQ8026 watches and
                         # build/omap3/asteroid.img for minnow
-    make SOC=omap3      # only minnow's
+    make SOC=omap3      # only minnow's (SOC=qcom only the APQ8026 one)
 
 One image runs on every watch with the same chip. The APQ8026 image holds
 a device tree per watch, each bootloader passes the one with its board-id,

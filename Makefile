@@ -1,6 +1,9 @@
 # asteroid-embedded: bare-metal firmware for smartwatches.
 # make            build/asteroid.img for the APQ8026 watches and
-#                 build/omap3/asteroid.img for the OMAP3630 one
+#                 build/omap3/asteroid.img for the OMAP3630 one, side by side
+# make SOC=qcom   only the APQ8026 image (SOC=omap3 only minnow's)
+# make JOBS=1     one job at a time (default: one per CPU; Make 3.81 ignores
+#                 a -j given on the command line)
 # make run        boot it over fastboot, wait for the reboot, show the log
 # make test       host unit tests of the console, adb and the parsers
 # make textbench  time Agenda-like text repaints on the host, with the UI's Slint
@@ -13,6 +16,13 @@ DTC     ?= dtc
 # The tools carry their Python version and packages for uv (PEP 723).
 PYTHON  ?= $(if $(shell command -v uv),uv run --script,python3)
 TEST    ?=
+
+JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc)
+# Only the top make: a sub-make given its own -j leaves the jobserver.
+# Not with clean, which would run alongside the build.
+ifeq ($(MAKELEVEL)$(filter clean,$(MAKECMDGOALS)),0)
+MAKEFLAGS += -j$(or $(JOBS),1)
+endif
 
 # The SoC the image is for: qcom (APQ8026) or omap3 (OMAP3630). Its code
 # is in src/soc/$(SOC), and each has its own image.
@@ -131,9 +141,11 @@ UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/build ui/fonts ui/icons third_party/slint third_party/asteroid-icons-ion/src 2>/dev/null) \
            src/ui/codes.h
 
-ifeq ($(SOC),qcom)
-all: $(BUILD)/asteroid.img
+ifeq ($(origin SOC),file)
+all: $(BUILD)/asteroid.img omap3
+omap3:
 	$(MAKE) SOC=omap3 build/omap3/asteroid.img
+.PHONY: omap3
 else ifeq ($(SOC),apollo3)
 all: $(BUILD)/asteroid.bin
 else
