@@ -283,7 +283,7 @@ void app_sensors(uint32_t now)
 		 * asteroid-hrm keeps the display from blanking until it has
 		 * a previous rate. */
 		bool measure = have_ui && power_awake() && ui_app_open() == UI_APP_HEART_RATE;
-		unsigned readings;
+		unsigned readings = 0;
 		uint32_t bpm = hub_heart_rate(NULL, &readings);
 		bpm = bpm == HUB_NONE ? 0 : bpm;
 		/* A hub that logs the rate by itself does so every five
