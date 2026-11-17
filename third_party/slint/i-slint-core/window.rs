@@ -1567,6 +1567,7 @@ impl WindowInner {
         );
 
         // Track position
+        #[cfg(feature = "ime")]
         if item.downcast::<crate::items::TextInput>().is_some() {
             self.focus_item_position_tracker.init(
                 (item.downgrade(), self.window_adapter_weak.clone()),

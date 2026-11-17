@@ -56,7 +56,9 @@ default = [
     "std",
     "unicode",
     "shared-parley",
+    "ime",
 ]
+ime = []
 ffi = [
     "dep:static_assertions",
     "i-slint-core-macros/ffi",
@@ -93,6 +95,7 @@ shared-parley = [
 shared-swash = ["dep:swash"]
 parley-complex-scripts = ["parley?/complex-scripts"]
 std = [
+    "ime",
     "euclid/std",
     "once_cell/std",
     "parley?/std",
