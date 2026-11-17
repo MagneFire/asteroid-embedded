@@ -17,6 +17,8 @@
  *   swdtool log                   the firmware's log
  *   swdtool shell                 the firmware's console
  *   swdtool reset                 reset the MCU and let it run
+ *   swdtool probe-reset           reset into a halt before the image, show what the
+ *                                 boot loader leaves, then reset and let it run
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -33,6 +35,7 @@
 
 #define SWD_DEV		"/dev/swd"
 #define CONNECT		0x4400u
+#define RESET_HALT	0x4402u
 #define RESET_RUN	0x4405u
 #define MEM_WRITE	0x40084408u
 #define MEM_READ	0xc0084409u
@@ -281,6 +284,48 @@ static int cmd_probe(void)
 			printf("%-15s %08x  %08x\n", regs[i].name, regs[i].addr, v);
 	}
 	return bad ? 1 : 0;
+}
+
+static uint32_t show(const char *name, uint32_t addr)
+{
+	uint32_t v = 0;
+	if (swd_read(&swd, addr, &v))
+		printf("%-22s %08x  read failed: %s\n", name, addr, strerror(errno));
+	else
+		printf("%-22s %08x  %08x\n", name, addr, v);
+	return v;
+}
+
+/* The halt before the image that the vendor's flasher starts from. The
+ * 0x4004 aliases are read last, as a fault on one can fail the reads
+ * after it. */
+static int cmd_probe_reset(void)
+{
+	if (check_chip())
+		return 1;
+	taken = TAKEN;
+	if (ioctl(dev, RESET_HALT, 0) < 0)
+		return fail("reset into a halt failed");
+	static const struct { const char *name; unsigned reg; } regs[] = { { "PC", 15 }, { "MSP", 17 }, { "xPSR", 16 } };
+	for (unsigned i = 0; i < sizeof regs / sizeof regs[0]; i++) {
+		uint32_t v;
+		if (swd_reg_read(&swd, regs[i].reg, &v))
+			printf("%-22s read failed\n", regs[i].name);
+		else
+			printf("%-22s %08x\n", regs[i].name, v);
+	}
+	show("DHCSR", 0xe000edf0u);
+	show("VTOR", 0xe000ed08u);
+	show("CLKGEN CCTRL", 0x40004018u);
+	show("FLASHWPROT0", 0x400203a0u);
+	show("BOOTLOADER", 0x400201a0u);
+	show("SCRATCH0", 0x400201b0u);
+	show("BOOTLOADER at 0x4004", 0x400401a0u);
+	show("SCRATCH0 at 0x4004", 0x400401b0u);
+	if (hard_reset())
+		return fail("reset failed: the MCU is left halted");
+	taken = FREE;
+	return 0;
 }
 
 /* Both parts are read twice with the core halted and the watchdog off,
@@ -568,7 +613,7 @@ int main(int argc, char **argv)
 {
 	if (argc < 2) {
 		fprintf(stderr, "usage: swdtool probe | backup <dir> | flash <image> | restore <dir>/mcu.flash |\n"
-				"               ramrun <image> <addr> | log | shell | reset\n");
+				"               ramrun <image> <addr> | log | shell | reset | probe-reset\n");
 		return 2;
 	}
 	const char *c = argv[1];
@@ -588,6 +633,8 @@ int main(int argc, char **argv)
 	blocks_probe();
 	if (!strcmp(c, "probe"))
 		return cmd_probe();
+	if (!strcmp(c, "probe-reset"))
+		return cmd_probe_reset();
 	if (!strcmp(c, "backup") && argc == 3)
 		return cmd_backup(argv[2]);
 	if (!strcmp(c, "flash") && argc == 3)
