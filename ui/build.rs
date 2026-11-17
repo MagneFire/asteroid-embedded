@@ -189,16 +189,17 @@ fn main() {
 const PARTS: &[&str] = &[
     "classic", "notes", "today", "launcher", "quick", "music", "settings", "alarm", "timer", "stopwatch", "weather",
     "heart", "flashlight", "calculator", "diamonds", "agenda", "activity", "three-icons", "two-columns", "turbo-list",
-    "three-by-three", "speed-dial",
+    "three-by-three", "speed-dial", "halo",
 ];
 
 /// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
 /// empty for none): what does not fit its flash after the watchface, the notifications and the
-/// quick settings.
+/// quick settings, and the digital face's halo, which is not visible on black and takes four times
+/// as long to draw as the labels themselves.
 const MCU_LEAVE_OUT: &[&str] = &[
     "classic", "launcher", "settings", "music", "alarm", "timer", "stopwatch", "weather", "heart", "flashlight",
     "calculator", "diamonds", "agenda", "activity", "three-icons", "two-columns", "turbo-list", "three-by-three",
-    "speed-dial",
+    "speed-dial", "halo",
 ];
 
 /// build.slint: a `Build` global with whether the build has each of PARTS, which the UI checks

@@ -7,6 +7,7 @@ import { Face } from "face.slint";
 import { Ring } from "ring.slint";
 import { Theme } from "theme.slint";
 import { Icons } from "icons.slint";
+import { Build } from "build.slint";
 
 component Label {
     in property <length> s;
@@ -23,7 +24,7 @@ component Label {
     height: self.s;
 
     // A label centred at (cx, cy) of the face, over a soft black halo.
-    for d[i] in [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]: Text {
+    for d[i] in Build.halo ? [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] : []: Text {
         x: root.s * root.cx - 50 * Theme.unit + d[0] * root.s * 0.006;
         y: root.s * root.cy - 25 * Theme.unit + d[1] * root.s * 0.006;
         width: 100 * Theme.unit;
