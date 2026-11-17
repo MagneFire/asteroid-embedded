@@ -239,7 +239,6 @@ void power_tick(void)
 	}
 }
 
-#if UI_LAYER_SIZE
 static int burn_in_shift(uint32_t *seed, int range)
 {
 	*seed ^= *seed << 13;
@@ -247,7 +246,6 @@ static int burn_in_shift(uint32_t *seed, int range)
 	*seed ^= *seed << 5;
 	return range ? (int)(*seed % (uint32_t)(2 * range + 1)) - range : 0;
 }
-#endif
 
 /* Back to the normal panel state and brightness, for waking or for the
  * panel turning off. */
@@ -284,6 +282,13 @@ static void ambient_draw(void)
 	bool ns = power_nightstand();
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), ns);
 	ui_tick();
+	/* The digital face leaves 54 px (20 px in nightstand mode) around
+	 * it, the classic one 14 px (24 px). */
+	static const uint8_t level[] = { 0, 4, 2, 1 };
+	uint32_t seed = rtc | 1;
+	int b = board->panel.lcd ? 0 : setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
+	int range = (setting_get(SETTING_WATCHFACE) ? (ns ? 24 : 14) : (ns ? 20 : 54)) * m / 4;
+	int dx = burn_in_shift(&seed, range), dy = burn_in_shift(&seed, range);
 #if UI_LAYER_SIZE
 	uint32_t x, y, w, h, *buf = display_backbuffer();
 	static const unsigned panels[] = { UI_PANEL_FACE, UI_PANEL_OVERLAY };
@@ -302,13 +307,6 @@ static void ambient_draw(void)
 				dcache_clean_range(layer + r * fb.stride + x, w * 4);
 		}
 	}
-	/* The digital face leaves 54 px (20 px in nightstand mode) around
-	 * it, the classic one 14 px (24 px). */
-	static const uint8_t level[] = { 0, 4, 2, 1 };
-	uint32_t seed = rtc | 1;
-	int b = board->panel.lcd ? 0 : setting_get(SETTING_BURN_IN), m = level[b < 4 ? b : 0];
-	int range = (setting_get(SETTING_WATCHFACE) ? (ns ? 24 : 14) : (ns ? 20 : 54)) * m / 4;
-	int dx = burn_in_shift(&seed, range), dy = burn_in_shift(&seed, range);
 	int ix = m ? burn_in_shift(&seed, FIN_PX) + FIN_PX : 0, iy = m ? burn_in_shift(&seed, 2 * FIN_PX) : 0;
 	memset(buf, 0, fb.stride * fb.height * 4);
 	ui_render(buf, fb.stride, dx, dy);
@@ -316,6 +314,7 @@ static void ambient_draw(void)
 	rotation_buffer(buf, fb.stride);
 	display_flip();
 #else
+	ui_set_shift(dx, dy);
 	frame_ambient();
 #endif
 	if (board->backlight_aod_code)

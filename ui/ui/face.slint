@@ -64,6 +64,9 @@ export global Face {
     in-out property <int> battery-percent;
     in-out property <bool> charging;
     in-out property <bool> ambient;
+    // How far the always-on face is moved against burn-in (Cortex-M).
+    in-out property <length> shift-x;
+    in-out property <length> shift-y;
     in-out property <int> watchface;
     in-out property <bool> nightstand;
     in-out property <bool> nightstand-on: true;

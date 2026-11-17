@@ -413,6 +413,11 @@ int main(int argc, char **argv)
 	ui_set_ambient(true);
 	backdrop.ambient = true;
 	shot(UI_PANEL_FACE, "aod");
+	/* The next minute, moved against burn-in as power.c would at High. */
+	ui_set_clock(10, 9, 30, 3, 12, 11, 2026, 1000060);
+	ui_set_shift(-31, 17);
+	shot(UI_PANEL_FACE, "aod-minute");
+	ui_set_shift(0, 0);
 	ui_set_ambient(false);
 	backdrop.ambient = false;
 	ui_set_face(1, false, false);

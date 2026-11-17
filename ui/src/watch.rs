@@ -1202,6 +1202,18 @@ impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_>
     }
 }
 
+#[cfg(feature = "mcu")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_shift(dx: i32, dy: i32) {
+    with_ui(|ui| {
+        for screen in &ui.screens {
+            let k = screen.window().scale_factor();
+            screen.global::<Face>().set_shift_x(dx as f32 / k);
+            screen.global::<Face>().set_shift_y(dy as f32 / k);
+        }
+    });
+}
+
 /// Has the next draw of window draw this box again.
 #[cfg(feature = "mcu")]
 fn mark_dirty(window: &MinimalSoftwareWindow, x: u32, y: u32, w: u32, h: u32) {
