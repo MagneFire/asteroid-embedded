@@ -172,7 +172,7 @@ FORCE:
 
 $(BUILD)/%.S.o: %.S
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -MMD -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 
 THIRD_PARTY_CFLAGS ?= -w
@@ -182,9 +182,10 @@ $(OBJS): $(wildcard src/bt/port/*.h src/bt/port/*/*.h)
 
 $(BUILD)/src/version.c.o $(BUILD)/src/soc/apollo3/ramtest.c.o: $(BUILD)/gitrev.h
 $(BUILD)/src/%.c.o: CFLAGS += -Werror
-$(BUILD)/%.c.o: %.c $(BUILD)/config.h
+# Only the files that include config.h depend on it, through their .d files.
+$(BUILD)/%.c.o: %.c | $(BUILD)/config.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -MMD -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(UI_LIB): $(UI_SRCS) $(BUILD)/ui-parts
 	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_$(shell echo $(RUST_TARGET) | tr a-z- A-Z_)_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC)) $(UI_CFG_$(SOC)) $(UI_RUSTFLAGS_$(SOC))" \
