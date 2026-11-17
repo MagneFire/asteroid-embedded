@@ -19,6 +19,6 @@ cflags="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -Os -g -ffree
 arm-none-eabi-gcc $cflags -c src/ui/stack.c -o build/ui-mcu/stack.o
 arm-none-eabi-gcc $cflags -DEMU -DW="${size%x*}" -DH="${size#*x}" \
 	-Wl,--gc-sections -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack -Wl,-T,tools/ui-mcu/emu.ld \
-	tools/ui-mcu/host.c build/ui-mcu/stack.o "$lib" -lgcc -o build/ui-mcu/emu.elf
+	tools/ui-mcu/host.c build/ui-mcu/stack.o src/display/flatmesh_mcu.c "$lib" -lgcc -o build/ui-mcu/emu.elf
 "$python" tools/ui-mcu/emu.py build/ui-mcu/emu.elf "$heap" "$out" "$size" ${PROFILE:+--profile "$PROFILE"} \
 	$([ -n "$PROFILE" ] && [ -f build/apollo3/asteroid.elf ] && echo --layout build/apollo3/asteroid.elf)

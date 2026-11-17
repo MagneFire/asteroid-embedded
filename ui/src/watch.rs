@@ -1167,6 +1167,8 @@ unsafe extern "C" {
     fn ui_draw_line(y: u32, x: u32, w: u32, rgb565: *const u16);
     #[cfg(feature = "mcu")]
     fn ui_draw_end();
+    #[cfg(feature = "mcu")]
+    fn ui_line_under(y: u32, x: u32, w: u32, rgb565: *mut u16);
 }
 
 /// The display as Slint's line buffer: each run of a line goes out as it is drawn.
@@ -1192,6 +1194,11 @@ impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_>
         let px = &mut self.line[..range.len()];
         render_fn(px);
         unsafe { ui_draw_line(line as u32, range.start as u32, px.len() as u32, px.as_ptr() as *const u16) };
+    }
+
+    fn fill_background(line: usize, start: usize, buffer: &mut [Self::TargetPixel]) -> bool {
+        unsafe { ui_line_under(line as u32, start as u32, buffer.len() as u32, buffer.as_mut_ptr() as *mut u16) };
+        true
     }
 }
 

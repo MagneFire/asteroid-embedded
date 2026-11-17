@@ -316,7 +316,7 @@ static void ambient_draw(void)
 	rotation_buffer(buf, fb.stride);
 	display_flip();
 #else
-	ui_draw(UI_PANEL_FACE, display_lost());
+	frame_ambient();
 #endif
 	if (board->backlight_aod_code)
 		ambient_backlight();

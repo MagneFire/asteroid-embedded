@@ -13,5 +13,5 @@ host=${host:-aarch64-apple-darwin}
 (cd ui && PATH="$(dirname "$cargo"):$PATH" "$cargo" build --profile mcu --target "$host" --no-default-features --features mcu \
 	--target-dir "$PWD/target-mcu-host")
 mkdir -p "$out"
-cc -O1 -g -Isrc/soc/qcom -Isrc -o build/ui-mcu/host tools/ui-mcu/host.c src/ui/stack.c "ui/target-mcu-host/$host/mcu/libasteroid_ui.a" -lz
+cc -O1 -g -Isrc/soc/qcom -Isrc -o build/ui-mcu/host tools/ui-mcu/host.c src/ui/stack.c src/display/flatmesh_mcu.c "ui/target-mcu-host/$host/mcu/libasteroid_ui.a" -lz
 build/ui-mcu/host "$heap" "$out"

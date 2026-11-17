@@ -30,6 +30,7 @@
 #include "../../src/gpu/draw.h"
 #include "../../src/ui/ui.h"
 #include "../../src/ui/stack.h"
+#include "../../src/display/flatmesh_mcu.h"
 
 #ifndef W
 #define W 402
@@ -39,6 +40,8 @@
 static uint16_t frame[H][W];
 static uint32_t now_ms;
 static uint32_t box[4];
+/* What frame_mcu.c would draw under the UI. */
+static struct backdrop backdrop;
 
 #ifdef EMU
 volatile uint32_t heap_size;
@@ -192,7 +195,7 @@ static void run(uint32_t panel, uint32_t ms)
 	for (uint32_t t = 0; t <= ms; t += 16) {
 		now_ms += 16;
 		ui_tick();
-		ui_draw(panel, false);
+		flatmesh_mcu_draw(ui_modal() ? UI_PANEL_OVERLAY : panel, &backdrop, false);
 	}
 }
 
@@ -245,6 +248,7 @@ static void shot(uint32_t panel, const char *name)
 	emu_screen(name);
 #endif
 	ui_set_screen(panel == UI_PANEL_APP ? UI_PANEL_FACE : panel);
+	backdrop.screen = panel;
 	run(panel, 1500);
 	if (!drawn(panel))
 		fail_on("blank", name);
@@ -371,6 +375,7 @@ int main(int argc, char **argv)
 #endif
 	if (!ui_init(heap, heap_size, NULL, 0, 0, W, H))
 		fail("ui_init failed");
+	flatmesh_mcu_init(W, H);
 #ifdef EMU
 	emu_shot("init", NULL, ui_heap_peak());
 #else
@@ -406,8 +411,10 @@ int main(int argc, char **argv)
 
 	shot(UI_PANEL_FACE, "face");
 	ui_set_ambient(true);
+	backdrop.ambient = true;
 	shot(UI_PANEL_FACE, "aod");
 	ui_set_ambient(false);
+	backdrop.ambient = false;
 	ui_set_face(1, false, false);
 	shot(UI_PANEL_FACE, "classic");
 	ui_set_face(0, false, false);

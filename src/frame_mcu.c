@@ -3,6 +3,7 @@
  * overlay instead while it is up. A move between screens is a switch. */
 #include "asteroid.h"
 #include "display/display.h"
+#include "display/flatmesh_mcu.h"
 #include "ui/ui.h"
 #include "ui/stack.h"
 #include "power.h"
@@ -12,7 +13,11 @@
 static bool have_ui, woke;
 static uint32_t hold_t, frames, draws, draw_us;
 
-void frame_init(bool ui, bool gpu, uint32_t start) { have_ui = ui; }
+void frame_init(bool ui, bool gpu, uint32_t start)
+{
+	have_ui = ui;
+	flatmesh_mcu_init(board->panel.width, board->panel.height);
+}
 void frame_busy(uint32_t now) {}
 void frame_touch_dot(int x, int y) {}
 void frame_app_colors(const struct ui_colors *c) {}
@@ -38,8 +43,8 @@ void frame_draw(uint32_t now)
 			power_activity(now);
 		ui_tick();
 		uint32_t t0 = time_us();
-		unsigned panel = ui_modal() ? UI_PANEL_OVERLAY : stack_screen();
-		drawn = ui_draw(panel, display_lost());
+		struct backdrop b = { .screen = stack_screen() };
+		drawn = flatmesh_mcu_draw(ui_modal() ? UI_PANEL_OVERLAY : b.screen, &b, display_lost());
 		if (drawn) {
 			draws++;
 			draw_us += time_us() - t0;
@@ -53,6 +58,12 @@ void frame_draw(uint32_t now)
 			wfi();
 		irq_restore(flags);
 	}
+}
+
+void frame_ambient(void)
+{
+	struct backdrop b = { .screen = UI_PANEL_FACE, .ambient = true };
+	flatmesh_mcu_draw(UI_PANEL_FACE, &b, display_lost());
 }
 
 void frame_log(void)
