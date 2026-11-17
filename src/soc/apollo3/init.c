@@ -12,6 +12,11 @@
 #define CACHE_CLKGATE		BIT(10)
 #define CACHE_DATA_CLKGATE	BIT(20)
 #define FPCCR_ASPEN_LSPEN	(3u << 30)
+#define MCUCTRL_SIMOBUCK2	(MCUCTRL_BASE + 0x354)
+#define MCUCTRL_SIMOBUCK3	(MCUCTRL_BASE + 0x358)
+#define MCUCTRL_SIMOBUCK4	(MCUCTRL_BASE + 0x35c)
+#define CHIPREV_A1		0x12u
+#define CHIPREV_B0		0x21u
 
 void mmu_init(void) {}
 void mmu_map(uint32_t from, uint32_t to, uint32_t attr) {}
@@ -30,6 +35,41 @@ void cpu_clock_init(void)
 	writel(CACHE_CLKGATE | CACHE_DATA_CLKGATE | CACHE_1WAY_1024 | CACHE_ICACHE | CACHE_DCACHE, CACHECFG);
 	writel(readl(CACHECFG) | CACHE_ENABLE, CACHECFG);
 	writel(readl(FPU_FPCCR) | FPCCR_ASPEN_LSPEN, FPU_FPCCR);
+}
+
+static void field(uint32_t addr, unsigned shift, unsigned bits, uint32_t v)
+{
+	uint32_t mask = ((1u << bits) - 1) << shift;
+	writel((readl(addr) & ~mask) | v << shift, addr);
+}
+
+/* Vendor's low power init: SIMO buck trims, then the BLE buck as supply,
+ * which the SIMO buck needs to run at all. */
+static void low_power_init(void)
+{
+	uint32_t rev = readl(MCUCTRL_CHIPREV) & 0xff;
+	if (rev >= CHIPREV_B0) {
+		field(MCUCTRL_SIMOBUCK2, 16, 4, 2);
+		field(MCUCTRL_SIMOBUCK2, 20, 4, 3);
+		field(MCUCTRL_SIMOBUCK3, 0, 4, 5);
+		field(MCUCTRL_SIMOBUCK3, 4, 4, 2);
+		field(MCUCTRL_SIMOBUCK3, 8, 4, 6);
+		field(MCUCTRL_SIMOBUCK3, 12, 4, 1);
+		field(MCUCTRL_SIMOBUCK3, 27, 4, 3);
+		field(MCUCTRL_SIMOBUCK4, 0, 4, 3);
+	}
+	if (rev >= CHIPREV_A1)
+		field(MCUCTRL_SIMOBUCK4, 24, 1, 0);
+	if (readl(PWRCTRL_DEVPWRSTATUS) & DEVPWRSTATUS_BLEL)
+		return;
+	writel(readl(MCUCTRL_FEATUREENABLE) | FEATURE_BLEREQ, MCUCTRL_FEATUREENABLE);
+	for (unsigned us = 0; (readl(MCUCTRL_FEATUREENABLE) & FEATURE_BLE) != FEATURE_BLE; us += 10) {
+		if (us >= 10000)
+			return;
+		delay_us(10);
+	}
+	writel(readl(PWRCTRL_SUPPLYSRC) | SUPPLYSRC_BLEBUCKEN, PWRCTRL_SUPPLYSRC);
+	writel(readl(PWRCTRL_MISC) | MISC_MEMVRLPBLE, PWRCTRL_MISC);
 }
 
 void cpu_clock_log(void)
@@ -52,6 +92,7 @@ void soc_init(void)
 	cpu_clock_init();
 	irq_ctrl_init();
 	timer_init();
+	low_power_init();
 	gpio_init();
 	swdbox_init();
 }
