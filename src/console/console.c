@@ -734,7 +734,6 @@ static void hexdump(uint32_t base, const uint8_t *p, uint32_t n)
 		say("%08lx:%s  %s\n", base + i, hex, asc);
 	}
 }
-#endif
 
 static uint32_t bits(const uint32_t *r, unsigned start, unsigned len)
 {
@@ -795,7 +794,6 @@ static void cmd_part(const char *args)
 	}
 }
 
-#ifndef SOC_NO_EMMC
 static void cmd_emmcrd(const char *args)
 {
 	char name[37];
@@ -827,13 +825,13 @@ static void cmd_emmcrd(const char *args)
 	}
 	hexdump(off * EMMC_BLOCK, buf, count * EMMC_BLOCK);
 }
-#endif
 
 static void ls_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
 {
 	static const char types[] = "?-dcbpsl";
 	say("%c %8lu %s\n", type < 8 ? types[type] : '?', ino, name);
 }
+#endif
 
 static struct ext4 *lookup(const char *args, struct ext4_inode *in)
 {
@@ -851,6 +849,7 @@ static struct ext4 *lookup(const char *args, struct ext4_inode *in)
 	return fs;
 }
 
+#ifndef SOC_NO_EMMC
 static void cmd_ls(const char *args)
 {
 	struct ext4_inode in;
@@ -908,6 +907,7 @@ static void cmd_fs(const char *args)
 	}
 	say("AsteroidOS root: %s\n", storage_rootfs_where());
 }
+#endif
 
 static void cmd_store(const char *args)
 {
@@ -1807,14 +1807,14 @@ static const struct command commands[] = {
 #ifdef SOC_WCNSS
 	{ "wcnss", "probe [keep] | hci | bt | stop | status", cmd_wcnss },
 #endif
+#ifndef SOC_NO_EMMC
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
-#ifndef SOC_NO_EMMC
 	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
-#endif
 	{ "fs", "", cmd_fs },
 	{ "ls", "[userdata:]<path>", cmd_ls },
 	{ "cat", "[userdata:]<path>", cmd_cat },
+#endif
 	{ "store", "", cmd_store },
 #ifndef SOC_NO_EMMC
 	{ "emmctest", "", cmd_emmctest },
