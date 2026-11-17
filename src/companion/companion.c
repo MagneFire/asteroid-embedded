@@ -113,6 +113,7 @@ static void set_time(const struct proto_time *t)
 	}
 	rtc_write((uint32_t)(t->time + zone_min * 60));
 	hub_set_time();
+	log_printf("companion: time %ld from the AP, zone %ld min\n", (long)t->time, (long)zone_min);
 }
 
 static bool reply(uint16_t chan, unsigned now_mode, unsigned before)
