@@ -1392,7 +1392,7 @@ fn render_window_frame_by_line(
                     let items = match first_cover {
                         Some(i) => &items[..=i],
                         None => {
-                            line_buffer.fill(background_color);
+                            TargetPixel::fill_slice(line_buffer, background_color);
                             items
                         }
                     };

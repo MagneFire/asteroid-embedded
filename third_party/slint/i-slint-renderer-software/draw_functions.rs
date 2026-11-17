@@ -852,12 +852,16 @@ pub trait TargetPixel: Sized + Copy {
     /// Blend a color to all the pixel in the slice.
     fn blend_slice(slice: &mut [Self], color: PremultipliedRgbaColor) {
         if color.alpha == u8::MAX {
-            slice.fill(Self::from_rgb(color.red, color.green, color.blue))
+            Self::fill_slice(slice, Self::from_rgb(color.red, color.green, color.blue))
         } else {
             for x in slice {
                 Self::blend(x, color);
             }
         }
+    }
+    /// Set all the pixels in the slice to `value`.
+    fn fill_slice(slice: &mut [Self], value: Self) {
+        slice.fill(value)
     }
     /// Create a pixel from the red, gree, blue component in the range 0..=255
     fn from_rgb(red: u8, green: u8, blue: u8) -> Self;
@@ -950,6 +954,23 @@ impl TargetPixel for Rgb565Pixel {
 
         self.0 = ((res >> 21) as u16 & Self::G_MASK)
             | ((res >> 5) as u16 & (Self::R_MASK | Self::B_MASK));
+    }
+
+    /// Two pixels a word, eight a loop: filling them one at a time took most of the time spent on
+    /// an empty line on Cortex-M.
+    fn fill_slice(slice: &mut [Self], value: Self) {
+        let (head, words, tail) = bytemuck::pod_align_to_mut::<Self, u32>(slice);
+        head.fill(value);
+        tail.fill(value);
+        let pair = value.0 as u32 * 0x1_0001;
+        let mut chunks = words.chunks_exact_mut(4);
+        for c in &mut chunks {
+            c[0] = pair;
+            c[1] = pair;
+            c[2] = pair;
+            c[3] = pair;
+        }
+        chunks.into_remainder().fill(pair);
     }
 
     fn from_rgb(r: u8, g: u8, b: u8) -> Self {
