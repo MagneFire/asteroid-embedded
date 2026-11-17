@@ -26,6 +26,16 @@ static const struct board_mcu_pad pads[] = {
 	{ 0, 0xff, 0 },
 };
 
+/* The AFE4900's SPI on IOM2, set only while it is on: MISO, SCK, MOSI
+ * and its chip select 3 on pad 34. */
+static const struct board_mcu_pad hr_pads[] = {
+	{ 25, 5, PAD_INPUT },
+	{ 27, 5, PAD_STRONG },
+	{ 28, 5, PAD_STRONG },
+	{ 34, 1, PAD_NCE(2) },
+	{ 0, 0xff, 0 },
+};
+
 /* On IOM0 with the touch controller, left running by the vendor's
  * firmware: the SX932x is reset, the TSL258x light sensor's power bit
  * and the LPS22HH barometer's data rate and one-shot are cleared. */
@@ -76,16 +86,18 @@ static const struct dcs_step panel_on_41[] = {
  * reference 7.2 V. Keys on pads 15 (upper, power) and 38; 38 is also
  * the PMIC's power key and 15 the AP's fastboot key, so neither is ever
  * driven. The LSM6DSO accelerometer is alone on IOM3's I2C (SCL pad 42,
- * SDA pad 43), its INT1 on pad 13. The application processor's link is the IO slave
+ * SDA pad 43), its INT1 on pad 13. The AFE4900 heart rate front end is
+ * on IOM2 at 4 MHz, mode 0: supply pad 31, reset 19, ADC_RDY 18. The application processor's link is the IO slave
  * on pads 0-3 with request and acknowledge lines: up to the AP on 29 and
  * 33, down from it on 30 and 32. */
 #define BELUGA_COMMON                                                                                                  \
-	.mcu_pads = pads, .heart_rate = false,                                                                         \
+	.mcu_pads = pads, .heart_rate = true,                                                                         \
 	.chips_off = { { .bus = 0, .sda = 6, .scl = 5, .func = 0 }, chips_off },                                       \
 	.battery_driver = &battery_adc, .battery_adc = { .pad = 35, .func = 0, .channel = 7, .mv_full = 7200 },        \
 	.key_gpio = { 15, 38 }, .input_only = { 15, 38 },                                                              \
 	.touch = &touch_tma525,                                                                                        \
 	.hub = &hub_lsm6dso, .hub_pins = { .i2c = { .bus = 3, .sda = 43, .scl = 42, .func = 4, .addr = 0x6a }, .irq = 13 }, \
+	.hr_pins = { .pads = hr_pads, .spi_bus = 2, .spi_cs = 3, .spi_hz = 4000000, .power = 31, .reset = 19, .irq = 18 }, \
 	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x5a }, .enable = 26 }, \
 	.ap_link = { .up_int = 29, .up_ack = 33, .dn_int = 30, .dn_ack = 32, .own_gpio = 36, .release_gpio = 14 }, \
 	.ble_gpio = 4

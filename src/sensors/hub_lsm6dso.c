@@ -6,6 +6,7 @@
  * the screen. */
 #include "asteroid.h"
 #include "sensors/hub.h"
+#include "sensors/afe4900.h"
 
 #define BUS		(board->hub_pins.i2c.bus)
 #define ADDR		(board->hub_pins.i2c.addr)
@@ -130,6 +131,7 @@ static void read_steps(void)
  * whatever became of the edge. */
 static void lsm_poll(void)
 {
+	afe4900_poll();
 	if (!ready || (!irq_seen && !(tilt_wanted && gpio_get(IRQ))))
 		return;
 	irq_seen = false;
@@ -174,13 +176,14 @@ static bool lsm_accel(int16_t v[3])
 	return true;
 }
 
-static bool lsm_can_sleep(void) { return !irq_seen; }
+static bool lsm_can_sleep(void) { return !irq_seen && afe4900_can_sleep(); }
 static void lsm_sleep(bool asleep) {}
 
 static void lsm_status(void (*say)(const char *fmt, ...))
 {
 	say("hub: LSM6DSO %s, %lu steps, tilt %s, %lu errors\n", ready ? "up" : "absent", steps,
 	    tilt_wanted ? "on" : "off", errors);
+	afe4900_status(say);
 }
 
 static int lsm_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
@@ -200,5 +203,5 @@ static int lsm_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, 
 const struct hub_driver hub_lsm6dso = {
 	.init = lsm_init, .poll = lsm_poll, .steps = lsm_steps, .tilted = lsm_tilted, .tilt_on = lsm_tilt_on,
 	.accel_on = lsm_accel_on, .accel = lsm_accel, .can_sleep = lsm_can_sleep, .sleep = lsm_sleep,
-	.status = lsm_status, .raw = lsm_raw,
+	.status = lsm_status, .raw = lsm_raw, .heart_rate_on = afe4900_on, .heart_rate = afe4900_rate,
 };

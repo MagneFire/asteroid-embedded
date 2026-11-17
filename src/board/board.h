@@ -464,6 +464,14 @@ struct board {
 	} hub_pins;
 	/* Which of the M4 hub's firmwares the watch has. */
 	const struct m4_variant *hub_variant;
+	/* A heart rate front end on SPI beside the hub: the bus, chip
+	 * select and rate, the pads set while it is on (ended by a
+	 * function of 0xff), its supply, reset and data ready lines. */
+	struct {
+		const struct board_mcu_pad *pads;
+		uint8_t spi_bus, spi_cs, power, reset, irq;
+		uint32_t spi_hz;
+	} hr_pins;
 
 	const struct backlight_driver *backlight;
 	struct {
