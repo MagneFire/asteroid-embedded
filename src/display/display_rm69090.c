@@ -269,6 +269,11 @@ static void begin_run(uint16_t x, uint16_t y, uint16_t w)
 	first_chunk = open_window = true;
 }
 
+static inline uint32_t swap16(uint32_t v)
+{
+	return (v & 0x00ff00ffu) << 8 | (v >> 8 & 0x00ff00ffu);
+}
+
 void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *px)
 {
 	if (!panel_on || panel_asleep || !w || x + w > fb.width || y >= fb.height)
@@ -285,11 +290,22 @@ void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *px)
 		if (n > w - i)
 			n = w - i;
 		uint32_t end = i + n;
-		if (!(f & 3))
-			for (; i + 1 < end; i += 2, f += 4) {
-				uint32_t v = px[i] | (uint32_t)px[i + 1] << 16;
-				*(uint32_t *)(buf + f) = (v & 0x00ff00ffu) << 8 | (v >> 8 & 0x00ff00ffu);
+		if (!(f & 3)) {
+			/* px is only two-byte aligned; the M4 loads it a word
+			 * at a time all the same. */
+			for (; i + 3 < end; i += 4, f += 8) {
+				uint32_t a, b;
+				__builtin_memcpy(&a, px + i, 4);
+				__builtin_memcpy(&b, px + i + 2, 4);
+				*(uint32_t *)(buf + f) = swap16(a);
+				*(uint32_t *)(buf + f + 4) = swap16(b);
 			}
+			for (; i + 1 < end; i += 2, f += 4) {
+				uint32_t v;
+				__builtin_memcpy(&v, px + i, 4);
+				*(uint32_t *)(buf + f) = swap16(v);
+			}
+		}
 		for (; i < end; i++, f += 2) {
 			buf[f] = (uint8_t)(px[i] >> 8);
 			buf[f + 1] = (uint8_t)px[i];
