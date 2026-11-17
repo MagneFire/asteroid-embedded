@@ -9,7 +9,8 @@
  *
  * Built with -DEMU for the Cortex-M4 with the firmware's build of the
  * library, it runs in emu.py, which sets heap_size, and is told of each
- * frame and of the exit through emu_shot and emu_exit.
+ * screen as it starts, each frame and the exit through emu_screen,
+ * emu_shot and emu_exit.
  *
  * -DW=... -DH=... draw another screen size than the 46 mm watch's. */
 #include <stdbool.h>
@@ -40,6 +41,11 @@ static uint8_t heap[256 * 1024] __attribute__((aligned(8)));
 __attribute__((noinline)) void emu_shot(const char *name, const uint16_t *pixels, uint32_t peak)
 {
 	__asm__ volatile("" ::"r"(name), "r"(pixels), "r"(peak) : "memory");
+}
+
+__attribute__((noinline)) void emu_screen(const char *name)
+{
+	__asm__ volatile("" ::"r"(name) : "memory");
 }
 
 __attribute__((noinline, noreturn)) void emu_exit(int status, const char *msg, size_t len)
@@ -181,6 +187,9 @@ static const char *out_dir;
 
 static void shot(uint32_t panel, const char *name)
 {
+#ifdef EMU
+	emu_screen(name);
+#endif
 	ui_set_screen(panel == UI_PANEL_APP ? UI_PANEL_FACE : panel);
 	run(panel, 1500);
 #ifdef EMU
