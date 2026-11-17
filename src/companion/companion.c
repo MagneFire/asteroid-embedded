@@ -18,6 +18,7 @@
 #include "companion/wire.h"
 
 #define KV_MODE		"ap.mode"
+#define KEPT_MAGIC	0x4d4f4431u	/* "MOD1" */
 #define KV_ZONE		"ap.zone"
 #define REPLY_MAX	64
 /* The AP lets go of the panel only after it sent the 375. */
@@ -37,6 +38,29 @@ static uint32_t take_t, burst_t, key_t;
 static uint8_t reply_buf[REPLY_MAX], report_buf[LINK_SEND_MAX];
 static unsigned reply_len;
 static int battery = -1;
+
+#ifdef HOST_TEST
+#define KEPT
+#else
+#define KEPT		__attribute__((section(".kept")))
+#endif
+
+/* The mode before it is in the store, for a reset in between. */
+static struct {
+	uint32_t magic;
+	uint8_t mode, last;
+	uint16_t check;
+} kept KEPT;
+
+static uint16_t kept_check(void) { return (uint16_t)~(kept.mode | kept.last << 8); }
+
+static void keep_mode(void)
+{
+	kept.mode = (uint8_t)mode;
+	kept.last = (uint8_t)last_mode;
+	kept.check = kept_check();
+	kept.magic = KEPT_MAGIC;
+}
 static struct {
 	uint32_t messages, work_modes, battery, boot, other, sensors, batch, unknown, bad, replies_lost, replies_failed,
 		escapes;
@@ -82,6 +106,13 @@ bool companion_boot(void)
 		zone_min = z;
 	uint32_t st = reset_status();
 	reboot_reason = proto_reboot_reason(st, log_previous_record() != NULL);
+	if (!proto_powered_up(st) && kept.magic == KEPT_MAGIC && kept.check == kept_check() &&
+	    kept.mode <= PROTO_MODE_POWER_OFF && kept.last <= PROTO_MODE_POWER_OFF) {
+		save_mode = kept.mode != mode;
+		mode = kept.mode;
+		last_mode = kept.last;
+	}
+	keep_mode();
 	if (mode == PROTO_MODE_NORMAL && !proto_powered_up(st)) {
 		boot_lent = chips_on = true;
 		display_start_lent();
@@ -163,6 +194,7 @@ static void enter(unsigned to)
 		last_mode = mode;
 		mode = to;
 		save_mode = true;
+		keep_mode();
 	}
 	if (to == PROTO_MODE_POWER_OFF)
 		sns_reset();
@@ -271,6 +303,7 @@ static void escape(uint32_t now)
 	if (mode != PROTO_MODE_POWER_OFF) {
 		last_mode = mode;
 		mode = PROTO_MODE_POWER_OFF;
+		keep_mode();
 		uint8_t m = (uint8_t)mode;
 		kv_set(KV_MODE, &m, 1);
 		save_mode = false;

@@ -388,10 +388,15 @@ static void companion_scenario(void)
 	mode_message(373, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
 	CHECK(display_lent && touch_lent && haptics_held && power_lent && !levels[OWN]);
+	/* A reset before the store has the normal mode keeps the AP's
+	 * panel. */
+	CHECK(kv_mode == PROTO_MODE_WRISTBAND);
+	reset_bits = 1u << 0;
+	CHECK(companion_boot() && display_lent && !levels[OWN]);
 	mode_message(374, m374, sizeof m374, &a);
-	CHECK(a.mode == PROTO_MODE_POWER_OFF && display_lent);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF && a.last_mode == PROTO_MODE_NORMAL && display_lent);
 	wait_ms(1000);
-	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 1);
+	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2);
 
 	/* The power key held for 5 s takes the panel back from an AP that
 	 * does not answer, and power off is stored at once. */
