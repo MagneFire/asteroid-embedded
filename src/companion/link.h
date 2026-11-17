@@ -26,8 +26,11 @@
  * dn_ack. */
 #define LINK_DN_SETTLE_MS	150
 /* Unfinished packets in a row after which dn_int is ignored until the
- * AP writes. */
+ * AP writes, or for LINK_DEAF_MS, twice that after each further one up
+ * to LINK_DEAF_MAX_MS. */
 #define LINK_UNFINISHED_MAX	3
+#define LINK_DEAF_MS		5000
+#define LINK_DEAF_MAX_MS	80000
 /* What fits in the direct bytes of one read with the header. */
 #define LINK_SEND_MAX		112
 

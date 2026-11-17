@@ -21,7 +21,7 @@ enum tx_end { TX_OK, TX_CHECK, TX_TIMEOUT, TX_STUCK };
 
 static volatile enum state state;
 static volatile bool rx_ready, dn_waiting, tx_queued, deaf;
-static volatile uint32_t state_ms, ack_us, retry_ms, active_ms, dn_ms;
+static volatile uint32_t state_ms, ack_us, retry_ms, active_ms, dn_ms, deaf_ms, deaf_wait;
 static volatile unsigned unfinished_run;
 static volatile enum link_result tx_result = LINK_SENT;
 static volatile uint32_t problems;
@@ -94,6 +94,7 @@ static void rx_part(void)
 		return;
 	}
 	count.rx++;
+	deaf_wait = 0;
 	gpio_set(DN_ACK, 0);
 	rx_ready = true;
 	state = IDLE;
@@ -188,6 +189,7 @@ static void ios_event(uint32_t st)
 		count.writes++;
 		if (deaf) {
 			unfinished_run = 0;
+			deaf_wait = 0;
 			hear(true);
 			wake();
 		}
@@ -249,7 +251,8 @@ static void report(void)
 	if (p & PROBLEM_TX_FAILED)
 		log_printf("link: gave up on a packet for the AP\n");
 	if (p & PROBLEM_DEAF)
-		log_printf("link: %u unfinished packets in a row, dn_int ignored until the AP writes\n", LINK_UNFINISHED_MAX);
+		log_printf("link: %u unfinished packets in a row, dn_int ignored for %lu s or until the AP writes\n",
+			   LINK_UNFINISHED_MAX, deaf_wait / 1000);
 }
 
 void link_poll(void)
@@ -258,6 +261,8 @@ void link_poll(void)
 		return;
 	uint32_t now = time_ms(), flags = irq_save();
 	uint32_t gone = now - state_ms;
+	if (deaf && now - deaf_ms >= deaf_wait)
+		hear(true);
 	if (state == RX && gone >= LINK_RX_MS) {
 		count.rx_timeouts++;
 		problems |= PROBLEM_RX_TIMEOUT;
@@ -267,6 +272,8 @@ void link_poll(void)
 		if (++unfinished_run >= LINK_UNFINISHED_MAX) {
 			count.deaf++;
 			problems |= PROBLEM_DEAF;
+			deaf_ms = now;
+			deaf_wait = !deaf_wait ? LINK_DEAF_MS : deaf_wait < LINK_DEAF_MAX_MS ? deaf_wait * 2 : LINK_DEAF_MAX_MS;
 			hear(false);
 			dn_waiting = false;
 		}
@@ -354,7 +361,12 @@ uint32_t link_next_ms(void)
 		return UINT32_MAX;
 	if (rx_ready)
 		return 0;
-	return state_next_ms(time_ms());
+	uint32_t now = time_ms(), next = state_next_ms(now);
+	if (deaf) {
+		uint32_t d = ms_left(deaf_ms, deaf_wait, now);
+		next = d < next ? d : next;
+	}
+	return next;
 }
 
 void link_status(void (*say)(const char *fmt, ...))

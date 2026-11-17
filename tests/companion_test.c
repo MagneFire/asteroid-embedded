@@ -542,8 +542,8 @@ static void companion_scenario(void)
 	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF);
 	key_down = false;
 
-	/* Requests without a packet: dn_int is ignored after three until
-	 * the AP writes. */
+	/* Requests without a packet: dn_int is ignored after three, until
+	 * the AP writes, or for a while. */
 	for (int i = 0; i < LINK_UNFINISHED_MAX; i++) {
 		ap_request();
 		CHECK(levels[DN_ACK] == 1);
@@ -554,7 +554,29 @@ static void companion_scenario(void)
 	CHECK(!irq_on[DN_INT]);
 	ios_fn(IOS_WRITTEN);
 	CHECK(irq_on[DN_INT]);
-	ap_write(1, PROTO_OOBE, NULL, 0);
+	for (int i = 0; i < LINK_UNFINISHED_MAX; i++) {
+		ap_request();
+		levels[DN_INT] = 0;
+		wait_ms(LINK_RX_MS);
+	}
+	CHECK(!irq_on[DN_INT]);
+	/* An AP that waits for dn_ack before it writes gets it once the
+	 * wait is over. */
+	levels[DN_INT] = 1;
+	fire(DN_INT);
+	CHECK(companion_next_ms() <= LINK_DEAF_MS);
+	wait_ms(LINK_DEAF_MS - 1);
+	CHECK(!irq_on[DN_INT] && !levels[DN_ACK]);
+	wait_ms(1);
+	CHECK(irq_on[DN_INT] && !levels[DN_ACK]);
+	wait_ms(LINK_DN_SETTLE_MS);
+	CHECK(levels[DN_ACK] == 1);
+	uint8_t env[16], parts[5][121];
+	ap_write_parts(env, wire_wrap(env, sizeof env, 1, PROTO_OOBE, NULL, 0), ap_seq++, parts);
+	memcpy(lram, parts[0], sizeof lram);
+	ios_fn(IOS_WRITTEN);
+	CHECK(levels[DN_ACK] == 0);
+	levels[DN_INT] = 0;
 
 	/* Nothing over what one read's direct bytes carry. */
 	uint8_t big[LINK_SEND_MAX + 1] = { 0 };
