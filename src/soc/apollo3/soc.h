@@ -180,10 +180,18 @@ uint32_t reset_status(void);
 const char *rtc_origin(void);
 
 void gpio_init(void);
+void gpio_swdck_irq(void (*fn)(unsigned n));
+/* The pad's edge latched, whether or not its interrupt is on. */
+bool gpio_irq_latched(unsigned n);
 void wdt_irq_init(void);
 /* The console over SWD (swdbox.c): input the application processor
  * left, and output for it to collect. */
 void swdbox_init(void);
 void swdbox_poll(void);
+/* The SWD clock wakes the core (swdwake.c), which then stays out of
+ * deep sleep while the application processor talks and while debug is
+ * on. */
+void swdwake_init(void);
+bool swd_wanted(void);
 #endif
 #endif

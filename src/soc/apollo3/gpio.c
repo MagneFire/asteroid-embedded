@@ -141,13 +141,9 @@ void gpio_init(void)
 
 void gpio_irq_init(void) { irq_attach(IRQ_GPIO, gpio_irq); }
 
-/* The pads latch edges only; a level asks for the edge into it. */
-void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
+static void set_irq(unsigned n, bool falling, void (*fn)(unsigned n))
 {
-	if (n >= GPIO_COUNT)
-		return;
 	handlers[n] = fn;
-	bool falling = type == GPIO_IRQ_EDGE_FALLING || type == GPIO_IRQ_LEVEL_LOW;
 	uint32_t flags = irq_save();
 	writel(KEY, PADKEY);
 	uint32_t cur = readl(CFG(n)) >> ((n & 7) * 4) & 0xf;
@@ -155,6 +151,26 @@ void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
 	writel(0, PADKEY);
 	irq_restore(flags);
 	writel(BIT(n % 32), INTCLR(n));
+}
+
+/* The pads latch edges only; a level asks for the edge into it. */
+void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n))
+{
+	if (n >= GPIO_COUNT || n == PAD_SWDCK || n == PAD_SWDIO)
+		return;
+	set_irq(n, type == GPIO_IRQ_EDGE_FALLING || type == GPIO_IRQ_LEVEL_LOW, fn);
+}
+
+/* A rising edge on the SWD clock, with the pad left on SWDCK: off the
+ * GPIO function, its CFG nibble only picks the interrupt edge. */
+void gpio_swdck_irq(void (*fn)(unsigned n))
+{
+	set_irq(PAD_SWDCK, false, fn);
+}
+
+bool gpio_irq_latched(unsigned n)
+{
+	return n < GPIO_COUNT && readl(INTSTAT(n)) & BIT(n % 32);
 }
 
 void gpio_irq_enable(unsigned n, bool on)

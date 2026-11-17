@@ -101,6 +101,7 @@ void soc_board_init(void)
 {
 	for (const struct board_mcu_pad *p = board->mcu_pads; p && p->func != 0xff; p++)
 		pad_set(p);
+	swdwake_init();
 	if (board_chips_off())
 		iom_stop(board->chips_off.i2c.bus);
 	log_printf("boot: %s\n", boot_reason());
