@@ -43,7 +43,7 @@ static void ios_irq(void)
 {
 	uint32_t st = readl(INTSTAT) & readl(INTEN);
 	writel(st, INTCLR);
-	if (st & IOS_HOST_INT)
+	if (st & IOS_WRITTEN)
 		writel(IOINTCLR_ALL, IOINTCTL);
 	interrupts++;
 	if (handler)
@@ -65,7 +65,7 @@ void ios_init(void (*fn)(uint32_t status))
 	fifo_empty();
 	writel(FIFO_THRESHOLD, FIFOTHR);
 	writel(~0u, INTCLR);
-	writel(readl(INTEN) | IOS_HOST_INT | IOS_READ | IOS_WRITTEN, INTEN);
+	writel(readl(INTEN) | IOS_WRITTEN | IOS_READ, INTEN);
 	irq_attach(IRQ_IOS, ios_irq);
 }
 
@@ -76,7 +76,8 @@ void ios_read(unsigned off, uint8_t *p, unsigned n)
 		p[i] = lram[off + i];
 }
 
-/* The FIFO counts what is written into its part of LRAM. */
+/* Host reads through 0x7f take LRAM from FIFOPTR on whatever FIFOCTR
+ * says; FIFOCTR only feeds the host's count registers. */
 void ios_stage(const uint8_t *direct, unsigned dn, const uint8_t *fifo, unsigned fn)
 {
 	volatile uint8_t *lram = (volatile uint8_t *)(uintptr_t)LRAM;

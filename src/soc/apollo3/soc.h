@@ -148,12 +148,12 @@ int iom_spi_wait(unsigned bus);
 void iom_stop(unsigned bus);
 
 /* The IO slave (ios.c): fn gets the interrupt status, IOS_WRITTEN for a
- * host write of the direct area, IOS_READ for a host read that reached
+ * host write that reached the host interrupt register at 0x78 (the AP's
+ * 121st byte of each write part), IOS_READ for a host read that reached
  * the FIFO. ios_read copies from the direct area; ios_stage fills it and
  * the FIFO for the host's next read. */
-#define IOS_HOST_INT		BIT(5)
+#define IOS_WRITTEN		BIT(5)
 #define IOS_READ		BIT(6)
-#define IOS_WRITTEN		BIT(9)
 void ios_init(void (*fn)(uint32_t status));
 void ios_read(unsigned off, uint8_t *p, unsigned n);
 void ios_stage(const uint8_t *direct, unsigned dn, const uint8_t *fifo, unsigned fn);
