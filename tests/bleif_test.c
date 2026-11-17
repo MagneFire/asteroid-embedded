@@ -71,6 +71,11 @@ int main(void)
 	uint8_t a[6];
 	bleif_chip_addr(0x00abcd00, 0x44332211, a);
 	CHECK(!memcmp(a, "\xab\xcd\x44\x33\x22\x11", 6));
+	CHECK(bleif_flash_addr((const uint8_t *)"\xdd\x8f\x57\xbe\x8a\x38", a));
+	CHECK(!memcmp(a, "\x38\x8a\xbe\x57\x8f\xdd", 6));
+	CHECK(!bleif_flash_addr((const uint8_t *)"\xff\xff\xff\xff\xff\xff", a));
+	CHECK(!bleif_flash_addr((const uint8_t *)"\0\0\0\0\0\0", a));
+	CHECK(!memcmp(a, "\x38\x8a\xbe\x57\x8f\xdd", 6));
 
 	CHECK(bleif_modex_trim(0x18240634) == 0x34);
 	CHECK(!bleif_modex_trim(0x18240610) && !bleif_modex_trim(0x18240641) && !bleif_modex_trim(0x18250634));

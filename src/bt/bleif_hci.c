@@ -3,7 +3,9 @@
  * slots until the main loop hands them on, and a write the controller
  * refuses because it wants to send first can go out once its packets
  * are in. Command complete and command status events for the command
- * being waited on end hci_cmd, everything else goes to the handler. */
+ * being waited on end hci_cmd, everything else goes to the handler.
+ * Like vendor firmware the address is set again after every reset, and
+ * the host only gets its reset's completion once that is done. */
 #include <string.h>
 #include "asteroid.h"
 #include "bt.h"
@@ -12,6 +14,8 @@
 
 #define SLOTS		4
 #define SEND_MS		100
+#define ADDR_MS		500
+#define HCI_RESET	0x0c03
 
 static uint32_t slot[SLOTS][BLEIF_PACKET_WORDS], txbuf[BLEIF_PACKET_WORDS];
 static uint16_t slot_len[SLOTS];
@@ -19,6 +23,15 @@ static unsigned head, tail;
 static bool delivering;
 static hci_packet_fn handler;
 static uint32_t packets, errors;
+static uint8_t bd_lsb[6];
+static bool have_addr;
+
+static struct {
+	bool on;
+	uint32_t ms;
+	uint8_t ev[8];
+	unsigned n;
+} held;
 
 static struct {
 	uint16_t opcode;
@@ -47,6 +60,37 @@ static void fetch(void)
 	}
 }
 
+static uint16_t done_opcode(const uint8_t *p, unsigned n)
+{
+	if (n >= 5 && p[0] == HCI_EV_COMMAND_COMPLETE)
+		return (uint16_t)(p[3] | p[4] << 8);
+	if (n >= 6 && p[0] == HCI_EV_COMMAND_STATUS)
+		return (uint16_t)(p[4] | p[5] << 8);
+	return 0;
+}
+
+static void release(void)
+{
+	held.on = false;
+	if (handler)
+		handler(HCI_EVENT, held.ev, held.n);
+}
+
+static bool hold_reset(const uint8_t *p, unsigned n)
+{
+	if (!have_addr || held.on || n > sizeof held.ev)
+		return false;
+	uint8_t c[3 + 6] = { (uint8_t)VS_SET_BD_ADDR, VS_SET_BD_ADDR >> 8, 6 };
+	memcpy(c + 3, bd_lsb, 6);
+	if (hci_send(HCI_COMMAND, c, sizeof c))
+		return false;
+	memcpy(held.ev, p, n);
+	held.n = n;
+	held.ms = time_ms();
+	held.on = true;
+	return true;
+}
+
 static void deliver(uint8_t *p, unsigned n)
 {
 	uint8_t type = *p++;
@@ -71,6 +115,13 @@ static void deliver(uint8_t *p, unsigned n)
 				return;
 			}
 		}
+		uint16_t op = done_opcode(p, n);
+		if (op == VS_SET_BD_ADDR && held.on) {
+			release();
+			return;
+		}
+		if (op == HCI_RESET && p[0] == HCI_EV_COMMAND_COMPLETE && hold_reset(p, n))
+			return;
 	}
 	if (handler)
 		handler(type, p, n);
@@ -92,6 +143,11 @@ bool bleif_hci_service(void)
 		fetch();
 	}
 	delivering = false;
+	if (held.on && time_ms() - held.ms > ADDR_MS) {
+		errors++;
+		release();
+		any = true;
+	}
 	return any;
 }
 
@@ -99,13 +155,14 @@ void hci_link_wakes(uint32_t *irqs, uint32_t *empty) { *irqs = *empty = 0; }
 
 bool bleif_hci_idle(void)
 {
-	return head == tail;
+	return head == tail && !held.on;
 }
 
 void hci_reset_parser(void)
 {
 	head = tail = 0;
 	waiting.opcode = 0;
+	held.on = false;
 }
 
 void hci_set_handler(hci_packet_fn fn)
@@ -168,6 +225,12 @@ int hci_cmd(uint16_t opcode, const void *param, uint8_t plen, uint8_t *rsp, unsi
 	if (rsp_len)
 		*rsp_len = waiting.len;
 	return waiting.status;
+}
+
+void bleif_hci_set_addr(const uint8_t lsb[6])
+{
+	memcpy(bd_lsb, lsb, 6);
+	have_addr = true;
 }
 
 void hci_stats(uint32_t *p, uint32_t *e)

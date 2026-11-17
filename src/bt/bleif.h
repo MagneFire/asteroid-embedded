@@ -19,4 +19,7 @@ int bleif_link_read(uint32_t *w, unsigned max);
 /* Read what the controller has and hand it on; true if there was any. */
 bool bleif_hci_service(void);
 bool bleif_hci_idle(void);
+/* Sent with VS_SET_BD_ADDR after every HCI Reset of the host. */
+void bleif_hci_set_addr(const uint8_t lsb[6]);
+#define VS_SET_BD_ADDR		0xfc32
 #endif

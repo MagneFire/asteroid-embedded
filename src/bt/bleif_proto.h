@@ -58,6 +58,9 @@ int bleif_nvds_set(const struct bleif_patch *p, uint8_t tag, const uint8_t *v, u
 uint8_t bleif_modex_trim(uint32_t word);
 /* An address in display order from the chip's ID registers. */
 void bleif_chip_addr(uint32_t id0, uint32_t id1, uint8_t addr[6]);
+/* The vendor's address page holds the address LSB first; false when
+ * it is erased or zero. */
+bool bleif_flash_addr(const uint8_t lsb[6], uint8_t addr[6]);
 
 /* Patch packets: start (with the length), data, CRC; then the end of a
  * copy patch and of all patching, both a start of type 0xee. Each is

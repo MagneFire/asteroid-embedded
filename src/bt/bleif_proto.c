@@ -147,6 +147,20 @@ void bleif_chip_addr(uint32_t id0, uint32_t id1, uint8_t addr[6])
 		addr[i] = lsb[5 - i];
 }
 
+bool bleif_flash_addr(const uint8_t lsb[6], uint8_t addr[6])
+{
+	bool ff = true, zero = true;
+	for (int i = 0; i < 6; i++) {
+		ff = ff && lsb[i] == 0xff;
+		zero = zero && !lsb[i];
+	}
+	if (ff || zero)
+		return false;
+	for (int i = 0; i < 6; i++)
+		addr[i] = lsb[5 - i];
+	return true;
+}
+
 unsigned bleif_patch_packet(uint8_t *out, uint8_t type, uint8_t step, const uint8_t *p, unsigned n)
 {
 	out[0] = 0x01;

@@ -71,6 +71,7 @@
 #define CLKGEN_BLEBUCKTONADJ	(CLKGEN_BASE + 0x3c)
 #define  TONADJUSTEN		BIT(22)
 
+#define FLASH_BDADDR		0x000f2000u
 #define INFO1_BANDGAP		0x50023800u
 #define INFO1_RETENTION		0x50023804u
 #define INFO1_MODEX		0x50023808u
@@ -83,7 +84,6 @@
 #define HCI_READ_LOCAL_NAME	0x0c14
 #define HCI_READ_LOCAL_VERSION	0x1001
 #define HCI_READ_BD_ADDR	0x1009
-#define VS_SET_BD_ADDR		0xfc32
 #define VS_REG_READ		0xfd02
 #define VS_REG_WRITE		0xfd03
 
@@ -533,10 +533,11 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	uint8_t addr[6], lsb[6], got[6];
 	if (bdaddr)
 		memcpy(addr, bdaddr, 6);
-	else
+	else if (!bleif_flash_addr((const uint8_t *)(uintptr_t)FLASH_BDADDR, addr))
 		bleif_chip_addr(readl(MCUCTRL_CHIPID0), readl(MCUCTRL_CHIPID1), addr);
 	for (int i = 0; i < 6; i++)
 		lsb[i] = addr[5 - i];
+	bleif_hci_set_addr(lsb);
 	struct bleif_edits trims = { 0 }, nvds = { 0 };
 	bleif_trims(rev->trimmed, readl(INFO1_BANDGAP), readl(INFO1_RETENTION), &trims);
 	bleif_nvds_set(rev->nvds, NVDS_BDADDR, lsb, 6, &nvds);
