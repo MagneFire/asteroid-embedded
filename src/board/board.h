@@ -136,8 +136,9 @@ struct motor_driver {
 	bool (*init)(void);
 	void (*set)(bool on);
 	/* Lets go of the driver's lines for the application processor,
-	 * or takes them back. */
-	void (*lend)(bool to_ap);
+	 * also of a chip that did not answer, or takes them back and
+	 * starts it again: whether it answers then. */
+	bool (*lend)(bool to_ap);
 };
 
 /* A panel lit by a separate chip; level 0 turns it off. Without one the

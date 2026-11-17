@@ -15,6 +15,14 @@
 #define GO_START	0x01
 #define GO_STOP		0x00
 
+static bool up;
+
+static void let_go(void)
+{
+	if (board->motor_pins.enable)
+		gpio_config(board->motor_pins.enable, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+}
+
 static int write(uint8_t reg, uint8_t val)
 {
 	uint8_t w[2] = { reg, val };
@@ -30,11 +38,12 @@ static bool aw_init(void)
 		gpio_set(board->motor_pins.enable, 1);
 		delay_ms(5);
 	}
-	if (i2c_init(BUS, board->motor_pins.i2c.sda, board->motor_pins.i2c.scl, board->motor_pins.i2c.func, 400000))
-		return false;
 	uint8_t reg = REG_ID, id = 0;
-	if (i2c_xfer(BUS, ADDR, &reg, 1, &id, 1) || id != CHIP_ID) {
+	up = !i2c_init(BUS, board->motor_pins.i2c.sda, board->motor_pins.i2c.scl, board->motor_pins.i2c.func, 400000) &&
+	     !i2c_xfer(BUS, ADDR, &reg, 1, &id, 1) && id == CHIP_ID;
+	if (!up) {
 		log_printf("haptics: no AW8624 (id %02x)\n", id);
+		let_go();
 		return false;
 	}
 	write(REG_SYSCTRL, SYSCTRL_STANDBY);
@@ -54,15 +63,14 @@ static void aw_set(bool on)
 
 /* As stock: the enable undriven while the AP has the chip, and all of
  * the start again when it comes back. */
-static void aw_lend(bool to_ap)
+static bool aw_lend(bool to_ap)
 {
-	if (!to_ap) {
-		aw_init();
-		return;
-	}
-	aw_set(false);
-	if (board->motor_pins.enable)
-		gpio_config(board->motor_pins.enable, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+	if (!to_ap)
+		return aw_init();
+	if (up)
+		aw_set(false);
+	let_go();
+	return false;
 }
 
 const struct motor_driver motor_aw8624 = { .init = aw_init, .set = aw_set, .lend = aw_lend };

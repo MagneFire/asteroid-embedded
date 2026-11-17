@@ -426,9 +426,10 @@ $(BUILD)/test/hr_test: tests/hr_test.c src/sensors/hr.c src/sensors/hr.h
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/hr.c -o $@
 
-$(BUILD)/test/companion_test: tests/companion_test.c $(COMPANION) $(wildcard src/companion/*.h)
+COMPANION_TEST := $(COMPANION) src/input/haptics.c src/input/haptics_aw8624.c
+$(BUILD)/test/companion_test: tests/companion_test.c $(COMPANION_TEST) $(wildcard src/companion/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(subst -I src/soc/qcom,-I src/soc/apollo3,$(HOST_CFLAGS)) $< $(COMPANION) -o $@
+	$(HOSTCC) $(subst -I src/soc/qcom,-I src/soc/apollo3,$(HOST_CFLAGS)) $< $(COMPANION_TEST) -o $@
 
 $(BUILD)/test/apollo3_timer_test: tests/apollo3_timer_test.c src/soc/apollo3/timer.c $(wildcard tests/*.h src/*.h src/soc/apollo3/*.h)
 	@mkdir -p $(dir $@)

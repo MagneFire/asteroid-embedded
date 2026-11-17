@@ -128,12 +128,17 @@ static void ap_parse(const uint8_t *p, unsigned n, struct ap_reply *r)
 #define STORE_WAIT_MS 13000
 enum { UP_INT = 29, DN_INT = 30, DN_ACK = 31, UP_ACK = 33, PINS = 64 };
 #define OWN 36
-static const struct board test_board = { .ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK, OWN, 14 } };
+#define MOTOR_EN 26
+static const struct board test_board = {
+	.ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK, OWN, 14 },
+	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .addr = 0x5a }, .enable = MOTOR_EN },
+};
 const struct board *board = &test_board;
 
 static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, darks, chips_offs;
 static unsigned levels[PINS];
-static bool irq_on[PINS], display_lent, touch_lent, haptics_held, power_lent, key_down;
+static bool irq_on[PINS], outputs[PINS], display_lent, touch_lent, power_lent, key_down;
+static unsigned i2c_fails;
 static void (*irq_fn[PINS])(unsigned);
 static void (*ios_fn)(uint32_t);
 static uint8_t lram[120], staged[256];
@@ -149,7 +154,19 @@ uint32_t irq_save(void) { return 0; }
 void irq_restore(uint32_t s) {}
 bool sched_add(struct sched_task *t) { return true; }
 void sched_post(const struct sched_task *t) {}
-void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
+void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) { outputs[n] = dir == GPIO_OUTPUT; }
+int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return 0; }
+/* The AW8624 answers with its ID, but for the next i2c_fails transfers. */
+int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+{
+	if (i2c_fails) {
+		i2c_fails--;
+		return -1;
+	}
+	if (rn)
+		r[0] = 0x24;
+	return 0;
+}
 unsigned gpio_get(unsigned n) { return levels[n]; }
 void gpio_set(unsigned n, unsigned v) { levels[n] = v; }
 void delay_ms(uint32_t ms) {}
@@ -205,7 +222,6 @@ void display_lend(bool to_ap) { display_lent = to_ap; }
 void display_start_lent(void) { display_lent = true; }
 void touch_lend(bool to_ap) { touch_lent = to_ap; }
 void touch_start_lent(void) { touch_lent = true; }
-void haptics_hold(bool on) { haptics_held = on; }
 void power_lend_display(bool on) { power_lent = on; }
 void power_dark_until_wake(void) { darks++; }
 bool board_chips_off(void)
@@ -467,7 +483,8 @@ static void companion_scenario(void)
 	reset_bits = 1u << 5;
 	levels[OWN] = 1;
 	CHECK(companion_boot());
-	CHECK(display_lent && touch_lent && haptics_held && !levels[OWN] && !chips_offs);
+	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && !levels[OWN] && !chips_offs);
+	CHECK(haptics_init() && !outputs[MOTOR_EN]);
 	companion_init();
 	CHECK(power_lent && irq_on[DN_INT]);
 
@@ -515,7 +532,8 @@ static void companion_scenario(void)
 	wait_ms(left - 1);
 	CHECK(display_lent);
 	wait_ms(1);
-	CHECK(!display_lent && !touch_lent && !haptics_held && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
+	CHECK(!display_lent && !touch_lent && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
+	CHECK(outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	/* The chips on the AP's bus are put to sleep once it is the watch's. */
 	CHECK(chips_offs == 1);
 	ap_write(1, PROTO_OOBE, NULL, 0);
@@ -548,7 +566,7 @@ static void companion_scenario(void)
 	/* 373, then 374: taken back without waking. */
 	mode_message(373, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
-	CHECK(display_lent && touch_lent && haptics_held && power_lent && !levels[OWN]);
+	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && power_lent && !levels[OWN]);
 	/* A reset before the store has the normal mode keeps the AP's
 	 * panel. */
 	CHECK(kv_mode == PROTO_MODE_WRISTBAND);
@@ -620,6 +638,21 @@ static void companion_scenario(void)
 	CHECK(!display_lent && !power_lent);
 	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_POWER_OFF);
+	run_ms(STORE_WAIT_MS);
+
+	/* The AW8624 not answering when the panel comes back: its enable is
+	 * let go of, and it is tried again the next time. */
+	mode_message(373, NULL, 0, &a);
+	CHECK(display_lent && !outputs[MOTOR_EN]);
+	i2c_fails = 1;
+	mode_message(374, m374, sizeof m374, &a);
+	run_ms(1000);
+	CHECK(!display_lent && !i2c_fails && !outputs[MOTOR_EN]);
+	mode_message(373, NULL, 0, &a);
+	CHECK(display_lent && !outputs[MOTOR_EN]);
+	mode_message(374, m374, sizeof m374, &a);
+	run_ms(1000);
+	CHECK(!display_lent && outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	run_ms(STORE_WAIT_MS);
 
 	/* Requests without a packet: dn_int is ignored after three, until

@@ -23,8 +23,11 @@ void haptics_hold(bool on)
 		pattern = NULL;
 		board->motor->set(false);
 	}
-	if (on != held && started && ready && board->motor->lend)
-		board->motor->lend(on);
+	if (on != held && started && board->motor && board->motor->lend) {
+		bool up = board->motor->lend(on);
+		if (!on)
+			ready = up;
+	}
 	held = on;
 	if (!on && !started && board->motor) {
 		started = true;
