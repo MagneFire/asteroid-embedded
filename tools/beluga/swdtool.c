@@ -51,8 +51,8 @@
 #define LOG_SIG		0x43474244u
 #define LOG_CONSOLE	0x4000u
 #define LOG_RECORD	0x400u
-/* The stock data pages and the settings, which only a restore writes. */
-#define IMAGE_END	0xf6000u
+/* Our settings and then the stock data pages: only a restore writes them. */
+#define IMAGE_END	0xe8000u
 
 struct mem_arg {
 	uint32_t addr, val;
@@ -337,7 +337,7 @@ static int cmd_flash(const char *path)
 	if (!img)
 		return fail(path);
 	if (size > IMAGE_END - SWD_FLASH_FIRST)
-		return refuse("image runs into the data pages at 0xf6000");
+		return refuse("image runs into the settings at 0xe8000");
 	return flash_image(img, size);
 }
 
