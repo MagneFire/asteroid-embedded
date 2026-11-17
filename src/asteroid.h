@@ -90,6 +90,7 @@ enum setting {
 	SETTING_HR_INTERVAL,
 	SETTING_AGE,
 	SETTING_MALE,
+	SETTING_BACKLIGHT_COLOR,
 	SETTINGS
 };
 int setting_get(enum setting s);

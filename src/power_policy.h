@@ -43,18 +43,22 @@ enum screen_state { SCREEN_OFF, SCREEN_AMBIENT, SCREEN_LIT };
 /* Asleep, what the panel shows. */
 enum screen_state power_policy_screen(bool aod, bool peeking, bool peek_light);
 
+enum backlight_color { BACKLIGHT_AUTO, BACKLIGHT_WHITE, BACKLIGHT_RED };
+
 /* The catfish hub reports anything darker as this. */
 #define BACKLIGHT_DARK_LUX 20
 
-/* The light behind the hub's display: the panel's brightness and the
- * value of the lit pixels. A brightness of 0 leaves the screen dark. */
+/* The light behind the hub's display: the panel's brightness, the
+ * value of the lit pixels, and whether only red ones are lit. A
+ * brightness of 0 leaves the screen dark. */
 struct backlight {
 	uint8_t dbv, pixel;
+	bool red;
 };
 
 /* For the lux the sensor saw before the screen lit, -1 without a
- * reading. */
-struct backlight power_policy_backlight(int32_t lux);
+ * reading, and the colour setting. */
+struct backlight power_policy_backlight(int32_t lux, int color);
 
 enum touch_use { TOUCH_USE, TOUCH_DROP, TOUCH_WAKE };
 

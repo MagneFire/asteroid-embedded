@@ -32,17 +32,24 @@ static void nightstand(void)
 	CHECK(!nightstand_step(&w, false, 95, 100));
 }
 
-/* The backlight dims with the room, and stays dark in bright light. */
+/* The backlight dims with the room, turns red in the dark when the
+ * colour is automatic, and stays dark in bright light. */
 static void backlight(void)
 {
-	struct backlight dark = power_policy_backlight(0), dim = power_policy_backlight(30);
-	CHECK(dark.dbv && dim.dbv > dark.dbv);
-	CHECK(power_policy_backlight(BACKLIGHT_DARK_LUX).dbv == dark.dbv);
-	CHECK(!power_policy_backlight(5000).dbv);
-	CHECK(power_policy_backlight(-1).dbv);
-	struct backlight prev = dark;
+	struct backlight dark = power_policy_backlight(0, BACKLIGHT_AUTO), dim = power_policy_backlight(30, BACKLIGHT_AUTO);
+	CHECK(dark.dbv && dark.red);
+	CHECK(dim.dbv > dark.dbv && !dim.red);
+	struct backlight floor = power_policy_backlight(BACKLIGHT_DARK_LUX, BACKLIGHT_AUTO);
+	CHECK(floor.dbv == dark.dbv && floor.red);
+	CHECK(!power_policy_backlight(BACKLIGHT_DARK_LUX + 1, BACKLIGHT_AUTO).red);
+	CHECK(!power_policy_backlight(5000, BACKLIGHT_AUTO).dbv);
+	CHECK(power_policy_backlight(30, BACKLIGHT_RED).red);
+	CHECK(!power_policy_backlight(0, BACKLIGHT_WHITE).red);
+	struct backlight none = power_policy_backlight(-1, BACKLIGHT_AUTO);
+	CHECK(none.dbv && !none.red);
+	struct backlight prev = power_policy_backlight(0, BACKLIGHT_WHITE);
 	for (int32_t lux = 1; lux < 2000; lux++) {
-		struct backlight b = power_policy_backlight(lux);
+		struct backlight b = power_policy_backlight(lux, BACKLIGHT_WHITE);
 		CHECK(!b.dbv || b.dbv * b.pixel >= prev.dbv * prev.pixel);
 		prev = b;
 	}

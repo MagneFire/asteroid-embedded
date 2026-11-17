@@ -332,7 +332,7 @@ static void ambient_enter(void)
 
 static void light_fill(void)
 {
-	uint32_t px = lit.pixel * 0x010101u, *buf = display_backbuffer();
+	uint32_t px = lit.red ? (uint32_t)lit.pixel << 16 : lit.pixel * 0x010101u, *buf = display_backbuffer();
 	for (uint32_t i = 0, n = fb.stride * fb.height; i < n; i++)
 		buf[i] = px;
 	display_flip();
@@ -355,8 +355,9 @@ static bool backlight_ready(uint32_t now)
 	if (lux < 0 && now - lux_t < LUX_WAIT_MS)
 		return false;
 	light_keep(false);
-	lit = power_policy_backlight(lux);
-	log_printf("backlight: %ld lux after %lu ms, %u/%u\n", (long)lux, (unsigned long)(now - lux_t), lit.dbv, lit.pixel);
+	lit = power_policy_backlight(lux, setting_get(SETTING_BACKLIGHT_COLOR));
+	log_printf("backlight: %ld lux after %lu ms, %u/%u %s\n", (long)lux, (unsigned long)(now - lux_t), lit.dbv, lit.pixel,
+		   lit.red ? "red" : "white");
 	lux_state = LUX_DONE;
 	return true;
 }

@@ -97,7 +97,7 @@ static const struct {
 	{ 400, 140, 255 },
 };
 
-struct backlight power_policy_backlight(int32_t lux)
+struct backlight power_policy_backlight(int32_t lux, int color)
 {
 	struct backlight b = { 0 };
 	/* Without a reading the room is taken to be a dim one, where too
@@ -113,6 +113,7 @@ struct backlight power_policy_backlight(int32_t lux)
 			break;
 		}
 	}
+	b.red = color == BACKLIGHT_RED || (color == BACKLIGHT_AUTO && lux >= 0 && lux <= BACKLIGHT_DARK_LUX);
 	return b;
 }
 
