@@ -71,8 +71,12 @@ bool hrlog_poll(uint32_t rtc, unsigned interval_min, uint32_t steady_bpm)
 		started = rtc;
 	}
 	if (measuring && (steady_bpm || rtc - started >= HRLOG_TIMEOUT_S || rtc < started)) {
-		if (steady_bpm)
+		if (steady_bpm) {
 			record(rtc, steady_bpm);
+			log_printf("hr: %lu bpm after %lu s\n", steady_bpm, rtc - started);
+		} else {
+			log_printf("hr: no reading in %lu s\n", rtc - started);
+		}
 		measuring = false;
 		next_at = slot;
 	}

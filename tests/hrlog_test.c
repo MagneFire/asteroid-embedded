@@ -13,6 +13,7 @@ static int failures;
 static uint8_t stored[1024];
 static int stored_len = -2, writes;
 
+void log_printf(const char *fmt, ...) {}
 int kv_get(const char *key, void *buf, unsigned size)
 {
 	if (stored_len > 0)
