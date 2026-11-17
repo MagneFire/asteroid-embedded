@@ -205,6 +205,12 @@ pub trait LineBufferProvider {
 
     /// Called once per frame before any line, with the region the lines will cover.
     fn begin(&mut self, _region: &PhysicalRegion) {}
+
+    /// Fills `buffer`, line `line` from x `start`, with what shows behind the window's items
+    /// instead of the window's background; false to have the background drawn.
+    fn fill_background(_line: usize, _start: usize, _buffer: &mut [Self::TargetPixel]) -> bool {
+        false
+    }
 }
 
 #[cfg(not(cbindgen))]
@@ -1356,12 +1362,12 @@ where
     }
 }
 
-fn render_window_frame_by_line(
+fn render_window_frame_by_line<L: LineBufferProvider>(
     window: &WindowInner,
     background: Brush,
     size: PhysicalSize,
     renderer: &SoftwareRenderer,
-    mut line_buffer: impl LineBufferProvider,
+    mut line_buffer: L,
 ) -> PhysicalRegion {
     let mut scene = prepare_scene(window, size, renderer);
     line_buffer.begin(&scene.dirty_region);
@@ -1392,7 +1398,13 @@ fn render_window_frame_by_line(
                     let items = match first_cover {
                         Some(i) => &items[..=i],
                         None => {
-                            TargetPixel::fill_slice(line_buffer, background_color);
+                            if !L::fill_background(
+                                scene.current_line.get() as usize,
+                                offset as usize,
+                                line_buffer,
+                            ) {
+                                TargetPixel::fill_slice(line_buffer, background_color);
+                            }
                             items
                         }
                     };
