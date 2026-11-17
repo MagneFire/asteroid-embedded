@@ -1245,6 +1245,7 @@ impl WindowInner {
     ///
     /// Arguments:
     /// * `event`: The key event received by the windowing system.
+    #[cfg_attr(not(feature = "key-input"), allow(dead_code))]
     pub(crate) fn process_key_input(
         &self,
         mut internal_key_event: InternalKeyEvent,

@@ -7,7 +7,9 @@ This module contains types that are public and re-exported in the slint-rs as we
 
 #![warn(missing_docs)]
 
-use crate::input::{BackendMouseEvent, InternalKeyEvent, KeyEventType, MouseEvent, TouchPhase};
+use crate::input::{BackendMouseEvent, MouseEvent, TouchPhase};
+#[cfg(feature = "key-input")]
+use crate::input::{InternalKeyEvent, KeyEventType};
 use crate::platform::WindowEventDispatchResult;
 use crate::window::{WindowAdapter, WindowInner};
 use alloc::boxed::Box;
@@ -714,6 +716,7 @@ impl Window {
                 WindowEventDispatchResult::Accepted
             }
 
+            #[cfg(feature = "key-input")]
             crate::platform::WindowEvent::KeyPressed { text } => self
                 .0
                 .process_key_input(InternalKeyEvent {
@@ -722,6 +725,7 @@ impl Window {
                     ..Default::default()
                 })
                 .into(),
+            #[cfg(feature = "key-input")]
             crate::platform::WindowEvent::KeyPressRepeated { text } => self
                 .0
                 .process_key_input(InternalKeyEvent {
@@ -730,6 +734,7 @@ impl Window {
                     ..Default::default()
                 })
                 .into(),
+            #[cfg(feature = "key-input")]
             crate::platform::WindowEvent::KeyReleased { text } => self
                 .0
                 .process_key_input(InternalKeyEvent {
@@ -738,6 +743,10 @@ impl Window {
                     ..Default::default()
                 })
                 .into(),
+            #[cfg(not(feature = "key-input"))]
+            crate::platform::WindowEvent::KeyPressed { .. }
+            | crate::platform::WindowEvent::KeyPressRepeated { .. }
+            | crate::platform::WindowEvent::KeyReleased { .. } => WindowEventDispatchResult::Rejected,
             crate::platform::WindowEvent::ScaleFactorChanged { scale_factor } => {
                 self.0.set_scale_factor(scale_factor);
                 WindowEventDispatchResult::Accepted
@@ -771,9 +780,12 @@ impl Window {
                 crate::platform::InternalEvent::Mouse(event) => {
                     self.0.process_mouse_input(event.into()).into()
                 }
+                #[cfg(feature = "key-input")]
                 crate::platform::InternalEvent::Key(event) => {
                     self.0.process_key_input(event).into()
                 }
+                #[cfg(not(feature = "key-input"))]
+                crate::platform::InternalEvent::Key(_) => WindowEventDispatchResult::Rejected,
                 crate::platform::InternalEvent::Touch { id, position, phase } => {
                     self.0.process_touch_input(id, position, phase).into()
                 }
