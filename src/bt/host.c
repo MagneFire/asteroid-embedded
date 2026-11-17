@@ -37,19 +37,36 @@ static void advertise(void);
  * to 250 ms; what the watch sends goes at the next event. */
 static struct bt_params params = { 24, 40, 4, 500 };
 
-/* A refused or busy request, or the phone going back to its own
- * parameters later, is asked again a few times per connection. */
+/* Asking again costs a wakeup, staying at latency 0 costs radio listens
+ * for the rest of the connection, so the watch never stops asking. */
 #define PARAMS_RETRY_MS	5000
-#define PARAMS_TRIES	3
+#define PARAMS_RETRY_MAX_MS	640000
+#define PARAMS_HELD_MS	60000
+/* A phone can accept the request without ever applying it, and NimBLE
+ * reports nothing then. */
+#define PARAMS_PENDING_MS	40000
 static uint32_t params_at;
-static unsigned params_tries;
+static uint32_t params_wait = PARAMS_RETRY_MS;
+static uint32_t params_held_at;
+static bool params_held;
 
 static void params_again(void)
 {
-	if (params.itvl_max && params_tries < PARAMS_TRIES) {
-		params_tries++;
-		params_at = (time_ms() + PARAMS_RETRY_MS) | 1;
-	}
+	if (params.itvl_max)
+		params_at = (time_ms() + params_wait) | 1;
+}
+
+static void params_restart(void)
+{
+	params_wait = PARAMS_RETRY_MS;
+	params_held = false;
+	params_at = 0;
+}
+
+static bool params_short(uint16_t c)
+{
+	struct ble_gap_conn_desc d;
+	return !ble_gap_conn_find(c, &d) && d.conn_latency < params.latency;
 }
 
 static void request_params(uint16_t c)
@@ -64,6 +81,9 @@ static void request_params(uint16_t c)
 	if (rc) {
 		log_printf("bt: connection update not asked: %d\n", rc);
 		params_again();
+	} else {
+		uint32_t wait = params_wait > PARAMS_PENDING_MS ? params_wait : PARAMS_PENDING_MS;
+		params_at = (time_ms() + wait) | 1;
 	}
 }
 
@@ -80,8 +100,7 @@ static int mtu_done(uint16_t c, const struct ble_gatt_error *error, uint16_t m, 
 void bt_host_params(const struct bt_params *p)
 {
 	params = *p;
-	params_tries = 0;
-	params_at = 0;
+	params_restart();
 	if (host_on && conn != BLE_HS_CONN_HANDLE_NONE)
 		request_params(conn);
 }
@@ -186,8 +205,23 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		if (!ble_gap_conn_find(ev->conn_update.conn_handle, &d)) {
 			log_printf("bt: connection update %d, interval %u, latency %u, timeout %u\n", ev->conn_update.status,
 				   d.conn_itvl, d.conn_latency, d.supervision_timeout);
-			if (d.sec_state.encrypted && (ev->conn_update.status || d.conn_latency < params.latency))
-				params_again();
+			if (d.conn_latency >= params.latency) {
+				if (!params_held) {
+					params_held = true;
+					params_held_at = time_ms();
+				}
+				params_at = 0;
+			} else {
+				/* Going back after the latency held a while is the
+				 * phone's own update, not a fight over parameters. */
+				bool held = params_held && time_ms() - params_held_at >= PARAMS_HELD_MS;
+				params_held = false;
+				if (d.sec_state.encrypted) {
+					if (held)
+						params_wait = PARAMS_RETRY_MS;
+					params_again();
+				}
+			}
 		}
 		break;
 	case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -204,8 +238,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 			log_addr("peer identity", &d.peer_id_addr);
 		}
 		if (!ev->enc_change.status) {
-			params_tries = 0;
-			params_at = 0;
+			params_restart();
 			request_params(ev->enc_change.conn_handle);
 		}
 		break;
@@ -338,6 +371,7 @@ void bt_host_stop(void)
 	host_on = false;
 	state = BT_HOST_OFF;
 	conn = BLE_HS_CONN_HANDLE_NONE;
+	params_restart();
 	bt_transport_detach();
 }
 
@@ -362,7 +396,11 @@ void bt_poll(void)
 	}
 	if (params_at && conn != BLE_HS_CONN_HANDLE_NONE && (int32_t)(time_ms() - params_at) >= 0) {
 		params_at = 0;
-		request_params(conn);
+		if (params_short(conn)) {
+			if (params_wait < PARAMS_RETRY_MAX_MS)
+				params_wait *= 2;
+			request_params(conn);
+		}
 	}
 	if (conn != BLE_HS_CONN_HANDLE_NONE && time_ms() - battery_t >= BATTERY_CHECK_MS) {
 		battery_t = time_ms();
