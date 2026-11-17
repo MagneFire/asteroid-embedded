@@ -64,6 +64,7 @@
 #define PAGE_BUF	(SWD_SRAM_BASE + 0x1000u)
 #define CALL_STACK	(SWD_SRAM_BASE + 0x8000u)
 #define CALL_TIMEOUT_US	2000000u
+#define ROM_TRIES	5
 
 int swd_read(const struct swd_link *l, uint32_t addr, uint32_t *val) { return l->read(l->ctx, addr, val); }
 int swd_write(const struct swd_link *l, uint32_t addr, uint32_t val) { return l->write(l->ctx, addr, val); }
@@ -158,10 +159,28 @@ static int vector_catch(const struct swd_link *l, uint32_t set, uint32_t clear)
 	return swd_write(l, DEMCR, (demcr & ~clear) | set);
 }
 
+/* Halted inside a boot ROM helper, the vendor's firmware may be in the
+ * middle of a flash write of its own: let it finish first. */
+static int halt_outside_rom(const struct swd_link *l)
+{
+	for (unsigned i = 0; i < ROM_TRIES; i++) {
+		uint32_t pc;
+		if (swd_halt(l) || swd_reg_read(l, REG_PC, &pc))
+			return -1;
+		if (pc < SWD_ROM_BASE || pc >= SWD_ROM_END)
+			return 0;
+		if (release(l, false))
+			return -1;
+		l->sleep_us(l->ctx, 2000);
+	}
+	return -4;
+}
+
 int swd_take(const struct swd_link *l)
 {
-	if (swd_halt(l))
-		return -1;
+	int r = halt_outside_rom(l);
+	if (r)
+		return r;
 	/* The watchdog runs on in a halt and would reset the chip midway.
 	 * A locked one takes no write, so it is read back. */
 	uint32_t wdt;

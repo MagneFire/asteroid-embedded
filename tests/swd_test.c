@@ -26,7 +26,8 @@ static uint32_t fpccr = 0xc0000001u, icsr_clears, regs[21], dcrdr, wdt_cfg = 0x0
 static bool halted, maskints, wdt_locked;
 static int fail_after = -1;
 static uint32_t demcr = TRCENA | 1, mpu_ctrl = 5, vendor_runs;
-
+/* Resumes until a core halted in the boot ROM leaves it, 0 for never. */
+static unsigned rom_resumes;
 /* Which page's program fails, comes out wrong or faults; 0 for none. */
 static uint32_t fail_program, corrupt_program, fault_program;
 
@@ -134,6 +135,8 @@ static int wr(void *ctx, uint32_t a, uint32_t v)
 			halted = false;
 			if ((regs[15] | 1) >= 0x08000000u && (regs[15] | 1) < 0x08000100u)
 				exec();
+			else if (regs[15] >= SWD_ROM_BASE && regs[15] < SWD_ROM_END && rom_resumes && !--rom_resumes)
+				regs[15] = 0x0000c100u;
 		}
 	} else if (a == DCRSR) {
 		unsigned r = v & 0x7f;
@@ -305,6 +308,20 @@ int main(void)
 	CHECK(swd_flash(&block_link, SWD_FLASH_FIRST, img, sizeof img, NULL) == 0);
 	CHECK(!memcmp(flash + SWD_FLASH_FIRST, img, sizeof img) && block_writes == 6);
 	blocks_fail = false;
+
+	/* Halted inside the boot ROM, the core is let run until it is out,
+	 * and refused if it stays. */
+	halted = maskints = false;
+	regs[15] = 0x08000400u;
+	rom_resumes = 2;
+	CHECK(swd_take(&link) == 0 && halted && regs[15] == 0x0000c100u);
+	halted = false;
+	regs[15] = 0x08000400u;
+	rom_resumes = 0;
+	nops = 0;
+	CHECK(swd_take(&link) == -4);
+	CHECK(swd_flash(&link, SWD_FLASH_FIRST, img, sizeof img, NULL) == -2 && nops == 0);
+	CHECK(calls_other == 0 && wdt_cfg == 0);
 
 	/* Parked, the core is set to run the loop with the interrupts off. */
 	vtor = 0;

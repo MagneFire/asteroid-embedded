@@ -29,6 +29,8 @@ struct swd_link {
 #define SWD_INFO0_BASE		0x50020000u
 #define SWD_INFO0_SIZE		0x2000u
 #define SWD_BOX_BASE		0x1005f800u
+#define SWD_ROM_BASE		0x08000000u
+#define SWD_ROM_END		0x08010000u
 
 int swd_read(const struct swd_link *l, uint32_t addr, uint32_t *val);
 int swd_write(const struct swd_link *l, uint32_t addr, uint32_t val);
@@ -43,7 +45,7 @@ int swd_reg_write(const struct swd_link *l, unsigned reg, uint32_t val);
 
 /* Halts the core with the watchdog and the interrupts off, and faults
  * caught as halts, for loading or flashing: -3 if the watchdog is
- * locked on. */
+ * locked on, -4 if the core keeps being halted inside the boot ROM. */
 int swd_take(const struct swd_link *l);
 /* Leaves the core in a loop in SRAM with the interrupts off, for when it
  * must not run from flash and the debug session ends. */

@@ -182,6 +182,8 @@ static int take(void)
 	int r = swd_take(&swd);
 	if (r == -3)
 		return refuse("the watchdog is locked on and would reset the chip midway");
+	if (r == -4)
+		return refuse("the core keeps halting inside the boot ROM, maybe in a flash write of its own");
 	return r ? fail("could not halt the core") : 0;
 }
 
