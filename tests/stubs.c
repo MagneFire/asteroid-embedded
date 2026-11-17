@@ -6,6 +6,7 @@
 #include "asteroid.h"
 #include "bt/bt.h"
 #include "stubs.h"
+#include "power.h"
 #include "storage/storage.h"
 #include "ui/ui.h"
 #include "display/display.h"
@@ -76,6 +77,12 @@ bool cpu_clock_is_slow(void) { return false; }
 void power_request(bool sleep) { stub_asleep = sleep; }
 bool stub_keep_awake;
 void power_keep_awake(bool on) { stub_keep_awake = on; }
+void power_peek(const char *cause, bool light) {}
+int32_t power_backlight_seen(struct backlight *b) { *b = (struct backlight){ 0 }; return -1; }
+void power_backlight_fix(const struct backlight *b) {}
+void light_start(void) {}
+void light_keep(bool on) {}
+int32_t light_finish(void) { return -1; }
 void cpu_idle_limit(enum idle_level level) {}
 static int stub_settings[SETTINGS] = { [SETTING_AOD] = 1 };
 int setting_get(enum setting s) { return stub_settings[s]; }

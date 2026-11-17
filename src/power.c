@@ -55,8 +55,9 @@ static const char *wake_cause;
 static bool lit_pending;
 static enum { LUX_IDLE, LUX_READING, LUX_DONE } lux_state;
 static uint32_t lux_t;
-static struct backlight lit;
-static bool lit_shown;
+static int32_t lux_seen = -1;
+static struct backlight lit, lit_fixed;
+static bool lit_is_fixed, lit_shown;
 
 void power_init(bool display, bool ui, bool hub)
 {
@@ -355,7 +356,8 @@ static bool backlight_ready(uint32_t now)
 	if (lux < 0 && now - lux_t < LUX_WAIT_MS)
 		return false;
 	light_keep(false);
-	lit = power_policy_backlight(lux, setting_get(SETTING_BACKLIGHT_COLOR));
+	lux_seen = lux;
+	lit = lit_is_fixed ? lit_fixed : power_policy_backlight(lux, setting_get(SETTING_BACKLIGHT_COLOR));
 	log_printf("backlight: %ld lux after %lu ms, %u/%u %s\n", (long)lux, (unsigned long)(now - lux_t), lit.dbv, lit.pixel,
 		   lit.red ? "red" : "white");
 	lux_state = LUX_DONE;
@@ -607,6 +609,19 @@ void power_idle(uint32_t app_next_ms)
 		bt_sleep(false);
 		cpu_clock_slow(false);
 	}
+}
+
+int32_t power_backlight_seen(struct backlight *b)
+{
+	*b = lit;
+	return lux_seen;
+}
+
+void power_backlight_fix(const struct backlight *b)
+{
+	lit_is_fixed = b;
+	if (b)
+		lit_fixed = *b;
 }
 
 uint32_t power_wakeups(void)

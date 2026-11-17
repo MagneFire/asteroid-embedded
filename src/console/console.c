@@ -244,6 +244,43 @@ static void cmd_bright(const char *args)
 	display_set_brightness((uint8_t)v);
 }
 
+/* backlight [peek | auto | <brightness> <pixel> white|red | lux [off]]:
+ * the catfish backlight's last reading, a peek with it, or a fixed
+ * light for every peek; lux reads the sensor, whatever the screen shows,
+ * -1 until its first reading. */
+static void cmd_backlight(const char *args)
+{
+	struct backlight b;
+	uint32_t dbv, pixel;
+	if (!hub_has_screen()) {
+		say("backlight: only behind a hub's display\n");
+		return;
+	}
+	if (!strcmp(args, "peek")) {
+		power_peek("console", true);
+	} else if (!strcmp(args, "auto")) {
+		power_backlight_fix(NULL);
+	} else if (!strcmp(args, "lux")) {
+		light_keep(true);
+		light_start();
+		say("lux %ld\n", (long)light_finish());
+		return;
+	} else if (!strcmp(args, "lux off")) {
+		light_keep(false);
+		return;
+	} else if (*args) {
+		if (!parse_num(&args, 10, &dbv) || dbv > 255 || !parse_num(&args, 10, &pixel) || pixel > 255 ||
+		    (strcmp(args, " white") && strcmp(args, " red"))) {
+			say("usage: backlight [peek | auto | <brightness> <pixel> white|red | lux [off]]\n");
+			return;
+		}
+		b = (struct backlight){ .dbv = (uint8_t)dbv, .pixel = (uint8_t)pixel, .red = !strcmp(args, " red") };
+		power_backlight_fix(&b);
+	}
+	int32_t lux = power_backlight_seen(&b);
+	say("last %ld lux: %u/%u %s\n", (long)lux, b.dbv, b.pixel, b.red ? "red" : "white");
+}
+
 static void cmd_sleep(const char *args) { power_request(true); }
 static void cmd_wake(const char *args) { power_request(false); }
 
@@ -1625,6 +1662,7 @@ static const struct command commands[] = {
 	{ "reboot", "[bootloader]", cmd_reboot },
 	{ "dload", "on | off", cmd_dload },
 	{ "bright", "<0-255>", cmd_bright },
+	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
 	{ "awake", "on|off", cmd_awake },

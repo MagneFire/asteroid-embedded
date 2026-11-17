@@ -30,4 +30,8 @@ void power_idle(uint32_t app_next_ms);
 void power_timepiece(void) __attribute__((noreturn));
 uint32_t power_wakeups(void);
 uint32_t power_slept_ms(uint32_t now);
+/* For tuning over the console: the last peek's lux and light, and a
+ * light that every peek uses in place of the one for the room. */
+int32_t power_backlight_seen(struct backlight *b);
+void power_backlight_fix(const struct backlight *b);
 #endif
