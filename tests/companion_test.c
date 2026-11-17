@@ -869,11 +869,13 @@ int main(void)
 	CHECK(proto_reply_put(out, sizeof out, &r) == 0);
 
 	/* The reboot reason from RSTGEN's status. */
-	CHECK(proto_reboot_reason(1u << 5 | 1u << 6, false) == PROTO_REBOOT_DEBUG);
+	CHECK(proto_reboot_reason(1u << 5 | 1u << 6, false) == PROTO_REBOOT_FAULT);
+	CHECK(proto_reboot_reason(1u << 5 | 1u << 0, false) == PROTO_REBOOT_PIN);
+	CHECK(proto_reboot_reason(1u << 5, false) == PROTO_REBOOT_DEBUG);
 	CHECK(proto_reboot_reason(1u << 6, false) == PROTO_REBOOT_FAULT);
 	CHECK(proto_reboot_reason(1u << 4, true) == PROTO_REBOOT_FAULT);
 	CHECK(proto_reboot_reason(1u << 0, false) == PROTO_REBOOT_PIN);
-	CHECK(proto_reboot_reason(1u << 0 | 1u << 1, false) == PROTO_REBOOT_OTHER);
+	CHECK(proto_reboot_reason(1u << 0 | 1u << 1, false) == PROTO_REBOOT_PIN);
 	CHECK(proto_reboot_reason(1u << 4, false) == PROTO_REBOOT_OTHER);
 	CHECK(proto_powered_up(1u << 1) && proto_powered_up(1u << 2 | 1u << 0));
 	CHECK(!proto_powered_up(1u << 0) && !proto_powered_up(1u << 3) && !proto_powered_up(1u << 5 | 1u << 6));

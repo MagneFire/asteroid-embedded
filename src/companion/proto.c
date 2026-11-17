@@ -222,12 +222,12 @@ bool proto_powered_up(uint32_t st) { return st & (RESET_POWER_ON | RESET_BROWN_O
 
 unsigned proto_reboot_reason(uint32_t st, bool faulted)
 {
-	if (st & RESET_DEBUGGER)
-		return PROTO_REBOOT_DEBUG;
 	if ((st & RESET_WATCHDOG) || faulted)
 		return PROTO_REBOOT_FAULT;
-	if ((st & RESET_PIN) && !(st & (RESET_POWER_ON | RESET_BROWN_OUT)))
+	if (st & RESET_PIN)
 		return PROTO_REBOOT_PIN;
+	if (st & RESET_DEBUGGER)
+		return PROTO_REBOOT_DEBUG;
 	return PROTO_REBOOT_OTHER;
 }
 
