@@ -25,6 +25,7 @@
 #define SWD_BOX_BASE		0x1005f800	/* the console over SWD */
 #define SWD_BOX_SIZE		0x00000800
 #define DRAM0_END		KEPT_BASE	/* the stack ends below this */
+#define RAMTEST_BASE		0x10010000	/* swdtool's scratch is below it */
 
 #define UI_HEAP_SIZE		0x00020000
 #define UI_LAYER_BASE		0

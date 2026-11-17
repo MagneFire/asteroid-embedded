@@ -1,0 +1,44 @@
+/* The test image `swdtool ramrun` loads: all of it in SRAM above the
+ * tool's own scratch, nothing in flash. */
+#include "memmap.h"
+MEMORY
+{
+    SRAM (rwx)  : ORIGIN = RAMTEST_BASE, LENGTH = DRAM0_END - RAMTEST_BASE
+    KEPT (rw)   : ORIGIN = KEPT_BASE, LENGTH = KEPT_SIZE
+}
+ENTRY(_start)
+SECTIONS
+{
+    .text : {
+        KEEP(*(.vectors))
+        *(.text*)
+        *(.rodata*)
+        . = ALIGN(4);
+    } > SRAM
+    .data : {
+        . = ALIGN(4);
+        __data_start = .;
+        *(.ramfunc*) *(.data*)
+        . = ALIGN(4);
+        __data_end = .;
+    } > SRAM
+    __data_load = __data_start;
+    __image_end = __data_end;
+    .bss (NOLOAD) : {
+        . = ALIGN(4);
+        __bss_start = .;
+        *(.bss*) *(COMMON)
+        . = ALIGN(4);
+        __bss_end = .;
+    } > SRAM
+    .stack (NOLOAD) : {
+        . = ALIGN(8);
+        __stack_bottom = .;
+        . += 16384;
+        __stack_top = .;
+        __stack_svc_top = .;
+    } > SRAM
+    __ram_end = .;
+    .kept (NOLOAD) : { *(.kept*) } > KEPT
+    /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
+}

@@ -155,7 +155,7 @@ $(BUILD)/%.S.o: %.S
 THIRD_PARTY_CFLAGS ?= -w
 $(BUILD)/$(NIMBLE)/%.c.o $(BUILD)/$(MBEDTLS)/%.c.o: CFLAGS += $(THIRD_PARTY_CFLAGS)
 
-$(BUILD)/src/version.c.o: $(BUILD)/gitrev.h
+$(BUILD)/src/version.c.o $(BUILD)/src/soc/apollo3/ramtest.c.o: $(BUILD)/gitrev.h
 $(BUILD)/src/%.c.o: CFLAGS += -Werror
 $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	@mkdir -p $(dir $@)
@@ -177,6 +177,17 @@ $(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/asteroid.ld
 
 $(BUILD)/asteroid.bin: $(BUILD)/asteroid.elf
 	$(OBJCOPY) -O binary $< $@
+
+# The SRAM test image for `swdtool ramrun`.
+$(BUILD)/ramtest.ld: ld/asteroid-ram.ld.in src/soc/$(SOC)/memmap.h
+	@mkdir -p $(BUILD)
+	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/$(SOC) $< -o $@
+$(BUILD)/ramtest.elf: $(filter-out $(BUILD)/src/main.c.o $(BUILD)/src/soc/apollo3/flash.c.o,$(OBJS)) $(BUILD)/src/soc/apollo3/ramtest.c.o $(UI_LIB) $(BUILD)/ramtest.ld
+	$(CC) $(CFLAGS) $(subst asteroid.ld,ramtest.ld,$(LDFLAGS)) $(filter %.o,$^) $(LIBS) $(UI_LIB) $(LIBS) -o $@
+	$(SIZE) $@
+$(BUILD)/ramtest.bin: $(BUILD)/ramtest.elf
+	$(OBJCOPY) -O binary $< $@
+ramtest: $(BUILD)/ramtest.bin
 
 $(BUILD)/%.dtb: dts/%.dts
 	@mkdir -p $(BUILD)
@@ -495,4 +506,4 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(OBJS:.o=.d)
-.PHONY: all run preview textbench disasm test clean swdtool FORCE bench-soft
+.PHONY: all run preview textbench disasm test clean swdtool ramtest FORCE bench-soft
