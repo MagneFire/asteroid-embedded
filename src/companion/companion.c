@@ -29,7 +29,7 @@
  * back, for an AP that is not there to give it back. */
 #define ESCAPE_MS	5000
 
-static bool ready, boot_lent, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
+static bool ready, boot_lent, chips_on, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
 static bool reply_pending, burst, key_held;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason, reply_mode;
 static int32_t zone_min;
@@ -52,8 +52,10 @@ static void lend_lines(bool to_ap)
 {
 	const uint8_t own = board->ap_link.own_gpio, rel = board->ap_link.release_gpio;
 	if (to_ap) {
-		if (own)
+		if (own) {
 			gpio_set(own, 0);
+			gpio_config(own, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		}
 		if (rel)
 			gpio_config(rel, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 		return;
@@ -68,10 +70,10 @@ static void lend_lines(bool to_ap)
 	delay_ms(5);
 }
 
-void companion_boot(void)
+bool companion_boot(void)
 {
 	if (!board->ap_link.up_int)
-		return;
+		return false;
 	uint8_t m;
 	if (kv_get(KV_MODE, &m, 1) == 1 && m <= PROTO_MODE_POWER_OFF)
 		mode = last_mode = m;
@@ -81,12 +83,13 @@ void companion_boot(void)
 	uint32_t st = reset_status();
 	reboot_reason = proto_reboot_reason(st, log_previous_record() != NULL);
 	if (mode == PROTO_MODE_NORMAL && !proto_powered_up(st)) {
-		boot_lent = true;
+		boot_lent = chips_on = true;
 		display_start_lent();
 		touch_start_lent();
 		haptics_hold(true);
 		lend_lines(true);
 	}
+	return boot_lent;
 }
 
 void companion_init(void)
@@ -240,6 +243,11 @@ static void switch_panel(void)
 		power_lend_display(true);
 	} else {
 		lend_lines(false);
+		if (chips_on) {
+			chips_on = false;
+			if (board_chips_off())
+				iom_stop(board->chips_off.i2c.bus);
+		}
 		power_lend_display(false);
 		display_lend(false);
 		touch_lend(false);

@@ -97,16 +97,29 @@ void soc_init(void)
 	swdbox_init();
 }
 
+static bool shared_pad(unsigned pad)
+{
+	if (pad == board->ap_link.own_gpio || pad == board->ap_link.release_gpio)
+		return true;
+	for (unsigned i = 0; i < ARRAY_SIZE(board->panel.spi_pads); i++)
+		if (pad == board->panel.spi_pads[i])
+			return true;
+	return false;
+}
+
+/* The chips are put to sleep once the watch has their bus, which is
+ * later if the AP has it now. */
 void soc_board_init(void)
 {
+	bool lent = companion_boot();
 	for (const struct board_mcu_pad *p = board->mcu_pads; p && p->func != 0xff; p++)
-		pad_set(p);
+		if (!lent || !shared_pad(p->pad))
+			pad_set(p);
 	swdwake_init();
-	if (board_chips_off())
+	if (!lent && board_chips_off())
 		iom_stop(board->chips_off.i2c.bus);
 	log_printf("boot: %s\n", boot_reason());
 	log_printf("rtc: %s\n", rtc_origin());
-	companion_boot();
 }
 
 /* No PMIC of its own: the application processor's has the charger and

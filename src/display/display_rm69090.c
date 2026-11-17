@@ -167,7 +167,7 @@ static void window(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 
 bool display_init(void)
 {
-	if (!board->panel.spi_hz || iom_spi_init(BUS, board->panel.spi_hz, board->panel.spi_mode)) {
+	if (!board->panel.spi_hz || (!lent && iom_spi_init(BUS, board->panel.spi_hz, board->panel.spi_mode))) {
 		log_printf("display: no SPI panel\n");
 		return false;
 	}

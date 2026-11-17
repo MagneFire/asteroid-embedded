@@ -130,7 +130,7 @@ enum { UP_INT = 29, DN_INT = 30, DN_ACK = 31, UP_ACK = 33, PINS = 64 };
 static const struct board test_board = { .ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK, OWN, 14 } };
 const struct board *board = &test_board;
 
-static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, darks;
+static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, darks, chips_offs;
 static unsigned levels[PINS];
 static bool irq_on[PINS], display_lent, touch_lent, haptics_held, power_lent, key_down;
 static void (*irq_fn[PINS])(unsigned);
@@ -207,6 +207,12 @@ void touch_start_lent(void) { touch_lent = true; }
 void haptics_hold(bool on) { haptics_held = on; }
 void power_lend_display(bool on) { power_lent = on; }
 void power_dark_until_wake(void) { darks++; }
+bool board_chips_off(void)
+{
+	chips_offs++;
+	return true;
+}
+void iom_stop(unsigned bus) {}
 void power_wake(const char *cause) { wakes++; }
 bool power_key(void) { return key_down; }
 void hub_accel_share(bool on) { accel_shared = on; }
@@ -318,8 +324,8 @@ static void companion_scenario(void)
 	kv_mode = PROTO_MODE_NORMAL;
 	reset_bits = 1u << 5;
 	levels[OWN] = 1;
-	companion_boot();
-	CHECK(display_lent && touch_lent && haptics_held && !levels[OWN]);
+	CHECK(companion_boot());
+	CHECK(display_lent && touch_lent && haptics_held && !levels[OWN] && !chips_offs);
 	companion_init();
 	CHECK(power_lent && irq_on[DN_INT]);
 
@@ -349,6 +355,8 @@ static void companion_scenario(void)
 	CHECK(display_lent);
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !haptics_held && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
+	/* The chips on the AP's bus are put to sleep once it is the watch's. */
+	CHECK(chips_offs == 1);
 	ap_write(1, PROTO_OOBE, NULL, 0);
 	companion_pass();
 	wait_ms(2999);
@@ -383,7 +391,7 @@ static void companion_scenario(void)
 	mode_message(374, m374, sizeof m374, &a);
 	CHECK(a.mode == PROTO_MODE_POWER_OFF && display_lent);
 	wait_ms(1000);
-	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1);
+	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 1);
 
 	/* The power key held for 5 s takes the panel back from an AP that
 	 * does not answer, and power off is stored at once. */

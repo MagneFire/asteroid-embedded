@@ -9,9 +9,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Before the display and touch start: the stored mode, and whether the
- * AP still has them from before a reset. */
-void companion_boot(void);
+/* Before the pads are set and the display and touch start: the stored
+ * mode, and whether the AP still has them from before a reset, in which
+ * case the pads and buses it shares stay alone. */
+bool companion_boot(void);
 void companion_init(void);
 /* Once a pass of the main loop: the messages and the mode changes. */
 void companion_pass(void);

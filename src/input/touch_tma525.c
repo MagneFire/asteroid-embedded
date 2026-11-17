@@ -26,7 +26,7 @@
 #define BOOT_WAIT_MS	500
 
 static volatile bool attention;
-static bool was_down, asleep, lent;
+static bool was_down, asleep, lent, up;
 static int last_x, last_y;
 static uint32_t attentions, errors;
 static struct touch pending;
@@ -67,6 +67,7 @@ static bool tma_init(void)
 		if (i == 9)
 			r = -6;
 	}
+	up = !r;
 	if (r) {
 		log_printf("touch: no answer from the TMA525 (%d)\n", r);
 		return false;
@@ -155,7 +156,8 @@ static void tma_lend(bool to_ap)
 		tma_init();
 		return;
 	}
-	normal_mode();
+	if (up)
+		normal_mode();
 	gpio_irq_enable(GPIO_IRQ, false);
 	gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	gpio_config(GPIO_IRQ, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
