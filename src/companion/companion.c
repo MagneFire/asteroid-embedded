@@ -1,6 +1,9 @@
 /* The mode, the last one before it and the zone are kept in the store.
- * A mode takes effect once the AP has its 377; the panel comes back
- * TAKE_DELAY_MS after that, and the store is only written while the
+ * The normal mode takes effect once the AP has its 377. The AP lets go
+ * of the panel right after it sent a 375 or 374, without waiting for
+ * an answer: those take effect at once, and only the 374 gets a 377,
+ * as with the vendor's firmware. The panel comes back TAKE_DELAY_MS
+ * after a mode change, and the store is only written while the
  * link has been quiet for a while, as a flash write masks interrupts
  * for longer than the AP's handshakes allow. The RTC keeps local time,
  * so the AP's Unix time is moved by its zone. */
@@ -163,9 +166,11 @@ static bool reply(uint16_t chan, unsigned now_mode, unsigned before)
 	return reply_len != 0;
 }
 
+static void enter(unsigned to, uint32_t now);
+
 /* A malformed message gets no 377, so the AP's retry and reset take
  * over. */
-static void work_mode(const struct wire_msg *m, unsigned to)
+static void work_mode(const struct wire_msg *m, unsigned to, uint32_t now)
 {
 	unsigned field;
 	struct proto_time t;
@@ -175,19 +180,25 @@ static void work_mode(const struct wire_msg *m, unsigned to)
 		log_printf("companion: malformed %s mode message from the AP\n", mode_names[to]);
 		return;
 	}
+	log_printf("companion: %s mode from the AP (field %u), was %s\n", mode_names[to], field, mode_names[mode]);
+	set_time(&t);
 	if (to == PROTO_MODE_NORMAL) {
 		burst = true;
-		burst_t = time_ms();
-	}
-	set_time(&t);
-	if (!reply(m->chan, to, mode))
+		burst_t = now;
+		if (reply(m->chan, to, mode)) {
+			reply_pending = true;
+			reply_mode = to;
+		}
 		return;
-	reply_pending = true;
-	reply_mode = to;
-	log_printf("companion: %s mode from the AP (field %u), was %s\n", mode_names[to], field, mode_names[mode]);
+	}
+	reply_pending = false;
+	if (to == PROTO_MODE_POWER_OFF)
+		reply(m->chan, to, mode);
+	else
+		reply_len = 0;
+	enter(to, now);
 }
 
-/* Takes effect once the AP has the 377. */
 static void enter(unsigned to, uint32_t now)
 {
 	if (to != mode) {
@@ -217,7 +228,7 @@ static void raw_data(const struct wire_msg *m)
 		count.other++;
 }
 
-static void message(const uint8_t *p, unsigned n)
+static void message(const uint8_t *p, unsigned n, uint32_t now)
 {
 	struct wire_msg m;
 	count.messages++;
@@ -233,7 +244,7 @@ static void message(const uint8_t *p, unsigned n)
 	int to = proto_mode_of(m.id);
 	struct proto_time t;
 	if (to >= 0)
-		work_mode(&m, (unsigned)to);
+		work_mode(&m, (unsigned)to, now);
 	else if (m.id == PROTO_MODE_REQUEST) {
 		count.other++;
 		reply(m.chan, mode, last_mode);
@@ -349,7 +360,7 @@ void companion_poll(void)
 
 static void settle(uint32_t now)
 {
-	if (reply_pending) {
+	if (reply_pending && link_idle()) {
 		reply_pending = false;
 		if (link_sent() == LINK_SENT)
 			enter(reply_mode, now);
@@ -382,7 +393,7 @@ void companion_pass(void)
 	uint8_t buf[WIRE_PAYLOAD_MAX];
 	unsigned n;
 	while ((n = link_recv(buf, sizeof buf)))
-		message(buf, n);
+		message(buf, n, now);
 	if (reply_len && link_send(reply_buf, reply_len)) {
 		reply_len = 0;
 		link_poll();
@@ -390,8 +401,7 @@ void companion_pass(void)
 	watch_key(now);
 	/* A report is queued after these, so that reports do not keep
 	 * them waiting. */
-	if (link_idle())
-		settle(now);
+	settle(now);
 	sns_pass();
 	if (link_idle() && sns_due() && (n = sns_report(report_buf, sizeof report_buf)) && link_send(report_buf, n)) {
 		sns_sent();
@@ -408,14 +418,12 @@ uint32_t companion_next_ms(void)
 	uint32_t now = time_ms(), next = link_next_ms();
 	if (reply_len && link_sent() != LINK_PENDING)
 		return 0;
-	if (link_idle()) {
-		if (reply_pending || (switching && want_ap))
-			return 0;
-		if (switching)
-			next = sooner(next, ms_left(take_t, TAKE_DELAY_MS, now));
-		if (save_mode || save_zone)
-			next = sooner(next, store_wait_ms(now));
-	}
+	if ((reply_pending && link_idle()) || (switching && want_ap))
+		return 0;
+	if (switching)
+		next = sooner(next, ms_left(take_t, TAKE_DELAY_MS, now));
+	if (save_mode || save_zone)
+		next = sooner(next, store_wait_ms(now));
 	if (key_held)
 		next = sooner(next, ms_left(key_t, ESCAPE_MS, now));
 	return sooner(next, sns_next_ms(link_idle()));

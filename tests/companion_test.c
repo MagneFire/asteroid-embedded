@@ -125,6 +125,7 @@ static void ap_parse(const uint8_t *p, unsigned n, struct ap_reply *r)
 	}
 }
 
+#define STORE_WAIT_MS 13000
 enum { UP_INT = 29, DN_INT = 30, DN_ACK = 31, UP_ACK = 33, PINS = 64 };
 #define OWN 36
 static const struct board test_board = { .ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK, OWN, 14 } };
@@ -411,6 +412,13 @@ static void wait_ms(uint32_t ms)
 	companion_pass();
 }
 
+/* One pass a millisecond, as when nothing else keeps the loop busy. */
+static void run_ms(uint32_t ms)
+{
+	while (ms--)
+		wait_ms(1);
+}
+
 /* A work mode message answered and acknowledged. */
 static void mode_message(uint16_t id, const uint8_t *body, unsigned len, struct ap_reply *a)
 {
@@ -471,13 +479,14 @@ static void companion_scenario(void)
 	companion_pass();
 	CHECK(display_lent && !kv_sets);
 
-	/* 375: the panel comes back a second after the 377, the store waits
-	 * for the end of the boot burst and a quiet link. */
+	/* 375: no 377, as the AP lets go of the panel without waiting for
+	 * one; the panel comes back a second later, the store waits for the
+	 * end of the boot burst and a quiet link. */
 	ms_per_read = 1;
-	mode_message(375, m375, sizeof m375, &a);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
 	ms_per_read = 0;
-	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL && a.reboot == PROTO_REBOOT_DEBUG);
-	CHECK(rtc_writes == 1);
+	CHECK(!levels[UP_INT] && rtc_writes == 1);
 	CHECK(display_lent && power_lent);
 	uint32_t left = companion_next_ms();
 	CHECK(left > 900 && left <= 1000);
@@ -496,7 +505,7 @@ static void companion_scenario(void)
 
 	/* 376 asks for the mode and changes nothing. */
 	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
-	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL);
+	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL && a.reboot == PROTO_REBOOT_DEBUG);
 	wait_ms(5000);
 	CHECK(!display_lent && kv_sets == 2);
 
@@ -541,6 +550,22 @@ static void companion_scenario(void)
 	wait_ms(1);
 	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF);
 	key_down = false;
+
+	/* A 374 whose 377 the AP never reads, as it is on its way down:
+	 * power off all the same, and the panel back a second later. */
+	mode_message(373, NULL, 0, &a);
+	CHECK(display_lent && !levels[OWN]);
+	ap_write(1, 374, m374, sizeof m374);
+	companion_pass();
+	CHECK(levels[UP_INT] && display_lent);
+	wait_ms(999);
+	CHECK(display_lent);
+	wait_ms(1);
+	CHECK(!display_lent && levels[OWN] && wakes == 2 && darks == 2);
+	run_ms(2 * LINK_TX_MS + 150);
+	CHECK(!levels[UP_INT]);
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_POWER_OFF);
 
 	/* Requests without a packet: dn_int is ignored after three, until
 	 * the AP writes, or for a while. */
@@ -782,7 +807,7 @@ static void sensor_scenario(void)
 	ap_sensors(2000);
 	CHECK(got.reports == 0);
 
-	/* Power off drops them once the AP has the 377. */
+	/* Power off drops them. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);
 	ap_activate(PROTO_SNS_ACCEL, true, 0);
 	CHECK(accel_shared);
