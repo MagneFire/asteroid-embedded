@@ -90,7 +90,7 @@
 #define STATUS_POLLS		300	/* of 10 us */
 #define XFER_US			10000
 #define START_RETRY_MS		3000
-#define TX_POWER_0DBM		0x08
+#define TX_POWER_MAX		0x0f
 #define BOOT_TRIES		3
 #define CLOCK_BAD		1
 
@@ -556,7 +556,7 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 	}
 	if (r)
 		return fail(info, what, r);
-	if ((r = tx_power(TX_POWER_0DBM)))
+	if ((r = tx_power(TX_POWER_MAX)))
 		return fail(info, "transmit power", r);
 	writel(INT_BLECIRQ, INTCLR);
 	writel(INT_BLECIRQ, INTEN);
