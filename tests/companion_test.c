@@ -324,6 +324,8 @@ static void ap_got_report(const struct wire_msg *m, unsigned n)
 static unsigned ap_receive(struct wire_msg *m, uint8_t *copy);
 
 static uint16_t ap_seq = 100;
+/* Whether the AP reads what the MCU offers while it waits to write. */
+static bool ap_reads = true;
 
 /* dn_int up and held: dn_ack answers once it has been up for a while. */
 static void ap_request(void)
@@ -332,7 +334,7 @@ static void ap_request(void)
 	fire(DN_INT);
 	CHECK(levels[DN_ACK] == 0);
 	if (!ms_per_read) {
-		CHECK(companion_next_ms() > 0 && companion_next_ms() <= LINK_DN_SETTLE_MS);
+		CHECK(levels[UP_INT] || (companion_next_ms() > 0 && companion_next_ms() <= LINK_DN_SETTLE_MS));
 		now_ms += LINK_DN_SETTLE_MS - 1;
 		link_poll();
 		CHECK(levels[DN_ACK] == 0);
@@ -349,6 +351,10 @@ static void ap_write_env(const uint8_t *env, unsigned n)
 	unsigned k = ap_write_parts(env, n, ap_seq++, parts);
 	ap_request();
 	/* The AP reads a sensor report under way first. */
+	for (int i = 0; !ap_reads && !levels[DN_ACK] && i < 2000; i++) {
+		now_ms++;
+		companion_poll();
+	}
 	while (!levels[DN_ACK] && levels[UP_INT]) {
 		struct wire_msg m;
 		uint8_t copy[WIRE_PAYLOAD_MAX];
@@ -417,6 +423,22 @@ static void run_ms(uint32_t ms)
 {
 	while (ms--)
 		wait_ms(1);
+}
+
+/* The mode in the 377 up_int offers, or -1. */
+static int staged_mode(void)
+{
+	struct wire_header h;
+	struct wire_msg m;
+	struct ap_reply a;
+	uint8_t copy[WIRE_PAYLOAD_MAX];
+	if (!levels[UP_INT] || wire_header_get(staged, &h) != WIRE_OK)
+		return -1;
+	memcpy(copy, staged + WIRE_HEADER, h.len);
+	if (!wire_unwrap(copy, h.len, &m) || !m.framework || m.id != PROTO_REPLY)
+		return -1;
+	ap_parse(m.body, m.len, &a);
+	return a.mode;
 }
 
 /* A work mode message answered and acknowledged. */
@@ -566,6 +588,39 @@ static void companion_scenario(void)
 	CHECK(!levels[UP_INT]);
 	run_ms(STORE_WAIT_MS);
 	CHECK(kv_mode == PROTO_MODE_POWER_OFF);
+
+	/* A 376 crossing a 373 whose 377 the AP never reads: the 377 for
+	 * the 376 does not make the normal mode take effect. */
+	ap_reads = false;
+	ap_write(1, 373, NULL, 0);
+	companion_pass();
+	CHECK(staged_mode() == PROTO_MODE_NORMAL);
+	ap_write(1, PROTO_MODE_REQUEST, NULL, 0);
+	ap_reads = true;
+	for (int i = 0; i < 2 * LINK_TX_MS && staged_mode() != PROTO_MODE_POWER_OFF; i++)
+		wait_ms(1);
+	CHECK(ap_take(&m, copy) && m.id == PROTO_REPLY);
+	ap_parse(m.body, m.len, &a);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF);
+	run_ms(1000);
+	CHECK(!display_lent && !power_lent && levels[OWN]);
+
+	/* A 375 crossing a 373 whose 377 the AP reads late: the 375 wins. */
+	ap_reads = false;
+	ap_write(1, 373, NULL, 0);
+	companion_pass();
+	CHECK(staged_mode() == PROTO_MODE_NORMAL);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	ap_reads = true;
+	for (int i = 0; i < LINK_TX_MS && !levels[UP_INT]; i++)
+		wait_ms(1);
+	CHECK(staged_mode() == PROTO_MODE_NORMAL && ap_take(&m, copy));
+	run_ms(1000);
+	CHECK(!display_lent && !power_lent);
+	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_POWER_OFF);
+	run_ms(STORE_WAIT_MS);
 
 	/* Requests without a packet: dn_int is ignored after three, until
 	 * the AP writes, or for a while. */

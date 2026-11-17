@@ -34,8 +34,11 @@
 #define ESCAPE_MS	5000
 
 static bool ready, boot_lent, chips_on, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
-static bool reply_pending, burst, key_held;
-static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason, reply_mode;
+static bool replying, burst, key_held;
+static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason;
+/* The mode a 377 queued or under way makes take effect once the AP has
+ * it, or -1. */
+static int reply_to = -1, sending_to = -1;
 static int32_t zone_min;
 static uint32_t take_t, burst_t, key_t;
 static uint8_t reply_buf[REPLY_MAX], report_buf[LINK_SEND_MAX];
@@ -162,6 +165,7 @@ static bool reply(uint16_t chan, unsigned now_mode, unsigned before)
 	int n = proto_reply_put(body, sizeof body, &r);
 	if (reply_len)
 		count.replies_lost++;
+	reply_to = -1;
 	reply_len = n >= 0 ? wire_wrap(reply_buf, sizeof reply_buf, wire_reply_chan(chan), PROTO_REPLY, body, (unsigned)n) : 0;
 	return reply_len != 0;
 }
@@ -185,17 +189,17 @@ static void work_mode(const struct wire_msg *m, unsigned to, uint32_t now)
 	if (to == PROTO_MODE_NORMAL) {
 		burst = true;
 		burst_t = now;
-		if (reply(m->chan, to, mode)) {
-			reply_pending = true;
-			reply_mode = to;
-		}
+		if (reply(m->chan, to, mode))
+			reply_to = (int)to;
 		return;
 	}
-	reply_pending = false;
+	sending_to = -1;
 	if (to == PROTO_MODE_POWER_OFF)
 		reply(m->chan, to, mode);
-	else
+	else {
 		reply_len = 0;
+		reply_to = -1;
+	}
 	enter(to, now);
 }
 
@@ -247,7 +251,8 @@ static void message(const uint8_t *p, unsigned n, uint32_t now)
 		work_mode(&m, (unsigned)to, now);
 	else if (m.id == PROTO_MODE_REQUEST) {
 		count.other++;
-		reply(m.chan, mode, last_mode);
+		if (reply_to < 0)
+			reply(m.chan, mode, last_mode);
 	} else if (m.id == PROTO_BATTERY) {
 		count.battery++;
 		battery = proto_battery(m.body, m.len);
@@ -336,7 +341,7 @@ static void watch_key(uint32_t now)
 		escape(now);
 }
 
-static bool link_idle(void) { return !reply_len && link_sent() != LINK_PENDING; }
+static bool link_idle(void) { return !reply_len && !replying && link_sent() != LINK_PENDING; }
 
 static uint32_t store_wait_ms(uint32_t now)
 {
@@ -358,17 +363,25 @@ void companion_poll(void)
 		link_poll();
 }
 
+/* What became of the 377 under way, before another one is queued. */
+static void replied(uint32_t now)
+{
+	if (!replying || link_sent() == LINK_PENDING)
+		return;
+	replying = false;
+	if (sending_to < 0)
+		return;
+	if (link_sent() == LINK_SENT)
+		enter((unsigned)sending_to, now);
+	else {
+		count.replies_failed++;
+		log_printf("companion: the AP did not take the 377, staying in %s mode\n", mode_names[mode]);
+	}
+	sending_to = -1;
+}
+
 static void settle(uint32_t now)
 {
-	if (reply_pending && link_idle()) {
-		reply_pending = false;
-		if (link_sent() == LINK_SENT)
-			enter(reply_mode, now);
-		else {
-			count.replies_failed++;
-			log_printf("companion: the AP did not take the 377, staying in %s mode\n", mode_names[mode]);
-		}
-	}
 	if (switching && (want_ap || now - take_t >= TAKE_DELAY_MS))
 		switch_panel();
 	if ((save_mode || save_zone) && store_wait_ms(now) == 0) {
@@ -394,8 +407,12 @@ void companion_pass(void)
 	unsigned n;
 	while ((n = link_recv(buf, sizeof buf)))
 		message(buf, n, now);
-	if (reply_len && link_send(reply_buf, reply_len)) {
+	replied(now);
+	if (reply_len && !replying && link_send(reply_buf, reply_len)) {
+		replying = true;
+		sending_to = reply_to;
 		reply_len = 0;
+		reply_to = -1;
 		link_poll();
 	}
 	watch_key(now);
@@ -416,9 +433,9 @@ uint32_t companion_next_ms(void)
 	if (!ready)
 		return UINT32_MAX;
 	uint32_t now = time_ms(), next = link_next_ms();
-	if (reply_len && link_sent() != LINK_PENDING)
+	if ((replying || reply_len) && link_sent() != LINK_PENDING)
 		return 0;
-	if ((reply_pending && link_idle()) || (switching && want_ap))
+	if (switching && want_ap)
 		return 0;
 	if (switching)
 		next = sooner(next, ms_left(take_t, TAKE_DELAY_MS, now));
