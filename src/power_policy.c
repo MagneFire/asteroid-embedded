@@ -84,6 +84,37 @@ enum screen_state power_policy_screen(bool aod, bool peeking, bool peek_light)
 	return aod ? SCREEN_AMBIENT : SCREEN_OFF;
 }
 
+/* Dark rooms need very little light; below the panel's lowest level
+ * the pixels can dim it further. */
+static const struct {
+	int32_t below_lux;
+	uint8_t dbv, pixel;
+} backlight_steps[] = {
+	{ BACKLIGHT_DARK_LUX + 1, 10, 255 },
+	{ 50, 20, 255 },
+	{ 150, 60, 255 },
+	{ INT32_MAX, 140, 255 },
+};
+
+struct backlight power_policy_backlight(int32_t lux)
+{
+	struct backlight b = { 0 };
+	/* Without a reading the room is taken to be a dim one, where too
+	 * much light glares and too little still shows the time. */
+	if (lux < 0) {
+		b.dbv = 10;
+		b.pixel = 255;
+	}
+	for (unsigned i = 0; lux >= 0 && i < sizeof(backlight_steps) / sizeof(backlight_steps[0]); i++) {
+		if (lux < backlight_steps[i].below_lux) {
+			b.dbv = backlight_steps[i].dbv;
+			b.pixel = backlight_steps[i].pixel;
+			break;
+		}
+	}
+	return b;
+}
+
 enum touch_use power_policy_touch(bool *wake_touch, bool awake, bool tap_wakes, bool down, bool up)
 {
 	if (!awake) {

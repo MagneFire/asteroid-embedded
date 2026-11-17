@@ -30,6 +30,10 @@
 /* How long the hub's own display takes to show after ambient mode is
  * set, as seen on catfish. */
 #define HUB_SCREEN_MS 800
+/* How long a peek waits for the room's light before it lights the
+ * screen without it; catfish's hub sends its first reading after about
+ * 330 ms. */
+#define LUX_WAIT_MS 600
 #define FIN_PX 6
 /* Awake, the light sensor is read this often, a reading is ready after
  * the integration time, and a change of brightness takes the fade time,
@@ -49,6 +53,10 @@ static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static const char *wake_cause;
 static bool lit_pending;
+static enum { LUX_IDLE, LUX_READING, LUX_DONE } lux_state;
+static uint32_t lux_t;
+static struct backlight lit;
+static bool lit_shown;
 
 void power_init(bool display, bool ui, bool hub)
 {
@@ -324,8 +332,60 @@ static void ambient_enter(void)
 
 static void light_fill(void)
 {
-	memset(display_backbuffer(), 0xff, fb.stride * fb.height * 4);
+	uint32_t px = lit.pixel * 0x010101u, *buf = display_backbuffer();
+	for (uint32_t i = 0, n = fb.stride * fb.height; i < n; i++)
+		buf[i] = px;
 	display_flip();
+}
+
+/* The room's light is read once per peek, before the screen lights, as
+ * the sensor would see the screen. */
+static bool backlight_ready(uint32_t now)
+{
+	if (lux_state == LUX_DONE)
+		return true;
+	if (lux_state == LUX_IDLE) {
+		lux_state = LUX_READING;
+		lux_t = now;
+		light_keep(true);
+		light_start();
+		return false;
+	}
+	int32_t lux = light_finish();
+	if (lux < 0 && now - lux_t < LUX_WAIT_MS)
+		return false;
+	light_keep(false);
+	lit = power_policy_backlight(lux);
+	log_printf("backlight: %ld lux after %lu ms, %u/%u\n", (long)lux, (unsigned long)(now - lux_t), lit.dbv, lit.pixel);
+	lux_state = LUX_DONE;
+	return true;
+}
+
+/* The panel keeps the fill and its brightness through sleep in, which
+ * the next wake would show at the normal brightness. */
+static void lit_clear(void)
+{
+	memset(display_backbuffer(), 0, fb.stride * fb.height * 4);
+	display_flip();
+	power_set_brightness();
+	lit_shown = false;
+}
+
+/* The reading comes with the hub's interrupt, so the wait for it can
+ * sleep, up to its end. */
+static uint32_t lux_next_ms(uint32_t now)
+{
+	if (lux_state != LUX_READING)
+		return UINT32_MAX;
+	uint32_t gone = now - lux_t;
+	return gone >= LUX_WAIT_MS ? 1 : LUX_WAIT_MS - gone;
+}
+
+static void backlight_done(void)
+{
+	if (lux_state == LUX_READING)
+		light_keep(false);
+	lux_state = LUX_IDLE;
 }
 
 /* Asleep, from what the panel shows to what it should show. */
@@ -344,13 +404,14 @@ static void screen_set(enum screen_state to)
 		if (from == SCREEN_OFF)
 			display_wake_hidden();
 		if (to == SCREEN_AMBIENT) {
+			lit_shown = false;
 			ambient_enter();
 		} else {
 			light_fill();
 			if (from == SCREEN_AMBIENT)
 				ambient_leave();
-			else
-				power_set_brightness();
+			display_set_brightness(lit.dbv);
+			lit_shown = true;
 		}
 		if (from == SCREEN_OFF)
 			display_show();
@@ -370,7 +431,9 @@ uint32_t power_next_ms(void)
 {
 	if (policy.awake)
 		return UINT32_MAX;
-	uint32_t now = time_ms(), next = power_policy_peek_next_ms(&policy, now);
+	uint32_t now = time_ms(), next = power_policy_peek_next_ms(&policy, now), lux = lux_next_ms(now);
+	if (lux < next)
+		next = lux;
 	if ((screen == SCREEN_AMBIENT) != (have_ui && setting_get(SETTING_AOD)) && !batt_cable()) {
 		uint32_t stand_next = nightstand_next_ms(&stand, now, nightstand_delay_ms());
 		if (stand_next < next)
@@ -415,11 +478,18 @@ enum power_change power_update(uint32_t *now_p)
 		 * the touch drivers retry from the passes it brings. */
 		timer_set_period(1);
 		timer_next(1);
-		/* The white screen is already at the normal brightness. */
-		if (screen == SCREEN_AMBIENT)
+		backlight_done();
+		if (screen == SCREEN_AMBIENT) {
 			ambient_leave();
-		else if (screen == SCREEN_OFF)
+		} else if (screen == SCREEN_OFF && lit_shown) {
+			display_wake_hidden();
+			lit_clear();
+			display_show();
+		} else if (screen == SCREEN_OFF) {
 			display_wake();
+		} else {
+			lit_clear();
+		}
 		screen = SCREEN_OFF;
 		policy.awake = true;
 		asleep_ms += now - asleep_t;
@@ -439,8 +509,13 @@ enum power_change power_update(uint32_t *now_p)
 	if (!policy.awake) {
 		enum screen_state want = screen_wanted(now);
 		hub_follow(want == SCREEN_AMBIENT, now);
-		lit_pending = lit_waits(want, now);
-		if (!lit_pending)
+		bool reading = false;
+		if (want == SCREEN_LIT)
+			reading = !backlight_ready(now);
+		else
+			backlight_done();
+		lit_pending = !reading && lit_waits(want, now);
+		if (!reading && !lit_pending)
 			screen_set(want);
 	} else {
 		lit_pending = false;
@@ -498,12 +573,15 @@ void power_idle(uint32_t app_next_ms)
 		if (next > MAX_SLEEP_MS)
 			next = MAX_SLEEP_MS;
 	}
+	uint32_t lux = lux_next_ms(time_ms());
+	if (lux < next)
+		next = lux;
 	/* The watchdog counts on the sleep clock through a cluster power
 	 * collapse, where its bark cannot wake the core, so a wake that
 	 * comes late would end in a bite with no record. As the vendor
 	 * kernel does for suspend, it is off across a long or cluster sleep,
 	 * and a wake later than planned is logged instead. */
-	bool long_sleep = !policy.awake && (next > 1000 || cluster);
+	bool long_sleep = !policy.awake && (next > 1000 || cluster || lux != UINT32_MAX);
 	uint32_t t0 = 0;
 	if (long_sleep) {
 		timer_set_period(next);
