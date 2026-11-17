@@ -20,9 +20,10 @@ void sns_pass(void);
 bool sns_due(void);
 /* The next report in its channel 4 envelope, as many of the oldest
  * events as fit in link_send: its length, 0 if none. They stay queued
- * until sns_sent. */
+ * until sns_sent, or sns_unsent if the AP did not take it. */
 unsigned sns_report(uint8_t *out, unsigned cap);
 void sns_sent(void);
+void sns_unsent(void);
 /* The time to the next sample or report; link_free says whether a
  * report that is due can go out. */
 uint32_t sns_next_ms(bool link_free);

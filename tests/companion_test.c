@@ -865,6 +865,18 @@ static void sensor_scenario(void)
 	for (unsigned i = 0; i + 1 < got.events; i++)
 		CHECK(got.ev[i].id == PROTO_SNS_ACCEL);
 
+	/* A flush whose report the AP does not read is answered in the
+	 * next one. */
+	ap_flush(PROTO_SNS_ACCEL);
+	CHECK(levels[UP_INT]);
+	run_ms(2 * LINK_TX_MS + 150);
+	memset(&got, 0, sizeof got);
+	ap_sensors(1100);
+	unsigned flushed = 0;
+	for (unsigned i = 0; i < got.events; i++)
+		flushed += got.ev[i].id == PROTO_SNS_META && got.ev[i].w[0] == PROTO_SNS_ACCEL;
+	CHECK(flushed == 1);
+
 	/* Without latency every sample goes out on its own; the step
 	 * counter on activation and when it changes. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 0);

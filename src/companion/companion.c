@@ -34,7 +34,7 @@
 #define ESCAPE_MS	5000
 
 static bool ready, boot_lent, chips_on, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
-static bool replying, burst, key_held;
+static bool replying, reporting, burst, key_held;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason;
 /* The mode a 377 queued or under way makes take effect once the AP has
  * it, or -1. */
@@ -340,7 +340,7 @@ static void watch_key(uint32_t now)
 		escape(now);
 }
 
-static bool link_idle(void) { return !reply_len && !replying && link_sent() != LINK_PENDING; }
+static bool link_idle(void) { return !reply_len && !replying && !reporting && link_sent() != LINK_PENDING; }
 
 static uint32_t store_wait_ms(uint32_t now)
 {
@@ -362,9 +362,17 @@ void companion_poll(void)
 		link_poll();
 }
 
-/* What became of the 377 under way, before another one is queued. */
+/* What became of the 377 or report under way, before another one is
+ * queued. */
 static void replied(uint32_t now)
 {
+	if (reporting && link_sent() != LINK_PENDING) {
+		reporting = false;
+		if (link_sent() == LINK_SENT)
+			sns_sent();
+		else
+			sns_unsent();
+	}
 	if (!replying || link_sent() == LINK_PENDING)
 		return;
 	replying = false;
@@ -420,7 +428,7 @@ void companion_pass(void)
 	settle(now);
 	sns_pass();
 	if (link_idle() && sns_due() && (n = sns_report(report_buf, sizeof report_buf)) && link_send(report_buf, n)) {
-		sns_sent();
+		reporting = true;
 		link_poll();
 	}
 }
@@ -432,7 +440,7 @@ uint32_t companion_next_ms(void)
 	if (!ready)
 		return UINT32_MAX;
 	uint32_t now = time_ms(), next = link_next_ms();
-	if ((replying || reply_len) && link_sent() != LINK_PENDING)
+	if ((replying || reporting || reply_len) && link_sent() != LINK_PENDING)
 		return 0;
 	if (switching && want_ap)
 		return 0;

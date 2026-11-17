@@ -319,6 +319,20 @@ void sns_sent(void)
 	taken = 0;
 }
 
+/* A flush's answer stays for the next report; samples are dropped. */
+void sns_unsent(void)
+{
+	unsigned metas = 0;
+	for (unsigned i = 0; i < taken; i++)
+		if (queue[i].handle == PROTO_SNS_META)
+			queue[metas++] = queue[i];
+	count.dropped += taken - metas;
+	memmove(queue + metas, queue + taken, (queued - taken) * sizeof queue[0]);
+	queued -= taken - metas;
+	taken = 0;
+	urgent |= metas != 0;
+}
+
 /* At least 1: a sample due now still needs a pass. */
 static uint32_t until(uint32_t t, uint32_t now)
 {
