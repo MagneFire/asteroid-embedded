@@ -37,7 +37,7 @@ enum { MODE_BAND = 1, MODE_AMBIENT = 2, MODE_NORMAL = 3, MODE_GAUGE = 5, MODE_SU
 
 static uint8_t tx[WRITE_PAD + REPLY_BYTES], rx[WRITE_PAD + REPLY_BYTES + MORE_BYTES];
 static uint8_t payload[NANOHUB_PAYLOAD_MAX];
-static uint32_t seq, errors, events, batched, unknown, bad, versions[2];
+static uint32_t seq, errors, events, batched, unknown, bad, versions[2], hub_warnings, hub_errors;
 static bool present, tilt_on, hr_on, accel_on, light_on, screen_off;
 static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
@@ -293,6 +293,10 @@ static void handle_event(const struct nanohub_event *ev)
 		memcpy(line, ev->log.text, k);
 		line[k] = 0;
 		log_printf("hub: %c %s\n", ev->log.level, line);
+		if (ev->log.level == 'W')
+			hub_warnings++;
+		else if (ev->log.level == 'E')
+			hub_errors++;
 	}
 }
 
@@ -795,10 +799,10 @@ static int nanohub_mode(unsigned code)
 static void nanohub_status(void (*say)(const char *fmt, ...))
 {
 	say("hub: nanohub hw %08lx fw %08lx, %s, mode %u, %lu events (%lu answers with more, %lu unknown sizes, %lu cut "
-	    "short), %lu errors, steps %ld, gauge %s %lu mV %lu%%\n",
-	    versions[0], versions[1], present ? "up" : "not up", mode, events, batched, unknown, bad, errors,
-	    (long)steps_today,
-	    have_gauge ? "" : "none", gauge.mv, gauge.percent);
+	    "short), %lu errors\n",
+	    versions[0], versions[1], present ? "up" : "not up", mode, events, batched, unknown, bad, errors);
+	say("hub: its own log %lu warnings and %lu errors, steps %ld, gauge %s %lu mV %lu%%\n", hub_warnings, hub_errors,
+	    (long)steps_today, have_gauge ? "" : "none", gauge.mv, gauge.percent);
 }
 
 /* The hub's light sensor: on while it is wanted, the last lux it
