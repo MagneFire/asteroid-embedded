@@ -356,6 +356,12 @@ static void companion_scenario(void)
 	wait_ms(1);
 	CHECK(kv_sets == 2 && kv_mode == PROTO_MODE_WRISTBAND && kv_zone == -300);
 
+	/* 376 asks for the mode and changes nothing. */
+	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL);
+	wait_ms(5000);
+	CHECK(!display_lent && kv_sets == 2);
+
 	/* A 377 the AP never reads: no panel for the AP, no mode stored. */
 	ap_write(1, 373, NULL, 0);
 	companion_pass();

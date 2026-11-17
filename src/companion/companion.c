@@ -198,7 +198,10 @@ static void message(const uint8_t *p, unsigned n)
 	struct proto_time t;
 	if (to >= 0)
 		work_mode(&m, (unsigned)to);
-	else if (m.id == PROTO_BATTERY) {
+	else if (m.id == PROTO_MODE_REQUEST) {
+		count.other++;
+		reply(m.chan, mode, last_mode);
+	} else if (m.id == PROTO_BATTERY) {
 		count.battery++;
 		battery = proto_battery(m.body, m.len);
 		if (battery >= 0)
