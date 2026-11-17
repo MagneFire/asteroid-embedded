@@ -790,7 +790,11 @@ static void light_set(bool on)
 {
 	static uint32_t refused_t;
 	static bool refused;
+	bool wanted = want_light;
 	want_light = on;
+	/* After a refused disable the last lux may be from long ago. */
+	if (on && !wanted)
+		lux = -1;
 	if (on == light_on)
 		return;
 	if (!on)
