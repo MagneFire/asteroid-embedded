@@ -935,6 +935,7 @@ impl Rgb565Pixel {
 }
 
 impl TargetPixel for Rgb565Pixel {
+    #[inline(always)]
     fn blend(&mut self, color: PremultipliedRgbaColor) {
         let a = (u8::MAX - color.alpha) as u32;
         // convert to 5 bits
