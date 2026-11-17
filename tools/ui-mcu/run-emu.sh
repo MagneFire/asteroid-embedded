@@ -13,9 +13,12 @@ size=${3:-402x476}
 python=${PYTHON:-python3}
 lib=ui/target-apollo3/thumbv7em-none-eabihf/mcu/libasteroid_ui.a
 mkdir -p build/ui-mcu
-arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -Os -g -ffreestanding -nostdlib -DEMU -DW="${size%x*}" -DH="${size#*x}" \
-	-Isrc/soc/apollo3 -Isrc -Wall -Wextra -Wno-unused-parameter -ffunction-sections -fdata-sections \
+cflags="-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -Os -g -ffreestanding -nostdlib -Isrc/soc/apollo3 -Isrc \
+	-Wall -Wextra -Wno-unused-parameter -ffunction-sections -fdata-sections"
+# Its own W and H are the stack's names.
+arm-none-eabi-gcc $cflags -c src/ui/stack.c -o build/ui-mcu/stack.o
+arm-none-eabi-gcc $cflags -DEMU -DW="${size%x*}" -DH="${size#*x}" \
 	-Wl,--gc-sections -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack -Wl,-T,tools/ui-mcu/emu.ld \
-	tools/ui-mcu/host.c "$lib" -lgcc -o build/ui-mcu/emu.elf
+	tools/ui-mcu/host.c build/ui-mcu/stack.o "$lib" -lgcc -o build/ui-mcu/emu.elf
 "$python" tools/ui-mcu/emu.py build/ui-mcu/emu.elf "$heap" "$out" "$size" ${PROFILE:+--profile "$PROFILE"} \
 	$([ -n "$PROFILE" ] && [ -f build/apollo3/asteroid.elf ] && echo --layout build/apollo3/asteroid.elf)

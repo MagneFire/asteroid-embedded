@@ -1,7 +1,10 @@
 /* The Cortex-M UI off the watch: draws each screen the way the Apollo3
  * firmware would, into a frame of RGB565 pixels, and reports the heap's
  * peak after each. A heap too small ends it: exit status 2 under emu.py,
- * an abort on the host.
+ * an abort on the host. Then it walks the screens with the firmware's
+ * screen stack, swiping each way from the watchface and tapping across
+ * each screen it reaches; a blank screen, a screen or an app the build
+ * left out, or a panic fails it.
  *
  * On the host, with a host build of the library (run-host.sh), the frames
  * are written out as PNG files.
@@ -23,7 +26,10 @@
 #include <zlib.h>
 #endif
 
+#include "../../src/display/display.h"
+#include "../../src/gpu/draw.h"
 #include "../../src/ui/ui.h"
+#include "../../src/ui/stack.h"
 
 #ifndef W
 #define W 402
@@ -67,10 +73,23 @@ static void fail(const char *msg)
 {
 	emu_exit(3, msg, strlen(msg));
 }
+
+/* emu.py prints the name as a screen's. */
+static void fail_on(const char *why, const char *name)
+{
+	emu_shot(name, NULL, 0);
+	fail(why);
+}
 #else
 static void fail(const char *msg)
 {
 	fprintf(stderr, "%s\n", msg);
+	exit(3);
+}
+
+static void fail_on(const char *why, const char *name)
+{
+	fprintf(stderr, "%s: %s\n", name, why);
 	exit(3);
 }
 #endif
@@ -78,6 +97,16 @@ static void fail(const char *msg)
 uint32_t time_ms(void)
 {
 	return now_ms;
+}
+
+/* The stack draws no layers here: frame_mcu.c's way, ui_draw. */
+struct fb fb;
+void *gpu_alloc(uint32_t size, uint32_t align) { return NULL; }
+void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha) {}
+void gpu_draw_layer_round(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha) {}
+void gpu_draw_layer_parts(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha,
+			  const struct gpu_rect *parts, unsigned n)
+{
 }
 
 void ui_panic(const char *msg, size_t len)
@@ -185,13 +214,22 @@ static void tap(uint32_t panel, int x, int y)
 static const char *out_dir;
 #endif
 
-static void shot(uint32_t panel, const char *name)
+/* Draws all of panel afresh into the frame: false if it is all black. */
+static bool drawn(uint32_t panel)
 {
-#ifdef EMU
-	emu_screen(name);
-#endif
-	ui_set_screen(panel == UI_PANEL_APP ? UI_PANEL_FACE : panel);
-	run(panel, 1500);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			frame[y][x] = 0;
+	ui_draw(panel, true);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			if (frame[y][x])
+				return true;
+	return false;
+}
+
+static void save(const char *name)
+{
 #ifdef EMU
 	emu_shot(name, &frame[0][0], ui_heap_peak());
 #else
@@ -199,6 +237,122 @@ static void shot(uint32_t panel, const char *name)
 	printf("%-16s heap peak %6u\n", name, ui_heap_peak());
 	fflush(stdout);
 #endif
+}
+
+static void shot(uint32_t panel, const char *name)
+{
+#ifdef EMU
+	emu_screen(name);
+#endif
+	ui_set_screen(panel == UI_PANEL_APP ? UI_PANEL_FACE : panel);
+	run(panel, 1500);
+	if (!drawn(panel))
+		fail_on("blank", name);
+	save(name);
+}
+
+/* The firmware's pass (frame_mcu.c), with the events the UI sent: none
+ * may open an app the build left out. */
+static void pass(uint32_t ms)
+{
+	for (uint32_t t = 0; t <= ms; t += 16) {
+		now_ms += 16;
+		stack_update(now_ms);
+		ui_tick();
+		ui_draw(ui_modal() ? UI_PANEL_OVERLAY : stack_screen(), false);
+		for (struct ui_event e; ui_next_event(&e);)
+			if ((e.kind == UI_EVENT_APP && !ui_has_app(e.value)) ||
+			    (e.kind == UI_EVENT_SETTING && e.value == UI_OPEN_SETTINGS && !ui_has_app(UI_APP_SETTINGS)))
+				fail("walk: opens an app the build left out");
+	}
+}
+
+static void stack_at(int kind, int x, int y)
+{
+	ui_set_touch_ms(now_ms);
+	stack_touch(kind, x, y, now_ms);
+}
+
+static void swipe(int x0, int y0, int x1, int y1)
+{
+	stack_at(UI_TOUCH_DOWN, x0, y0);
+	pass(16);
+	for (int i = 1; i <= 6; i++) {
+		stack_at(UI_TOUCH_MOVE, x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * i / 6);
+		pass(16);
+	}
+	stack_at(UI_TOUCH_UP, x1, y1);
+	pass(400);
+}
+
+/* What the stack shows must be in the build and drawn. */
+static void check(const char *name)
+{
+	unsigned panel = ui_modal() ? UI_PANEL_OVERLAY : stack_screen();
+	if (!ui_has_panel(panel))
+		fail_on("a screen the build left out", name);
+	if (!drawn(panel))
+		fail_on("blank", name);
+	save(name);
+}
+
+/* From the watchface each way (the finger's direction) and, where that
+ * leads somewhere, taps and a long press across the screen, then back. */
+static void walk(void)
+{
+	static const struct {
+		const char *name;
+		int dx, dy;
+	} ways[] = { { "walk-right", 1, 0 }, { "walk-left", -1, 0 }, { "walk-down", 0, 1 }, { "walk-up", 0, -1 } };
+	stack_init(W, H, NULL, 0);
+	pass(100);
+	check("walk-face");
+	for (int y = 1; y < 5; y++)
+		for (int x = 1; x < 5; x++) {
+			stack_at(UI_TOUCH_DOWN, W * x / 5, H * y / 5);
+			pass(50);
+			stack_at(UI_TOUCH_UP, W * x / 5, H * y / 5);
+			pass(300);
+		}
+	check("walk-face-taps");
+	for (unsigned i = 0; i < sizeof(ways) / sizeof(ways[0]); i++) {
+		int cx = W / 2, cy = H / 2, ax = W * 3 / 10 * ways[i].dx, ay = H * 3 / 10 * ways[i].dy;
+		swipe(cx - ax, cy - ay, cx + ax, cy + ay);
+		check(ways[i].name);
+		if (stack_screen() == UI_PANEL_FACE)
+			continue;
+		for (int y = 1; y < 5; y++)
+			for (int x = 1; x < 5; x++) {
+				stack_at(UI_TOUCH_DOWN, W * x / 5, H * y / 5);
+				pass(x == y ? 1000 : 50);
+				stack_at(UI_TOUCH_UP, W * x / 5, H * y / 5);
+				pass(300);
+				ui_hide_notification();
+				pass(16);
+				if (ui_app_open() >= 0 && !ui_has_app(ui_app_open()))
+					fail("walk: an app the build left out is open");
+				if (!drawn(ui_modal() ? UI_PANEL_OVERLAY : stack_screen()))
+					fail_on("blank after a tap", ways[i].name);
+			}
+		/* The remorse timers of reboot and power off run out. */
+		pass(4000);
+		swipe(cx + ax, cy + ay, cx - ax, cy - ay);
+		if (stack_screen() != UI_PANEL_FACE)
+			fail("walk: no way back to the watchface");
+		check("walk-back");
+	}
+	/* A pop-up, tapped and swiped away. */
+	ui_show_notification(1);
+	pass(400);
+	check("walk-popup");
+	stack_at(UI_TOUCH_DOWN, W / 2, H / 2);
+	pass(50);
+	stack_at(UI_TOUCH_UP, W / 2, H / 2);
+	pass(400);
+	swipe(W / 4, H / 2, W * 3 / 4, H / 2);
+	if (ui_modal())
+		fail("walk: the pop-up stays");
+	check("walk-end");
 }
 
 int main(int argc, char **argv)
@@ -260,10 +414,13 @@ int main(int argc, char **argv)
 	ui_show_notification(1);
 	shot(UI_PANEL_FACE, "popup");
 	ui_hide_notification();
-	shot(UI_PANEL_LEFT, "notes");
-	shot(UI_PANEL_RIGHT, "today");
-	shot(UI_PANEL_TOP, "quick");
-	for (int l = 0; l < UI_LAUNCHERS; l++) {
+	if (ui_has_panel(UI_PANEL_LEFT))
+		shot(UI_PANEL_LEFT, "notes");
+	if (ui_has_panel(UI_PANEL_RIGHT))
+		shot(UI_PANEL_RIGHT, "today");
+	if (ui_has_panel(UI_PANEL_TOP))
+		shot(UI_PANEL_TOP, "quick");
+	for (int l = 0; ui_has_panel(UI_PANEL_BOTTOM) && l < UI_LAUNCHERS; l++) {
 		char name[] = "launcher0";
 		name[8] += l;
 		ui_set_launcher(l);
@@ -273,6 +430,8 @@ int main(int argc, char **argv)
 	static const char *const app_names[] = { "music", "settings", "alarm", "timer", "stopwatch",
 						 "weather", "heart", "flashlight", "calculator", "diamonds" };
 	for (int a = 0; a < 10; a++) {
+		if (!ui_has_app(a))
+			continue;
 		ui_set_app(a);
 		shot(UI_PANEL_APP, app_names[a]);
 		if (a == UI_APP_SETTINGS) {
@@ -291,7 +450,8 @@ int main(int argc, char **argv)
 	for (int i = 3; i < 20; i++)
 		ui_add_notification(i + 1, apps[1], strlen(apps[1]), summary, sizeof(summary), body, sizeof(body), icons[1],
 				    strlen(icons[1]), 1000000 - 600 * (i + 1));
-	shot(UI_PANEL_LEFT, "notes-full");
+	if (ui_has_panel(UI_PANEL_LEFT))
+		shot(UI_PANEL_LEFT, "notes-full");
 	ui_show_notification(20);
 	shot(UI_PANEL_FACE, "popup-long");
 	ui_hide_notification();
@@ -299,6 +459,7 @@ int main(int argc, char **argv)
 	shot(UI_PANEL_FACE, "ringing");
 	ui_set_ringing(false, false);
 	shot(UI_PANEL_FACE, "face-again");
+	walk();
 	return 0;
 }
 
