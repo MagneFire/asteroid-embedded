@@ -44,6 +44,30 @@ static struct {
 
 static const char *const mode_names[] = { "normal", "wristband", "power off" };
 
+/* Stock's lines around a handover besides the panel's and the touch
+ * controller's: own_gpio low takes touch and haptics off our side, and
+ * release_gpio is let go of. Taken back, both go high first, so the
+ * chips are there when their drivers start again. */
+static void lend_lines(bool to_ap)
+{
+	const uint8_t own = board->ap_link.own_gpio, rel = board->ap_link.release_gpio;
+	if (to_ap) {
+		if (own)
+			gpio_set(own, 0);
+		if (rel)
+			gpio_config(rel, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+		return;
+	}
+	for (unsigned i = 0; i < 2; i++) {
+		unsigned pad = i ? rel : own;
+		if (pad) {
+			gpio_set(pad, 1);
+			gpio_config(pad, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		}
+	}
+	delay_ms(5);
+}
+
 void companion_boot(void)
 {
 	if (!board->ap_link.up_int)
@@ -61,6 +85,7 @@ void companion_boot(void)
 		display_start_lent();
 		touch_start_lent();
 		haptics_hold(true);
+		lend_lines(true);
 	}
 }
 
@@ -207,8 +232,10 @@ static void switch_panel(void)
 		haptics_hold(true);
 		display_lend(true);
 		touch_lend(true);
+		lend_lines(true);
 		power_lend_display(true);
 	} else {
+		lend_lines(false);
 		power_lend_display(false);
 		display_lend(false);
 		touch_lend(false);

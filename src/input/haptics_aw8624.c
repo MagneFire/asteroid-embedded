@@ -52,4 +52,17 @@ static void aw_set(bool on)
 	}
 }
 
-const struct motor_driver motor_aw8624 = { .init = aw_init, .set = aw_set };
+/* As stock: the enable undriven while the AP has the chip, and all of
+ * the start again when it comes back. */
+static void aw_lend(bool to_ap)
+{
+	if (!to_ap) {
+		aw_init();
+		return;
+	}
+	aw_set(false);
+	if (board->motor_pins.enable)
+		gpio_config(board->motor_pins.enable, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
+}
+
+const struct motor_driver motor_aw8624 = { .init = aw_init, .set = aw_set, .lend = aw_lend };

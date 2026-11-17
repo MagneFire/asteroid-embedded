@@ -426,10 +426,18 @@ static void power_off(void)
 	periph_power(PWR_BLE, false);
 	delay_us(100);
 	running = patched = false;
+	if (board->ble_gpio)
+		gpio_set(board->ble_gpio, 1);
 }
 
+/* Stock holds the board's line low while its radio is on; it looks
+ * like the antenna's switch. */
 static int power_on(void)
 {
+	if (board->ble_gpio) {
+		gpio_set(board->ble_gpio, 0);
+		gpio_config(board->ble_gpio, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
 	writel((readl(MCUCTRL_BLEBUCK2) & ~BLEBUCK2_TON) | BLEBUCK2_TON_TRIM, MCUCTRL_BLEBUCK2);
 	writel(readl(CLKGEN_BLEBUCKTONADJ) & ~TONADJUSTEN, CLKGEN_BLEBUCKTONADJ);
 	writel(readl(MCUCTRL_FEATUREENABLE) | FEATURE_BLEREQ, MCUCTRL_FEATUREENABLE);

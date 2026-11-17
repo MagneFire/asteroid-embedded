@@ -135,6 +135,9 @@ struct gauge_driver {
 struct motor_driver {
 	bool (*init)(void);
 	void (*set)(bool on);
+	/* Lets go of the driver's lines for the application processor,
+	 * or takes them back. */
+	void (*lend)(bool to_ap);
 };
 
 /* A panel lit by a separate chip; level 0 turns it off. Without one the
@@ -491,7 +494,13 @@ struct board {
 	 * up_int 0 for none. */
 	struct {
 		uint8_t up_int, up_ack, dn_int, dn_ack;
+		/* High while touch and haptics are ours, low while the AP has
+		 * them; and a line let go of while the AP has the panel. 0 for
+		 * none. */
+		uint8_t own_gpio, release_gpio;
 	} ap_link;
+	/* Low while the BLE radio is on, high otherwise: 0 for none. */
+	uint8_t ble_gpio;
 };
 
 /* The charger limits have to land on a register step: 10 mV from 3.24 V

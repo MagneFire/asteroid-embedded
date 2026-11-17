@@ -200,8 +200,8 @@ int i2c_init(unsigned n, unsigned sda, unsigned scl, unsigned func, uint32_t bus
 		gpio_set(scl, 1);
 		delay_us(5);
 	}
-	pad_config(sda, func, PAD_INPUT | PAD_I2C_PULL | PAD_OPEN_DRAIN);
-	pad_config(scl, func, PAD_INPUT | PAD_I2C_PULL | PAD_OPEN_DRAIN);
+	pad_config(sda, func, PAD_INPUT | PAD_I2C_PULL | PAD_OPEN_DRAIN | PAD_STRONG);
+	pad_config(scl, func, PAD_INPUT | PAD_I2C_PULL | PAD_OPEN_DRAIN | PAD_STRONG);
 	power_up(n);
 	/* 400 kHz: 48 MHz / 2 over 30 periods, and the HAL's timing. */
 	writel(CLK_TOTPER(0x1d) | CLK_LOWPER(0x0e) | CLK_DIVEN | CLK_FSEL(2) | CLK_IOCLKEN, IOM(n, CLKCFG));

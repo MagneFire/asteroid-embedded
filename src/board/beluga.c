@@ -9,11 +9,14 @@
  * on pad 45. Pads 4 and 14 go high, as the vendor's firmware has them
  * from its start on; what they switch is not known. Without pad 36
  * high the touch controller and the haptics driver do not answer on
- * IOM0. */
+ * IOM0. GNSS (pads 41 and 17) and heart rate (pad 31) stay off. */
 static const struct board_mcu_pad pads[] = {
 	{ 4, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 14, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 36, PAD_FUNC_GPIO, PAD_OUT_HIGH },
+	{ 17, PAD_FUNC_GPIO, PAD_OUT_LOW },
+	{ 31, PAD_FUNC_GPIO, PAD_OUT_LOW },
+	{ 41, PAD_FUNC_GPIO, PAD_OUT_LOW },
 	{ 47, 5, PAD_STRONG },
 	{ 48, 5, PAD_STRONG },
 	{ 49, 5, PAD_INPUT },
@@ -70,7 +73,8 @@ static const struct dcs_step panel_on_41[] = {
 	.touch = &touch_tma525,                                                                                        \
 	.hub = &hub_lsm6dso, .hub_pins = { .i2c = { .bus = 3, .sda = 43, .scl = 42, .func = 4, .addr = 0x6a }, .irq = 13 }, \
 	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x5a }, .enable = 26 }, \
-	.ap_link = { .up_int = 29, .up_ack = 33, .dn_int = 30, .dn_ack = 32 }
+	.ap_link = { .up_int = 29, .up_ack = 33, .dn_int = 30, .dn_ack = 32, .own_gpio = 36, .release_gpio = 14 }, \
+	.ble_gpio = 4
 
 const struct board board_beluga = {
 	.name = "beluga",

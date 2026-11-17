@@ -126,7 +126,8 @@ static void ap_parse(const uint8_t *p, unsigned n, struct ap_reply *r)
 }
 
 enum { UP_INT = 29, DN_INT = 30, DN_ACK = 31, UP_ACK = 33, PINS = 64 };
-static const struct board test_board = { .ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK } };
+#define OWN 36
+static const struct board test_board = { .ap_link = { UP_INT, UP_ACK, DN_INT, DN_ACK, OWN, 14 } };
 const struct board *board = &test_board;
 
 static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, darks;
@@ -150,6 +151,7 @@ void sched_post(const struct sched_task *t) {}
 void gpio_config(unsigned n, unsigned func, unsigned dir, unsigned pull, unsigned drive_ma) {}
 unsigned gpio_get(unsigned n) { return levels[n]; }
 void gpio_set(unsigned n, unsigned v) { levels[n] = v; }
+void delay_ms(uint32_t ms) {}
 void gpio_irq_config(unsigned n, unsigned type, void (*fn)(unsigned n)) { irq_fn[n] = fn; }
 void gpio_irq_enable(unsigned n, bool on) { irq_on[n] = on; }
 void ios_init(void (*fn)(uint32_t status)) { ios_fn = fn; }
@@ -315,8 +317,9 @@ static void companion_scenario(void)
 	/* Reset by the debugger in the normal mode: the AP keeps the panel. */
 	kv_mode = PROTO_MODE_NORMAL;
 	reset_bits = 1u << 5;
+	levels[OWN] = 1;
 	companion_boot();
-	CHECK(display_lent && touch_lent && haptics_held);
+	CHECK(display_lent && touch_lent && haptics_held && !levels[OWN]);
 	companion_init();
 	CHECK(power_lent && irq_on[DN_INT]);
 
@@ -345,7 +348,7 @@ static void companion_scenario(void)
 	wait_ms(999);
 	CHECK(display_lent);
 	wait_ms(1);
-	CHECK(!display_lent && !touch_lent && !haptics_held && !power_lent && wakes == 1 && !kv_sets);
+	CHECK(!display_lent && !touch_lent && !haptics_held && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
 	ap_write(1, PROTO_OOBE, NULL, 0);
 	companion_pass();
 	wait_ms(2999);
@@ -370,7 +373,7 @@ static void companion_scenario(void)
 	/* 373, then 374: taken back without waking. */
 	mode_message(373, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
-	CHECK(display_lent && touch_lent && haptics_held && power_lent);
+	CHECK(display_lent && touch_lent && haptics_held && power_lent && !levels[OWN]);
 	mode_message(374, m374, sizeof m374, &a);
 	CHECK(a.mode == PROTO_MODE_POWER_OFF && display_lent);
 	wait_ms(1000);
