@@ -1,8 +1,9 @@
 /* The link to the application processor over the IO slave, one packet
  * at a time each way (wire.h has the framing). The AP asks to write
- * with dn_int; dn_ack goes high while it may, and low again within
- * 30 ms of a good packet or after LINK_ERROR_MS for a bad one. A packet
- * for the AP is staged, then up_int goes high until the AP has read it
+ * with dn_int; once that has been high for LINK_DN_SETTLE_MS, dn_ack
+ * goes high while it may, and low again within 30 ms of a good packet
+ * or after LINK_ERROR_MS for a bad one. A packet for the AP is staged,
+ * then up_int goes high until the AP has read it
  * and answered on up_ack: a short pulse for a good packet, one of 30 ms
  * for a bad one. The interrupts do the transfers; link_poll keeps the
  * deadlines and starts what is waiting. */
@@ -20,6 +21,10 @@
 #define LINK_ACK_ERROR_US	19531
 #define LINK_ACK_STUCK_MS	100
 #define LINK_TX_TRIES		2
+/* The AP's boot loader raises dn_int for about 80 ms and reads any
+ * answer as the MCU's boot state; the AP's writes hold it until
+ * dn_ack. */
+#define LINK_DN_SETTLE_MS	150
 /* Unfinished packets in a row after which dn_int is ignored until the
  * AP writes. */
 #define LINK_UNFINISHED_MAX	3

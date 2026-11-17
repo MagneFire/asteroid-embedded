@@ -21,7 +21,7 @@ enum tx_end { TX_OK, TX_CHECK, TX_TIMEOUT, TX_STUCK };
 
 static volatile enum state state;
 static volatile bool rx_ready, dn_waiting, tx_queued, deaf;
-static volatile uint32_t state_ms, ack_us, retry_ms, active_ms;
+static volatile uint32_t state_ms, ack_us, retry_ms, active_ms, dn_ms;
 static volatile unsigned unfinished_run;
 static volatile enum link_result tx_result = LINK_SENT;
 static volatile uint32_t problems;
@@ -33,7 +33,7 @@ static uint16_t seq_out;
 static bool resync_out = true, ready, task_added;
 
 static volatile struct {
-	uint32_t rx, rx_errors[WIRE_BAD_SEQ + 1], rx_timeouts, tx, tx_check, tx_timeouts, tx_stuck, writes, reads, deaf;
+	uint32_t rx, rx_errors[WIRE_BAD_SEQ + 1], rx_timeouts, tx, tx_check, tx_timeouts, tx_stuck, writes, reads, deaf, strobes;
 } count;
 
 static const char *const rx_why[] = { "", "header", "length", "checksum", "sequence" };
@@ -160,14 +160,17 @@ static void up_ack_irq(unsigned pin)
 	tx_end(time_us() - ack_us < LINK_ACK_ERROR_US ? TX_OK : TX_CHECK);
 }
 
+static void dn_rose(void)
+{
+	dn_waiting = true;
+	dn_ms = time_ms();
+}
+
 static void dn_int_irq(unsigned pin)
 {
 	if (deaf)
 		return;
-	if (state == IDLE && !rx_ready)
-		rx_begin();
-	else
-		dn_waiting = true;
+	dn_rose();
 	wake();
 }
 
@@ -176,7 +179,7 @@ static void hear(bool on)
 	deaf = !on;
 	gpio_irq_enable(DN_INT, on);
 	if (on && gpio_get(DN_INT))
-		dn_waiting = true;
+		dn_rose();
 }
 
 static void ios_event(uint32_t st)
@@ -220,7 +223,7 @@ void link_init(void)
 	gpio_irq_enable(DN_INT, true);
 	ready = true;
 	if (gpio_get(DN_INT))
-		dn_waiting = true;
+		dn_rose();
 	log_printf("link: waiting for the application processor\n");
 }
 
@@ -275,10 +278,15 @@ void link_poll(void)
 	else if (state == TX_ACK && gone >= LINK_ACK_STUCK_MS)
 		tx_end(gpio_get(UP_ACK) ? TX_STUCK : TX_CHECK);
 	if (state == IDLE && dn_waiting && !rx_ready) {
-		dn_waiting = false;
-		if (gpio_get(DN_INT))
+		if (!gpio_get(DN_INT)) {
+			dn_waiting = false;
+			count.strobes++;
+		} else if (now - dn_ms >= LINK_DN_SETTLE_MS) {
+			dn_waiting = false;
 			rx_begin();
-	} else if (state == IDLE && !dn_waiting && tx_queued && (!tx_tries || now - retry_ms >= RETRY_MS))
+		}
+	}
+	if (state == IDLE && !dn_waiting && tx_queued && (!tx_tries || now - retry_ms >= RETRY_MS))
 		tx_begin();
 	irq_restore(flags);
 	if (problems)
@@ -320,13 +328,8 @@ uint32_t link_quiet_ms(void)
 	return time_ms() - active_ms;
 }
 
-uint32_t link_next_ms(void)
+static uint32_t state_next_ms(uint32_t now)
 {
-	if (!ready)
-		return UINT32_MAX;
-	if (rx_ready || (dn_waiting && state == IDLE))
-		return 0;
-	uint32_t now = time_ms();
 	switch (state) {
 	case RX:
 		return ms_left(state_ms, LINK_RX_MS, now);
@@ -337,8 +340,21 @@ uint32_t link_next_ms(void)
 	case TX_ACK:
 		return ms_left(state_ms, LINK_ACK_STUCK_MS, now);
 	default:
-		return tx_queued ? (tx_tries ? ms_left(retry_ms, RETRY_MS, now) : 0) : UINT32_MAX;
+		if (dn_waiting)
+			return gpio_get(DN_INT) ? ms_left(dn_ms, LINK_DN_SETTLE_MS, now) : 0;
+		if (!tx_queued)
+			return UINT32_MAX;
+		return tx_tries ? ms_left(retry_ms, RETRY_MS, now) : 0;
 	}
+}
+
+uint32_t link_next_ms(void)
+{
+	if (!ready)
+		return UINT32_MAX;
+	if (rx_ready)
+		return 0;
+	return state_next_ms(time_ms());
 }
 
 void link_status(void (*say)(const char *fmt, ...))
@@ -356,5 +372,6 @@ void link_status(void (*say)(const char *fmt, ...))
 	    count.rx_errors[WIRE_BAD_SEQ], count.rx_timeouts);
 	say("link: sent %lu, reported bad %lu, not read %lu, up_ack stuck %lu; %lu writes, %lu reads, %lu interrupts\n",
 	    count.tx, count.tx_check, count.tx_timeouts, count.tx_stuck, count.writes, count.reads, ios_interrupts());
-	say("link: dn_int ignored %lu times%s\n", count.deaf, deaf ? ", now" : "");
+	say("link: dn_int ignored %lu times%s, %lu requests dropped before %u ms\n", count.deaf, deaf ? ", now" : "",
+	    count.strobes, LINK_DN_SETTLE_MS);
 }

@@ -233,7 +233,112 @@ static void fire(unsigned pin)
 		irq_fn[pin](pin);
 }
 
+static uint64_t le(const uint8_t *p, unsigned n)
+{
+	uint64_t v = 0;
+	while (n--)
+		v = v << 8 | p[n];
+	return v;
+}
+
+/* The HAL's decode of a ResponseBody: field 1 a varint, field 2 the
+ * repeated SensorsEvtT (1 fixed32 id, 2 fixed64 time, 3 SensorsRawData
+ * whose field 1 is SensorsVecT, four fixed32). Every field is checked
+ * for its wire type; -1 for anything else. */
+struct ap_event { uint32_t id; uint64_t time; uint32_t w[4]; unsigned words; };
+
+static int ap_vec(const uint8_t *p, unsigned n, struct ap_event *e)
+{
+	for (unsigned i = 0; i < n; i += 5) {
+		unsigned k = p[i] >> 3;
+		if (i + 5 > n || (p[i] & 7) != 5 || k < 1 || k > 4)
+			return -1;
+		e->w[k - 1] = (uint32_t)le(p + i + 1, 4);
+		e->words++;
+	}
+	return 0;
+}
+
+static int ap_events(const uint8_t *p, unsigned n, struct ap_event *ev, unsigned max, unsigned *field1)
+{
+	unsigned count = 0;
+	*field1 = 0;
+	for (unsigned i = 0; i < n;) {
+		uint64_t key = ap_varint(p, n, &i), v = ap_varint(p, n, &i);
+		if (key == (1 << 3 | 0)) {
+			*field1 = (unsigned)v;
+			continue;
+		}
+		if (key != (2 << 3 | 2) || i + v > n || count == max)
+			return -1;
+		struct ap_event *e = &ev[count++];
+		memset(e, 0, sizeof *e);
+		const uint8_t *q = p + i;
+		unsigned m = (unsigned)v, j = 0;
+		i += m;
+		if (m < 14 || q[0] != (1 << 3 | 5) || q[5] != (2 << 3 | 1))
+			return -1;
+		e->id = (uint32_t)le(q + 1, 4);
+		e->time = le(q + 6, 8);
+		j = 14;
+		uint64_t k3 = ap_varint(q, m, &j), l3 = ap_varint(q, m, &j);
+		if (k3 != (3 << 3 | 2) || j + l3 != m)
+			return -1;
+		const uint8_t *r = q + j;
+		unsigned rn = (unsigned)l3, t = 0;
+		uint64_t k1 = ap_varint(r, rn, &t), l1 = ap_varint(r, rn, &t);
+		if (k1 != (1 << 3 | 2) || t + l1 != rn || ap_vec(r + t, (unsigned)l1, e))
+			return -1;
+	}
+	return (int)count;
+}
+
+/* What the AP has read of the sensor channel so far. */
+static struct {
+	struct ap_event ev[256];
+	unsigned events, reports, most, longest;
+	uint64_t last_time;
+	bool backwards;
+} got;
+
+static void ap_got_report(const struct wire_msg *m, unsigned n)
+{
+	CHECK(!m->framework && m->chan == WIRE_CHAN_SENSORS);
+	struct ap_event e[PROTO_SNS_EVENTS];
+	unsigned field1;
+	int k = ap_events(m->body, m->len, e, PROTO_SNS_EVENTS, &field1);
+	CHECK(k > 0 && field1 == 1);
+	for (int j = 0; j < k && got.events < 256; j++) {
+		if (e[j].id != PROTO_SNS_META) {
+			got.backwards |= e[j].time <= got.last_time;
+			got.last_time = e[j].time;
+		}
+		got.ev[got.events++] = e[j];
+	}
+	got.reports++;
+	got.most = (unsigned)k > got.most ? (unsigned)k : got.most;
+	got.longest = n > got.longest ? n : got.longest;
+}
+
+static unsigned ap_receive(struct wire_msg *m, uint8_t *copy);
+
 static uint16_t ap_seq = 100;
+
+/* dn_int up and held: dn_ack answers once it has been up for a while. */
+static void ap_request(void)
+{
+	levels[DN_INT] = 1;
+	fire(DN_INT);
+	CHECK(levels[DN_ACK] == 0);
+	if (!ms_per_read) {
+		CHECK(companion_next_ms() > 0 && companion_next_ms() <= LINK_DN_SETTLE_MS);
+		now_ms += LINK_DN_SETTLE_MS - 1;
+		link_poll();
+		CHECK(levels[DN_ACK] == 0);
+	}
+	now_ms += ms_per_read ? LINK_DN_SETTLE_MS : 1;
+	link_poll();
+}
 
 /* deamonserver's write: dn_int up, the parts once dn_ack is up, and
  * dn_ack low again for a good packet. */
@@ -241,8 +346,15 @@ static void ap_write_env(const uint8_t *env, unsigned n)
 {
 	uint8_t parts[5][121];
 	unsigned k = ap_write_parts(env, n, ap_seq++, parts);
-	levels[DN_INT] = 1;
-	fire(DN_INT);
+	ap_request();
+	/* The AP reads a sensor report under way first. */
+	while (!levels[DN_ACK] && levels[UP_INT]) {
+		struct wire_msg m;
+		uint8_t copy[WIRE_PAYLOAD_MAX];
+		unsigned n = ap_receive(&m, copy);
+		ap_got_report(&m, n);
+		link_poll();
+	}
 	CHECK(levels[DN_ACK] == 1);
 	for (unsigned i = 0; i < k; i++) {
 		memcpy(lram, parts[i], sizeof lram);
@@ -328,6 +440,21 @@ static void companion_scenario(void)
 	CHECK(display_lent && touch_lent && haptics_held && !levels[OWN] && !chips_offs);
 	companion_init();
 	CHECK(power_lent && irq_on[DN_INT]);
+
+	/* The AP's boot loader strobes dn_int for 80 ms and takes any answer
+	 * as a boot state: none comes, and a 377 waiting goes after it. */
+	ap_write(1, PROTO_MODE_REQUEST, NULL, 0);
+	levels[DN_INT] = 1;
+	fire(DN_INT);
+	for (int i = 0; i < 16; i++) {
+		wait_ms(5);
+		CHECK(!levels[DN_ACK] && !levels[UP_INT]);
+	}
+	levels[DN_INT] = 0;
+	wait_ms(1);
+	CHECK(!levels[DN_ACK] && levels[UP_INT]);
+	CHECK(ap_take(&m, copy) && m.id == PROTO_REPLY);
+	companion_pass();
 
 	/* A truncated 375 changes nothing and gets no 377. */
 	ap_write(1, 375, m375, sizeof m375 - 1);
@@ -415,11 +542,10 @@ static void companion_scenario(void)
 	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF);
 	key_down = false;
 
-	/* dn_int edges without a packet: ignored after three until the AP
-	 * writes. */
+	/* Requests without a packet: dn_int is ignored after three until
+	 * the AP writes. */
 	for (int i = 0; i < LINK_UNFINISHED_MAX; i++) {
-		levels[DN_INT] = 1;
-		fire(DN_INT);
+		ap_request();
 		CHECK(levels[DN_ACK] == 1);
 		levels[DN_INT] = 0;
 		wait_ms(LINK_RX_MS);
@@ -434,66 +560,6 @@ static void companion_scenario(void)
 	uint8_t big[LINK_SEND_MAX + 1] = { 0 };
 	CHECK(!link_send(big, sizeof big));
 	CHECK(link_send(big, LINK_SEND_MAX));
-}
-
-static uint64_t le(const uint8_t *p, unsigned n)
-{
-	uint64_t v = 0;
-	while (n--)
-		v = v << 8 | p[n];
-	return v;
-}
-
-/* The HAL's decode of a ResponseBody: field 1 a varint, field 2 the
- * repeated SensorsEvtT (1 fixed32 id, 2 fixed64 time, 3 SensorsRawData
- * whose field 1 is SensorsVecT, four fixed32). Every field is checked
- * for its wire type; -1 for anything else. */
-struct ap_event { uint32_t id; uint64_t time; uint32_t w[4]; unsigned words; };
-
-static int ap_vec(const uint8_t *p, unsigned n, struct ap_event *e)
-{
-	for (unsigned i = 0; i < n; i += 5) {
-		unsigned k = p[i] >> 3;
-		if (i + 5 > n || (p[i] & 7) != 5 || k < 1 || k > 4)
-			return -1;
-		e->w[k - 1] = (uint32_t)le(p + i + 1, 4);
-		e->words++;
-	}
-	return 0;
-}
-
-static int ap_events(const uint8_t *p, unsigned n, struct ap_event *ev, unsigned max, unsigned *field1)
-{
-	unsigned count = 0;
-	*field1 = 0;
-	for (unsigned i = 0; i < n;) {
-		uint64_t key = ap_varint(p, n, &i), v = ap_varint(p, n, &i);
-		if (key == (1 << 3 | 0)) {
-			*field1 = (unsigned)v;
-			continue;
-		}
-		if (key != (2 << 3 | 2) || i + v > n || count == max)
-			return -1;
-		struct ap_event *e = &ev[count++];
-		memset(e, 0, sizeof *e);
-		const uint8_t *q = p + i;
-		unsigned m = (unsigned)v, j = 0;
-		i += m;
-		if (m < 14 || q[0] != (1 << 3 | 5) || q[5] != (2 << 3 | 1))
-			return -1;
-		e->id = (uint32_t)le(q + 1, 4);
-		e->time = le(q + 6, 8);
-		j = 14;
-		uint64_t k3 = ap_varint(q, m, &j), l3 = ap_varint(q, m, &j);
-		if (k3 != (3 << 3 | 2) || j + l3 != m)
-			return -1;
-		const uint8_t *r = q + j;
-		unsigned rn = (unsigned)l3, t = 0;
-		uint64_t k1 = ap_varint(r, rn, &t), l1 = ap_varint(r, rn, &t);
-		if (k1 != (1 << 3 | 2) || t + l1 != rn || ap_vec(r + t, (unsigned)l1, e))
-			return -1;
-	}
-	return (int)count;
 }
 
 static float bits_float(uint32_t u)
@@ -603,14 +669,6 @@ static void ap_flush(uint32_t handle)
 	ap_write_sensors(b, sizeof b);
 }
 
-/* What the AP has read of the sensor channel so far. */
-static struct {
-	struct ap_event ev[256];
-	unsigned events, reports, most, longest;
-	uint64_t last_time;
-	bool backwards;
-} got;
-
 /* Reads each report as it comes, for ms milliseconds. */
 static void ap_sensors(uint32_t ms)
 {
@@ -619,23 +677,8 @@ static void ap_sensors(uint32_t ms)
 		struct wire_msg m;
 		uint8_t copy[WIRE_PAYLOAD_MAX];
 		unsigned n = ap_receive(&m, copy);
-		if (!n)
-			continue;
-		CHECK(!m.framework && m.chan == WIRE_CHAN_SENSORS);
-		struct ap_event e[PROTO_SNS_EVENTS];
-		unsigned field1;
-		int k = ap_events(m.body, m.len, e, PROTO_SNS_EVENTS, &field1);
-		CHECK(k > 0 && field1 == 1);
-		for (int j = 0; j < k && got.events < 256; j++) {
-			if (e[j].id != PROTO_SNS_META) {
-				got.backwards |= e[j].time <= got.last_time;
-				got.last_time = e[j].time;
-			}
-			got.ev[got.events++] = e[j];
-		}
-		got.reports++;
-		got.most = (unsigned)k > got.most ? (unsigned)k : got.most;
-		got.longest = n > got.longest ? n : got.longest;
+		if (n)
+			ap_got_report(&m, n);
 	}
 }
 
