@@ -53,7 +53,9 @@ default = [
     "std",
     "unicode",
     "shared-parley",
+    "key-input",
 ]
+key-input = []
 ffi = [
     "dep:static_assertions",
     "i-slint-core-macros/ffi",
@@ -93,6 +95,7 @@ shared-parley = [
 shared-swash = ["dep:swash"]
 parley-complex-scripts = ["parley?/complex-scripts"]
 std = [
+    "key-input",
     "euclid/std",
     "once_cell/std",
     "parley?/std",
