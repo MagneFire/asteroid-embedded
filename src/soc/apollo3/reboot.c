@@ -24,6 +24,7 @@ const char *boot_reason(void)
 		static const char *const bits[] = { "external pin", "power-on", "brown-out", "software POR",
 						    "software POI", "debugger", "watchdog" };
 		uint32_t st = status = readl(RSTGEN_STAT);
+		writel(0, RSTGEN_STAT);
 		size_t len = 0;
 		for (unsigned i = 0; i < ARRAY_SIZE(bits) && len < sizeof reason - 1; i++)
 			if (st & BIT(i)) {
