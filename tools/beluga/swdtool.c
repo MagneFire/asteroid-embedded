@@ -20,6 +20,7 @@
  *   swdtool probe-reset           reset into a halt before the image, show what the
  *                                 boot loader leaves, then reset and let it run
  */
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -328,6 +329,30 @@ static int cmd_probe_reset(void)
 	return 0;
 }
 
+/* The vendor's daemon may reset the MCU through the sensor hub node,
+ * which in the middle of a flash starts an image with its vector page
+ * erased. */
+static void warn_daemon(void)
+{
+	DIR *d = opendir("/proc");
+	struct dirent *e;
+	while (d && (e = readdir(d))) {
+		char path[300], comm[32] = "";
+		if (e->d_name[0] < '0' || e->d_name[0] > '9')
+			continue;
+		snprintf(path, sizeof path, "/proc/%s/comm", e->d_name);
+		FILE *f = fopen(path, "r");
+		if (!f)
+			continue;
+		if (fgets(comm, sizeof comm, f) && !strncmp(comm, "deamonserver", 12))
+			fprintf(stderr, "swdtool: warning: deamonserver is running (pid %s); it can reset the MCU midway\n",
+				e->d_name);
+		fclose(f);
+	}
+	if (d)
+		closedir(d);
+}
+
 /* Both parts are read twice with the core halted and the watchdog off,
  * so the vendor's firmware writes nothing meanwhile, and saved only if
  * the core stayed halted, the reads match and the image area starts
@@ -400,6 +425,7 @@ static int flash_image(const uint8_t *img, uint32_t size)
 		why = swd_image_check(img, size, SWD_FLASH_FIRST);
 	if (why)
 		return refuse(why);
+	warn_daemon();
 	if (check_chip() || take())
 		return 1;
 	taken = FLASHING;
