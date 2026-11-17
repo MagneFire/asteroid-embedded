@@ -127,6 +127,14 @@ static void handle(const char *s, const char *end)
 	int32_t id = id_text[0] == '-' ? -(int32_t)strtoul(id_text + 1, NULL, 10) : (int32_t)strtoul(id_text, NULL, 10);
 	const char *e;
 	if (find_tag(s, end, "insert", &e)) {
+		char app[sizeof list[0].app], summary[sizeof list[0].summary], body[sizeof list[0].body];
+		field(s, end, "an", app, sizeof app);
+		field(s, end, "su", summary, sizeof summary);
+		field(s, end, "bo", body, sizeof body);
+		if (!app[0] && !summary[0] && !body[0]) {
+			log_printf("notify: nothing to show in %.*s\n", (int)(end - s < 120 ? end - s : 120), s);
+			return;
+		}
 		int i = find_id(id);
 		if (i >= 0)
 			remove_at((unsigned)i);
@@ -135,10 +143,10 @@ static void handle(const char *s, const char *end)
 		memset(n, 0, sizeof *n);
 		n->id = id;
 		field(s, end, "pn", n->package, sizeof n->package);
-		field(s, end, "an", n->app, sizeof n->app);
+		memcpy(n->app, app, sizeof app);
 		field(s, end, "ai", n->icon, sizeof n->icon);
-		field(s, end, "su", n->summary, sizeof n->summary);
-		field(s, end, "bo", n->body, sizeof n->body);
+		memcpy(n->summary, summary, sizeof summary);
+		memcpy(n->body, body, sizeof body);
 		field(s, end, "vb", n->vibrate, sizeof n->vibrate);
 		n->time = rtc_read();
 		n->seq = ++serial;

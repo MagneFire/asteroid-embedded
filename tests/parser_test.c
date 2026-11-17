@@ -90,6 +90,8 @@ static void test_notify(void)
 	CHECK(notify_count() == 1 && !strcmp(notify_get(0)->summary, "Again"));
 	feed("<removed><id>7</id></removed>");
 	CHECK(notify_count() == 0);
+	feed("<insert><id>5</id><pn>com.example</pn></insert>");
+	CHECK(notify_count() == 0);
 
 	char big[600];
 	memset(big, 'x', sizeof big);
@@ -118,7 +120,7 @@ static void test_notify(void)
 	CHECK(notify_count() == 0);
 
 	for (int i = 0; i < 25; i++) {
-		snprintf(msg, sizeof msg, "<insert><id>%d</id></insert>", i);
+		snprintf(msg, sizeof msg, "<insert><id>%d</id><su>n</su></insert>", i);
 		feed(msg);
 	}
 	CHECK(notify_count() == NOTIFY_MAX);
