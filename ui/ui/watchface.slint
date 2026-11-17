@@ -31,7 +31,7 @@ export component Screen inherits Window {
     default-font-family: "Noto Sans";
     default-font-weight: 300;
 
-    if root.kind == 0 && Face.watchface == 0: DigitalFace { }
+    if root.kind == 0 && (Face.watchface == 0 || !Build.classic): DigitalFace { }
     if Build.classic && root.kind == 0 && Face.watchface == 1: Watchface { }
     if Build.notes && root.kind == 1: NoteList { }
     if Build.today && root.kind == 2: TodayScreen { }
