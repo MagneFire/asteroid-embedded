@@ -182,8 +182,7 @@ fn main() {
     println!("cargo:rerun-if-changed=fonts");
     println!("cargo:rerun-if-changed=icons");
     println!("cargo:rerun-if-changed={ICON_DIR}");
-    println!("cargo:rerun-if-changed=../src/ui/ui.h");
-    println!("cargo:rerun-if-changed=../src/asteroid.h");
+    println!("cargo:rerun-if-changed=../src/ui/codes.h");
 }
 
 /// The parts of the UI a build can leave out: screens, apps and launcher layouts.
@@ -391,22 +390,21 @@ fn c_enum(header: &str, name: &str) -> Vec<(String, i64)> {
 /// codes.slint: a `Codes` global with one property per enumerator, lower-kebab (UI_LOCK is
 /// Codes.ui-lock); codes.rs: the same as Rust constants.
 fn codes(out: &std::path::Path) {
-    let ui_h = std::fs::read_to_string("../src/ui/ui.h").unwrap();
-    let asteroid_h = std::fs::read_to_string("../src/asteroid.h").unwrap();
+    let h = std::fs::read_to_string("../src/ui/codes.h").unwrap();
     let mut slint = String::from("export global Codes {\n");
     let mut rust = String::new();
-    for (header, name, ty) in [
-        (&asteroid_h, "setting", "i32"),
-        (&ui_h, "ui_action", "i32"),
-        (&ui_h, "ui_clock_action", "i32"),
-        (&ui_h, "ui_media_action", "i32"),
-        (&ui_h, "ui_alarm_action", "i32"),
-        (&ui_h, "ui_event_kind", "u32"),
-        (&ui_h, "ui_calc_key", "i32"),
-        (&ui_h, "ui_game_move", "i32"),
-        (&ui_h, "ui_compass_state", "i32"),
+    for (name, ty) in [
+        ("setting", "i32"),
+        ("ui_action", "i32"),
+        ("ui_clock_action", "i32"),
+        ("ui_media_action", "i32"),
+        ("ui_alarm_action", "i32"),
+        ("ui_event_kind", "u32"),
+        ("ui_calc_key", "i32"),
+        ("ui_game_move", "i32"),
+        ("ui_compass_state", "i32"),
     ] {
-        for (ident, value) in c_enum(header, name) {
+        for (ident, value) in c_enum(&h, name) {
             writeln!(slint, "    out property <int> {}: {value};", ident.to_lowercase().replace('_', "-")).unwrap();
             writeln!(rust, "pub const {ident}: {ty} = {value};").unwrap();
         }

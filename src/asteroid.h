@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include "soc.h"
 #include "board/board.h"
+#include "ui/codes.h"
 
 #define BIT(n) (1u << (n))
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -65,34 +66,6 @@ enum tilt_mode { TILT_OFF, TILT_WAKE, TILT_FACE, TILT_LIGHT };
 /* The daily step goal is set in units of STEP_GOAL_UNIT steps. */
 #define STEP_GOAL_UNIT	500
 #define STEP_GOAL_MAX	40
-enum setting {
-	SETTING_BRIGHTNESS,
-	SETTING_BLUETOOTH,
-	SETTING_VIBRATION,
-	SETTING_AOD,
-	SETTING_CLOCK12,
-	SETTING_WATCHFACE,
-	SETTING_NIGHTSTAND,
-	SETTING_LAUNCHER,
-	SETTING_TILT,
-	SETTING_TAP,
-	SETTING_FAHRENHEIT,
-	SETTING_NIGHTSTAND_BRIGHTNESS,
-	SETTING_NIGHTSTAND_DELAY,
-	SETTING_NIGHTSTAND_AOD,
-	SETTING_BURN_IN,
-	SETTING_CINEMA_AOD,
-	SETTING_NIGHTSTAND_ROTATE,
-	SETTING_AUTO_BRIGHTNESS,
-	SETTING_STEP_GOAL,
-	SETTING_HEIGHT,
-	SETTING_WEIGHT,
-	SETTING_HR_INTERVAL,
-	SETTING_AGE,
-	SETTING_MALE,
-	SETTING_BACKLIGHT_COLOR,
-	SETTINGS
-};
 int setting_get(enum setting s);
 void setting_set(enum setting s, int v);
 void settings_flush(void);	/* write changed settings to the store now */

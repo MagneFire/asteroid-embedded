@@ -75,6 +75,7 @@
 #include <stdbool.h>
 
 #include "memmap.h"
+#include "codes.h"
 
 #define UI_PANELS 7
 _Static_assert(UI_PANELS * UI_LAYER_STRIDE <= UI_LAYER_SIZE, "more panels than layers");
@@ -100,57 +101,7 @@ enum ui_app {
 /* The Compass app: asteroid-compass's "No data" page while the field's
  * accuracy is unreliable or unknown, the dial with a line asking to
  * calibrate while it is low or medium, the dial alone at high. */
-enum ui_compass_state { UI_COMPASS_NO_DATA, UI_COMPASS_CALIBRATE, UI_COMPASS_READY };
-enum ui_clock_action {
-	UI_TIMER_START = 20,
-	UI_TIMER_RESET,
-	UI_TIMER_MINUTE_UP,
-	UI_TIMER_MINUTE_DOWN,
-	UI_TIMER_SECONDS_UP,
-	UI_TIMER_SECONDS_DOWN,
-	UI_STOPWATCH_START = 30,
-	UI_STOPWATCH_RESET,
-	UI_STOPWATCH_LAP,
-};
-enum ui_alarm_action { UI_ALARM_SNOOZE, UI_ALARM_DISMISS };
-enum ui_action {
-	UI_BRIGHTNESS_DOWN = 32,
-	UI_BRIGHTNESS_UP,
-	UI_FORGET_PHONE,
-	UI_WATCHFACE_FIRST,
-	UI_LOCK = 37,
-	UI_OPEN_SETTINGS,
-	UI_REBOOT,
-	UI_POWER_OFF,
-	UI_CINEMA,
-	UI_PAIR_REJECT,
-	UI_PAIR_ACCEPT,
-	UI_TIMEPIECE,
-	UI_RESET_WATCH,
-	UI_LAUNCHER_FIRST = 48
-};
 #define UI_LAUNCHERS 7
-enum ui_media_action {
-	UI_MEDIA_PREVIOUS,
-	UI_MEDIA_NEXT,
-	UI_MEDIA_PLAY,
-	UI_MEDIA_PAUSE,
-	UI_MEDIA_VOLUME_UP = 5,
-	UI_MEDIA_VOLUME_DOWN,
-};
-/* The calculator's keys: the digits are their values. */
-enum ui_calc_key {
-	UI_CALC_POINT = 10,
-	UI_CALC_ADD,
-	UI_CALC_SUBTRACT,
-	UI_CALC_MULTIPLY,
-	UI_CALC_DIVIDE,
-	UI_CALC_EQUALS,
-	UI_CALC_CLEAR,
-	UI_CALC_BACK,
-	UI_CALC_NEGATE,
-};
-enum ui_game_move { UI_GAME_LEFT, UI_GAME_RIGHT, UI_GAME_UP, UI_GAME_DOWN, UI_GAME_RESET };
 
 /* Shared with the Rust side (ui/src/watch.rs), which lays them out the
  * same way and checks their sizes. */
@@ -196,30 +147,6 @@ struct ui_settings {
 	uint8_t height_cm, weight_kg, hr_interval, age;
 	bool male;
 	uint8_t backlight_color;
-};
-
-enum ui_event_kind {
-	UI_EVENT_SETTING,
-	UI_EVENT_APP,
-	UI_EVENT_MEDIA,
-	UI_EVENT_CLOCK,
-	UI_EVENT_ALARM_RING,
-	UI_EVENT_ALARM_EDIT,
-	UI_EVENT_ALARM_DELETE,
-	UI_EVENT_DISMISS,
-	UI_EVENT_TIMER_SET,
-	UI_EVENT_BRIGHTNESS,
-	UI_EVENT_DISMISS_ALL,
-	UI_EVENT_SNOOZE,
-	UI_EVENT_SETTING_VALUE,
-	UI_EVENT_TIME_SET,
-	UI_EVENT_DATE_SET,
-	UI_EVENT_CALC,
-	UI_EVENT_GAME,
-	UI_EVENT_AGENDA_DAY,
-	UI_EVENT_AGENDA_EDIT,
-	UI_EVENT_AGENDA_DELETE,
-	UI_EVENT_WORKOUT,
 };
 
 struct ui_event {

@@ -128,7 +128,8 @@ UI_TARGET := ui/target$(if $(filter qcom,$(SOC)),,-$(SOC))
 UI_PROFILE := $(or $(UI_PROFILE_$(SOC)),release)
 UI_LIB  := $(UI_TARGET)/$(RUST_TARGET)/$(UI_PROFILE)/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
-           $(shell find ui/src ui/ui ui/build ui/fonts ui/icons third_party/slint -type f 2>/dev/null)
+           $(shell find ui/src ui/ui ui/build ui/fonts ui/icons third_party/slint third_party/asteroid-icons-ion/src 2>/dev/null) \
+           src/ui/codes.h
 
 ifeq ($(SOC),qcom)
 all: $(BUILD)/asteroid.img
@@ -458,7 +459,7 @@ $(BUILD)/test/sensor_power_test: tests/sensor_power_test.c src/sensors/ak09918.c
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(subst src/soc/qcom,src/soc/apollo3,$(HOST_CFLAGS)) $< src/sensors/ak09918.c src/sensors/hub_lsm6dso.c -o $@
 
-$(BUILD)/test/flatmesh_mcu_test: tests/flatmesh_mcu_test.c src/display/flatmesh_mcu.c $(wildcard src/display/flatmesh_mcu*.h src/ui/ui.h)
+$(BUILD)/test/flatmesh_mcu_test: tests/flatmesh_mcu_test.c src/display/flatmesh_mcu.c $(wildcard src/display/flatmesh_mcu*.h src/ui/ui.h src/ui/codes.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) -Wno-unknown-pragmas $< src/display/flatmesh_mcu.c -o $@
 
