@@ -7,10 +7,13 @@
 
 /* The panel's SPI master, IOM5: MOSI, SCK, MISO, and its chip select 3
  * on pad 45. Pads 4 and 14 go high, as the vendor's firmware has them
- * from its start on; what they switch is not known. */
+ * from its start on; what they switch is not known. Without pad 36
+ * high the touch controller and the haptics driver do not answer on
+ * IOM0. */
 static const struct board_mcu_pad pads[] = {
 	{ 4, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 14, PAD_FUNC_GPIO, PAD_OUT_HIGH },
+	{ 36, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 47, 5, PAD_STRONG },
 	{ 48, 5, PAD_STRONG },
 	{ 49, 5, PAD_INPUT },
