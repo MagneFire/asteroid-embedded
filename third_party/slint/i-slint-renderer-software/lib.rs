@@ -1355,12 +1355,12 @@ where
     }
 }
 
-fn render_window_frame_by_line(
+fn render_window_frame_by_line<L: LineBufferProvider>(
     window: &WindowInner,
     background: Brush,
     size: PhysicalSize,
     renderer: &SoftwareRenderer,
-    mut line_buffer: impl LineBufferProvider,
+    mut line_buffer: L,
 ) -> PhysicalRegion {
     let gradient_background = gradient_background(&background);
     let mut scene = prepare_scene(window, size, gradient_background, renderer);
@@ -1393,7 +1393,13 @@ fn render_window_frame_by_line(
                     let items = match first_cover {
                         Some(i) => &items[..=i],
                         None => {
-                            TargetPixel::fill_slice(line_buffer, background_color);
+                            if !L::fill_background(
+                                scene.current_line.get() as usize,
+                                offset as usize,
+                                line_buffer,
+                            ) {
+                                TargetPixel::fill_slice(line_buffer, background_color);
+                            }
                             items
                         }
                     };

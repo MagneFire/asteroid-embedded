@@ -94,6 +94,12 @@ pub trait LineBufferProvider {
 
     /// Called once per frame before any line, with the region the lines will cover.
     fn begin(&mut self, _region: &PhysicalRegion) {}
+
+    /// Fills `buffer`, line `line` from x `start`, with what shows behind the window's items
+    /// instead of the window's background; false to have the background drawn.
+    fn fill_background(_line: usize, _start: usize, _buffer: &mut [Self::TargetPixel]) -> bool {
+        false
+    }
 }
 
 #[cfg(not(cbindgen))]
