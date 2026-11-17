@@ -755,9 +755,17 @@ static int recalculate(bool first)
 		last_change_sec = last_recalc_sec;
 	}
 	report_soc();
-	log_printf("bms: %d%% (calculated %d%%), ocv %d uV, cc %d uAh, fcc %d uAh, uuc %d uAh, iavg %d mA, rbatt %d mOhm, %d.%d C\n",
-		   last_soc, calculated_soc, last_ocv_uv, p.cc_uah, p.fcc_uah, p.uuc_uah, p.iavg_ua / 1000, p.rbatt_mohm,
-		   temp / 10, iabs(temp % 10));
+	/* Unchanged it is logged every 10 minutes, not each 20 s. */
+	static int logged_soc = NONE, logged_calculated = NONE;
+	static uint32_t logged_sec;
+	if (last_soc != logged_soc || calculated_soc != logged_calculated || now_sec() - logged_sec >= 600) {
+		logged_soc = last_soc;
+		logged_calculated = calculated_soc;
+		logged_sec = now_sec();
+		log_printf("bms: %d%% (calculated %d%%), ocv %d uV, cc %d uAh, fcc %d uAh, uuc %d uAh, iavg %d mA, rbatt %d mOhm, %d.%d C\n",
+			   last_soc, calculated_soc, last_ocv_uv, p.cc_uah, p.fcc_uah, p.uuc_uah, p.iavg_ua / 1000,
+			   p.rbatt_mohm, temp / 10, iabs(temp % 10));
+	}
 	last_recalc_sec = now_sec();
 	first_soc = first_uuc = false;
 	was_charging = status == BAT_CHARGING;
