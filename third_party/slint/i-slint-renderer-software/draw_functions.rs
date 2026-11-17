@@ -270,20 +270,17 @@ pub(super) fn draw_texture_line(
                 }
             }
             TexturePixelFormat::AlphaMap => {
+                let solid = TargetPixel::from_rgb(color.red(), color.green(), color.blue());
                 for pix in line_buffer {
                     let pos = pos(1).0;
-                    let c = PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
-                        ((data[pos] as u16 * alpha as u16) / 255) as u8,
-                        color.red(),
-                        color.green(),
-                        color.blue(),
-                    ));
-                    pix.blend(c);
+                    let a = ((data[pos] as u16 * alpha as u16) / 255) as u8;
+                    blend_coverage(pix, a, color, solid);
                 }
             }
             TexturePixelFormat::SignedDistanceField => {
                 const RANGE: i32 = 6;
                 let factor = (362 * 256 / delta.0) * RANGE; // 362 ≃ 255 * sqrt(2)
+                let solid = TargetPixel::from_rgb(color.red(), color.green(), color.blue());
                 for pix in line_buffer {
                     let (pos, col_f, row_f) = pos(1);
                     let (col_f, row_f) = (col_f as i32, row_f as i32);
@@ -298,17 +295,30 @@ pub(super) fn draw_texture_line(
                         debug_assert_eq!(row_f, 0);
                     }
                     let a = ((((dist >> 8) * factor) >> 16) + 128).clamp(0, 255) * alpha as i32;
-                    let c = PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
-                        (a / 255) as u8,
-                        color.red(),
-                        color.green(),
-                        color.blue(),
-                    ));
-                    pix.blend(c);
+                    blend_coverage(pix, (a / 255) as u8, color, solid);
                 }
             }
         };
     }
+}
+
+/// Blends `color` at coverage `a` over `pix`: most of a glyph's box is either outside the glyph or
+/// fully inside it, where blending is a no-op or `solid`.
+#[inline(always)]
+fn blend_coverage<T: TargetPixel>(pix: &mut T, a: u8, color: Color, solid: T) {
+    if a == 0 {
+        return;
+    }
+    if a == 255 {
+        *pix = solid;
+        return;
+    }
+    pix.blend(PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
+        a,
+        color.red(),
+        color.green(),
+        color.blue(),
+    )));
 }
 
 /// draw one line of the rounded rectangle in the line buffer
