@@ -83,7 +83,8 @@ const struct board board_beluga = {
 		.spi_pads = { 45, 47, 48, 49 },
 		.col_offset = 40,
 	},
-	.touch_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x24 }, .irq = 23, .reset = 22 },
+	.touch_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x24 }, .irq = 23, .reset = 22,
+			.grid_w = 368, .grid_h = 448 },
 };
 
 /* The 41 mm watch: pad 12 switches the touch controller instead of the

@@ -2,9 +2,14 @@
  * starts with its length, little-endian, and a read from the start gives
  * the whole of it. Report 1 is the touches: their count in byte 5, the
  * records from byte 7, 10 bytes each, the first finger's tip in bit 7 of
- * its byte 1 and x, y in bytes 2-5 in panel pixels. The line going low
- * says a report is waiting; the interrupt only marks it, and the read
- * is done from the main loop, where the bus's other users are. */
+ * its byte 1, its event in bits 5-6 (none: nothing to take), and the
+ * controller's y then x in bytes 2-5, on a grid over the whole glass
+ * that the board can give as smaller than the panel. Stock switches it
+ * to its easy wake mode after reset; that reports touches on a coarse
+ * grid, so only its switch back before letting go of the controller is
+ * done here. The line going low says a report is waiting; the interrupt
+ * only marks it, and the read is done from the main loop, where the
+ * bus's other users are. */
 #include "asteroid.h"
 #include "display/display.h"
 #include "input/touch.h"
@@ -17,7 +22,8 @@
 #define REPORT_TOUCH	1
 #define PALM		0x20
 #define TIP		0x80
-#define BOOT_WAIT_MS	200
+#define EVENT(b)	((b) >> 5 & 3)
+#define BOOT_WAIT_MS	500
 
 static volatile bool attention;
 static bool was_down, asleep, lent;
@@ -30,6 +36,13 @@ static void line_low(unsigned pin)
 {
 	attentions++;
 	attention = true;
+}
+
+static void normal_mode(void)
+{
+	const uint8_t cmd[] = { 0x04, 0x00, 0x06, 0x00, 0x2f, 0x00, 0x1b, 0x00 };
+	if (i2c_xfer(BUS, ADDR, cmd, sizeof cmd, NULL, 0))
+		errors++;
 }
 
 static bool tma_init(void)
@@ -49,7 +62,7 @@ static bool tma_init(void)
 	uint8_t len[2] = { 0 };
 	for (int i = 0; !r; i++) {
 		delay_ms(BOOT_WAIT_MS / 10);
-		if (!i2c_xfer(BUS, ADDR, NULL, 0, len, 2))
+		if (!i2c_xfer(BUS, ADDR, NULL, 0, len, 2) && len[0])
 			break;
 		if (i == 9)
 			r = -6;
@@ -76,9 +89,15 @@ static bool decode(const uint8_t *r, unsigned n, struct touch *t)
 		was_down = false;
 		return true;
 	}
+	if (count && n >= 17 && !EVENT(r[8]))
+		return false;
 	bool down = count && n >= 17 && (r[8] & TIP);
 	if (down) {
-		int x = r[9] | r[10] << 8, y = r[11] | r[12] << 8;
+		int x = r[11] | r[12] << 8, y = r[9] | r[10] << 8;
+		if (board->touch_pins.grid_w)
+			x = x * (int)fb.width / board->touch_pins.grid_w;
+		if (board->touch_pins.grid_h)
+			y = y * (int)fb.height / board->touch_pins.grid_h;
 		last_x = x < (int)fb.width ? x : (int)fb.width - 1;
 		last_y = y < (int)fb.height ? y : (int)fb.height - 1;
 	}
@@ -136,6 +155,7 @@ static void tma_lend(bool to_ap)
 		tma_init();
 		return;
 	}
+	normal_mode();
 	gpio_irq_enable(GPIO_IRQ, false);
 	gpio_config(GPIO_RESET, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 	gpio_config(GPIO_IRQ, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);

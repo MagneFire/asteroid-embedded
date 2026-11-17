@@ -424,6 +424,9 @@ struct board {
 		uint8_t palm_width;
 		/* A line that switches its supply, 0 for none. */
 		uint8_t power_gpio;
+		/* The controller's grid when it is not the panel's, scaled
+		 * to the panel: 0 for the panel's. */
+		uint16_t grid_w, grid_h;
 	} touch_pins;
 
 	const struct hub_driver *hub;
