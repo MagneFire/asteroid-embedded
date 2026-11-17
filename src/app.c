@@ -508,7 +508,7 @@ void app_key(uint32_t now, bool irq)
 void app_tick(uint32_t now)
 {
 	if (clockapps_tick(now) && !power_awake())
-		power_request(false);
+		power_wake("alarm");
 	if (clockapps_ringing())
 		power_activity(now);
 }

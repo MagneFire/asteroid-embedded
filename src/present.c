@@ -178,7 +178,7 @@ void present_events(uint32_t now)
 		if (have_ui)
 			ui_set_passkey(passkey);
 		if (passkey >= 0 && !power_awake())
-			power_request(false);
+			power_wake("pairing");
 		power_activity(now);
 	}
 	if (notify_serial() != notify_seen) {
@@ -204,7 +204,7 @@ void present_events(uint32_t now)
 			if (have_haptics && setting_get(SETTING_VIBRATION))
 				vibrate(top->vibrate);
 			if (!power_awake())
-				power_request(false);
+				power_wake("notification");
 			power_activity(now);
 		}
 		shown_seq = top ? top->seq : 0;
