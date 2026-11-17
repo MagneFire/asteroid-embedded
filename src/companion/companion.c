@@ -262,7 +262,6 @@ static void message(const uint8_t *p, unsigned n, uint32_t now)
 			count.bad++;
 	} else if (m.id == PROTO_BOOT) {
 		count.boot++;
-		sns_reset();
 		if (proto_boot(m.body, m.len, &t))
 			set_time(&t);
 		else

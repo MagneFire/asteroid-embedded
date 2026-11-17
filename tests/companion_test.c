@@ -350,7 +350,7 @@ static void ap_request(void)
 	fire(DN_INT);
 	CHECK(levels[DN_ACK] == 0);
 	if (!ms_per_read) {
-		CHECK(levels[UP_INT] || (companion_next_ms() > 0 && companion_next_ms() <= LINK_DN_SETTLE_MS));
+		CHECK(levels[UP_INT] || companion_next_ms() <= LINK_DN_SETTLE_MS);
 		now_ms += LINK_DN_SETTLE_MS - 1;
 		link_poll();
 		CHECK(levels[DN_ACK] == 0);
@@ -907,13 +907,18 @@ static void sensor_scenario(void)
 	ap_sensors(2000);
 	CHECK(got.reports == 0);
 
-	/* The AP's boot drops them too. */
+	/* The daemon's 386, also after a restart of the daemon alone,
+	 * keeps them; a malformed one changes nothing. */
 	ap_activate(PROTO_SNS_ACCEL, true, 0);
 	CHECK(accel_shared);
 	ap_sensors(1);
 	ap_write(1, PROTO_BOOT, NULL, 0);
 	companion_pass();
-	CHECK(!accel_shared);
+	static const uint8_t cut386[] = { 0x1a, 0x02, 0x08, 0x80 };
+	uint32_t rtc = rtc_writes;
+	ap_write(1, PROTO_BOOT, cut386, sizeof cut386);
+	companion_pass();
+	CHECK(accel_shared && rtc_writes == rtc);
 }
 
 int main(void)
