@@ -144,6 +144,8 @@ bool i2c_busy(unsigned bus);
 /* How long a slave may hold the clock on a transfer this master has on
  * the bus before it is given up, beyond the usual 20 ms; 0 for none. */
 void i2c_set_timeout(unsigned bus, uint32_t stretch_ms);
+/* Puts the board's chips_off to sleep; false when it has none. */
+bool board_chips_off(void);
 bool haptics_init(void);
 void haptics_play(const uint16_t *on_off_ms, unsigned n);
 void haptics_poll(void);

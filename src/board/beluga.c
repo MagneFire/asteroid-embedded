@@ -9,19 +9,32 @@
  * on pad 45. Pads 4 and 14 go high, as the vendor's firmware has them
  * from its start on; what they switch is not known. Without pad 36
  * high the touch controller and the haptics driver do not answer on
- * IOM0. GNSS (pads 41 and 17) and heart rate (pad 31) stay off. */
+ * IOM0. GNSS (pads 41 and 17) and heart rate (pad 31, and pad 19 as
+ * an input) stay off. */
 static const struct board_mcu_pad pads[] = {
 	{ 4, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 14, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 36, PAD_FUNC_GPIO, PAD_OUT_HIGH },
 	{ 17, PAD_FUNC_GPIO, PAD_OUT_LOW },
 	{ 31, PAD_FUNC_GPIO, PAD_OUT_LOW },
+	{ 19, PAD_FUNC_GPIO, PAD_INPUT },
 	{ 41, PAD_FUNC_GPIO, PAD_OUT_LOW },
 	{ 47, 5, PAD_STRONG },
 	{ 48, 5, PAD_STRONG },
 	{ 49, 5, PAD_INPUT },
 	{ 45, 1, PAD_NCE(2) },
 	{ 0, 0xff, 0 },
+};
+
+/* On IOM0 with the touch controller, left running by the vendor's
+ * firmware: the SX932x is reset, the TSL258x light sensor's power bit
+ * and the LPS22HH barometer's data rate and one-shot are cleared. */
+static const struct board_chip_off chips_off[] = {
+	{ 0x28, 0x9f, 0xff, 0xde, 10, 0x00 },
+	{ 0x29, 0x80, 0x01, 0, 0, 0xff },
+	{ 0x5c, 0x10, 0x70, 0, 0, 0xff },
+	{ 0x5c, 0x11, 0x03, 0, 0, 0xff },
+	{ 0 },
 };
 
 /* From reset to the picture on: the user command page, the partial area
@@ -68,6 +81,7 @@ static const struct dcs_step panel_on_41[] = {
  * 33, down from it on 30 and 32. */
 #define BELUGA_COMMON                                                                                                  \
 	.mcu_pads = pads, .heart_rate = false,                                                                         \
+	.chips_off = { { .bus = 0, .sda = 6, .scl = 5, .func = 0 }, chips_off },                                       \
 	.battery_driver = &battery_adc, .battery_adc = { .pad = 35, .func = 0, .channel = 7, .mv_full = 7200 },        \
 	.key_gpio = { 15, 38 }, .input_only = { 15, 38 },                                                              \
 	.touch = &touch_tma525,                                                                                        \

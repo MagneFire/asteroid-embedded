@@ -211,12 +211,25 @@ struct board_mcu_pad {
 	uint16_t flags;
 };
 
+/* A register write that puts a chip the firmware leaves alone to sleep:
+ * reg = (reg & ~clear) | set, unread when clear is 0xff; then wait_ms
+ * and read clear_irq unless it is 0xff. */
+struct board_chip_off {
+	uint8_t addr, reg, clear, set, wait_ms, clear_irq;
+};
+
 struct board {
 	const char *name, *compatible;
 	/* Pads to set at boot, ended by an offset of 0, for a SoC that
 	 * has the pins muxed apart from their use. */
 	const struct board_pad *pads;
 	const struct board_mcu_pad *mcu_pads;
+	/* Chips that keep running across a reset of this SoC, put to
+	 * sleep at boot; the list ends with addr 0. */
+	struct {
+		struct board_i2c i2c;
+		const struct board_chip_off *regs;
+	} chips_off;
 	/* The pads that can wake such a SoC, which a driver names by its
 	 * place here where another watch has an MPM pin. */
 	const uint16_t *wake_pads;

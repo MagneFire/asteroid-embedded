@@ -14,6 +14,29 @@
 #define HUB(fn) (board->hub && board->hub->fn)
 #define LIGHT(fn) (board->light && board->light->fn)
 
+bool board_chips_off(void)
+{
+	const struct board_i2c *b = &board->chips_off.i2c;
+	if (!board->chips_off.regs || i2c_init(b->bus, b->sda, b->scl, b->func, 400000))
+		return false;
+	for (const struct board_chip_off *c = board->chips_off.regs; c->addr; c++) {
+		uint8_t w[2] = { c->reg, c->set }, v = 0;
+		if (c->clear != 0xff) {
+			if (i2c_xfer(b->bus, c->addr, w, 1, &v, 1))
+				continue;
+			w[1] = (uint8_t)((v & ~c->clear) | c->set);
+		}
+		if (i2c_xfer(b->bus, c->addr, w, 2, NULL, 0))
+			continue;
+		log_printf("board: chip %02x off, reg %02x %02x -> %02x\n", c->addr, c->reg, v, w[1]);
+		if (c->wait_ms)
+			delay_ms(c->wait_ms);
+		if (c->clear_irq != 0xff)
+			i2c_xfer(b->bus, c->addr, &c->clear_irq, 1, &v, 1);
+	}
+	return true;
+}
+
 void batt_init(void)
 {
 	if (BATT_SETUP(init))
