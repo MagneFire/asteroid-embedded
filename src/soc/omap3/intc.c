@@ -15,6 +15,7 @@
 static void (*handlers[IRQ_COUNT])(void);
 static uint32_t spurious;
 const uint32_t *irq_frame;
+volatile unsigned irq_last;
 
 void irq_ctrl_init(void)
 {
@@ -73,6 +74,7 @@ void irq_handler(const uint32_t *frame)
 		spurious++;
 	else {
 		unsigned id = sir & 0x7f;
+		irq_last = id;
 		depth++;
 		if (id < IRQ_COUNT && handlers[id])
 			handlers[id]();

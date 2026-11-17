@@ -80,8 +80,11 @@ unsigned sched_run(uint32_t now)
 	return ran;
 }
 
+static const char *next_name;
+
 uint32_t sched_next_ms(uint32_t now)
 {
+	next_name = "events";
 	if (sched_pending())
 		return 0;
 	uint32_t next = UINT32_MAX;
@@ -89,13 +92,20 @@ uint32_t sched_next_ms(uint32_t now)
 		const struct sched_task *t = tasks[i];
 		if (!t->armed || t->lazy)
 			continue;
-		if (due(t, now))
-			return 0;
-		uint32_t left = t->at - now;
-		if (left < next)
+		uint32_t left = due(t, now) ? 0 : t->at - now;
+		if (left < next) {
 			next = left;
+			next_name = t->name;
+		}
+		if (!left)
+			break;
 	}
 	return next;
+}
+
+const char *sched_next_name(void)
+{
+	return next_name;
 }
 
 bool sched_pending(void)

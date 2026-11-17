@@ -88,6 +88,7 @@ static void bank_irq(unsigned bank)
 			continue;
 		if (pin_irqs[i].edge)
 			writel(PIN(n), base + GPIO_IRQSTATUS1);
+		irq_last = IRQ_LAST_GPIO + n;
 		pin_irqs[i].fn(n);
 		if (!pin_irqs[i].edge)
 			writel(PIN(n), base + GPIO_IRQSTATUS1);

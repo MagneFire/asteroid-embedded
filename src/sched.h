@@ -47,6 +47,8 @@ unsigned sched_run(uint32_t now);
 /* The time until a task is due: 0 if one is already, UINT32_MAX if none
  * has a deadline. Lazy tasks do not count. */
 uint32_t sched_next_ms(uint32_t now);
+/* The task behind the last sched_next_ms. */
+const char *sched_next_name(void);
 bool sched_pending(void);
 /* A task other than a lazy one more than `limit_ms` past its deadline, or
  * NULL. */

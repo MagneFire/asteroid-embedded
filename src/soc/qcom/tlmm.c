@@ -44,8 +44,10 @@ static void summary_irq(void)
 {
 	for (unsigned i = 0; i < npin_irqs; i++) {
 		unsigned n = pin_irqs[i].pin;
-		if ((readl(TLMM_INTR_CFG(n)) & INTR_ENABLE) && (readl(TLMM_INTR_STATUS(n)) & 1))
+		if ((readl(TLMM_INTR_CFG(n)) & INTR_ENABLE) && (readl(TLMM_INTR_STATUS(n)) & 1)) {
+			irq_last = IRQ_LAST_GPIO + n;
 			pin_irqs[i].fn(n);
+		}
 	}
 }
 

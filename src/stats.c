@@ -44,6 +44,7 @@ static void asleep_line(uint32_t now)
 	cpu_idle_stats(&pc, &pcc, &pcb);
 	log_printf("power: asleep %lu s, %lu wakeups, %lu/%lu/%lu collapses, %s\n", (now - last) / 1000, power_wakeups(), pc,
 		   pcc, pcb, current(false));
+	log_printf("power: woke for %s\n", power_woke_by());
 	last = now;
 }
 

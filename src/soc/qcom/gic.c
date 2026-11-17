@@ -23,6 +23,7 @@ static void (*handlers[MAX_IRQ])(void);
 static unsigned nirq;
 static uint32_t spurious;
 const uint32_t *irq_frame;
+volatile unsigned irq_last;
 
 void irq_ctrl_init(void)
 {
@@ -111,6 +112,7 @@ void irq_handler(const uint32_t *frame)
 		spurious++;
 		return;
 	}
+	irq_last = id;
 	depth++;
 	if (id < nirq && handlers[id])
 		handlers[id]();

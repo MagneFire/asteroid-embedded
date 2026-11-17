@@ -636,7 +636,7 @@ void app_power_changed(enum power_change change)
 /* The time asleep until something here has work to do. The battery
  * driver's deadline is for safety: the charge limits on the dock, an
  * empty battery off it. */
-uint32_t app_next_ms(void)
+uint32_t app_next_ms(const char **why)
 {
 	uint32_t next[] = {
 #if ASLEEP_STATS
@@ -651,8 +651,18 @@ uint32_t app_next_ms(void)
 		sched_next_ms(time_ms()),
 		have_heart_rate && !hub_has_passive() ? hrlog_next_ms(rtc_read(), setting_get(SETTING_HR_INTERVAL)) : UINT32_MAX,
 	}, min = UINT32_MAX;
+	static const char *const names[] = {
+#if ASLEEP_STATS
+		"stats",
+#endif
+		"clock apps", "touch", "usb", "emmc", "battery", "screen", NULL, "heart rate",
+	};
+	_Static_assert(ARRAY_SIZE(names) == ARRAY_SIZE(next), "a name for each deadline");
+	*why = "nothing";
 	for (unsigned i = 0; i < ARRAY_SIZE(next); i++)
-		if (next[i] < min)
+		if (next[i] < min) {
 			min = next[i];
+			*why = names[i] ? names[i] : sched_next_name();
+		}
 	return min;
 }

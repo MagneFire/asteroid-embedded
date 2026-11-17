@@ -26,9 +26,11 @@ void power_set_brightness(void);
  * something else is holding the brightness. */
 void power_light(uint32_t now, bool hold);
 void power_tick(void);
-void power_idle(uint32_t app_next_ms);
+void power_idle(uint32_t app_next_ms, const char *why);
 void power_timepiece(void) __attribute__((noreturn));
 uint32_t power_wakeups(void);
+/* What ended the sleeps since the last call, most first. */
+const char *power_woke_by(void);
 uint32_t power_slept_ms(uint32_t now);
 /* For tuning over the console: the last peek's lux and light, and a
  * light that every peek uses in place of the one for the room. */

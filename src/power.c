@@ -539,7 +539,60 @@ enum power_change power_update(uint32_t *now_p)
  * next tick while anything is pending, else as long as app_next_ms and
  * the Bluetooth and sensor hub links allow, with the cluster parked
  * when they can sleep too. */
-void power_idle(uint32_t app_next_ms)
+/* Asleep, what ended each wait: the deadline that was due, or the
+ * interrupt that came before it. A pass that did not wait at all counts
+ * as "busy". */
+#define WOKE_KINDS 8
+static struct woke {
+	const char *name;
+	unsigned irq;
+	uint32_t n;
+} woke[WOKE_KINDS];
+
+static void woke_count(const char *name, unsigned irq)
+{
+	for (unsigned i = 0; i < WOKE_KINDS; i++)
+		if (woke[i].n && woke[i].name == name && woke[i].irq == irq) {
+			woke[i].n++;
+			return;
+		}
+	for (unsigned i = 0; i < WOKE_KINDS - 1; i++)
+		if (!woke[i].n) {
+			woke[i] = (struct woke){ name, irq, 1 };
+			return;
+		}
+	woke[WOKE_KINDS - 1].name = "other";
+	woke[WOKE_KINDS - 1].irq = 0;
+	woke[WOKE_KINDS - 1].n++;
+}
+
+const char *power_woke_by(void)
+{
+	static char s[160];
+	unsigned len = 0;
+	s[0] = 0;
+	for (;;) {
+		struct woke *top = NULL;
+		for (unsigned i = 0; i < WOKE_KINDS; i++)
+			if (woke[i].n && (!top || woke[i].n > top->n))
+				top = &woke[i];
+		if (!top || len >= sizeof s - 1)
+			break;
+		int w;
+		if (!top->name)
+			w = snprintf(s + len, sizeof s - len, "%s%lu %s %u", len ? ", " : "", top->n,
+				     top->irq >= IRQ_LAST_GPIO ? "gpio" : "irq", top->irq >= IRQ_LAST_GPIO ? top->irq - IRQ_LAST_GPIO : top->irq);
+		else
+			w = snprintf(s + len, sizeof s - len, "%s%lu %s", len ? ", " : "", top->n, top->name);
+		if (w > 0)
+			len += (unsigned)w;
+		top->n = 0;
+	}
+	memset(woke, 0, sizeof woke);
+	return len ? s : "nothing";
+}
+
+void power_idle(uint32_t app_next_ms, const char *why)
 {
 	/* A USB completion that landed after this pass's poll would wait
 	 * for the next tick, a second asleep, and adb needs several per
@@ -549,10 +602,15 @@ void power_idle(uint32_t app_next_ms)
 	if (usb_busy() || lit_pending) {
 		if (!policy.awake && cpu_clock_is_slow())
 			cpu_clock_slow(false);
+		if (!policy.awake)
+			woke_count("busy", 0);
 		return;
 	}
-	if ((have_display && policy.awake) || haptics_busy() || screenshot_busy() || !timer_ticks() || sched_pending())
+	if ((have_display && policy.awake) || haptics_busy() || screenshot_busy() || !timer_ticks() || sched_pending()) {
+		if (!policy.awake)
+			woke_count("busy", 0);
 		return;
+	}
 	bool quiet = !have_display || policy.awake || display_rest();
 	bool cluster = quiet && !policy.awake && usb_resting() && bt_can_sleep() && (!have_hub || hub_can_sleep());
 	if (!policy.awake)
@@ -563,40 +621,60 @@ void power_idle(uint32_t app_next_ms)
 		cpu_clock_park();
 	}
 	uint32_t next = 1000;
+	if (usb_connected())
+		why = "usb tick";
 	if (!policy.awake && !usb_connected()) {
 		uint32_t bt = bt_idle_ms(), lpm = bt_lpm_next_ms();
 		next = app_next_ms;
-		if (bt < next)
+		if (bt < next) {
 			next = bt;
-		if (lpm < next)
+			why = "bt";
+		}
+		if (lpm < next) {
 			next = lpm;
-		if (have_hub && !hub_can_sleep() && next > 50)
+			why = "bt sleep";
+		}
+		if (have_hub && !hub_can_sleep() && next > 50) {
 			next = 50;
+			why = "hub busy";
+		}
 		uint32_t minute = (60 - rtc_read() % 60) * 1000;
-		if (screen == SCREEN_AMBIENT && minute < next)
+		if (screen == SCREEN_AMBIENT && minute < next) {
 			next = minute;
-		if (next > MAX_SLEEP_MS)
+			why = "ambient minute";
+		}
+		if (next > MAX_SLEEP_MS) {
 			next = MAX_SLEEP_MS;
+			why = "longest sleep";
+		}
 	}
 	uint32_t lux = lux_next_ms(time_ms());
-	if (lux < next)
+	if (lux < next) {
 		next = lux;
+		why = "light";
+	}
 	/* The watchdog counts on the sleep clock through a cluster power
 	 * collapse, where its bark cannot wake the core, so a wake that
 	 * comes late would end in a bite with no record. As the vendor
 	 * kernel does for suspend, it is off across a long or cluster sleep,
 	 * and a wake later than planned is logged instead. */
 	bool long_sleep = !policy.awake && (next > 1000 || cluster || lux != UINT32_MAX);
-	uint32_t t0 = 0;
 	if (long_sleep) {
 		timer_set_period(next);
 		timer_next(next);
 		wdt_stop();
-		t0 = time_ms();
 	}
+	uint32_t t0 = time_ms();
+	irq_last = ~0u;
 	cpu_idle(cluster);
+	uint32_t slept = time_ms() - t0;
+	if (!policy.awake) {
+		if (slept + 1 >= next)
+			woke_count(why, 0);
+		else
+			woke_count(irq_last == ~0u ? "busy" : NULL, irq_last == ~0u ? 0 : irq_last);
+	}
 	if (long_sleep) {
-		uint32_t slept = time_ms() - t0;
 		wdt_arm(3000, 4000, NULL);
 		timer_set_period(1000);
 		timer_next(1);

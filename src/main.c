@@ -234,6 +234,7 @@ void main(uint32_t machtype, const void *fdt)
 #endif
 		if (!awake)
 			emmc_idle();
-		power_idle(awake ? 1000 : app_next_ms());
+		const char *why = "awake";
+		power_idle(awake ? 1000 : app_next_ms(&why), why);
 	}
 }
