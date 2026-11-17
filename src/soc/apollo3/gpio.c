@@ -37,8 +37,22 @@ static void put(uint32_t reg, unsigned shift, uint32_t mask, uint32_t v)
 	writel((readl(reg) & ~(mask << shift)) | (v & mask) << shift, reg);
 }
 
+/* The SWD pads stay as the boot loader leaves them: the AP's only way
+ * in. The board's shared pads only ever become GPIO inputs. */
+static bool refused(unsigned p, uint32_t padreg, uint32_t cfg)
+{
+	if (p == PAD_SWDCK || p == PAD_SWDIO)
+		return true;
+	for (unsigned i = 0; i < ARRAY_SIZE(board->input_only); i++)
+		if (board->input_only[i] && board->input_only[i] == p)
+			return (padreg & PAD_FNC(7)) != PAD_FNC(PAD_FUNC_GPIO) || (cfg >> 1 & 3) != OUT_DIS;
+	return false;
+}
+
 static void set_pad(unsigned p, uint32_t padreg, uint32_t cfg, uint32_t alt)
 {
+	if (refused(p, padreg, cfg))
+		return;
 	uint32_t flags = irq_save();
 	writel(KEY, PADKEY);
 	put(PADREG(p), (p & 3) * 8, 0xff, padreg);

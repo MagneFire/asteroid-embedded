@@ -350,6 +350,9 @@ struct board {
 	/* Keys on GPIOs, pressed low: the power key and a second one, 0
 	 * for none. */
 	uint8_t key_gpio[2];
+	/* Pads another chip drives too, kept inputs whatever asks: 0 for
+	 * none. */
+	uint8_t input_only[4];
 	/* A MAX17050 gauge (or the fuel gauge's bus), the wireless pad line (low on the pad), the
 	 * receiver's charge output and its termination (high stops charging)
 	 * and reduced rate inputs. */

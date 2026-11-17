@@ -124,6 +124,8 @@
 #define PAD_OUT_HIGH		BIT(8)
 #define PAD_OUT_LOW		BIT(9)
 #define PAD_FUNC_GPIO		3
+#define PAD_SWDCK		20
+#define PAD_SWDIO		21
 void pad_config(unsigned pad, unsigned func, unsigned flags);
 struct board_mcu_pad;
 void pad_set(const struct board_mcu_pad *p);
