@@ -6,6 +6,8 @@
 #include "sched.h"
 
 #define SCR_SLEEPDEEP	BIT(2)
+#define DHCSR		0xe000edf0u
+#define C_DEBUGEN	BIT(0)
 
 static uint32_t deep_sleeps;
 
@@ -22,6 +24,11 @@ bool cpu_idle_init(void)
  * interrupt, and it is taken on unmasking. */
 void cpu_idle(bool deep)
 {
+	/* A debug access during deep sleep breaks the AP's SWD link until
+	 * it reconnects, so with debug on the core only sleeps lightly, as
+	 * the vendor's firmware does. */
+	if (readl(DHCSR) & C_DEBUGEN)
+		deep = false;
 	__asm__ volatile("cpsid i" ::: "memory");
 	if (!sched_pending()) {
 		if (deep)
