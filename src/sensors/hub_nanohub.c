@@ -469,6 +469,13 @@ static uint64_t steps_latency_ns(void)
 	return screen_off ? 3600000000000ull : 0;
 }
 
+/* A heart rate comes about once a second, and with the screen off each
+ * one woke the AP for the 30 to 60 s a reading takes. */
+static uint64_t hr_latency_ns(void)
+{
+	return screen_off ? 10000000000ull : 0;
+}
+
 static void nanohub_flush_steps(void)
 {
 	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_FLUSH, 0, 0);
@@ -491,7 +498,7 @@ static void apply_state(void)
 	if (present && exchange(NANOHUB_WRITE, b, n) < 0)
 		log_printf("hub: steps row not set\n");
 	tilt_on = want_tilt && configure(NANOHUB_SENSOR_HAND_UP, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
-	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
+	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns());
 	accel_on = want_accel && configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_ENABLE, NANOHUB_HZ(10), 0);
 	light_on = want_light && configure(NANOHUB_SENSOR_LIGHT, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
 }
@@ -633,7 +640,7 @@ static void nanohub_heart_rate_on(bool on)
 	heart_rate = HUB_NONE;
 	heart_readings = 0;
 	heart_started = false;
-	if (configure(NANOHUB_SENSOR_HEART_RATE, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, 0))
+	if (configure(NANOHUB_SENSOR_HEART_RATE, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns()))
 		hr_on = on;
 	else
 		log_printf("hub: heart rate %s not taken\n", on ? "on" : "off");
@@ -719,8 +726,13 @@ static void nanohub_screen(bool on)
 		return;
 	set_mode(on ? MODE_NORMAL : MODE_AMBIENT);
 	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns());
-	if (on)
+	if (hr_on)
+		configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns());
+	if (on) {
 		nanohub_flush_steps();
+		if (hr_on)
+			configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_FLUSH, 0, 0);
+	}
 }
 
 /* What the vendor's Essential mode leaves the hub in: its sensors for the
