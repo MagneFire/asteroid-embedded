@@ -1,7 +1,8 @@
 /* The battery's voltage on the ADC: one slot on its pad's channel, 14
  * bits against the internal 2.0 V reference, averaged in hardware, then
- * the ADC is powered down again. The divider in front of it is the
- * board's. */
+ * the ADC is powered down again. Each trigger takes one sample; the
+ * average reaches the FIFO after the last of them. The divider in front
+ * of it is the board's. */
 #include "asteroid.h"
 
 #define ADC_CFG		(ADC_BASE + 0x00)
@@ -16,6 +17,7 @@
 #define CFG_REF_2V0	(0u << 8)
 #define CFG_ADCEN	BIT(0)
 #define SL_AVG16	(4u << 24)
+#define SAMPLES		16
 #define SL_14BIT	(0u << 16)
 #define SL_CHANNEL(n)	((n) << 8)
 #define SL_EN		BIT(0)
@@ -35,8 +37,13 @@ uint32_t adc_battery_mv(void)
 	writel(~0u, ADC_INTCLR);
 	writel(CFG_HFRC | CFG_SWT | CFG_REF_2V0 | CFG_ADCEN, ADC_CFG);
 	delay_us(50);
-	writel(SWT_KEY, ADC_SWT);
 	uint32_t t0 = time_ms(), raw = 0;
+	for (unsigned i = 0; i < SAMPLES; i++) {
+		writel(SWT_KEY, ADC_SWT);
+		while (!(readl(ADC_INTSTAT) & INT_SCNCMP) && time_ms() - t0 < 10)
+			;
+		writel(INT_SCNCMP, ADC_INTCLR);
+	}
 	bool got = false;
 	while (time_ms() - t0 < 10) {
 		uint32_t v = readl(ADC_FIFO);
