@@ -504,7 +504,7 @@ pub unsafe extern "C" fn ui_set_activity(today: u32, goal: u32, distance_m: u32,
     let days = if days.is_null() { &[][..] } else { unsafe { core::slice::from_raw_parts(days, n as usize) } };
     let days: Vec<i32> = days.iter().map(|&d| d as i32).collect();
     with_ui(|ui| {
-        let face = ui.screens[APP].global::<Face>();
+        let face = ui.screen(APP).global::<Face>();
         face.set_activity_today(today as i32);
         face.set_activity_goal(goal as i32);
         face.set_activity_distance(distance_m as i32);
@@ -516,7 +516,7 @@ pub unsafe extern "C" fn ui_set_activity(today: u32, goal: u32, distance_m: u32,
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_workout(running: bool, start: u32, seconds: u32, steps: u32, distance_m: u32, kcal: u32, avg_bpm: u32, max_bpm: u32) {
     with_ui(|ui| {
-        let face = ui.screens[APP].global::<Face>();
+        let face = ui.screen(APP).global::<Face>();
         face.set_workout_running(running);
         face.set_workout_start(start as i32);
         face.set_workout_seconds(seconds as i32);
@@ -533,7 +533,7 @@ pub unsafe extern "C" fn ui_set_heart_log(x: *const u16, bpm: *const u8, n: u32)
     let n = if x.is_null() || bpm.is_null() { 0 } else { n as usize };
     let (x, bpm) = unsafe { (core::slice::from_raw_parts(x, n), core::slice::from_raw_parts(bpm, n)) };
     let points: Vec<HeartPoint> = x.iter().zip(bpm).map(|(&x, &b)| HeartPoint { x: x as i32, bpm: b as i32 }).collect();
-    with_ui(|ui| ui.screens[APP].global::<Face>().set_heart_log(Rc::new(VecModel::from(points)).into()));
+    with_ui(|ui| ui.screen(APP).global::<Face>().set_heart_log(Rc::new(VecModel::from(points)).into()));
 }
 
 /// The app on the app panel, -1 for none.
