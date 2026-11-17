@@ -32,12 +32,13 @@ static void nightstand(void)
 	CHECK(!nightstand_step(&w, false, 95, 100));
 }
 
-/* The backlight dims with the room. */
+/* The backlight dims with the room, and stays dark in bright light. */
 static void backlight(void)
 {
 	struct backlight dark = power_policy_backlight(0), dim = power_policy_backlight(30);
 	CHECK(dark.dbv && dim.dbv > dark.dbv);
 	CHECK(power_policy_backlight(BACKLIGHT_DARK_LUX).dbv == dark.dbv);
+	CHECK(!power_policy_backlight(5000).dbv);
 	CHECK(power_policy_backlight(-1).dbv);
 	struct backlight prev = dark;
 	for (int32_t lux = 1; lux < 2000; lux++) {

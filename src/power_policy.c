@@ -85,7 +85,8 @@ enum screen_state power_policy_screen(bool aod, bool peeking, bool peek_light)
 }
 
 /* Dark rooms need very little light; below the panel's lowest level
- * the pixels can dim it further. */
+ * the pixels can dim it further. In bright light the hub's display
+ * reads without any. */
 static const struct {
 	int32_t below_lux;
 	uint8_t dbv, pixel;
@@ -93,7 +94,7 @@ static const struct {
 	{ BACKLIGHT_DARK_LUX + 1, 10, 255 },
 	{ 50, 20, 255 },
 	{ 150, 60, 255 },
-	{ INT32_MAX, 140, 255 },
+	{ 400, 140, 255 },
 };
 
 struct backlight power_policy_backlight(int32_t lux)

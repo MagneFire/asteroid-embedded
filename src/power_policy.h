@@ -47,7 +47,7 @@ enum screen_state power_policy_screen(bool aod, bool peeking, bool peek_light);
 #define BACKLIGHT_DARK_LUX 20
 
 /* The light behind the hub's display: the panel's brightness and the
- * value of the lit pixels. */
+ * value of the lit pixels. A brightness of 0 leaves the screen dark. */
 struct backlight {
 	uint8_t dbv, pixel;
 };

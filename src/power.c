@@ -515,8 +515,10 @@ enum power_change power_update(uint32_t *now_p)
 		else
 			backlight_done();
 		lit_pending = !reading && lit_waits(want, now);
+		/* Too bright for the backlight to help: the hub's display shows
+		 * with the screen dark. */
 		if (!reading && !lit_pending)
-			screen_set(want);
+			screen_set(want == SCREEN_LIT && !lit.dbv ? SCREEN_OFF : want);
 	} else {
 		lit_pending = false;
 		hub_follow(true, now);
