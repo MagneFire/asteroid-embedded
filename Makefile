@@ -30,7 +30,7 @@ SRCS := src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clock
         src/power.c src/power_policy.c src/sched.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
         src/civil.c src/log.c src/lib/ramoops.c src/board/drivers.c \
         src/sensors/steps.c src/sensors/auto_brightness.c src/sensors/orient.c src/sensors/tsl2584.c src/input/haptics.c \
-        src/soc/charge_policy.c src/soc/max17050.c src/soc/gauge_max17050.c src/audio/speaker.c \
+        src/soc/charge_policy.c src/audio/speaker.c \
         src/lib/libc.c src/lib/fmt.c src/lib/fdt.c src/lib/crc32.c src/ui/ui.c src/ui/stack.c src/ui/rotation.c \
         src/bt/npl.c src/bt/transport.c src/bt/store.c src/bt/gatt.c src/bt/host.c src/console/console.c \
         src/notify/notify.c src/media/media.c src/weather/weather.c src/storage/kv.c
@@ -38,6 +38,7 @@ SRCS := src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clock
 # The application processors: MMU, eMMC, USB, a frame buffer, and HCI
 # over a UART.
 SRCS_ap := src/start.S src/soc/cache.S src/frame.c src/soc/mmu.c src/soc/exceptions.c \
+        src/soc/max17050.c src/soc/gauge_max17050.c \
         src/sensors/hub_m4.c src/sensors/m4_proto.c src/input/mxt.c src/input/touch_mxt.c src/input/haptics_ldo.c \
         src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
         src/bt/hci.c src/lib/inflate.c src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/screenshot/screenshot.c src/screenshot/jpeg.c \

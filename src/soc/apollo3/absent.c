@@ -1,8 +1,8 @@
 /* What the application processors have and this chip has not: no USB,
- * no eMMC to read vendor files from, no GPU and no screenshots, and no
- * UART in use. The console goes over SWD instead (swdbox.c), and the
- * USB calls of the main loop serve the link to the application
- * processor. */
+ * no eMMC to read vendor files from, no GPU and no screenshots, no
+ * MAX17050 gauge, and no UART in use. The console goes over SWD instead
+ * (swdbox.c), and the USB calls of the main loop serve the link to the
+ * application processor. */
 #include "asteroid.h"
 #include "storage/storage.h"
 #include "console/console.h"
@@ -32,6 +32,9 @@ void emmc_idle(void) {}
 int soc_dload_mode(bool on) { return -1; }
 bool gpu_init(void) { return false; }
 bool gpu_selftest(void) { return false; }
+
+const struct battery_driver battery_max17050;
+bool gauge_model_load(void) { return false; }
 
 const void *firmware_get(const char *name, uint32_t *size) { return NULL; }
 int firmware_read(const char *path, uint32_t off, void *buf, uint32_t len) { return -1; }
