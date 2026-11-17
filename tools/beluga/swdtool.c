@@ -184,6 +184,12 @@ static int take(void)
 {
 	taken = TAKEN;
 	int r = swd_take(&swd);
+	/* An image that will not halt, or keeps the core in the ROM, is
+	 * stopped in the boot loader instead, before it runs. */
+	if ((r == -1 || r == -4) && ioctl(dev, RESET_HALT, 0) >= 0) {
+		fprintf(stderr, "swdtool: halted in the boot loader after a reset\n");
+		r = swd_take(&swd);
+	}
 	if (r == -3)
 		return refuse("the watchdog is locked on and would reset the chip midway");
 	if (r == -4)
