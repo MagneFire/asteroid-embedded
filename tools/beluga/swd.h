@@ -8,11 +8,16 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* read_block and write_block move n bytes of whole words at once, 0 on
+ * success; either may be NULL, and a failed one is done again word by
+ * word. */
 struct swd_link {
 	int (*read)(void *ctx, uint32_t addr, uint32_t *val);
 	int (*write)(void *ctx, uint32_t addr, uint32_t val);
 	void (*sleep_us)(void *ctx, uint32_t us);
 	void *ctx;
+	int (*read_block)(void *ctx, uint32_t addr, void *buf, uint32_t n);
+	int (*write_block)(void *ctx, uint32_t addr, const void *buf, uint32_t n);
 };
 
 #define SWD_FLASH_SIZE		0x100000u

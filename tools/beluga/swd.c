@@ -70,6 +70,8 @@ int swd_write(const struct swd_link *l, uint32_t addr, uint32_t val) { return l-
 
 int swd_read_block(const struct swd_link *l, uint32_t addr, uint32_t *buf, uint32_t words)
 {
+	if (l->read_block && !l->read_block(l->ctx, addr, buf, 4 * words))
+		return 0;
 	for (uint32_t i = 0; i < words; i++)
 		if (swd_read(l, addr + 4 * i, &buf[i]))
 			return -1;
@@ -78,6 +80,8 @@ int swd_read_block(const struct swd_link *l, uint32_t addr, uint32_t *buf, uint3
 
 int swd_write_block(const struct swd_link *l, uint32_t addr, const uint32_t *buf, uint32_t words)
 {
+	if (l->write_block && !l->write_block(l->ctx, addr, buf, 4 * words))
+		return 0;
 	for (uint32_t i = 0; i < words; i++)
 		if (swd_write(l, addr + 4 * i, buf[i]))
 			return -1;

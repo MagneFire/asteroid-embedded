@@ -1,8 +1,9 @@
 /* swdtool: the Apollo3 coprocessor of the OPPO Watch from its application
  * processor, as root on the watch. The kernel's SWD driver bit-bangs the
  * link on two of the application processor's GPIOs and gives /dev/swd:
- * a connect, a reset, and word reads and writes of the MCU's memory;
- * everything else is built on those (swd.c). Closing the device ends the
+ * a connect, a reset, word reads and writes of the MCU's memory, and
+ * reads and writes of whole blocks at the file offset; everything else
+ * is built on those (swd.c). Closing the device ends the
  * debug session and lets the core run, so every path that has taken the
  * core resets the MCU before it ends, but for a flash that did not
  * finish: that one leaves the core in a loop in SRAM, as a reset would
@@ -82,7 +83,48 @@ static int link_write(void *ctx, uint32_t addr, uint32_t val)
 
 static void link_sleep(void *ctx, uint32_t us) { usleep(us); }
 
-static const struct swd_link swd = { link_read, link_write, link_sleep, NULL };
+/* The driver takes the file offset as the address, which a 32-bit
+ * off_t only holds below 2 GiB: flash and SRAM. */
+#define BLOCK_END	0x80000000u
+
+static int link_read_block(void *ctx, uint32_t addr, void *buf, uint32_t n)
+{
+	if (addr >= BLOCK_END || n > BLOCK_END - addr)
+		return -1;
+	for (uint32_t done = 0; done < n;) {
+		ssize_t r = pread(dev, (uint8_t *)buf + done, n - done, (off_t)(addr + done));
+		if (r <= 0)
+			return -1;
+		done += (uint32_t)r;
+	}
+	return 0;
+}
+
+static int link_write_block(void *ctx, uint32_t addr, const void *buf, uint32_t n)
+{
+	if (addr >= BLOCK_END || n > BLOCK_END - addr)
+		return -1;
+	for (uint32_t done = 0; done < n;) {
+		ssize_t r = pwrite(dev, (const uint8_t *)buf + done, n - done, (off_t)(addr + done));
+		if (r <= 0)
+			return -1;
+		done += (uint32_t)r;
+	}
+	return 0;
+}
+
+static struct swd_link swd = { .read = link_read, .write = link_write, .sleep_us = link_sleep };
+
+/* Blocks only from a driver whose read gives what a word read does. */
+static void blocks_probe(void)
+{
+	uint32_t a = 0, b = 1;
+	if (!link_read(NULL, SWD_FLASH_FIRST, &a) && !link_read_block(NULL, SWD_FLASH_FIRST, &b, 4) && a == b) {
+		swd.read_block = link_read_block;
+		swd.write_block = link_write_block;
+	} else
+		fprintf(stderr, "swdtool: no block transfers, going word by word\n");
+}
 
 /* The reset line, through the driver or else the sensor hub's node: it
  * works whatever state the core is in. */
@@ -541,6 +583,7 @@ int main(int argc, char **argv)
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
 	signal(SIGHUP, on_signal);
+	blocks_probe();
 	if (!strcmp(c, "probe"))
 		return cmd_probe();
 	if (!strcmp(c, "backup") && argc == 3)

@@ -26,6 +26,7 @@ static uint32_t fpccr = 0xc0000001u, icsr_clears, regs[21], dcrdr, wdt_cfg = 0x0
 static bool halted, maskints, wdt_locked;
 static int fail_after = -1;
 static uint32_t demcr = TRCENA | 1, mpu_ctrl = 5, vendor_runs;
+
 /* Which page's program fails, comes out wrong or faults; 0 for none. */
 static uint32_t fail_program, corrupt_program, fault_program;
 
@@ -170,7 +171,39 @@ static int wr(void *ctx, uint32_t a, uint32_t v)
 
 static void nap(void *ctx, uint32_t us) {}
 
-static const struct swd_link link = { rd, wr, nap, NULL };
+static const struct swd_link link = { .read = rd, .write = wr, .sleep_us = nap };
+
+/* Blocks as the driver does them, word after word underneath. */
+static unsigned block_reads, block_writes;
+static bool blocks_fail;
+
+static int rd_block(void *ctx, uint32_t a, void *buf, uint32_t n)
+{
+	block_reads++;
+	if (blocks_fail || n % 4)
+		return -1;
+	for (uint32_t i = 0; i < n; i += 4)
+		if (rd(ctx, a + i, (uint32_t *)((uint8_t *)buf + i)))
+			return -1;
+	return 0;
+}
+
+static int wr_block(void *ctx, uint32_t a, const void *buf, uint32_t n)
+{
+	block_writes++;
+	if (blocks_fail || n % 4)
+		return -1;
+	for (uint32_t i = 0; i < n; i += 4) {
+		uint32_t v;
+		memcpy(&v, (const uint8_t *)buf + i, 4);
+		if (wr(ctx, a + i, v))
+			return -1;
+	}
+	return 0;
+}
+
+static const struct swd_link block_link = { .read = rd, .write = wr, .sleep_us = nap, .read_block = rd_block,
+					    .write_block = wr_block };
 
 static unsigned stop_after;
 
@@ -259,6 +292,19 @@ int main(void)
 	CHECK(swd_flash(&link, SWD_FLASH_FIRST, img, sizeof img, stopper) == -7);
 	CHECK(ops_are("Ec000 Ee000 Pe000"));
 	CHECK(erased(SWD_FLASH_FIRST) && halted);
+
+	/* Pages go through the link's block transfers, and word by word
+	 * when those fail. */
+	memset(flash + SWD_FLASH_FIRST, 0x5a, 0x6000);
+	nops = 0;
+	CHECK(swd_flash(&block_link, SWD_FLASH_FIRST, img, sizeof img, NULL) == 0);
+	CHECK(ops_are("Ec000 Ee000 Pe000 E10000 P10000 Pc000"));
+	CHECK(!memcmp(flash + SWD_FLASH_FIRST, img, sizeof img) && block_writes == 3 && block_reads == 3);
+	blocks_fail = true;
+	memset(flash + SWD_FLASH_FIRST, 0x5a, 0x6000);
+	CHECK(swd_flash(&block_link, SWD_FLASH_FIRST, img, sizeof img, NULL) == 0);
+	CHECK(!memcmp(flash + SWD_FLASH_FIRST, img, sizeof img) && block_writes == 6);
+	blocks_fail = false;
 
 	/* Parked, the core is set to run the loop with the interrupts off. */
 	vtor = 0;
