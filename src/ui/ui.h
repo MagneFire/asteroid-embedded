@@ -178,7 +178,8 @@ struct ui_agenda {
 };
 
 /* Brightnesses in per cent, the nightstand delay in seconds, burn_in
- * 0 off, 1 high, 2 medium, 3 low, tilt an enum tilt_mode. */
+ * 0 off, 1 high, 2 medium, 3 low, tilt an enum tilt_mode,
+ * backlight_color an enum backlight_color. */
 struct ui_settings {
 	uint8_t brightness, nightstand_brightness, nightstand_delay, burn_in;
 	bool bluetooth, vibration, aod, clock12;
@@ -186,6 +187,7 @@ struct ui_settings {
 	bool tap, fahrenheit, nightstand_aod, nightstand_rotate, auto_brightness;
 	uint8_t height_cm, weight_kg, hr_interval, age;
 	bool male;
+	uint8_t backlight_color;
 };
 
 enum ui_event_kind {
@@ -218,7 +220,7 @@ struct ui_event {
 	struct ui_alarm alarm;
 };
 
-_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 19 &&
+_Static_assert(sizeof(struct ui_alarm) == 4 && sizeof(struct ui_colors) == 6 && sizeof(struct ui_settings) == 20 &&
 	       sizeof(struct ui_tile) == 6 && sizeof(struct ui_agenda) == 30, "ui types");
 _Static_assert(sizeof(struct ui_event) == 16, "ui_event");
 

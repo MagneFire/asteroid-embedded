@@ -125,7 +125,7 @@ pub struct UiColors {
 
 /// The settings as the firmware keeps them: brightnesses in per cent, the nightstand delay in
 /// seconds, burn_in 0 off, 1 high, 2 medium, 3 low, tilt 0 off, 1 wakes the screen, 2 shows the
-/// always-on face, 3 lights the hub's own display.
+/// always-on face, 3 lights the hub's own display; backlight_color 0 auto, 1 white, 2 red.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct UiSettings {
@@ -148,6 +148,7 @@ pub struct UiSettings {
     hr_interval: u8,
     age: u8,
     male: bool,
+    backlight_color: u8,
 }
 
 /// Something the user did, for the firmware to act on: kind is one of the EVENT_* values, value
@@ -170,7 +171,7 @@ use codes::*;
 
 const _: () = assert!(core::mem::size_of::<UiAlarm>() == 4 && core::mem::size_of::<UiColors>() == 6);
 const _: () = assert!(core::mem::size_of::<UiTile>() == 6 && core::mem::size_of::<UiAgenda>() == 30);
-const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 19);
+const _: () = assert!(core::mem::size_of::<UiEvent>() == 16 && core::mem::size_of::<UiSettings>() == 20);
 
 type Events = Rc<RefCell<VecDeque<UiEvent>>>;
 
@@ -734,6 +735,7 @@ pub unsafe extern "C" fn ui_set_settings(settings: *const UiSettings) {
         face.set_hr_interval(s.hr_interval as i32);
         face.set_age(s.age as i32);
         face.set_male(s.male);
+        face.set_backlight_color(s.backlight_color as i32);
     });
 }
 

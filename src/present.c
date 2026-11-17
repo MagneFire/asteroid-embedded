@@ -133,6 +133,7 @@ void present_settings(void)
 		.hr_interval = setting_get(SETTING_HR_INTERVAL),
 		.age = setting_get(SETTING_AGE),
 		.male = setting_get(SETTING_MALE),
+		.backlight_color = setting_get(SETTING_BACKLIGHT_COLOR),
 	};
 	ui_set_settings(&u);
 	present_activity();

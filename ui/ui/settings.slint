@@ -193,6 +193,19 @@ export component SettingsApp {
                     }
                 }
 
+                if Face.has-tilt-light && Face.tilt == 3: VerticalLayout {
+                    RowSeparator { }
+
+                    // OptionCycler: Auto (red in the dark), White, Red.
+                    LabeledSwitch {
+                        text: "Backlight Color";
+                        value: ["Auto", "White", "Red"][Face.backlight-color];
+                        clicked => {
+                            Face.setting-set(Codes.setting-backlight-color, Math.mod(Face.backlight-color + 1, 3));
+                        }
+                    }
+                }
+
                 RowSeparator { }
 
                 LabeledSwitch {
