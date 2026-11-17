@@ -43,13 +43,16 @@ static bool tma_init(void)
 	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	delay_ms(2);
 	gpio_set(GPIO_RESET, 0);
-	delay_ms(1);
+	delay_ms(10);
 	gpio_set(GPIO_RESET, 1);
 	int r = i2c_init(BUS, board->touch_pins.i2c.sda, board->touch_pins.i2c.scl, board->touch_pins.i2c.func, 400000);
 	uint8_t len[2] = { 0 };
-	for (int i = 0; !r && i < 10; i++) {
+	for (int i = 0; !r; i++) {
 		delay_ms(BOOT_WAIT_MS / 10);
-		r = i2c_xfer(BUS, ADDR, NULL, 0, len, 2);
+		if (!i2c_xfer(BUS, ADDR, NULL, 0, len, 2))
+			break;
+		if (i == 9)
+			r = -6;
 	}
 	if (r) {
 		log_printf("touch: no answer from the TMA525 (%d)\n", r);
