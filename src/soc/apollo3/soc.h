@@ -176,6 +176,8 @@ uint32_t adc_battery_mv(void);
 void battery_from_ap(unsigned percent);
 /* RSTGEN's status bits at the start. */
 uint32_t reset_status(void);
+/* Where the wall clock came from: kept across a reset, set, or not set. */
+const char *rtc_origin(void);
 
 void gpio_init(void);
 void wdt_irq_init(void);

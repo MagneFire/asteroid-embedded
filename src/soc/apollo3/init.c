@@ -104,6 +104,7 @@ void soc_board_init(void)
 	if (board_chips_off())
 		iom_stop(board->chips_off.i2c.bus);
 	log_printf("boot: %s\n", boot_reason());
+	log_printf("rtc: %s\n", rtc_origin());
 	companion_boot();
 }
 

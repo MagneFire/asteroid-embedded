@@ -72,6 +72,7 @@ static void __attribute__((noreturn)) reset_now(void)
 	if (power_off)
 		sleep_off();
 	irq_disable();
+	rtc_read();
 	writel(SWPOI_KEY, RSTGEN_SWPOI);
 	for (;;)
 		;

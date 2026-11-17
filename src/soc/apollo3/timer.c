@@ -3,7 +3,9 @@
  * interrupt. Its first compare gives the tick that wakes the main loop.
  * Short delays count core cycles instead, for their resolution. The wall
  * clock counts on from what was last set, like a clock that keeps no
- * time of its own: the phone sets it on connecting. */
+ * time of its own: the phone sets it on connecting. A warm reset keeps
+ * SRAM, so it goes on from what .kept holds: from the counter if the
+ * reset left it running, else from the last time read. */
 #include "asteroid.h"
 #include "prof.h"
 
@@ -19,14 +21,32 @@
 #define STCFG_FREEZE	BIT(31)
 #define INT_COMPAREA	BIT(0)
 #define INT_OVERFLOW	BIT(8)
+#define STCFG_MODE	(STCFG_FREEZE | STCFG_CLEAR | 0xfu)
+#define RESET_COLD	(BIT(1) | BIT(2))
+#define KEPT_MAGIC	0x52544331u	/* "RTC1" */
+/* Longer than any sleep, shorter than the counter's wrap. */
+#define KEPT_GAP_S	(30u * 3600u)
 
-static volatile uint32_t ticks, wraps;
+#ifdef HOST_TEST
+#define KEPT
+#else
+#define KEPT		__attribute__((section(".kept")))
+#endif
+
+/* wraps and wall change all the time, so the sum leaves them out. */
+static volatile struct {
+	uint32_t magic, base, sum;
+	uint32_t wraps, wall;
+} kept KEPT;
+
+static volatile uint32_t ticks;
 static uint32_t period = 1;
+static const char *origin = "not set";
 
 static uint64_t cnt_now(void)
 {
 	uint32_t flags = irq_save();
-	uint32_t lo = readl(STTMR), hi = wraps;
+	uint32_t lo = readl(STTMR), hi = kept.wraps;
 	if (readl(STMINTSTAT) & INT_OVERFLOW) {
 		lo = readl(STTMR);
 		hi++;
@@ -98,7 +118,7 @@ static void stimer_irq(void)
 	uint32_t st = readl(STMINTSTAT);
 	if (st & INT_OVERFLOW) {
 		writel(INT_OVERFLOW, STMINTCLR);
-		wraps++;
+		kept.wraps++;
 	}
 }
 
@@ -113,35 +133,85 @@ static void tick_irq(void)
 
 void timer_resume(void) {}
 
+static uint32_t base;
+static bool set;
+
+static uint32_t kept_sum(void)
+{
+	return (kept.magic ^ 0x9e3779b9u) * 2654435761u + kept.base;
+}
+
+static void keep_base(void)
+{
+	kept.base = base;
+	kept.magic = KEPT_MAGIC;
+	kept.sum = kept_sum();
+}
+
+/* The wall clock from before a warm reset: 0 when there is none. */
+static uint32_t kept_wall(void)
+{
+	origin = "not set";
+	if (kept.magic != KEPT_MAGIC || kept.sum != kept_sum() || (reset_status() & RESET_COLD))
+		return 0;
+	uint32_t wall = kept.wall;
+	origin = "kept, last read";
+	if ((readl(STCFG) & STCFG_MODE) == STCFG_XTAL) {
+		uint32_t lo = readl(STTMR), hi = kept.wraps;
+		if (readl(STMINTSTAT) & INT_OVERFLOW) {
+			lo = readl(STTMR);
+			hi++;
+		}
+		uint32_t t = kept.base + (uint32_t)(((uint64_t)hi << 32 | lo) / SLEEP_CLK_HZ);
+		if (t - wall < KEPT_GAP_S) {
+			wall = t;
+			origin = "kept, counter";
+		}
+	}
+	return wall;
+}
+
 void timer_init(void)
 {
 	writel(readl(DEMCR) | BIT(24), DEMCR);
 	writel(readl(DWT_CTRL) | 1, DWT_CTRL);
+	uint32_t wall = kept_wall();
 	/* The boot loader may have left it on another clock: start over
 	 * from 0 on the crystal. */
 	writel(STCFG_CLEAR | STCFG_FREEZE, STCFG);
 	writel(STCFG_XTAL, STCFG);
 	writel(~0u, STMINTCLR);
+	kept.wraps = 0;
+	base = wall;
+	set = wall != 0;
+	kept.wall = wall;
+	if (set)
+		keep_base();
+	else
+		kept.magic = 0;
 	writel(INT_COMPAREA | INT_OVERFLOW, STMINTEN);
 	irq_attach(IRQ_STIMER, stimer_irq);
 	irq_attach(IRQ_STIMER_CMPR(0), tick_irq);
 	timer_next(1);
 }
 
-static uint32_t base, last_s;
-static bool set;
+const char *rtc_origin(void) { return origin; }
 
 bool rtc_valid(void) { return set; }
 
 uint32_t rtc_read(void)
 {
-	uint32_t now = (uint32_t)(cnt_now() / SLEEP_CLK_HZ);
-	last_s = now;
-	return base + now;
+	uint32_t wall = base + (uint32_t)(cnt_now() / SLEEP_CLK_HZ);
+	if (set)
+		kept.wall = wall;
+	return wall;
 }
 
 void rtc_write(uint32_t secs)
 {
 	base = secs - (uint32_t)(cnt_now() / SLEEP_CLK_HZ);
 	set = true;
+	origin = "set";
+	kept.wall = secs;
+	keep_base();
 }
