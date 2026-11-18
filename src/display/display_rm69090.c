@@ -10,6 +10,7 @@
 #include "asteroid.h"
 #include "display/display.h"
 
+#define DCS_POWER_MODE	0x0a
 #define DCS_SLEEP_IN	0x10
 #define DCS_SLEEP_OUT	0x11
 #define DCS_DISPLAY_OFF	0x28
@@ -23,6 +24,8 @@
 #define DCS_PIXELS	0x3a
 #define DCS_BRIGHTNESS	0x51
 #define PIXELS_RGB565	0x75
+#define MODE_SLEEP_OUT	BIT(4)
+#define MODE_DISPLAY_ON	BIT(2)
 #define CHUNK		4092u
 #define TE_WAIT_MS	25
 
@@ -128,6 +131,18 @@ static void stop(void)
 	panel_on = false;
 }
 
+/* The AP's display driver can power the panel down under us, on a
+ * charger event: one no longer out of sleep with its display on starts
+ * over. Only trusted once a read has been seen to work. */
+static bool reads_work;
+
+static bool mode_has(uint8_t bits)
+{
+	uint8_t mode;
+	iom_spi_wait(BUS);
+	return !query(DCS_POWER_MODE, &mode, 1) && mode != 0xff && (mode & bits) == bits;
+}
+
 /* The ID bytes, for telling the panels apart; 0 for any not read. */
 void display_read_id(uint8_t id[3])
 {
@@ -185,10 +200,11 @@ bool display_init(void)
 	start();
 	uint8_t id[3];
 	display_read_id(id);
+	reads_work = mode_has(MODE_SLEEP_OUT);
 	started = true;
 	panel_asleep = false;
-	log_printf("display: %lux%lu on spi%u at %lu Hz, id %02x %02x %02x, up in %lu ms\n", fb.width, fb.height, BUS,
-		   board->panel.spi_hz, id[0], id[1], id[2], time_ms() - t0);
+	log_printf("display: %lux%lu on spi%u at %lu Hz, id %02x %02x %02x, reads %s, up in %lu ms\n", fb.width, fb.height,
+		   BUS, board->panel.spi_hz, id[0], id[1], id[2], reads_work ? "work" : "fail", time_ms() - t0);
 	return true;
 }
 
@@ -360,6 +376,10 @@ void display_sleep(void)
 /* On, but dark until display_show, so a new picture is there first. */
 void display_wake_hidden(void)
 {
+	if (panel_on && !lent && reads_work && !mode_has(MODE_SLEEP_OUT | MODE_DISPLAY_ON)) {
+		log_printf("display: panel was turned off, starting it again\n");
+		panel_on = false;
+	}
 	if (!panel_on && !lent) {
 		uint8_t keep = level;
 		level = 0;
