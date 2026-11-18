@@ -110,6 +110,8 @@ enum idle_level { IDLE_WFI, IDLE_CORE, IDLE_GDHS, IDLE_CLUSTER };
 void cpu_idle_limit(enum idle_level level);
 void wake_pin(unsigned pin, bool on, bool high);
 void wake_pin_falling(unsigned pin, bool on);
+/* Whether the touch line ends a deep sleep. */
+void wake_pin_touch(bool on);
 void cpu_idle_stats(uint32_t *collapses, uint32_t *cluster_collapses, uint32_t *bailouts);
 void dcache_clean_range(const void *addr, uint32_t size);
 void dcache_invalidate_range(const void *addr, uint32_t size);

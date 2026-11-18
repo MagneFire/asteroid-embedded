@@ -164,6 +164,12 @@ static void mpm_wake_irq(void)
  * register image in RPM memory is copied into the hardware when the RPM
  * is interrupted; the wake-up time is in system counter ticks. */
 static uint32_t extra_pins[2], extra_high[2], extra_falling[2];
+static bool touch_wakes = true;
+
+void wake_pin_touch(bool on)
+{
+	touch_wakes = on;
+}
 
 void wake_pin(unsigned pin, bool on, bool high)
 {
@@ -190,7 +196,7 @@ void wake_pin_falling(unsigned pin, bool on)
 static void mpm_arm(uint64_t wake)
 {
 	volatile uint32_t *v = (volatile uint32_t *)(uintptr_t)VMPM;
-	uint32_t enable[2] = { BIT(MPM_PIN_TOUCH) | extra_pins[0], BIT(MPM_PIN_PMIC - 32) | extra_pins[1] };
+	uint32_t enable[2] = { (touch_wakes ? BIT(MPM_PIN_TOUCH) : 0) | extra_pins[0], BIT(MPM_PIN_PMIC - 32) | extra_pins[1] };
 	uint32_t polarity[2] = { extra_high[0], BIT(MPM_PIN_PMIC - 32) | extra_high[1] };
 	for (unsigned i = 0; i < 2; i++) {
 		v[0 + i] = (uint32_t)(wake >> (32 * i));

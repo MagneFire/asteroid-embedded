@@ -617,13 +617,13 @@ void app_power_changed(enum power_change change)
 			app_tilt();
 		game_save();
 		if (have_touch)
-			touch_sleep(true);
+			touch_sleep(true, setting_get(SETTING_TAP));
 		frame_sleep();
 		break;
 	case POWER_WOKE:
 		stats_woke(time_ms());
 		if (have_touch)
-			touch_sleep(false);
+			touch_sleep(false, true);
 		frame_wake();
 		present_clock_soon();
 		was_lit = false;

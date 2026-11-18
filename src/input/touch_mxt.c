@@ -184,7 +184,7 @@ static bool mxt_init(void)
 
 /* The vendor's low power settings while the screen sleeps. A message in
  * flight finishes first. */
-static void mxt_sleep(bool on)
+static void mxt_sleep(bool on, bool wakes)
 {
 	if (!map.t9_addr)
 		return;

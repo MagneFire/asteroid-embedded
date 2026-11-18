@@ -33,6 +33,7 @@
 /* A finger the chip stopped reporting is let go after this long. */
 #define LIFT_MS		200
 #define STALL_MS	50
+#define MUTE_MS		30000
 
 #define QUEUE_LEN	16
 static struct touch queue[QUEUE_LEN];
@@ -43,6 +44,11 @@ static const uint8_t report_reg = REG_REPORT;
 static uint8_t report[FTS_REPORT_LEN];
 static uint32_t attentions, errors, stalls;
 static bool present;
+/* Asleep, the chip need not wake the watch: with tap to wake off, or
+ * for a while after a palm, as a sleeve over the screen reports every
+ * few seconds. */
+static volatile bool asleep, muted, mute_all;
+static volatile uint32_t muted_t;
 static int cur_id, last_x, last_y;
 
 static int rd(uint8_t reg, uint8_t *buf, unsigned n)
@@ -69,8 +75,22 @@ static void push(const struct touch *t)
 	q_head = next;
 }
 
+static void mute(void)
+{
+	round_busy = false;
+	muted = true;
+	muted_t = time_ms();
+	wake_pin_touch(false);
+}
+
 static void rearm(void)
 {
+	if (asleep && mute_all) {
+		mute();
+		return;
+	}
+	muted = false;
+	wake_pin_touch(true);
 	round_busy = false;
 	round_t = time_ms();
 	gpio_irq_enable(GPIO_IRQ, true);
@@ -121,6 +141,10 @@ static void report_done(int err, void *ctx)
 		was_down = false;
 		push(&t);
 	}
+	if (asleep && palm_down) {
+		mute();
+		return;
+	}
 	rearm();
 }
 
@@ -149,7 +173,7 @@ static void attention(unsigned pin)
  * starts one from here. */
 static void stall_poll(void)
 {
-	if (!present || round_busy || gpio_get(GPIO_IRQ) || time_ms() - round_t < STALL_MS)
+	if (!present || round_busy || muted || gpio_get(GPIO_IRQ) || time_ms() - round_t < STALL_MS)
 		return;
 	uint32_t flags = irq_save();
 	if (!round_busy) {
@@ -173,14 +197,28 @@ static void release(void)
 	irq_restore(flags);
 }
 
-static void fts_sleep(bool on)
+static void fts_sleep(bool on, bool wakes)
 {
-	if (present && on)
+	if (!present)
+		return;
+	uint32_t flags = irq_save();
+	asleep = on;
+	mute_all = !wakes;
+	if (on)
 		release();
+	if (on && !wakes && !round_busy) {
+		gpio_irq_enable(GPIO_IRQ, false);
+		mute();
+	} else if (!on && muted) {
+		rearm();
+	}
+	irq_restore(flags);
 }
 
 static uint32_t fts_next_ms(void)
 {
+	if (muted && !mute_all)
+		return ms_left(muted_t, MUTE_MS, time_ms());
 	return present && (was_down || palm_down) ? ms_left(report_t, LIFT_MS, time_ms()) : UINT32_MAX;
 }
 
@@ -227,6 +265,12 @@ static void fake_poll(void)
 static bool fts_poll(struct touch *t)
 {
 	i2c_poll(BUS);
+	if (muted && !mute_all && time_ms() - muted_t >= MUTE_MS) {
+		uint32_t flags = irq_save();
+		if (muted)
+			rearm();
+		irq_restore(flags);
+	}
 	stall_poll();
 	if (present && (was_down || palm_down) && !round_busy && time_ms() - report_t >= LIFT_MS)
 		release();

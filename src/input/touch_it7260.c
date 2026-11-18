@@ -405,7 +405,7 @@ static void apply_mode(void)
 	gpio_irq_enable(GPIO_IRQ, true);
 }
 
-static void it7260_sleep(bool on)
+static void it7260_sleep(bool on, bool wakes)
 {
 	if (!present)
 		return;

@@ -47,7 +47,7 @@ struct touch_driver {
 	bool (*poll)(struct touch *t);
 	void (*stats)(uint32_t *attentions, uint32_t *errors);
 	void (*inject)(int x0, int y0, int x1, int y1, uint32_t ms);
-	void (*sleep)(bool on);
+	void (*sleep)(bool on, bool wakes);
 	uint32_t (*next_ms)(void);
 };
 

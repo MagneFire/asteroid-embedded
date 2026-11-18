@@ -75,10 +75,10 @@ void touch_inject(int x0, int y0, int x1, int y1, uint32_t ms)
 	if (TOUCH(inject))
 		touch->inject(x0, y0, x1, y1, ms);
 }
-void touch_sleep(bool on)
+void touch_sleep(bool on, bool wakes)
 {
 	if (TOUCH(sleep))
-		touch->sleep(on);
+		touch->sleep(on, wakes);
 }
 uint32_t touch_next_ms(void) { return TOUCH(next_ms) ? touch->next_ms() : UINT32_MAX; }
 void touch_stats(uint32_t *attentions, uint32_t *errors)

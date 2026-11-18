@@ -74,6 +74,8 @@ void wake_pin(unsigned pin, bool on, bool high)
 
 void cpu_idle_limit(enum idle_level level) {}
 
+void wake_pin_touch(bool on) {}
+
 void wake_pin_falling(unsigned pin, bool on)
 {
 	wake_pin(pin, on, false);
