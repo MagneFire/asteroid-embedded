@@ -51,11 +51,8 @@
 #define BOX_HEAD	64u
 #define BOX_IN		64u
 #define BOX_OUT		(BOX_IN + BOX_IN_SIZE)
-#define LOG_BASE	0x1005b000u
-#define LOG_SIZE	0x4800u
-#define LOG_SIG		0x43474244u
-#define LOG_CONSOLE	0x4000u
 #define LOG_RECORD	0x400u
+#define LOG_SIG		0x43474244u
 /* Our settings and then the stock data pages: only a restore writes them. */
 #define IMAGE_END	0xe8000u
 
@@ -546,6 +543,13 @@ struct box {
 	uint32_t in_head, in_tail, out_head, out_tail;
 };
 
+/* The log regions firmwares have had, console then fault record. */
+static const struct { uint32_t base, console; } logs[] = {
+	{ 0x1005b000u, 0x4000u },
+	{ 0x1004f000u, 0x10000u },
+};
+static uint32_t log_base, log_console;
+
 static int box_read(struct box *b)
 {
 	uint32_t w[12];
@@ -555,7 +559,13 @@ static int box_read(struct box *b)
 		fprintf(stderr, "swdtool: no firmware console (magic %08x): the stock firmware, or not started\n", w[0]);
 		return 1;
 	}
-	if (w[1] != BOX_VERSION || w[2] != LOG_BASE || w[3] != LOG_SIZE || w[8] != BOX_IN_SIZE || w[9] != BOX_OUT_SIZE)
+	log_base = log_console = 0;
+	for (unsigned i = 0; i < sizeof logs / sizeof logs[0]; i++)
+		if (w[2] == logs[i].base && w[3] == logs[i].console + 2 * LOG_RECORD) {
+			log_base = logs[i].base;
+			log_console = logs[i].console;
+		}
+	if (w[1] != BOX_VERSION || !log_base || w[8] != BOX_IN_SIZE || w[9] != BOX_OUT_SIZE)
 		return refuse("the firmware's console box is of another version");
 	if (w[4] >= BOX_IN_SIZE || w[5] >= BOX_IN_SIZE || w[6] >= BOX_OUT_SIZE || w[7] >= BOX_OUT_SIZE)
 		return refuse("the firmware's console box is corrupt");
@@ -565,7 +575,10 @@ static int box_read(struct box *b)
 
 /* A log zone, {signature, start, size} and the ring after it, read until
  * two reads of its header around the data agree, as the firmware keeps
- * writing. */
+ * writing. A ring that only moved on while it was read is taken as it
+ * was at the first header, less its oldest bytes that the writer may
+ * have reached meanwhile: a large ring is never read between two lines
+ * of a watch that logs every second. */
 static int read_zone(uint32_t addr, uint32_t bytes, bool ring, FILE *out)
 {
 	uint32_t cap = bytes - 12, *w = malloc(bytes);
@@ -578,12 +591,17 @@ static int read_zone(uint32_t addr, uint32_t bytes, bool ring, FILE *out)
 			free(w);
 			return fail("read failed");
 		}
-		if (memcmp(a, b, sizeof a))
-			continue;
+		uint32_t skip = 0;
+		if (memcmp(a, b, sizeof a)) {
+			if (!ring || a[0] != LOG_SIG || b[0] != LOG_SIG || a[1] >= cap || b[1] >= cap || b[2] < a[2])
+				continue;
+			uint32_t moved = (b[1] + cap - a[1]) % cap;
+			skip = a[2] + moved > cap ? a[2] + moved - cap : 0;
+		}
 		if (a[0] == LOG_SIG && a[1] < cap && a[2] <= cap) {
 			const uint8_t *d = (const uint8_t *)w;
 			uint32_t from = ring ? (a[1] + cap - a[2]) % cap : 0;
-			for (uint32_t i = 0; i < a[2]; i++)
+			for (uint32_t i = skip; i < a[2]; i++)
 				fputc(d[(from + i) % cap], out);
 		}
 		free(w);
@@ -613,10 +631,10 @@ static int cmd_log(void)
 	struct box b;
 	if (debug_on() || box_read(&b))
 		return 1;
-	if (read_zone(LOG_BASE, LOG_CONSOLE, true, stdout))
+	if (read_zone(log_base, log_console, true, stdout))
 		return 1;
 	printf("\n--- fault record:\n");
-	return read_zone(LOG_BASE + LOG_CONSOLE, LOG_RECORD, false, stdout);
+	return read_zone(log_base + log_console, LOG_RECORD, false, stdout);
 }
 
 /* 1 while the ring is full; the byte is kept for the next try. */
