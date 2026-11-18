@@ -952,7 +952,7 @@ fn generate_model_two_way_binding(
     } else {
         let mut e = quote!(_self.parent.clone());
         for _ in 1..info.parent_level {
-            e = quote!(#e.upgrade().unwrap().parent.clone());
+            e = quote!(sp::OrUnusable::or_unusable(#e.upgrade()).parent.clone());
         }
         e
     };
@@ -1558,7 +1558,7 @@ fn generate_sub_component_body(
                 _self.#repeater_id.set_model_binding({
                     let self_weak = sp::VRcMapped::downgrade(&self_rc);
                     move || {
-                        let self_rc = self_weak.upgrade().unwrap();
+                        let self_rc = sp::OrUnusable::or_unusable(self_weak.upgrade());
                         let _self = self_rc.as_pin_ref();
                         (#model) as _
                     }
@@ -1593,7 +1593,7 @@ fn generate_sub_component_body(
                 ));
                 ensure_instantiated_stmts.push(quote!({
                     _changed |= #inner_component_id::FIELD_OFFSETS.#repeater_id().apply_pin(_self).ensure_updated_listview(
-                        || { #rep_inner_component_id::new(_self.self_weak.get().unwrap().clone()).unwrap().into() },
+                        || { sp::OrUnusable::or_unusable(#rep_inner_component_id::new(sp::OrUnusable::or_unusable(_self.self_weak.get()).clone())).into() },
                         #content_w, #content_h, #content_y, #lv_w.get(), #lv_h
                     );
                 }));
@@ -1605,7 +1605,7 @@ fn generate_sub_component_body(
                 ));
                 ensure_instantiated_stmts.push(quote!({
                     _changed |= #inner_component_id::FIELD_OFFSETS.#repeater_id().apply_pin(_self).ensure_updated(
-                        || #rep_inner_component_id::new(_self.self_weak.get().unwrap().clone()).unwrap().into()
+                        || sp::OrUnusable::or_unusable(#rep_inner_component_id::new(sp::OrUnusable::or_unusable(_self.self_weak.get()).clone())).into()
                     );
                 }));
             }
@@ -2002,7 +2002,7 @@ fn generate_sub_component_body(
                 if millis >= 0 {
                     let interval = ::core::time::Duration::from_millis(millis as u64);
                     if !self.#ident.running() || interval != self.#ident.interval() {
-                        let self_weak = self.self_weak.get().unwrap().clone();
+                        let self_weak = sp::OrUnusable::or_unusable(self.self_weak.get()).clone();
                         #context.start_timer(&self.#ident, sp::TimerMode::Repeated, interval, move || {
                             if let Some(self_rc) = self_weak.upgrade() {
                                 let _self = self_rc.as_pin_ref();
@@ -2109,7 +2109,7 @@ fn generate_sub_component_body(
                 let _self = self;
                 match dyn_index {
                     #(#repeated_visit_branch)*
-                    _ => panic!("invalid dyn_index {}", dyn_index),
+                    _ => sp::no_such_child(),
                 }
             }
         )
@@ -2127,7 +2127,7 @@ fn generate_sub_component_body(
                 let _self = self;
                 match dyn_index {
                     #(#repeated_subtree_ranges)*
-                    _ => panic!("invalid dyn_index {}", dyn_index),
+                    _ => sp::no_such_child(),
                 }
             }
 
@@ -2135,7 +2135,7 @@ fn generate_sub_component_body(
                 let _self = self;
                 match dyn_index {
                     #(#repeated_subtree_components)*
-                    _ => panic!("invalid dyn_index {}", dyn_index),
+                    _ => sp::no_such_child(),
                 };
             }
         )
@@ -2234,11 +2234,11 @@ fn generate_sub_component_body(
             // Shorthands used by the generated expression code: these accesses are
             // emitted many times, so keep the call sites as small as possible.
             pub(super) fn globals(&self) -> &sp::Rc<SharedGlobals> {
-                self.globals.get().unwrap()
+                sp::OrUnusable::or_unusable(self.globals.get())
             }
 
             pub(super) fn origin_rc(&self) -> sp::ItemTreeRc {
-                sp::VRcMapped::origin(&self.self_weak.get().unwrap().upgrade().unwrap())
+                sp::VRcMapped::origin(&sp::OrUnusable::or_unusable(sp::OrUnusable::or_unusable(self.self_weak.get()).upgrade()))
             }
 
             pub(super) fn init(self_rc: sp::VRcMapped<sp::ItemTreeVTable, Self>,
@@ -2482,7 +2482,7 @@ fn generate_global(
                 // Shorthand used by the generated expression code: the member access is
                 // emitted for every global property access, so keep it as small as possible.
                 fn globals(&self) -> sp::Rc<SharedGlobals> {
-                    self.globals.get().unwrap().upgrade().unwrap()
+                    sp::OrUnusable::or_unusable(self.globals.get()).upgrade().unwrap()
                 }
                 fn new() -> ::core::pin::Pin<sp::Rc<Self>> {
                     sp::Rc::pin(Self::default())
@@ -2575,7 +2575,7 @@ fn generate_item_tree_body(
     let globals = if is_popup {
         quote!(globals)
     } else if parent_ctx.is_some() {
-        quote!(parent.upgrade().unwrap().globals.get().unwrap().clone())
+        quote!(sp::OrUnusable::or_unusable(sp::OrUnusable::or_unusable(parent.upgrade()).globals.get()).clone())
     } else {
         quote!(SharedGlobals::new(sp::VRc::downgrade(&self_dyn_rc), context))
     };
@@ -2586,7 +2586,7 @@ fn generate_item_tree_body(
     let context_arg = is_root_component.then(|| quote!(context: sp::SlintContext));
 
     let embedding_function = if parent_ctx.is_some() {
-        quote!(todo!("Components written in Rust can not get embedded yet."))
+        quote!(sp::not_embeddable())
     } else {
         quote!(false)
     };
@@ -2727,16 +2727,16 @@ fn generate_item_tree_body(
                 impl sp::PinnedDrop for #inner_component_id {
                     fn drop(self: ::core::pin::Pin<&mut #inner_component_id>) {
                         sp::vtable::new_vref!(let vref : VRef<sp::ItemTreeVTable> for sp::ItemTree = self.as_ref().get_ref());
-                        if let Some(wa) = self.globals.get().unwrap().maybe_window_adapter_impl() {
+                        if let Some(wa) = self.globals().maybe_window_adapter_impl() {
                             sp::unregister_item_tree(self.as_ref(), vref, Self::item_array(), &wa);
                         }
                     }
                 }
             )),
             quote!(if do_create {
-                *result = sp::Some(self.globals.get().unwrap().window_adapter_impl());
+                *result = sp::Some(self.globals().window_adapter_impl());
             } else {
-                *result = self.globals.get().unwrap().maybe_window_adapter_impl();
+                *result = self.globals().maybe_window_adapter_impl();
             }),
         )
     } else {
@@ -2760,7 +2760,7 @@ fn generate_item_tree_body(
         quote!(&mut slint::private_unstable_api::no_dynamic_children)
     };
     let default_call = quote!(sp::visit_item_tree(
-        &sp::VRcMapped::origin(&self.as_ref().self_weak.get().unwrap().upgrade().unwrap()),
+        &self.origin_rc(),
         self.get_item_tree().as_slice(),
         index,
         order,
@@ -2773,7 +2773,7 @@ fn generate_item_tree_body(
         let ctx = EvaluationContext::new_sub_component(
             root,
             sub_tree.root,
-            RustGeneratorContext { global_access: quote!(_self.globals.get().unwrap()) },
+            RustGeneratorContext { global_access: quote!(_self.globals()) },
             parent_ctx,
         );
         let z_match_arms = z_sorted_nodes.iter().map(|(node_idx, node)| {
@@ -2806,7 +2806,7 @@ fn generate_item_tree_body(
             quote! {
                 #idx_lit => {
                     return sp::visit_item_tree_z_sorted(
-                        &sp::VRcMapped::origin(&self.as_ref().self_weak.get().unwrap().upgrade().unwrap()),
+                        &self.origin_rc(),
                         self.get_item_tree().as_slice(),
                         index,
                         order,
@@ -3332,7 +3332,7 @@ fn generate_repeated_component_body(
         let ctx = EvaluationContext::new_sub_component(
             unit,
             repeated.sub_tree.root,
-            RustGeneratorContext { global_access: quote!(_self.globals.get().unwrap()) },
+            RustGeneratorContext { global_access: quote!(_self.globals()) },
             Some(parent_ctx),
         );
         let z_prop = access_member(z_ref, &ctx).get_property();
@@ -3350,13 +3350,13 @@ fn generate_repeated_component_body(
         impl sp::RepeatedItemTree for #inner_component_id {
             type Data = #data_type;
             fn update(&self, _index: usize, _data: Self::Data) {
-                let self_rc = self.self_weak.get().unwrap().upgrade().unwrap();
+                let self_rc = sp::OrUnusable::or_unusable(sp::OrUnusable::or_unusable(self.self_weak.get()).upgrade());
                 let _self = self_rc.as_pin_ref();
                 #(#index_prop.set(_index as _);)*
                 #(#set_data_expr)*
             }
             fn init(&self) {
-                let self_rc = self.self_weak.get().unwrap().upgrade().unwrap();
+                let self_rc = sp::OrUnusable::or_unusable(sp::OrUnusable::or_unusable(self.self_weak.get()).upgrade());
                 #inner_component_id::user_init(
                     sp::VRcMapped::map(self_rc, |x| x),
                 );
