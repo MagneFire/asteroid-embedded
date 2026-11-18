@@ -26,18 +26,20 @@ component Label {
     height: self.s;
 
     // A label centred at (cx, cy) of the face, over a soft black halo.
-    for d[i] in Build.halo ? [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] : []: Text {
-        x: root.s * root.cx - 50 * Theme.unit + d[0] * root.s * 0.006 + root.dx;
-        y: root.s * root.cy - 25 * Theme.unit + d[1] * root.s * 0.006 + root.dy;
-        width: 100 * Theme.unit;
-        height: 50 * Theme.unit;
-        text: root.text;
-        color: i == 0 ? transparent : #00000048;
-        font-size: root.font-size;
-        font-family: root.family;
-        font-weight: root.weight;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    if Build.halo: Rectangle {
+        for d[i] in [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]: Text {
+            x: root.s * root.cx - 50 * Theme.unit + d[0] * root.s * 0.006 + root.dx;
+            y: root.s * root.cy - 25 * Theme.unit + d[1] * root.s * 0.006 + root.dy;
+            width: 100 * Theme.unit;
+            height: 50 * Theme.unit;
+            text: root.text;
+            color: i == 0 ? transparent : #00000048;
+            font-size: root.font-size;
+            font-family: root.family;
+            font-weight: root.weight;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
     }
 
     Text {
