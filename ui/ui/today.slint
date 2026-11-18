@@ -20,26 +20,28 @@ export component TodayScreen {
         give: 0;
         content-height: (35 + 15 * root.count + 25) * Theme.unit;
 
-        if Face.weather-valid: Image {
-            x: root.width / 2 - 15 * Theme.unit;
-            y: 17.5 * Theme.unit - 7.5 * Theme.unit;
-            width: 15 * Theme.unit;
-            height: 15 * Theme.unit;
-            source: Icons.get(Face.weather-icon(Face.weather-today.id), self.width, self.height);
-            colorize: white;
-            opacity: 0.8;
-        }
+        if Face.weather-valid: Rectangle {
+            Image {
+                x: root.width / 2 - 15 * Theme.unit;
+                y: 17.5 * Theme.unit - 7.5 * Theme.unit;
+                width: 15 * Theme.unit;
+                height: 15 * Theme.unit;
+                source: Icons.get(Face.weather-icon(Face.weather-today.id), self.width, self.height);
+                colorize: white;
+                opacity: 0.8;
+            }
 
-        if Face.weather-valid: Text {
-            x: root.width * 0.55;
-            y: 0;
-            width: root.width * 0.45;
-            height: 35 * Theme.unit;
-            text: Face.temperature(Face.weather-today.min) + "\n" + Face.temperature(Face.weather-today.max);
-            color: white;
-            opacity: 0.8;
-            font-size: 5 * Theme.unit;
-            vertical-alignment: center;
+            Text {
+                x: root.width * 0.55;
+                y: 0;
+                width: root.width * 0.45;
+                height: 35 * Theme.unit;
+                text: Face.temperature(Face.weather-today.min) + "\n" + Face.temperature(Face.weather-today.max);
+                color: white;
+                opacity: 0.8;
+                font-size: 5 * Theme.unit;
+                vertical-alignment: center;
+            }
         }
 
         // Qt's small caps: the capital, then the rest as smaller capitals on the same baseline.
@@ -101,24 +103,26 @@ export component TodayScreen {
         }
     }
 
-    if root.count == 0: Image {
-        x: (root.width - 27 * Theme.unit) / 2;
-        y: (root.height - 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit);
-        width: 27 * Theme.unit;
-        height: 27 * Theme.unit;
-        source: Icons.get("ios-calendar-outline", self.width, self.height);
-        colorize: white;
-        opacity: 0.8;
-    }
+    if root.count == 0: Rectangle {
+        Image {
+            x: (root.width - 27 * Theme.unit) / 2;
+            y: (root.height - 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit);
+            width: 27 * Theme.unit;
+            height: 27 * Theme.unit;
+            source: Icons.get("ios-calendar-outline", self.width, self.height);
+            colorize: white;
+            opacity: 0.8;
+        }
 
-    if root.count == 0: Text {
-        x: 0;
-        y: (root.height + 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit) + 4 * Theme.unit;
-        width: root.width;
-        text: "No events today";
-        color: white;
-        opacity: 0.8;
-        font-size: 6 * Theme.unit;
-        horizontal-alignment: center;
+        Text {
+            x: 0;
+            y: (root.height + 27 * Theme.unit) / 2 + (Face.weather-valid ? 1 * Theme.unit : -9 * Theme.unit) + 4 * Theme.unit;
+            width: root.width;
+            text: "No events today";
+            color: white;
+            opacity: 0.8;
+            font-size: 6 * Theme.unit;
+            horizontal-alignment: center;
+        }
     }
 }
