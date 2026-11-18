@@ -19,10 +19,10 @@
 
 #define SRAM_BASE		0x10000000
 #define SRAM_END		0x10060000
-#define KEPT_BASE		0x1005af00	/* the .kept section, kept across a warm reset */
+#define KEPT_BASE		0x1004ef00	/* the .kept section, kept across a warm reset */
 #define KEPT_SIZE		0x00000100
-#define RAMOOPS_BASE		0x1005b000	/* log and fault record, kept across a warm reset */
-#define RAMOOPS_SIZE		0x00004800
+#define RAMOOPS_BASE		0x1004f000	/* log and fault record, kept across a warm reset */
+#define RAMOOPS_SIZE		0x00010800
 #define SWD_BOX_BASE		0x1005f800	/* the console over SWD */
 #define SWD_BOX_SIZE		0x00000800
 #define DRAM0_END		KEPT_BASE	/* the stack ends below this */
