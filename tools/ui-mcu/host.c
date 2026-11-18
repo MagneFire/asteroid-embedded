@@ -4,8 +4,9 @@
  * an abort on the host. Then it walks the screens with the firmware's
  * screen stack, swiping each way from the watchface and tapping across
  * each screen it reaches; a blank screen, a screen or an app the build
- * left out, or a panic fails it. Last it goes through the pages of
- * Settings and the Heart Rate app step by step, where the build has them.
+ * left out, or a panic fails it. First it goes through the pages of
+ * Settings and the Heart Rate app step by step, where the build has them,
+ * and the nightstand's battery ring.
  *
  * On the host, with a host build of the library (run-host.sh), the frames
  * are written out as PNG files.
@@ -364,6 +365,8 @@ static void walk(void)
 	check("walk-end");
 }
 
+static uint32_t step_panel = UI_PANEL_APP;
+
 /* The frame as it was drawn piece by piece, which must be what drawing it
  * whole gives: saved as tour-PART-N. */
 static void step(const char *part, unsigned n)
@@ -381,7 +384,7 @@ static void step(const char *part, unsigned n)
 	for (int y = 0; y < H; y++)
 		for (int x = 0; x < W; x++)
 			pieces[y][x] = frame[y][x];
-	if (!drawn(UI_PANEL_APP))
+	if (!drawn(step_panel))
 		fail_on("blank", name);
 	for (int y = 0; y < H; y++)
 		for (int x = 0; x < W; x++)
@@ -505,6 +508,38 @@ static void tour(void)
 		}
 	}
 	ui_set_app(-1);
+	/* The nightstand's battery ring as the battery fills, and moved against
+	 * burn-in on the always-on face. */
+	static const uint8_t levels[] = { 76, 77, 78, 20, 1, 100, 50 };
+	unsigned n = 0;
+	step_panel = UI_PANEL_FACE;
+	ui_set_screen(UI_PANEL_FACE);
+	backdrop.screen = UI_PANEL_FACE;
+	backdrop.edges = 0xf;
+	ui_set_face(0, true, true);
+	for (unsigned i = 0; i < sizeof(levels); i++) {
+		ui_set_battery(levels[i], true);
+		run(UI_PANEL_FACE, 200);
+		step("ring", n++);
+	}
+	ui_set_ambient(true);
+	backdrop.ambient = true;
+	for (int i = 0; i < 3; i++) {
+		ui_set_shift(-31 + 20 * i, 17 - 12 * i);
+		backdrop.dx = 9 - 6 * i;
+		backdrop.dy = -4 + 3 * i;
+		run(UI_PANEL_FACE, 200);
+		step("ring", n++);
+	}
+	ui_set_shift(0, 0);
+	backdrop.dx = backdrop.dy = 0;
+	ui_set_ambient(false);
+	backdrop.ambient = false;
+	ui_set_face(0, false, false);
+	ui_set_battery(76, false);
+	run(UI_PANEL_FACE, 200);
+	step("ring", n++);
+	step_panel = UI_PANEL_APP;
 }
 
 int main(int argc, char **argv)
