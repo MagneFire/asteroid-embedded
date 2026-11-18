@@ -358,10 +358,10 @@ export component SettingsApp {
             height: 100 * Theme.unit;
             content-height: Math.ceil(Apps.layouts.length / 2) * 40 * Theme.unit;
             init => {
-                self.place(Math.clamp(Math.floor(Face.launcher / 2) * 40 * Theme.unit + 20 * Theme.unit - 50 * Theme.unit, 0, self.content-height - 100 * Theme.unit));
+                self.place(Math.clamp(Math.floor(Face.launcher / 2) * 40 * Theme.unit + 20 * Theme.unit - 50 * Theme.unit, 0, Math.max(0, self.content-height - 100 * Theme.unit)));
             }
 
-            for name[i] in Apps.layouts: Rectangle {
+            for layout[i] in Apps.layouts: Rectangle {
                 x: Math.mod(i, 2) * 50 * Theme.unit;
                 y: Math.floor(i / 2) * 40 * Theme.unit;
                 width: 50 * Theme.unit;
@@ -371,23 +371,23 @@ export component SettingsApp {
                 LauncherView {
                     x: 5 * Theme.unit;
                     size: 40 * Theme.unit;
-                    layout: i;
+                    layout: layout;
                     preview: true;
-                    last: Face.launcher == i && root.flip;
+                    last: Face.launcher == layout && root.flip;
                 }
 
-                if Face.launcher == i: Rectangle {
+                if Face.launcher == layout: Rectangle {
                     background: #00000066;
                 }
 
-                if Face.launcher == i: Check {
+                if Face.launcher == layout: Check {
                     x: parent.width - self.width;
                     y: parent.height - self.height;
                 }
 
                 TouchArea {
                     clicked => {
-                        Face.setting-toggled(Codes.ui-launcher-first + i);
+                        Face.setting-toggled(Codes.ui-launcher-first + layout);
                     }
                 }
             }

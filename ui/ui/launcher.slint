@@ -15,7 +15,9 @@ export { App }
 
 export global Apps {
     out property <[App]> list: Face.has-heart-rate ? BuiltApps.all : BuiltApps.without-heart-rate;
-    out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
+    // The layouts the build has, as the Launcher setting numbers them: Horizontal, Vertical, Three
+    // icons, Two columns, Turbo list, Three by three, Speed dial.
+    out property <[int]> layouts: BuiltApps.layouts;
 }
 
 // Scrolling along one axis in steps of item, count steps, with a flick that coasts: the average

@@ -248,6 +248,10 @@ const APPS: &[(&str, u32, &str, &str, &str, &str)] = &[
     ("weather", 5, "Weather", "launcher-cloudy-outline", "#990019", "#0C0200"),
 ];
 
+/// The part each launcher layout is in, in the order of the Launcher setting: Horizontal and
+/// Vertical come with the launcher.
+const LAYOUTS: &[&str] = &["launcher", "launcher", "three-icons", "two-columns", "turbo-list", "three-by-three", "speed-dial"];
+
 /// Settings' list: the part a row needs, if any, its icon, title and page.
 const SETTINGS_ROWS: &[(&str, &str, &str, u32)] = &[
     ("", "ios-display-outline", "Display", 1),
@@ -264,7 +268,8 @@ const SETTINGS_ROWS: &[(&str, &str, &str, u32)] = &[
 ];
 
 /// apps_built.slint: a `BuiltApps` global with the apps the build has, the same without the
-/// Heart Rate app for a watch without the sensor, and the rows of Settings' list it has.
+/// Heart Rate app for a watch without the sensor, the launcher layouts the build has, and the
+/// rows of Settings' list it has.
 fn apps(out: &std::path::Path, leave_out: &[String]) {
     let mut slint = String::from(
         "export struct App {\n    id: int,\n    name: string,\n    icon: string,\n    center: color,\n    outer: color,\n}\n\n\
@@ -279,6 +284,9 @@ fn apps(out: &std::path::Path, leave_out: &[String]) {
         }
         slint.push_str("    ];\n");
     }
+    let layouts: Vec<String> =
+        LAYOUTS.iter().enumerate().filter(|(_, part)| !leave_out.iter().any(|p| p == *part)).map(|(i, _)| i.to_string()).collect();
+    writeln!(slint, "    out property <[int]> layouts: [{}];", layouts.join(", ")).unwrap();
     slint.push_str("    out property <[SettingsRow]> settings-rows: [\n");
     for (part, icon, title, page) in SETTINGS_ROWS {
         if part.is_empty() || !leave_out.iter().any(|p| p == part) {
