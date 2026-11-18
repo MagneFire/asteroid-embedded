@@ -450,6 +450,7 @@ void frame_draw(uint32_t now)
 			wfi();
 		irq_restore(flags);
 		waited_us = time_us() - w0;
+		power_count_idle(waited_us);
 	}
 #ifdef SGX_BASE
 	sgx_compose_settle();

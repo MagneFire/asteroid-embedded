@@ -54,10 +54,11 @@ void frame_draw(uint32_t now)
 		woke = woke && !drawn;
 	}
 	if (!drawn) {
-		uint32_t flags = irq_save();
+		uint32_t w0 = time_us(), flags = irq_save();
 		if (!sched_pending())
 			wfi();
 		irq_restore(flags);
+		power_count_idle(time_us() - w0);
 	}
 }
 

@@ -50,7 +50,7 @@ static bool have_display, have_ui, have_hub;
 static struct power_policy policy = { .awake = true };
 static struct nightstand stand;
 static enum screen_state screen;
-static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
+static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t, idle_us;
 #if UI_LAYER_SIZE
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 #endif
@@ -569,6 +569,7 @@ enum power_change power_update(uint32_t *now_p)
 		screen = SCREEN_OFF;
 		policy.awake = true;
 		asleep_ms += now - asleep_t;
+		idle_us = 0;
 		now = time_ms();
 		const char *cause = policy.charger_wake ? "charger" : wake_cause ? wake_cause : "other";
 		power_policy_woke(&policy, now);
@@ -741,11 +742,13 @@ void power_idle(uint32_t app_next_ms, const char *why)
 		timer_next(next);
 		wdt_stop();
 	}
-	uint32_t t0 = time_ms();
+	uint32_t t0 = time_ms(), i0 = time_us();
 	irq_last = ~0u;
 	cpu_idle(cluster);
 	uint32_t slept = time_ms() - t0;
-	if (!policy.awake) {
+	if (policy.awake) {
+		idle_us += time_us() - i0;
+	} else {
 		if (slept + 1 >= next)
 			woke_count(why, 0);
 		else
@@ -784,6 +787,18 @@ uint32_t power_wakeups(void)
 	uint32_t n = wakeups;
 	wakeups = 0;
 	return n;
+}
+
+void power_count_idle(uint32_t us)
+{
+	idle_us += us;
+}
+
+uint32_t power_idle_us(void)
+{
+	uint32_t us = idle_us;
+	idle_us = 0;
+	return us;
 }
 
 /* Time asleep since the last call. */

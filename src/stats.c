@@ -78,12 +78,12 @@ void stats_poll(uint32_t now, bool awake)
 		log_printf("tick %lu, %lu fps, rtc %lu, battery %lu mV, %s, usb %lu/%lu, touch %lu/%lu\n", (now - start_ms) / 1000,
 			   display_frames() - frames0, rtc_read(), batt_mv(), batt_status(), rx, tx, att, terr);
 		frames0 = display_frames();
-		uint32_t slept = power_slept_ms(now);
+		uint32_t slept = power_slept_ms(now), idle = power_idle_us() / 10000;
 		uint32_t pc, pcc, pcb;
 		cpu_idle_stats(&pc, &pcc, &pcb);
-		log_printf("power: %s, asleep %lu%% of the last second, %lu wakeups, %lu/%lu/%lu collapses, %s\n",
-			   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, power_wakeups(), pc, pcc, pcb,
-			   current(true));
+		log_printf("power: %s, asleep %lu%% of the last second, idle %lu%%, %lu wakeups, %lu/%lu/%lu collapses, %s\n",
+			   awake ? "awake" : "asleep", slept > 1000 ? 100 : slept / 10, idle > 100 ? 100 : idle, power_wakeups(),
+			   pc, pcc, pcb, current(true));
 		frame_log();
 #if defined(TEST_HANG)
 		if (now - start_ms >= 2000) {
