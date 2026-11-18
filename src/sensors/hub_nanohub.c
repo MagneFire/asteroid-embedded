@@ -13,6 +13,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "hub.h"
+#include "hr_accept.h"
 #include "nanohub_proto.h"
 
 #define PINS		(board->hub_pins)
@@ -44,16 +45,12 @@ static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
 static uint32_t steps_today = HUB_NONE, heart_rate = HUB_NONE;
 static unsigned heart_readings;
-/* The PixArt library starts from 110 bpm and moves towards the real rate
- * over the next 15-35 s. A reading counts once y, its trust level, is 3
- * (it agrees with the ones before), or is 2 after HR_SETTLE_MS, and z,
- * a sign of a disturbed signal, is 0. A bpm of 0 after the first is the
- * library starting over. */
-#define HR_SETTLE_MS 20000
-static uint32_t heart_first_t;
-static bool heart_started;
-/* The other two fields of a heart rate event, not yet understood:
- * logged when they change. */
+/* The last rate kept, given out in place of the library's own for a
+ * while, as a batch can end on one that is not. */
+#define HR_KEPT_MS 15000
+static uint32_t heart_kept = HUB_NONE, heart_kept_t;
+static struct hr_accept heart_accept;
+/* The trust and gain jump of a heart rate, logged when they change. */
 static float hr_y, hr_z;
 static bool tilted, have_gauge;
 static struct hub_gauge gauge;
@@ -240,17 +237,12 @@ static void sensor_event(const struct nanohub_event *ev)
 			hr_y = y;
 			hr_z = z;
 			heart_rate = bpm > 0 ? (uint32_t)(bpm + 0.5f) : HUB_NONE;
-			if (heart_rate == HUB_NONE) {
-				heart_started = false;
-				continue;
-			}
-			if (!heart_started) {
-				heart_started = true;
-				heart_first_t = time_ms();
-			}
-			bool settled = y >= 3 || (y >= 2 && time_ms() - heart_first_t >= HR_SETTLE_MS);
-			if (settled && z == 0)
+			unsigned kept = hr_accept_take(&heart_accept, bpm, y, z, time_ms());
+			if (kept) {
+				heart_kept = kept;
+				heart_kept_t = time_ms();
 				heart_readings++;
+			}
 		}
 		break;
 	case NANOHUB_SENSOR_LIGHT:
@@ -639,7 +631,8 @@ static void nanohub_heart_rate_on(bool on)
 		return;
 	heart_rate = HUB_NONE;
 	heart_readings = 0;
-	heart_started = false;
+	heart_kept = HUB_NONE;
+	hr_accept_reset(&heart_accept);
 	if (configure(NANOHUB_SENSOR_HEART_RATE, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns()))
 		hr_on = on;
 	else
@@ -652,6 +645,8 @@ static uint32_t nanohub_heart_rate(uint8_t *status, unsigned *readings)
 		*status = 0;
 	if (readings)
 		*readings = hr_on ? heart_readings : 0;
+	if (heart_kept != HUB_NONE && time_ms() - heart_kept_t < HR_KEPT_MS)
+		return heart_kept;
 	return heart_rate;
 }
 
