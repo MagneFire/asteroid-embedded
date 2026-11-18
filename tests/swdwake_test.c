@@ -74,11 +74,10 @@ int main(void)
 	CHECK(!swd_wanted() && irq_on);
 	CHECK(logs == 2);
 
-	/* Debug on keeps it light with no hold. */
+	/* Debug left on by a killed tool does not keep it awake. */
 	dhcsr = 1;
-	CHECK(swd_wanted());
-	dhcsr = 0x00030000u;
 	CHECK(!swd_wanted());
+	dhcsr = 0;
 
 	/* Log lines for wakes 1, 2, 4, 8 only. */
 	for (unsigned i = 3; i <= 9; i++) {

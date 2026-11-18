@@ -1,14 +1,14 @@
-/* In deep sleep the debug port answers WAIT to every memory access, and
- * the application processor's driver resets the MCU after too many. The
- * SWD clock's first edge wakes the core instead; one interrupt starts a
- * hold, and the core sleeps only lightly until the clock has been quiet
- * for a whole hold, and while debug is on. */
+/* While the core sleeps the debug port answers WAIT to every memory
+ * access, and the application processor's driver resets the MCU after
+ * too many. The SWD clock's first edge wakes the core instead; one
+ * interrupt starts a hold, and the core does not sleep until the clock
+ * has been quiet for a whole hold. Debug being on is not a reason: the
+ * firmware cannot turn it off, and a tool killed with it on would keep
+ * the MCU awake until a reset. */
 #include "asteroid.h"
 #include "sched.h"
 
 #define HOLD_MS		500
-#define DHCSR		0xe000edf0u
-#define C_DEBUGEN	BIT(0)
 
 static volatile bool held;
 static bool timing;
@@ -60,5 +60,5 @@ void swdwake_init(void)
 
 bool swd_wanted(void)
 {
-	return held || (readl(DHCSR) & C_DEBUGEN);
+	return held;
 }

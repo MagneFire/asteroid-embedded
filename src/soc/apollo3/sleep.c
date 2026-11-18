@@ -46,7 +46,11 @@ static void buck_lift(void)
  * interrupt, and it is taken on unmasking. */
 void cpu_idle(bool deep)
 {
-	if (deep && swd_wanted()) {
+	/* Any wfi stops the bus clock, and the debugger's memory accesses
+	 * then wait until the next wake: while it is there the core only
+	 * spins, on what would have ended the wfi. */
+	bool spin = swd_wanted();
+	if (spin) {
 		deep = false;
 		kept_light++;
 	}
@@ -54,7 +58,10 @@ void cpu_idle(bool deep)
 	/* The main loop's tick can be a second away, past the link's
 	 * deadlines. */
 	timer_wake_within(link_next_ms());
-	if (!sched_pending()) {
+	if (spin) {
+		while (!sched_pending() && !(readl(NVIC_ISPR(0)) & readl(NVIC_ISER(0))))
+			;
+	} else if (!sched_pending()) {
 		if (deep) {
 			buck_lift();
 			writel(readl(SCB_SCR) | SCR_SLEEPDEEP, SCB_SCR);
