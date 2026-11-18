@@ -59,20 +59,17 @@ export component IconButton {
     }
 }
 
-// A vertical list taller than the screen, as a Flickable: drag it, or flick it to coast as Pager
-// does (the same speeds and deceleration) to any position. A drag past either end follows the
-// finger less and less, up to give, and a flick that reaches an end with speed left goes past it
-// by up to 0.6 give and comes back. The children are the content, content-height tall, and
-// scroll is how far down it is. released says where a drag let go is heading, and scroll-to
-// moves the content over d. horizontal makes it a row content-width wide.
-export component Scroller inherits SwipeGestureHandler {
+// How a Scroller moves, apart from it as a component without children: the Scrollers, each with
+// its content, then share the code of this one.
+component ScrollMoves {
     in property <bool> horizontal;
-    in property <length> content-height;
-    in property <length> content-width: self.width;
-    in-out property <length> scroll;
-    in property <length> give: 15 * Theme.unit;
+    in property <length> max;
+    in property <length> give;
+    in property <bool> swiping;
+    in property <Point> pressed-position;
+    in property <Point> current-position;
+    out property <length> scroll;
     callback released(length);
-    property <length> max: Math.max(0, self.horizontal ? self.content-width - self.width : self.content-height - self.height);
     property <duration> anim: 0ms;
     // Where the content was when the drag took it, and where it comes back to after going past an end.
     property <length> grab;
@@ -89,10 +86,8 @@ export component Scroller inherits SwipeGestureHandler {
         easing: ease-out;
     }
 
-    handle-swipe-up: !self.horizontal;
-    handle-swipe-down: !self.horizontal;
-    handle-swipe-left: self.horizontal;
-    handle-swipe-right: self.horizontal;
+    width: 0;
+    height: 0;
 
     function resist(e: length) -> length {
         return self.give > 0 ? self.give * (e / (e + 2 * self.give)) : 0;
@@ -103,7 +98,10 @@ export component Scroller inherits SwipeGestureHandler {
         self.rest = to;
         self.scroll = to;
     }
-    function release(moving: bool) {
+    public function place(to: length) {
+        self.scroll = to;
+    }
+    public function release(moving: bool) {
         let avg = self.samples == 3 ? (self.v0 + self.v1) / 2 : self.samples == 2 ? self.v1 : 0;
         let held = Face.touch-time() - self.last-ms;
         let v = !moving ? 0 : Math.clamp(held > 100 ? 0 : held < 50 ? avg : avg * (100 - held) / 50, -2.5, 2.5);
@@ -147,7 +145,7 @@ export component Scroller inherits SwipeGestureHandler {
         }
     }
 
-    moved => {
+    public function moved() {
         let y = self.horizontal ? self.current-position.x : self.current-position.y;
         if !self.tracking {
             // The first move of a press takes the content where it is, coasting or not.
@@ -173,11 +171,55 @@ export component Scroller inherits SwipeGestureHandler {
             self.last-ms = Face.touch-time();
         }
     }
+}
+
+// A vertical list taller than the screen, as a Flickable: drag it, or flick it to coast as Pager
+// does (the same speeds and deceleration) to any position. A drag past either end follows the
+// finger less and less, up to give, and a flick that reaches an end with speed left goes past it
+// by up to 0.6 give and comes back. The children are the content, content-height tall, and
+// scroll is how far down it is: place puts it somewhere at once. released says where a drag let
+// go is heading, and scroll-to moves the content over d. horizontal makes it a row content-width
+// wide.
+export component Scroller inherits SwipeGestureHandler {
+    in property <bool> horizontal;
+    in property <length> content-height;
+    in property <length> content-width: self.width;
+    out property <length> scroll: moves.scroll;
+    in property <length> give: 15 * Theme.unit;
+    callback released(length);
+
+    handle-swipe-up: !self.horizontal;
+    handle-swipe-down: !self.horizontal;
+    handle-swipe-left: self.horizontal;
+    handle-swipe-right: self.horizontal;
+
+    public function scroll-to(to: length, d: duration) {
+        moves.scroll-to(to, d);
+    }
+    public function place(to: length) {
+        moves.place(to);
+    }
+
+    moves := ScrollMoves {
+        horizontal: root.horizontal;
+        max: Math.max(0, root.horizontal ? root.content-width - root.width : root.content-height - root.height);
+        give: root.give;
+        swiping: root.swiping;
+        pressed-position: root.pressed-position;
+        current-position: root.current-position;
+        released(to) => {
+            root.released(to);
+        }
+    }
+
+    moved => {
+        moves.moved();
+    }
     swiped => {
-        self.release(true);
+        moves.release(true);
     }
     cancelled => {
-        self.release(false);
+        moves.release(false);
     }
 
     Rectangle {

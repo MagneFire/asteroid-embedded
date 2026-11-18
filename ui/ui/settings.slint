@@ -368,7 +368,7 @@ export component SettingsApp {
             height: 100 * Theme.unit;
             content-height: Math.ceil(Apps.layouts.length / 2) * 40 * Theme.unit;
             init => {
-                self.scroll = Math.clamp(Math.floor(Face.launcher / 2) * 40 * Theme.unit + 20 * Theme.unit - 50 * Theme.unit, 0, self.content-height - 100 * Theme.unit);
+                self.place(Math.clamp(Math.floor(Face.launcher / 2) * 40 * Theme.unit + 20 * Theme.unit - 50 * Theme.unit, 0, self.content-height - 100 * Theme.unit));
             }
 
             for name[i] in Apps.layouts: Rectangle {
