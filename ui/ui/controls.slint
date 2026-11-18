@@ -463,55 +463,60 @@ export component LabeledSwitch {
 
     width: 100 * Theme.unit;
     height: 25 * Theme.unit;
-    opacity: self.dim ? 0.4 : 1;
-    animate opacity {
-        duration: 200ms;
-    }
 
     Rectangle {
-        background: touch.pressed ? #ffffff33 : #ffffff00;
-        animate background {
-            duration: 150ms;
-            easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        opacity: root.dim ? 0.4 : 1;
+        animate opacity {
+            duration: 200ms;
         }
-    }
 
-    Text {
-        x: 15 * Theme.unit;
-        width: 44 * Theme.unit;
-        height: parent.height;
-        text: root.text;
-        color: white;
-        font-size: 6 * Theme.unit;
-        vertical-alignment: center;
-        wrap: word-wrap;
-    }
+        Rectangle {
+            background: touch.pressed ? #ffffff33 : #ffffff00;
+            animate background {
+                duration: 150ms;
+                easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            }
+        }
 
-    if root.value == "": Image {
-        x: 65 * Theme.unit;
-        y: 2.5 * Theme.unit;
-        width: 20 * Theme.unit;
-        height: 20 * Theme.unit;
-        source: Icons.get(root.icon != "" ? root.icon : root.checked ? "ios-checkmark-circle-outline" : "ios-circle-outline", self.width, self.height);
-        colorize: white;
-    }
+        Text {
+            x: 15 * Theme.unit;
+            width: 44 * Theme.unit;
+            height: parent.height;
+            text: root.text;
+            color: white;
+            font-size: 6 * Theme.unit;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
 
-    if root.value != "": Text {
-        x: 59 * Theme.unit;
-        width: 32 * Theme.unit;
-        height: parent.height;
-        text: root.value;
-        color: white;
-        font-family: "Noto Sans SemiCondensed Bold";
-        font-size: 7 * Theme.unit;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        wrap: word-wrap;
-    }
+        Image {
+            visible: root.value == "";
+            x: 65 * Theme.unit;
+            y: 2.5 * Theme.unit;
+            width: 20 * Theme.unit;
+            height: 20 * Theme.unit;
+            source: Icons.get(root.icon != "" ? root.icon : root.checked ? "ios-checkmark-circle-outline" : "ios-circle-outline", self.width, self.height);
+            colorize: white;
+        }
 
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
+        Text {
+            visible: root.value != "";
+            x: 59 * Theme.unit;
+            width: 32 * Theme.unit;
+            height: parent.height;
+            text: root.value;
+            color: white;
+            font-family: "Noto Sans SemiCondensed Bold";
+            font-size: 7 * Theme.unit;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.clicked();
+            }
         }
     }
 }
