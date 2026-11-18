@@ -205,80 +205,84 @@ int main(void)
 	steps_init();
 	CHECK(steps_today() == 77 && steps_activity_today().distance_m == 0);
 
-	/* A hub that keeps steps today (catfish), with no count since boot:
-	 * the steps it counted while the watch was off come in at once. */
+	/* A hub restarted while running: its count starts over, ours goes
+	 * on. */
+	at(today + 2, 600, 5000);
+	uint32_t before_restart = steps_today();
+	at(today + 2, 700, 20);
+	CHECK(steps_today() == before_restart + 20);
+	at(today + 2, 800, 25);
+	CHECK(steps_today() == before_restart + 25);
+
+	/* Booted just after midnight: the steps since boot are today's, the
+	 * day before keeps what was saved. */
+	steps_save();
+	uint32_t saved_today = steps_today();
+	fake_rtc = DAY(today + 3) + 60;
+	fake_steps = HUB_NONE;
+	steps_init();
+	CHECK(steps_today() == 0 && steps_day(1) == saved_today);
+	at(today + 3, 70, 30);
+	CHECK(steps_today() == 30 && steps_day(1) == saved_today);
+
+	/* A hub that keeps steps today itself (catfish), read once after a
+	 * boot on the same day: the steps it counted while the watch was off
+	 * come in, and nothing is written back when it agrees. */
 	memset(kvs, 0, sizeof kvs);
 	uint32_t d = 21000;
-	fake_steps = HUB_NONE;
 	fake_rtc = DAY(d) + 3600;
+	fake_steps = HUB_NONE;
 	steps_init();
-	CHECK(steps_today() == 0);
-	fake_today = 500;
-	CHECK(steps_poll());
-	CHECK(steps_today() == 500);
-	fake_today = 520;
-	steps_poll();
-	CHECK(steps_today() == 520);
-
-	/* It lost its count: today stays, ours goes back, once a minute. */
-	fake_rtc += 100;
-	fake_today = 100;
-	steps_poll();
-	CHECK(steps_today() == 520 && synced == 520 && syncs == 1);
-	fake_rtc += 10;
-	steps_poll();
-	CHECK(syncs == 1);
-	fake_rtc += 60;
-	steps_poll();
-	CHECK(syncs == 2);
-	fake_today = 530;
-	steps_poll();
-	CHECK(steps_today() == 530);
-
-	/* Our midnight first: its count of yesterday is not taken into
-	 * today until it drops. */
-	fake_rtc = DAY(d) + 86399;
-	fake_today = 880;
-	steps_poll();
-	CHECK(steps_today() == 880);
-	/* Counted before midnight, read after it. */
-	fake_rtc = DAY(d + 1) + 30;
-	fake_today = 900;
-	CHECK(steps_poll());
-	CHECK(steps_today() == 0 && steps_day(1) == 900);
-	fake_rtc += 30;
-	fake_today = 905;
-	steps_poll();
-	CHECK(steps_today() == 0);
-	fake_rtc += 30;
-	fake_today = 3;
-	steps_poll();
-	CHECK(steps_today() == 3);
-
-	/* Its midnight first: no drop and nothing sent back. */
-	fake_today = 4000;
-	fake_rtc = DAY(d + 1) + 50000;
-	steps_poll();
-	unsigned before = syncs;
-	fake_rtc = DAY(d + 1) + 86350;
-	fake_today = 2;
-	steps_poll();
-	CHECK(steps_today() == 4000 && syncs == before);
-
-	/* Booted the next morning: yesterday's count is not sent to the hub
-	 * nor taken into today. */
-	fake_today = 1000;
-	fake_rtc = DAY(d + 2) + 80000;
-	steps_poll();
-	steps_poll();
+	at(d, 3600, 400);
 	steps_save();
-	fake_today = 50;
-	fake_rtc = DAY(d + 3) + 30000;
 	steps_init();
-	before = syncs;
+	at(d, 7200, 0);
+	fake_today = 1000;
+	unsigned before = syncs;
 	CHECK(steps_poll());
-	steps_poll();
-	CHECK(syncs == before && steps_today() == 50 && steps_day(1) == 1000);
+	CHECK(steps_today() == 1000 && syncs == before);
+	/* Later on its count is not taken. */
+	fake_today = 5000;
+	at(d, 7300, 10);
+	CHECK(steps_today() == 1010 && syncs == before);
+
+	/* What it saved lags ours: ours stays and goes to its LCD. */
+	steps_save();
+	steps_init();
+	fake_today = 990;
+	at(d, 7400, 0);
+	CHECK(steps_today() == 1010 && syncs == before + 1 && synced == 1010);
+
+	/* Booted on another day with the count of a day the hub never saw
+	 * end: not taken, and its LCD gets ours. */
+	steps_save();
+	fake_rtc = DAY(d + 1) + 3600;
+	fake_steps = HUB_NONE;
+	steps_init();
+	fake_today = 8000;
+	at(d + 1, 3600, 12);
+	CHECK(steps_today() == 12 && steps_day(1) == 1010 && synced == 12);
+
+	/* Midnight with the hub's count held back an hour: today starts at
+	 * 0 and stays its own, yesterday's count is never sent back, and
+	 * three days in a row do not pile up. */
+	uint32_t c = 12;
+	for (uint32_t n = 0; n < 3; n++) {
+		c += 900;
+		at(d + 1 + n, 86399, c);
+		uint32_t ended = steps_today();
+		CHECK(ended == (n ? 903 : 912));
+		fake_today = ended;
+		at(d + 2 + n, 5, c);
+		CHECK(steps_today() == 0 && steps_day(1) == ended && synced == 0);
+		at(d + 2 + n, 130, c);
+		at(d + 2 + n, 3600, c);
+		CHECK(steps_today() == 0 && steps_day(1) == ended);
+		fake_today = 0;
+		c += 3;
+		at(d + 2 + n, 3700, c);
+		CHECK(steps_today() == 3 && synced == 0);
+	}
 
 	printf(failures ? "steps_test: %d failures\n" : "steps_test: ok\n", failures);
 	return failures != 0;

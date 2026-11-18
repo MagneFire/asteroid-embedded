@@ -238,6 +238,7 @@ unsigned nanohub_sample_step(uint8_t type)
 		return 4 + 12;
 	case NANOHUB_SENSOR_LIGHT:
 	case NANOHUB_SENSOR_STEP_COUNTER:
+	case NANOHUB_SENSOR_STEPS:
 	case NANOHUB_SENSOR_STEPS_TODAY:
 	case NANOHUB_SENSOR_HAND_UP:
 		return 4 + 4;

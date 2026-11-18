@@ -43,7 +43,7 @@ static bool present, tilt_on, hr_on, accel_on, light_on, screen_off;
 static int32_t lux = -1;
 static volatile bool data_irq, mode_irq;
 static uint8_t mode = MODE_NORMAL;
-static uint32_t steps_today = HUB_NONE, heart_rate = HUB_NONE;
+static uint32_t steps = HUB_NONE, steps_today = HUB_NONE, heart_rate = HUB_NONE;
 static unsigned heart_readings;
 /* The last rate kept, given out in place of the library's own for a
  * while, as a batch can end on one that is not. */
@@ -220,6 +220,10 @@ static void sensor_event(const struct nanohub_event *ev)
 	switch (ev->sensor.type) {
 	case NANOHUB_SENSOR_HAND_UP:
 		tilted = true;
+		break;
+	case NANOHUB_SENSOR_STEPS:
+		if (ev->sensor.header && nanohub_sample(ev, last, 4, &ns, &d))
+			memcpy(&steps, d, 4);
 		break;
 	case NANOHUB_SENSOR_STEPS_TODAY:
 		if (ev->sensor.header && nanohub_sample(ev, last, 4, &ns, &d))
@@ -470,14 +474,24 @@ static uint64_t hr_latency_ns(void)
 
 static void nanohub_flush_steps(void)
 {
-	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_FLUSH, 0, 0);
+	configure(NANOHUB_SENSOR_STEPS, NANOHUB_CMD_FLUSH, 0, 0);
+}
+
+/* The count since the hub started is what the watch counts from, as on
+ * every watch; the hub's own steps today, which it shows on its LCD, is
+ * read once after boot for the steps taken while the watch was off. */
+static void enable_steps(void)
+{
+	if (!configure(NANOHUB_SENSOR_STEPS, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns()))
+		log_printf("hub: step counter not enabled\n");
+	if (!configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns()))
+		log_printf("hub: steps today not enabled\n");
 }
 
 static void apply_state(void)
 {
 	set_time();
-	if (!configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns()))
-		log_printf("hub: steps today not enabled\n");
+	enable_steps();
 	/* What the hub logs in band mode: steps and activity, and the heart
 	 * rate if the watch logs it. */
 	flash_cmd(4, 1);
@@ -613,9 +627,10 @@ static bool get_gauge(struct hub_gauge *g)
 	return have_gauge;
 }
 
+static uint32_t nanohub_steps(void) { return steps; }
 static uint32_t nanohub_steps_today(void) { return steps_today; }
 
-/* The hub's count replaced by ours, when ours is the higher one. */
+/* What the hub's LCD shows as steps today. */
 static void nanohub_sync_steps_today(uint32_t v)
 {
 	uint8_t b[NANOHUB_PAYLOAD_MAX];
@@ -720,7 +735,7 @@ static void nanohub_screen(bool on)
 	if (!started)
 		return;
 	set_mode(on ? MODE_NORMAL : MODE_AMBIENT);
-	configure(NANOHUB_SENSOR_STEPS_TODAY, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, steps_latency_ns());
+	enable_steps();
 	if (hr_on)
 		configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns());
 	if (on) {
@@ -808,8 +823,8 @@ static void nanohub_status(void (*say)(const char *fmt, ...))
 	say("hub: nanohub hw %08lx fw %08lx, %s, mode %u, %lu events (%lu answers with more, %lu unknown sizes, %lu cut "
 	    "short), %lu errors\n",
 	    versions[0], versions[1], present ? "up" : "not up", mode, events, batched, unknown, bad, errors);
-	say("hub: its own log %lu warnings and %lu errors, steps %ld, gauge %s %lu mV %lu%%\n", hub_warnings, hub_errors,
-	    (long)steps_today, have_gauge ? "" : "none", gauge.mv, gauge.percent);
+	say("hub: its own log %lu warnings and %lu errors, steps %ld today %ld, gauge %s %lu mV %lu%%\n", hub_warnings, hub_errors,
+	    (long)steps, (long)steps_today, have_gauge ? "" : "none", gauge.mv, gauge.percent);
 }
 
 /* The hub's light sensor: on while it is wanted, the last lux it
@@ -853,6 +868,7 @@ const struct hub_driver hub_nanohub = {
 	.init = nanohub_init,
 	.poll = nanohub_poll,
 	.set_time = set_time,
+	.steps = nanohub_steps,
 	.steps_today = nanohub_steps_today,
 	.sync_steps_today = nanohub_sync_steps_today,
 	.flush_steps = nanohub_flush_steps,

@@ -1,15 +1,17 @@
 /* Steps today and on the days before. The sensor hub counts from its own
  * reset, which happens at every boot, so the count is kept as a running
- * total on top of the total saved before; the day starts over at
- * midnight of the clock's local time. The totals are saved in the
- * key-value store when they changed and the watch goes to sleep, or the
- * day changes; nothing is counted or saved before steps_init has loaded
- * them. Each day that ends goes into a ring of the last STEPS_DAYS, and
- * the days the watch missed, off or with the clock set ahead, count as
- * none. A hub that measures the distance and calories from the wearer's
- * profile has them kept the same way, today's alone; otherwise the
- * distance is worked out from the steps. The calories always come from
- * the distance: the hub counts arm movement at a desk as activity. */
+ * total on top of the total saved before, and a count that goes down is
+ * a hub that started over; the day starts over at midnight of the
+ * clock's local time, whatever the hub makes of midnight. The totals are
+ * saved in the key-value store when they changed and the watch goes to
+ * sleep, or the day changes; nothing is counted or saved before
+ * steps_init has loaded them. Each day that ends goes into a ring of the
+ * last STEPS_DAYS, and the days the watch missed, off or with the clock
+ * set ahead, count as none. A hub that measures the distance and
+ * calories from the wearer's profile has them kept the same way, today's
+ * alone; otherwise the distance is worked out from the steps. The
+ * calories always come from the distance: the hub counts arm movement at
+ * a desk as activity. */
 #include <string.h>
 #include "asteroid.h"
 #include "fitness.h"
@@ -32,37 +34,31 @@ static struct days {
 	uint32_t last;
 	uint32_t steps[STEPS_DAYS];
 } days;
-static uint32_t base = HUB_NONE, measured_base[2];
+static uint32_t last = HUB_NONE, measured_base[2];
 static bool measured_based;
 static bool ready, changed;
 
 /* A hub that keeps steps today itself (catfish) also counts while the
- * watch is off: today follows it up, never down. Its midnight and ours
- * can be a little apart, so for ROLL_S after ours its count is taken only
- * once it dropped, and a lower count near midnight is not sent back. */
-#define ROLL_S		120
-#define SYNC_S		60
-static uint32_t hub_last = HUB_NONE, sync_t;
-static bool rolling;
+ * watch is off. Its count is taken once after a boot on the same day as
+ * the last save, and only the steps it has above ours: from another day
+ * it can be one the hub never saw end, and what it saved can lag ours.
+ * Its LCD then shows ours, from then on and from each midnight. */
+static void end_day(uint32_t day);
+static uint32_t boot_day;
+static bool hub_today_read;
 
-static void follow_hub(uint32_t t, uint32_t now)
+static void take_hub_today(uint32_t day)
 {
-	uint32_t mine = now_state.total - now_state.day_start, secs = now % 86400;
-	if (rolling) {
-		if (t >= hub_last && secs < ROLL_S) {
-			hub_last = t;
-			return;
-		}
-		rolling = false;
-	}
-	hub_last = t;
-	if (t > mine) {
-		now_state.total += t - mine;
+	uint32_t t = hub_steps_today();
+	if (hub_today_read || t == HUB_NONE)
+		return;
+	hub_today_read = true;
+	if (day == boot_day && day == now_state.day && t > steps_today()) {
+		now_state.total += t - steps_today();
 		changed = true;
-	} else if (t < mine && secs >= ROLL_S && secs < 86400 - ROLL_S && now - sync_t >= SYNC_S) {
-		sync_t = now;
-		hub_sync_steps_today(mine);
 	}
+	if (t != steps_today())
+		hub_sync_steps_today(steps_today());
 }
 
 void steps_init(void)
@@ -75,11 +71,15 @@ void steps_init(void)
 	now_state = saved;
 	if (kv_get(KV_DAYS, &days, sizeof days) != (int)sizeof days)
 		days = (struct days){ .last = saved.day - 1 };
-	base = hub_last = HUB_NONE;
-	measured_based = changed = rolling = false;
-	sync_t = 0;
+	last = HUB_NONE;
+	measured_based = changed = hub_today_read = false;
 	ready = true;
-	log_printf("steps: %lu today, %lu in total\n", saved.total - saved.day_start, saved.total);
+	/* The steps since this boot are today's. */
+	uint32_t day = rtc_read() / 86400;
+	boot_day = day == saved.day ? day : HUB_NONE;
+	if (day != saved.day)
+		end_day(day);
+	log_printf("steps: %lu today, %lu in total\n", steps_today(), now_state.total);
 }
 
 static void end_day(uint32_t day)
@@ -96,7 +96,6 @@ static void end_day(uint32_t day)
 	}
 	now_state.day = day;
 	now_state.day_start = now_state.total;
-	rolling = hub_last != HUB_NONE;
 	for (unsigned i = 0; i < 2; i++)
 		now_state.measured_start[i] = now_state.measured[i];
 	steps_save();
@@ -123,22 +122,17 @@ bool steps_poll(void)
 			}
 	}
 	if (count != HUB_NONE) {
-		if (base == HUB_NONE)
-			base = saved.total;
-		if (base + count != now_state.total) {
-			now_state.total = base + count;
+		uint32_t add = last == HUB_NONE || count < last ? count : count - last;
+		last = count;
+		if (add) {
+			now_state.total += add;
 			changed = true;
 		}
 	}
-	/* Steps the hub counted since the last poll go into the day that
-	 * ends, when that is the day before and its count can still be
-	 * yesterday's. */
-	uint32_t hub_today = hub_steps_today(), rtc = rtc_read();
-	bool just_ended = day == now_state.day + 1 && rtc % 86400 < ROLL_S;
-	if (hub_today != HUB_NONE && (day == now_state.day || just_ended))
-		follow_hub(hub_today, rtc);
+	take_hub_today(day);
 	if (day != now_state.day) {
 		end_day(day);
+		hub_sync_steps_today(0);
 		return true;
 	}
 	struct activity after = steps_activity_today();
