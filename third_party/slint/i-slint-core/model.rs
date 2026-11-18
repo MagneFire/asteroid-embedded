@@ -25,6 +25,55 @@ mod repeater;
 
 pub use repeater::{Conditional, ListViewProperties, RepeatedItemTree, Repeater, RepeaterTracker};
 
+/// Where generated code panics for a component that is used before it is set up or after it
+/// is dropped, or that could not be created. An `unwrap()` at each place has its own location,
+/// which takes flash and keeps code apart that is otherwise the same for every component.
+#[cold]
+#[inline(never)]
+pub fn component_unusable() -> ! {
+    panic!("component used before it was set up or after it was dropped, or not created")
+}
+
+/// Where generated code panics for a child that the component does not have.
+#[cold]
+#[inline(never)]
+pub fn no_such_child() -> ! {
+    panic!("invalid dyn_index, or an item asked of a dynamic tree")
+}
+
+/// Where generated code panics for a component that is asked to be embedded.
+#[cold]
+#[inline(never)]
+pub fn not_embeddable() -> ! {
+    panic!("Components written in Rust can not get embedded yet.")
+}
+
+/// `unwrap()` for generated code, with [`component_unusable`] as its one place to panic.
+pub trait OrUnusable<T> {
+    /// The value, or a panic.
+    fn or_unusable(self) -> T;
+}
+
+impl<T> OrUnusable<T> for Option<T> {
+    #[inline(always)]
+    fn or_unusable(self) -> T {
+        match self {
+            Some(value) => value,
+            None => component_unusable(),
+        }
+    }
+}
+
+impl<T, E> OrUnusable<T> for Result<T, E> {
+    #[inline(always)]
+    fn or_unusable(self) -> T {
+        match self {
+            Ok(value) => value,
+            Err(_) => component_unusable(),
+        }
+    }
+}
+
 /// Error returned by the row mutation functions of [`Model`] when the modification
 /// was not applied.
 #[derive(Debug, Clone, Eq, PartialEq, derive_more::Error, derive_more::Display)]
