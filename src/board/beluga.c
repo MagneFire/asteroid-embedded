@@ -20,7 +20,9 @@ static const struct board_mcu_pad pads[] = {
 	{ 19, PAD_FUNC_GPIO, PAD_INPUT },
 	{ 41, PAD_FUNC_GPIO, PAD_OUT_LOW },
 	{ 47, 5, PAD_STRONG },
-	{ 48, 5, PAD_STRONG },
+	/* An SPI master's clock pad needs its input on: the IOM reads the
+	 * clock back to sample, and without it reads stall and give zeros. */
+	{ 48, 5, PAD_INPUT | PAD_STRONG },
 	{ 49, 5, PAD_INPUT },
 	{ 45, 1, PAD_NCE(2) },
 	{ 0, 0xff, 0 },
@@ -30,7 +32,7 @@ static const struct board_mcu_pad pads[] = {
  * and its chip select 3 on pad 34. */
 static const struct board_mcu_pad hr_pads[] = {
 	{ 25, 5, PAD_INPUT },
-	{ 27, 5, PAD_STRONG },
+	{ 27, 5, PAD_INPUT | PAD_STRONG },
 	{ 28, 5, PAD_STRONG },
 	{ 34, 1, PAD_NCE(2) },
 	{ 0, 0xff, 0 },
