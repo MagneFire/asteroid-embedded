@@ -146,6 +146,11 @@ $(BUILD)/config.h: FORCE
 	@echo '$(if $(ASLEEP_STATS),#define ASLEEP_STATS 1,)' >> $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
+$(BUILD)/ui-parts: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(UI_LEAVE_OUT)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
 FORCE:
 
 $(BUILD)/%.S.o: %.S
@@ -164,7 +169,7 @@ $(BUILD)/%.c.o: %.c $(BUILD)/config.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
 
-$(UI_LIB): $(UI_SRCS)
+$(UI_LIB): $(UI_SRCS) $(BUILD)/ui-parts
 	cd ui && PATH="$(dir $(CARGO)):$$PATH" CARGO_TARGET_$(shell echo $(RUST_TARGET) | tr a-z- A-Z_)_RUSTFLAGS="-C target-cpu=$(CPU_$(SOC)) $(UI_CFG_$(SOC)) $(UI_RUSTFLAGS_$(SOC))" \
 		$(CARGO) build --profile $(UI_PROFILE) --target $(RUST_TARGET) --target-dir $(abspath $(UI_TARGET)) \
 		$(if $(UI_FEATURES_$(SOC)),--no-default-features --features $(UI_FEATURES_$(SOC)))
