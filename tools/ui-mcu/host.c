@@ -390,8 +390,9 @@ static void step(const char *part, unsigned n)
 	save(name);
 }
 
-/* A drag held at its end, so that nothing coasts after it. */
-static void drag(int x0, int y0, int x1, int y1)
+/* A drag held at its end for hold ms: long enough and nothing coasts
+ * after it. */
+static void drag_held(int x0, int y0, int x1, int y1, uint32_t hold)
 {
 	touch(UI_PANEL_APP, UI_TOUCH_DOWN, x0, y0);
 	run(UI_PANEL_APP, 16);
@@ -399,8 +400,13 @@ static void drag(int x0, int y0, int x1, int y1)
 		touch(UI_PANEL_APP, UI_TOUCH_MOVE, x0 + (x1 - x0) * i / 8, y0 + (y1 - y0) * i / 8);
 		run(UI_PANEL_APP, 16);
 	}
-	run(UI_PANEL_APP, 200);
+	run(UI_PANEL_APP, hold);
 	touch(UI_PANEL_APP, UI_TOUCH_UP, x1, y1);
+}
+
+static void drag(int x0, int y0, int x1, int y1)
+{
+	drag_held(x0, y0, x1, y1, 200);
 	run(UI_PANEL_APP, 600);
 }
 
@@ -461,6 +467,14 @@ static void tour(void)
 			step(pages[row], n++);
 			drag(W / 2, unit / 4, W / 2, unit * 3 / 4);
 			step(pages[row], n++);
+			/* Flicked up and down, as it coasts and after. */
+			for (int up = 1; up >= 0; up--) {
+				drag_held(W / 2, unit * (up ? 3 : 1) / 4, W / 2, unit * (up ? 1 : 3) / 4, 0);
+				for (int i = 0; i < 4; i++) {
+					run(UI_PANEL_APP, i < 3 ? 64 : 800);
+					step(pages[row], n++);
+				}
+			}
 			/* A remorse timer runs out. */
 			run(UI_PANEL_APP, 3500);
 			step(pages[row], n++);
