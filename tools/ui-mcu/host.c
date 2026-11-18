@@ -422,6 +422,8 @@ static void tour(void)
 						  .nightstand_rotate = true, .auto_brightness = true, .height_cm = 180, .weight_kg = 75,
 						  .age = 40, .male = true };
 	int unit = (W < H ? W : H);
+	/* Settings has no Watchface row without a second one. */
+	int rows = ui_has_face(1) ? 11 : 10;
 	for (int pass = 0; ui_has_app(UI_APP_SETTINGS) && pass < 2; pass++) {
 		if (pass) {
 			ui_set_settings(&other);
@@ -430,11 +432,15 @@ static void tour(void)
 			ui_set_tilt_light(true);
 			ui_set_connected(false, false);
 		}
-		for (int row = 0; row < 11; row++) {
+		for (int page = 0, row = 0; page < 11; page++, row++) {
 			unsigned n = pass * 50;
+			if (page == 2 && rows < 11) {
+				row--;
+				continue;
+			}
 			int scroll = row > 2 ? 21 * (row - 2) : 0;
-			if (scroll > 143)
-				scroll = 143;
+			if (scroll > 21 * rows - 88)
+				scroll = 21 * rows - 88;
 			ui_set_app(-1);
 			run(UI_PANEL_APP, 100);
 			ui_set_app(UI_APP_SETTINGS);
@@ -447,37 +453,37 @@ static void tour(void)
 			run(UI_PANEL_APP, 50);
 			touch(UI_PANEL_APP, UI_TOUCH_UP, W / 2, (33 + 42 * row - 2 * scroll) * unit / 200);
 			run(UI_PANEL_APP, 96);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			run(UI_PANEL_APP, 500);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			for (int y = 1; y < 6; y++)
 				for (int x = 1; x < 4; x++) {
 					touch(UI_PANEL_APP, UI_TOUCH_DOWN, W * x / 4, unit * y / 6);
 					run(UI_PANEL_APP, 50);
-					step(pages[row], n++);
+					step(pages[page], n++);
 					touch(UI_PANEL_APP, UI_TOUCH_UP, W * x / 4, unit * y / 6);
 					run(UI_PANEL_APP, 250);
 				}
-			step(pages[row], n++);
+			step(pages[page], n++);
 			drag(W / 2, unit * 3 / 4, W / 2, unit / 4);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			drag(W / 4, unit * 3 / 8, W * 3 / 4, unit * 3 / 8);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			drag(W / 2, unit * 3 / 4, W / 2, unit / 8);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			drag(W / 2, unit / 4, W / 2, unit * 3 / 4);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			/* Flicked up and down, as it coasts and after. */
 			for (int up = 1; up >= 0; up--) {
 				drag_held(W / 2, unit * (up ? 3 : 1) / 4, W / 2, unit * (up ? 1 : 3) / 4, 0);
 				for (int i = 0; i < 4; i++) {
 					run(UI_PANEL_APP, i < 3 ? 64 : 800);
-					step(pages[row], n++);
+					step(pages[page], n++);
 				}
 			}
 			/* A remorse timer runs out. */
 			run(UI_PANEL_APP, 3500);
-			step(pages[row], n++);
+			step(pages[page], n++);
 			for (struct ui_event e; ui_next_event(&e);)
 				;
 		}

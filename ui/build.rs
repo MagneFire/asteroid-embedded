@@ -248,11 +248,27 @@ const APPS: &[(&str, u32, &str, &str, &str, &str)] = &[
     ("weather", 5, "Weather", "launcher-cloudy-outline", "#990019", "#0C0200"),
 ];
 
-/// apps_built.slint: a `BuiltApps` global with the apps the build has, and the same without the
-/// Heart Rate app for a watch without the sensor.
+/// Settings' list: the part a row needs, if any, its icon, title and page.
+const SETTINGS_ROWS: &[(&str, &str, &str, u32)] = &[
+    ("", "ios-display-outline", "Display", 1),
+    ("", "ios-moon-outline", "Nightstand", 2),
+    ("classic", "ios-watchface-outline", "Watchface", 3),
+    ("launcher", "ios-launcher-outline", "Launcher", 4),
+    ("", "ios-clock-outline", "Time", 8),
+    ("", "ios-date-outline", "Date", 9),
+    ("", "ios-units-outline", "Units", 5),
+    ("", "ios-person-outline", "Profile", 11),
+    ("", "ios-bluetooth-outline", "Bluetooth", 6),
+    ("", "ios-power-outline", "Power", 10),
+    ("", "ios-help-circle-outline", "About", 7),
+];
+
+/// apps_built.slint: a `BuiltApps` global with the apps the build has, the same without the
+/// Heart Rate app for a watch without the sensor, and the rows of Settings' list it has.
 fn apps(out: &std::path::Path, leave_out: &[String]) {
     let mut slint = String::from(
-        "export struct App {\n    id: int,\n    name: string,\n    icon: string,\n    center: color,\n    outer: color,\n}\n\nexport global BuiltApps {\n",
+        "export struct App {\n    id: int,\n    name: string,\n    icon: string,\n    center: color,\n    outer: color,\n}\n\n\
+         export struct SettingsRow {\n    icon: string,\n    title: string,\n    page: int,\n}\n\nexport global BuiltApps {\n",
     );
     for (list, heart) in [("all", true), ("without-heart-rate", false)] {
         writeln!(slint, "    out property <[App]> {list}: [").unwrap();
@@ -263,6 +279,13 @@ fn apps(out: &std::path::Path, leave_out: &[String]) {
         }
         slint.push_str("    ];\n");
     }
+    slint.push_str("    out property <[SettingsRow]> settings-rows: [\n");
+    for (part, icon, title, page) in SETTINGS_ROWS {
+        if part.is_empty() || !leave_out.iter().any(|p| p == part) {
+            writeln!(slint, "        {{ icon: \"{icon}\", title: \"{title}\", page: {page} }},").unwrap();
+        }
+    }
+    slint.push_str("    ];\n");
     slint.push_str("}\n");
     std::fs::write(out.join("apps_built.slint"), slint).unwrap();
 }

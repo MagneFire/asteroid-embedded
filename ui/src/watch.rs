@@ -770,6 +770,12 @@ pub extern "C" fn ui_has_app(app: i32) -> bool {
     usize::try_from(app).ok().and_then(|a| APPS.get(a)).copied().unwrap_or(false)
 }
 
+/// Whether the build has watchface: the digital one, or the classic one.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_has_face(watchface: i32) -> bool {
+    watchface == 0 || (watchface == 1 && BUILD_CLASSIC)
+}
+
 /// Which panel the stack has on screen, under any app.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_screen(panel: u32) {

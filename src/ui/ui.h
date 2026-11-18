@@ -274,10 +274,11 @@ void ui_app_peek(int px);
 void ui_app_peek_end(bool back);
 int ui_app_depth(void);
 void ui_set_screen(unsigned panel);
-/* Whether the build has the panel's screen, and the app: the Cortex-M
- * build leaves some out. */
+/* Whether the build has the panel's screen, the app and the watchface:
+ * the Cortex-M build leaves some out. */
 bool ui_has_panel(unsigned panel);
 bool ui_has_app(int app);
+bool ui_has_face(int watchface);
 bool ui_launcher_colors(struct ui_colors *out);
 void ui_set_launcher(int layout);
 unsigned ui_launcher_edges(void);

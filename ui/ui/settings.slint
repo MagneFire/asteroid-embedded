@@ -15,6 +15,8 @@ import { PageHeader, Scroller, ListItem, LabeledSwitch, IntSelector, RowLabel, R
 import { ProfileRows } from "profile.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
+import { Build } from "build.slint";
+import { BuiltApps } from "apps_built.slint";
 
 // A 60 px check badge with a soft shadow, as the pickers mark the current choice.
 component Check {
@@ -95,19 +97,7 @@ export component SettingsApp {
                 padding-top: 6 * Theme.unit;
                 padding-bottom: 6 * Theme.unit;
 
-                for item[i] in [
-                    { icon: "ios-display-outline", title: "Display", page: 1 },
-                    { icon: "ios-moon-outline", title: "Nightstand", page: 2 },
-                    { icon: "ios-watchface-outline", title: "Watchface", page: 3 },
-                    { icon: "ios-launcher-outline", title: "Launcher", page: 4 },
-                    { icon: "ios-clock-outline", title: "Time", page: 8 },
-                    { icon: "ios-date-outline", title: "Date", page: 9 },
-                    { icon: "ios-units-outline", title: "Units", page: 5 },
-                    { icon: "ios-person-outline", title: "Profile", page: 11 },
-                    { icon: "ios-bluetooth-outline", title: "Bluetooth", page: 6 },
-                    { icon: "ios-power-outline", title: "Power", page: 10 },
-                    { icon: "ios-help-circle-outline", title: "About", page: 7 },
-                ]: ListItem {
+                for item[i] in BuiltApps.settings-rows: ListItem {
                     icon: item.icon;
                     title: item.title;
                     clicked => {
@@ -312,7 +302,7 @@ export component SettingsApp {
         }
     }
 
-    if root.page == 3: Page {
+    if Build.classic && root.page == 3: Page {
         for name[i] in ["Digital", "Classic"]: Rectangle {
             x: Math.mod(i, 2) * 50 * Theme.unit;
             y: 30 * Theme.unit;
