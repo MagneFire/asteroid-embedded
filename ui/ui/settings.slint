@@ -378,11 +378,11 @@ export component SettingsApp {
 
                 if Face.launcher == layout: Rectangle {
                     background: #00000066;
-                }
 
-                if Face.launcher == layout: Check {
-                    x: parent.width - self.width;
-                    y: parent.height - self.height;
+                    Check {
+                        x: parent.width - self.width;
+                        y: parent.height - self.height;
+                    }
                 }
 
                 TouchArea {
@@ -493,11 +493,12 @@ export component SettingsApp {
             value: Face.minute;
         }
 
-        if Face.clock12: Rectangle {
+        Rectangle {
             x: 5 * Theme.unit + 2 * parent.w - 0.25 * Theme.unit;
             y: 26 * Theme.unit;
             width: 0.25 * Theme.unit;
             height: 48 * Theme.unit;
+            visible: Face.clock12;
             background: #ffffff88;
         }
 

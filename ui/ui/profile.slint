@@ -54,32 +54,34 @@ export component ProfileRows inherits VerticalLayout {
         }
     }
 
-    if Face.has-profile: RowLabel {
-        text: "Age";
-    }
+    if Face.has-profile: VerticalLayout {
+        RowLabel {
+            text: "Age";
+        }
 
-    if Face.has-profile: IntSelector {
-        value: Face.age;
-        min: 10;
-        max: 99;
-        step: 1;
-        unit: " years";
-        down => {
-            Face.setting-set(Codes.setting-age, Face.age - 1);
+        IntSelector {
+            value: Face.age;
+            min: 10;
+            max: 99;
+            step: 1;
+            unit: " years";
+            down => {
+                Face.setting-set(Codes.setting-age, Face.age - 1);
+            }
+            up => {
+                Face.setting-set(Codes.setting-age, Face.age + 1);
+            }
+            set(v) => {
+                Face.setting-set(Codes.setting-age, v);
+            }
         }
-        up => {
-            Face.setting-set(Codes.setting-age, Face.age + 1);
-        }
-        set(v) => {
-            Face.setting-set(Codes.setting-age, v);
-        }
-    }
 
-    if Face.has-profile: LabeledSwitch {
-        text: "Sex";
-        value: Face.male ? "Male" : "Female";
-        clicked => {
-            Face.setting-toggled(Codes.setting-male);
+        LabeledSwitch {
+            text: "Sex";
+            value: Face.male ? "Male" : "Female";
+            clicked => {
+                Face.setting-toggled(Codes.setting-male);
+            }
         }
     }
 }
