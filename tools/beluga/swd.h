@@ -39,6 +39,7 @@ int swd_write_block(const struct swd_link *l, uint32_t addr, const uint32_t *buf
 
 int swd_halt(const struct swd_link *l);
 int swd_run(const struct swd_link *l);
+int swd_unmask(const struct swd_link *l);
 bool swd_halted(const struct swd_link *l);
 int swd_reg_read(const struct swd_link *l, unsigned reg, uint32_t *val);
 int swd_reg_write(const struct swd_link *l, unsigned reg, uint32_t val);

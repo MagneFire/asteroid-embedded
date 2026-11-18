@@ -124,6 +124,21 @@ static int release(const struct swd_link *l, bool mask)
 
 int swd_run(const struct swd_link *l) { return release(l, false); }
 
+/* The driver's own recovery after a reset can leave the mask on; the
+ * core then sleeps through every interrupt until the watchdog, and the
+ * mask outlives that reset too. */
+int swd_unmask(const struct swd_link *l)
+{
+	uint32_t v;
+	if (swd_read(l, DHCSR, &v))
+		return -1;
+	if (!(v & C_MASKINTS) || (v & S_HALT))
+		return 0;
+	if (swd_write(l, DHCSR, DBGKEY | C_DEBUGEN | C_HALT | C_MASKINTS) || wait_halt(l, 100000))
+		return -1;
+	return release(l, false);
+}
+
 static int reg_ready(const struct swd_link *l)
 {
 	for (int i = 0; i < 100; i++) {
@@ -203,7 +218,9 @@ int swd_take(const struct swd_link *l)
  * back from the boot loader. */
 int swd_reset(const struct swd_link *l)
 {
-	if (vector_catch(l, 0, VC_CORERESET | VC_FAULTS))
+	/* C_MASKINTS outlives the reset: left on from the ROM calls, the
+	 * image would sleep with every interrupt masked until the watchdog. */
+	if (swd_write(l, DHCSR, DBGKEY | C_DEBUGEN | C_HALT) || vector_catch(l, 0, VC_CORERESET | VC_FAULTS))
 		return -1;
 	return swd_write(l, AIRCR, AIRCR_RESET) ? -1 : 0;
 }

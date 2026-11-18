@@ -583,6 +583,8 @@ static int read_zone(uint32_t addr, uint32_t bytes, bool ring, FILE *out)
 static int debug_on(void)
 {
 	uint32_t v;
+	if (swd_unmask(&swd))
+		return fail("could not unmask the core's interrupts");
 	if (swd_write(&swd, 0xe000edf0u, 0xa05f0001u) || swd_read(&swd, 0xe000edf0u, &v) || !(v & 1))
 		return fail("could not turn debug on");
 	debug_set = true;

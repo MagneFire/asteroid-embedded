@@ -95,7 +95,7 @@ static int rd(void *ctx, uint32_t a, uint32_t *v)
 	if (fail_after == 0)
 		return -1;
 	if (a == DHCSR)
-		*v = (halted ? 1u << 17 : 0) | 1u << 16;
+		*v = (halted ? 1u << 17 : 0) | 1u << 16 | (maskints ? 8u : 0);
 	else if (a == 0x40024000u)
 		*v = wdt_cfg;
 	else if (a == DCRDR)
@@ -368,9 +368,16 @@ int main(void)
 	wdt_locked = false;
 
 	halted = true;
+	maskints = true;
 	demcr = TRCENA | VC_FAULTS | 1;
 	CHECK(swd_reset(&link) == 0 && aircr == 0x05fa0004u);
 	CHECK(demcr == TRCENA);
+	CHECK(!maskints);
+	halted = false;
+	maskints = true;
+	uint32_t changes = bad_mask_changes;
+	CHECK(swd_unmask(&link) == 0 && !maskints && !halted && bad_mask_changes == changes);
+	CHECK(swd_unmask(&link) == 0 && !halted);
 	fail_after = 1;
 	CHECK(swd_reset(&link) != 0);
 	fail_after = -1;
