@@ -153,7 +153,9 @@ static int xfer(unsigned n, unsigned cs, uint32_t dev, uint32_t off, unsigned of
 	}
 	writel(cmd, IOM(n, CMD));
 	while (left) {
-		uint32_t ptr = readl(IOM(n, FIFOPTR)), st = readl(IOM(n, INTSTAT));
+		/* Status first: the last word can land between the two reads,
+		 * and then the FIFO count already holds it. */
+		uint32_t st = readl(IOM(n, INTSTAT)), ptr = readl(IOM(n, FIFOPTR));
 		if (st & INT_ERRORS)
 			break;
 		if (rx && ((ptr >> 16 & 0xff) >= 4 || ((ptr >> 16 & 0xff) >= left && (st & INT_CMDCMP)))) {
