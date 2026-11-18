@@ -231,6 +231,10 @@ export global Face {
     callback agenda-deleted(int);
     // Starts a workout, or stops the running one.
     callback workout(bool);
+    // The Heart Rate app's arc where the firmware paints it (Build.mcu), in degrees clockwise
+    // from 3 o'clock: from start to e1 and, with end past g2, from g2 to end, and the arrow by the
+    // previous rate, 0 for none.
+    callback heart-arc(int, int, int, int, int);
 
     public pure function two-digits(n: int) -> string {
         return (n < 10 ? "0" : "") + n;

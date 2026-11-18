@@ -36,6 +36,9 @@ const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
 const QUICK: usize = 5;
 const APP: usize = 6;
+/// The Heart Rate app, as apps.slint numbers them.
+#[cfg(feature = "mcu")]
+const HEART_APP: i32 = 6;
 
 struct Static<T>(UnsafeCell<T>);
 unsafe impl<T> Sync for Static<T> {}
@@ -408,6 +411,16 @@ pub unsafe extern "C" fn ui_init(
         let Some(panel) = open(&screen, width, height) else {
             return false;
         };
+        #[cfg(feature = "mcu")]
+        if BUILD_HEART {
+            let window = panel.window.clone();
+            face.on_heart_arc(move |start, e1, g2, end, arrow| {
+                let size = window.size();
+                crate::arc::set(crate::arc::Arc { start, e1, g2, end, arrow }, size.width, size.height, |x, y, w, h| {
+                    mark_dirty(&window, x, y, w, h)
+                });
+            });
+        }
         screens.push(screen);
         panels.push(panel);
     }
@@ -1217,6 +1230,9 @@ impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_>
 
     fn fill_background(line: usize, start: usize, buffer: &mut [Self::TargetPixel]) -> bool {
         unsafe { ui_line_under(line as u32, start as u32, buffer.len() as u32, buffer.as_mut_ptr() as *mut u16) };
+        if BUILD_HEART {
+            crate::arc::paint(line, start, buffer);
+        }
         true
     }
 }
@@ -1268,6 +1284,12 @@ pub extern "C" fn ui_draw(panel: u32, whole: bool) -> bool {
         if whole {
             let size = window.size();
             mark_dirty(window, 0, 0, size.width, size.height);
+        }
+        if BUILD_HEART {
+            let heart = ui.shown == APP && ui.screens[0].global::<Face>().get_app() == HEART_APP;
+            if let Some((x, y, w, h)) = crate::arc::show(heart) {
+                mark_dirty(window, x, y, w, h);
+            }
         }
         window.draw_if_needed(|renderer| {
             renderer.render_by_line(&mut display);

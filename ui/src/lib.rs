@@ -7,6 +7,8 @@ extern crate alloc;
 compile_error!("the mcu build has its glyphs and icons made at build time: build it with --no-default-features");
 
 #[cfg(feature = "mcu")]
+mod arc;
+#[cfg(feature = "mcu")]
 mod fonts;
 #[cfg_attr(feature = "mcu", path = "icon_fields.rs")]
 mod icons;

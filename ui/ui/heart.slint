@@ -7,6 +7,7 @@ import { Face } from "face.slint";
 import { HeartArc } from "heart_arc.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
+import { Build } from "build.slint";
 
 export component HeartRateScreen {
     property <int> bpm: Face.heart-rate;
@@ -48,8 +49,27 @@ export component HeartRateScreen {
     width: 100%;
     height: 100%;
 
+    // The Cortex-M build has no room for a piece of the arc per degree: the firmware paints the
+    // arc and the arrow there.
+    property <{start: int, e1: int, g2: int, end: int, arrow: int}> painted: {
+        start: self.start,
+        e1: self.e1,
+        g2: self.split ? self.g2 : 0,
+        end: self.split ? self.end : 0,
+        arrow: self.last > 0 ? Math.round(self.last-deg) : 0,
+    };
+    function paint() {
+        if Build.mcu {
+            Face.heart-arc(self.painted.start, self.painted.e1, self.painted.g2, self.painted.end, self.painted.arrow);
+        }
+    }
+    changed painted => {
+        self.paint();
+    }
+
     init => {
         self.started = animation-tick();
+        self.paint();
     }
     changed bpm => {
         if self.bpm > 0 && self.shown > 0 && self.bpm != self.shown {
@@ -58,33 +78,36 @@ export component HeartRateScreen {
         self.shown = self.bpm;
     }
 
-    for seg[i] in HeartArc.segments: Image {
-        x: seg.x;
-        y: seg.y;
-        width: seg.w;
-        height: seg.h;
-        source: Icons.get(seg.img, self.width, self.height);
-        colorize: #38ff12;
-        opacity: 0.4;
-        visible: (115 + i >= root.start && 116 + i <= root.e1) || (root.split && 115 + i >= root.g2 && 116 + i <= root.end);
+    if !Build.mcu: Rectangle {
+        for seg[i] in HeartArc.segments: Image {
+            x: seg.x;
+            y: seg.y;
+            width: seg.w;
+            height: seg.h;
+            source: Icons.get(seg.img, self.width, self.height);
+            colorize: #38ff12;
+            opacity: 0.4;
+            visible: (115 + i >= root.start && 116 + i <= root.e1) || (root.split && 115 + i >= root.g2 && 116 + i <= root.end);
+        }
+
+        // Round ends: the start, the end of the first run and, with a gap, the second run's ends.
+        for cap in [
+            { on: root.e1 > root.start, img: HeartArc.starts[root.start - 115] },
+            { on: root.e1 > root.start, img: HeartArc.ends[root.e1 - 115] },
+            { on: root.split && root.end > root.g2, img: HeartArc.starts[root.g2 - 115] },
+            { on: root.split && root.end > root.g2, img: HeartArc.ends[root.end - 115] },
+        ]: Image {
+            x: cap.img.x;
+            y: cap.img.y;
+            width: cap.img.w;
+            height: cap.img.h;
+            source: Icons.get(cap.img.img, self.width, self.height);
+            colorize: #38ff12;
+            opacity: 0.4;
+            visible: cap.on;
+        }
     }
 
-    // Round ends: the start, the end of the first run and, with a gap, the second run's ends.
-    for cap in [
-        { on: root.e1 > root.start, img: HeartArc.starts[root.start - 115] },
-        { on: root.e1 > root.start, img: HeartArc.ends[root.e1 - 115] },
-        { on: root.split && root.end > root.g2, img: HeartArc.starts[root.g2 - 115] },
-        { on: root.split && root.end > root.g2, img: HeartArc.ends[root.end - 115] },
-    ]: Image {
-        x: cap.img.x;
-        y: cap.img.y;
-        width: cap.img.w;
-        height: cap.img.h;
-        source: Icons.get(cap.img.img, self.width, self.height);
-        colorize: #38ff12;
-        opacity: 0.4;
-        visible: cap.on;
-    }
     Text {
         x: 0;
         y: 0;
@@ -126,15 +149,17 @@ export component HeartRateScreen {
     }
 
     // The arrow inside it, pointing at the current rate in the middle.
-    if root.last > 0: Image {
-        property <{img: string, x: length, y: length, w: length, h: length}> arrow: HeartArc.arrows[Math.round(root.last-deg) - 140];
-        x: self.arrow.x;
-        y: self.arrow.y;
-        width: self.arrow.w;
-        height: self.arrow.h;
-        source: Icons.get(self.arrow.img, self.width, self.height);
-        colorize: #38ff12;
-        opacity: 0.4;
+    if !Build.mcu: Rectangle {
+        if root.last > 0: Image {
+            property <{img: string, x: length, y: length, w: length, h: length}> arrow: HeartArc.arrows[Math.round(root.last-deg) - 140];
+            x: self.arrow.x;
+            y: self.arrow.y;
+            width: self.arrow.w;
+            height: self.arrow.h;
+            source: Icons.get(self.arrow.img, self.width, self.height);
+            colorize: #38ff12;
+            opacity: 0.4;
+        }
     }
 
     Timer {
