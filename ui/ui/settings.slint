@@ -602,17 +602,24 @@ export component SettingsApp {
             y: 20 * Theme.unit;
             height: self.preferred-height;
 
-            for item[i] in [
-                { icon: "ios-power-outline", title: "Power Off", action: Codes.ui-power-off },
-                { icon: "ios-sync", title: "Reboot", action: Codes.ui-reboot },
-            ]: ListItem {
-                icon: item.icon;
-                title: item.title;
+            ListItem {
+                icon: "ios-power-outline";
+                title: "Power Off";
                 clicked => {
-                    remorse.action = item.title;
-                    remorse.code = item.action;
+                    remorse.action = self.title;
+                    remorse.code = Codes.ui-power-off;
                 }
             }
+
+            ListItem {
+                icon: "ios-sync";
+                title: "Reboot";
+                clicked => {
+                    remorse.action = self.title;
+                    remorse.code = Codes.ui-reboot;
+                }
+            }
+
             // The watch off, with the time on the hub's own display.
             if Face.has-timepiece: ListItem {
                 icon: "ios-clock-outline";
