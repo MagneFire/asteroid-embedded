@@ -4,7 +4,8 @@
  * an abort on the host. Then it walks the screens with the firmware's
  * screen stack, swiping each way from the watchface and tapping across
  * each screen it reaches; a blank screen, a screen or an app the build
- * left out, or a panic fails it.
+ * left out, or a panic fails it. Last it goes through the pages of
+ * Settings and the Heart Rate app step by step, where the build has them.
  *
  * On the host, with a host build of the library (run-host.sh), the frames
  * are written out as PNG files.
@@ -363,6 +364,129 @@ static void walk(void)
 	check("walk-end");
 }
 
+/* The frame as it was drawn piece by piece, which must be what drawing it
+ * whole gives: saved as tour-PART-N. */
+static void step(const char *part, unsigned n)
+{
+	static uint16_t pieces[H][W];
+	char name[32] = "tour-";
+	size_t len = 5;
+	while (*part && len < sizeof(name) - 5)
+		name[len++] = *part++;
+	name[len++] = '-';
+	name[len++] = '0' + n / 100 % 10;
+	name[len++] = '0' + n / 10 % 10;
+	name[len++] = '0' + n % 10;
+	name[len] = 0;
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			pieces[y][x] = frame[y][x];
+	if (!drawn(UI_PANEL_APP))
+		fail_on("blank", name);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			if (pieces[y][x] != frame[y][x])
+				fail_on("stale pixels", name);
+	save(name);
+}
+
+/* A drag held at its end, so that nothing coasts after it. */
+static void drag(int x0, int y0, int x1, int y1)
+{
+	touch(UI_PANEL_APP, UI_TOUCH_DOWN, x0, y0);
+	run(UI_PANEL_APP, 16);
+	for (int i = 1; i <= 8; i++) {
+		touch(UI_PANEL_APP, UI_TOUCH_MOVE, x0 + (x1 - x0) * i / 8, y0 + (y1 - y0) * i / 8);
+		run(UI_PANEL_APP, 16);
+	}
+	run(UI_PANEL_APP, 200);
+	touch(UI_PANEL_APP, UI_TOUCH_UP, x1, y1);
+	run(UI_PANEL_APP, 600);
+}
+
+/* Every page of Settings, tapped and dragged across, with the settings
+ * one way and the other, and the Heart Rate app measuring, with a rate
+ * and with rates above and below the one before. */
+static void tour(void)
+{
+	static const char *const pages[] = { "display", "nightstand", "watchface", "launcher", "time", "date",
+					     "units",	"profile",    "bluetooth", "power",    "about" };
+	static const struct ui_settings other = { .brightness = 10, .nightstand_brightness = 100, .nightstand_delay = 30, .burn_in = 2,
+						  .clock12 = true, .tilt = 2, .fahrenheit = true, .nightstand_aod = true,
+						  .nightstand_rotate = true, .auto_brightness = true, .height_cm = 180, .weight_kg = 75,
+						  .age = 40, .male = true };
+	int unit = (W < H ? W : H);
+	for (int pass = 0; ui_has_app(UI_APP_SETTINGS) && pass < 2; pass++) {
+		if (pass) {
+			ui_set_settings(&other);
+			ui_set_board("beluga", 6, true, false, true, true, true, false);
+			ui_set_timepiece(true);
+			ui_set_tilt_light(true);
+			ui_set_connected(false, false);
+		}
+		for (int row = 0; row < 11; row++) {
+			unsigned n = pass * 50;
+			int scroll = row > 2 ? 21 * (row - 2) : 0;
+			if (scroll > 143)
+				scroll = 143;
+			ui_set_app(-1);
+			run(UI_PANEL_APP, 100);
+			ui_set_app(UI_APP_SETTINGS);
+			run(UI_PANEL_APP, 300);
+			if (scroll)
+				drag(W / 2, H * 3 / 4, W / 2, H * 3 / 4 - scroll * unit / 100);
+			if (row == 0 || scroll)
+				step(pass ? "list-b" : "list", row);
+			touch(UI_PANEL_APP, UI_TOUCH_DOWN, W / 2, (33 + 42 * row - 2 * scroll) * unit / 200);
+			run(UI_PANEL_APP, 50);
+			touch(UI_PANEL_APP, UI_TOUCH_UP, W / 2, (33 + 42 * row - 2 * scroll) * unit / 200);
+			run(UI_PANEL_APP, 96);
+			step(pages[row], n++);
+			run(UI_PANEL_APP, 500);
+			step(pages[row], n++);
+			for (int y = 1; y < 6; y++)
+				for (int x = 1; x < 4; x++) {
+					touch(UI_PANEL_APP, UI_TOUCH_DOWN, W * x / 4, unit * y / 6);
+					run(UI_PANEL_APP, 50);
+					step(pages[row], n++);
+					touch(UI_PANEL_APP, UI_TOUCH_UP, W * x / 4, unit * y / 6);
+					run(UI_PANEL_APP, 250);
+				}
+			step(pages[row], n++);
+			drag(W / 2, unit * 3 / 4, W / 2, unit / 4);
+			step(pages[row], n++);
+			drag(W / 4, unit * 3 / 8, W * 3 / 4, unit * 3 / 8);
+			step(pages[row], n++);
+			drag(W / 2, unit * 3 / 4, W / 2, unit / 8);
+			step(pages[row], n++);
+			drag(W / 2, unit / 4, W / 2, unit * 3 / 4);
+			step(pages[row], n++);
+			/* A remorse timer runs out. */
+			run(UI_PANEL_APP, 3500);
+			step(pages[row], n++);
+			for (struct ui_event e; ui_next_event(&e);)
+				;
+		}
+	}
+	if (ui_has_app(UI_APP_HEART_RATE)) {
+		static const struct {
+			uint32_t bpm, ms, steps;
+		} rates[] = { { 0, 240, 12 }, { 0, 30000, 1 }, { 72, 64, 16 }, { 95, 96, 16 }, { 64, 96, 16 }, { 120, 48, 12 }, { 0, 240, 6 } };
+		unsigned n = 0;
+		ui_set_app(-1);
+		run(UI_PANEL_APP, 100);
+		ui_set_app(UI_APP_HEART_RATE);
+		for (unsigned i = 0; i < sizeof(rates) / sizeof(rates[0]); i++) {
+			ui_set_heart_rate(rates[i].bpm);
+			for (unsigned k = 0; k < rates[i].steps; k++) {
+				run(UI_PANEL_APP, rates[i].ms);
+				step("heart", n++);
+			}
+		}
+	}
+	ui_set_app(-1);
+}
+
 int main(int argc, char **argv)
 {
 #ifdef EMU
@@ -478,6 +602,7 @@ int main(int argc, char **argv)
 	shot(UI_PANEL_FACE, "ringing");
 	ui_set_ringing(false, false);
 	shot(UI_PANEL_FACE, "face-again");
+	tour();
 	walk();
 	return 0;
 }
