@@ -1516,6 +1516,18 @@ fn render_window_frame_by_line<L: LineBufferProvider>(
     scene.dirty_region
 }
 
+/// A box rounded out to even physical edges, for the line renderer's
+/// panels (see prepare_scene).
+fn even_box(b: euclid::Box2D<f32, PhysicalPx>) -> euclid::Box2D<f32, PhysicalPx> {
+    // Slightly inside first: a logical edge times the scale factor can land
+    // a hair past the even pixel it came from.
+    let e = 1. / 64.;
+    euclid::Box2D::new(
+        euclid::point2(((b.min.x + e) / 2.).floor() * 2., ((b.min.y + e) / 2.).floor() * 2.),
+        euclid::point2(((b.max.x - e) / 2.).ceil() * 2., ((b.max.y - e) / 2.).ceil() * 2.),
+    )
+}
+
 fn prepare_scene(
     window: &WindowInner,
     size: PhysicalSize,
@@ -1566,13 +1578,41 @@ fn prepare_scene(
             }
         }
 
+        // Panels written a window at a time (the RM69090) take one only at
+        // even columns and rows with an even count: the region grows to even
+        // edges here, before items are culled against it, so that what is
+        // drawn in the extra column or row is real.
+        // Boxes side by side would also make the lines take turns between
+        // them, each line a window of its own starting at any row: those
+        // are drawn as one box.
+        let mut boxes: Vec<euclid::Box2D<f32, PhysicalPx>> =
+            renderer.dirty_region.iter().map(|r| even_box(r.cast() * factor)).collect();
+        let mut i = 0;
+        while i < boxes.len() {
+            let shares_rows = (0..boxes.len()).find(|&j| {
+                j != i && boxes[i].min.y < boxes[j].max.y && boxes[j].min.y < boxes[i].max.y
+            });
+            match shares_rows {
+                Some(j) => {
+                    boxes[i] = boxes[i].union(&boxes[j]);
+                    boxes.swap_remove(j);
+                    i = 0;
+                }
+                None => i += 1,
+            }
+        }
+        let mut even = DirtyRegion::default();
+        for b in boxes {
+            even.add_box(b.cast() / factor);
+        }
+        renderer.dirty_region = even;
+
         let rotation =
             RotationInfo { orientation: software_renderer.rotation.get(), screen_size: size };
         let screen_rect = PhysicalRect::from_size(size);
         let mut i = renderer.dirty_region.iter().filter_map(|r| {
-            (r.cast() * factor)
+            even_box(r.cast() * factor)
                 .to_rect()
-                .round_out()
                 .cast()
                 .intersection(&screen_rect)?
                 .transformed(rotation)
