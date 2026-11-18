@@ -150,6 +150,7 @@ bool haptics_init(void);
 void haptics_play(const uint16_t *on_off_ms, unsigned n);
 void haptics_poll(void);
 bool haptics_busy(void);
+uint32_t haptics_next_ms(void);
 /* Silent while on, as while another processor has the motor's bus. */
 void haptics_hold(bool on);
 void i2c_poll(unsigned bus);

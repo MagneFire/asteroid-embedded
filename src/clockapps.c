@@ -271,6 +271,21 @@ void clockapps_sleep(void)
 	ringing = false;
 }
 
+/* The timer and the stopwatch show tenths of a second. */
+uint32_t clockapps_awake_next_ms(uint32_t now)
+{
+	uint32_t next = clockapps_next_ms(now);
+	if (!have_ui)
+		return next;
+	if (timer_end && (int32_t)(timer_end - now) > 0 && (timer_end - now) % 100 + 1 < next)
+		next = (timer_end - now) % 100 + 1;
+	if (sw_running && 100 - (sw_acc + now - sw_start) % 100 < next)
+		next = 100 - (sw_acc + now - sw_start) % 100;
+	if (ringing && ms_left(ring_t, RING_MS, now) < next)
+		next = ms_left(ring_t, RING_MS, now);
+	return next;
+}
+
 bool clockapps_ringing(void)
 {
 	return ringing;

@@ -100,6 +100,11 @@ void stats_poll(uint32_t now, bool awake)
 	}
 }
 
+uint32_t stats_awake_next_ms(uint32_t now)
+{
+	return ms_left(last, 1000, now);
+}
+
 /* The time to the next line asleep. */
 uint32_t stats_next_ms(void)
 {

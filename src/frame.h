@@ -18,6 +18,9 @@ void frame_draw(uint32_t now);
 /* Without layers: draws the always-on face, the waiting-notification
  * indicator moved by (dx, dy). */
 void frame_ambient(int dx, int dy);
+/* Awake, after frame_draw: how long the core may wait before the next
+ * one, 0 when frame_draw did its own waiting or has more to draw. */
+uint32_t frame_rest_ms(void);
 /* How long the last frame_draw slept with nothing to draw. */
 uint32_t frame_waited_us(void);
 void frame_log(void);

@@ -33,6 +33,8 @@
 #include "config.h"
 
 #define BT_START_MS 2000
+/* Turning with the watch reads the accelerometer from the main loop. */
+#define ACCEL_POLL_MS 100
 
 static const char wake_by_touch[] = "touch";
 
@@ -44,7 +46,7 @@ static struct app_caps caps;
 #define have_hub caps.hub
 #define have_heart_rate caps.heart_rate
 
-static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen;
+static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen, turning;
 static uint32_t shown_bpm, key_down_t, down_t;
 static unsigned seen_readings;
 static int down_x, down_y, last_x, last_y;
@@ -340,7 +342,7 @@ void app_sensors(uint32_t now)
 		 * the launcher's OrientationSensor turns it, the sensor on
 		 * while the screen is; the always-on face keeps the turn. */
 		bool turn = have_ui && setting_get(SETTING_NIGHTSTAND_ROTATE) && power_nightstand();
-		bool turning = turn && power_awake();
+		turning = turn && power_awake();
 		hub_accel_on(turning);
 		int16_t g[3];
 		if (turning && hub_accel(g))
@@ -679,5 +681,26 @@ uint32_t app_next_ms(const char **why)
 			min = next[i];
 			*why = names[i] ? names[i] : sched_next_name();
 		}
+	return min;
+}
+
+/* Awake, the time until something here has work to do that no
+ * interrupt brings. */
+uint32_t app_awake_next_ms(void)
+{
+	uint32_t now = time_ms();
+	const char *why;
+	uint32_t next[] = {
+		app_next_ms(&why),
+		stats_awake_next_ms(now),
+		present_clock_next_ms(now),
+		clockapps_awake_next_ms(now),
+		have_haptics ? haptics_next_ms() : UINT32_MAX,
+		game_next_ms(now),
+		turning ? ACCEL_POLL_MS : UINT32_MAX,
+	}, min = UINT32_MAX;
+	for (unsigned i = 0; i < ARRAY_SIZE(next); i++)
+		if (next[i] < min)
+			min = next[i];
 	return min;
 }

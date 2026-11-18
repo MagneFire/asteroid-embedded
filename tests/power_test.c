@@ -58,11 +58,17 @@ static void backlight(void)
 static void timeout(void)
 {
 	struct power_policy p = { .awake = true };
+	/* Waiting awake ends in time for the timeout. */
+	CHECK(power_policy_awake_next_ms(&p, true, 0) == SLEEP_AFTER_MS);
+	CHECK(power_policy_awake_next_ms(&p, true, SLEEP_AFTER_MS - 1) == 1);
+	CHECK(power_policy_awake_next_ms(&p, true, SLEEP_AFTER_MS + 5) == 1);
+	CHECK(power_policy_awake_next_ms(&p, false, 0) == UINT32_MAX);
 	CHECK(power_policy_step(&p, true, SLEEP_AFTER_MS - 1) == POWER_STEP_NONE);
 	CHECK(power_policy_step(&p, true, SLEEP_AFTER_MS) == POWER_STEP_SLEEP);
 	CHECK(power_policy_step(&p, false, SLEEP_AFTER_MS) == POWER_STEP_NONE);
 	/* Held awake it never times out, a request still works. */
 	p.keep_awake = true;
+	CHECK(power_policy_awake_next_ms(&p, true, 5 * SLEEP_AFTER_MS) == UINT32_MAX);
 	CHECK(power_policy_step(&p, true, 5 * SLEEP_AFTER_MS) == POWER_STEP_NONE);
 	CHECK(power_policy_step(&p, true, 7 * SLEEP_AFTER_MS) == POWER_STEP_NONE);
 	p.sleep_request = true;

@@ -234,7 +234,13 @@ void main(uint32_t machtype, const void *fdt)
 #endif
 		if (!awake)
 			emmc_idle();
-		const char *why = "awake";
-		power_idle(awake ? 1000 : app_next_ms(&why), why);
+		uint32_t rest = awake && have_display ? frame_rest_ms() : 0;
+		if (rest) {
+			uint32_t next = app_awake_next_ms();
+			power_rest(rest < next ? rest : next);
+		} else {
+			const char *why = "awake";
+			power_idle(awake ? 1000 : app_next_ms(&why), why);
+		}
 	}
 }

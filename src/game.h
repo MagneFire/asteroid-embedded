@@ -15,6 +15,7 @@ struct ui_tile;
 void game_init(void);
 void game_move(int dir, uint32_t now);
 bool game_tick(uint32_t now);
+uint32_t game_next_ms(uint32_t now);
 void game_save(void);
 const struct ui_tile *game_tiles(void);
 uint32_t game_score(void);

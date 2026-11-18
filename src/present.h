@@ -16,4 +16,5 @@ void present_events(uint32_t now);
 void present_weather(void);
 void present_clock(uint32_t now);
 void present_clock_soon(void);
+uint32_t present_clock_next_ms(uint32_t now);
 #endif

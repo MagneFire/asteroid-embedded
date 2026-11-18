@@ -9,10 +9,12 @@
 #include "screenshot/screenshot.h"
 #include "gpu/a3xx.h"
 #include "companion/companion.h"
+#include "power.h"
 
 void usb_init(const char *serialno) { companion_init(); }
 void usb_cable(bool present, bool edge) {}
-uint32_t usb_next_ms(void) { return companion_next_ms(); }
+/* Keys typed into the console over SWD wait for the next pass. */
+uint32_t usb_next_ms(void) { return swd_wanted() && power_awake() ? 1 : companion_next_ms(); }
 bool dcd_stuck(void) { return false; }
 void usb_pass(void) { companion_pass(); }
 

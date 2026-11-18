@@ -1058,6 +1058,20 @@ pub extern "C" fn ui_tick() {
     slint::platform::update_timers_and_animations();
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_next_ms() -> u32 {
+    let Some(animating) = with_ui(|ui| ui.panels.iter().any(|p| p.window.window().has_active_animations())) else {
+        return u32::MAX;
+    };
+    if animating {
+        return 0;
+    }
+    match slint::platform::duration_until_next_timer_update() {
+        Some(d) => d.as_millis().min(u32::MAX as u128) as u32,
+        None => u32::MAX,
+    }
+}
+
 #[cfg(not(feature = "mcu"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_update(panel: u32, x: *mut u32, y: *mut u32, w: *mut u32, h: *mut u32) -> bool {

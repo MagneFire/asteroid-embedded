@@ -120,8 +120,10 @@ int main(void)
 	CHECK(game_tick(1000));
 	game_move(UI_GAME_RIGHT, 1100);	/* ignored while settling */
 	CHECK(board_is("4,4,0,0/0,0,0,0/0,0,0,0/0,0,0,0"));
+	CHECK(game_next_ms(1100) == 100);
 	CHECK(!game_tick(1199));
 	CHECK(game_tick(1200));
+	CHECK(game_next_ms(1200) == UINT32_MAX);
 	CHECK(count() == 3);	/* the duplicate dropped, a new tile placed */
 	load_board(b);
 	CHECK(b[0] == '4' && b[2] == '4');

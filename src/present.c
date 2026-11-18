@@ -263,3 +263,10 @@ void present_clock(uint32_t now)
 }
 
 void present_clock_soon(void) { last_clock = 0; }
+
+uint32_t present_clock_next_ms(uint32_t now)
+{
+	if (!have_ui)
+		return UINT32_MAX;
+	return last_clock ? ms_left(last_clock, 1000, now) : 1;
+}

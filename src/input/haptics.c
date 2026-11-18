@@ -66,3 +66,8 @@ bool haptics_busy(void)
 {
 	return pattern != NULL;
 }
+
+uint32_t haptics_next_ms(void)
+{
+	return pattern ? ms_left(step_t, pattern[step], time_ms()) : UINT32_MAX;
+}

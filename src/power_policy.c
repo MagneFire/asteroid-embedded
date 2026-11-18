@@ -135,6 +135,13 @@ enum touch_use power_policy_touch(bool *wake_touch, bool awake, bool tap_wakes, 
 	return TOUCH_USE;
 }
 
+uint32_t power_policy_awake_next_ms(const struct power_policy *p, bool have_display, uint32_t now)
+{
+	if (!have_display || !p->awake || p->keep_awake)
+		return UINT32_MAX;
+	return ms_left(p->last_activity, SLEEP_AFTER_MS, now);
+}
+
 void power_policy_woke(struct power_policy *p, uint32_t now)
 {
 	p->last_activity = now;

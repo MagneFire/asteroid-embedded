@@ -8,9 +8,8 @@
 #include "ui/stack.h"
 #include "power.h"
 #include "frame.h"
-#include "sched.h"
 
-static bool have_ui, woke;
+static bool have_ui, woke, drawn;
 static uint32_t hold_t, frames, draws, draw_us;
 
 void frame_init(bool ui, bool gpu, uint32_t start)
@@ -31,12 +30,12 @@ void frame_hold(uint32_t ms)
 
 void frame_draw(uint32_t now)
 {
+	drawn = false;
 	if (hold_t) {
 		if ((int32_t)(hold_t - now) > 0)
 			return;
 		hold_t = 0;
 	}
-	bool drawn = false;
 	if (have_ui) {
 		stack_update(now);
 		if (stack_moving())
@@ -53,13 +52,22 @@ void frame_draw(uint32_t now)
 		frames++;
 		woke = woke && !drawn;
 	}
-	if (!drawn) {
-		uint32_t w0 = time_us(), flags = irq_save();
-		if (!sched_pending())
-			wfi();
-		irq_restore(flags);
-		power_count_idle(time_us() - w0);
-	}
+}
+
+/* A moving screen or a running animation goes on at the 1 ms tick. */
+uint32_t frame_rest_ms(void)
+{
+	if (drawn)
+		return 0;
+	uint32_t now = time_ms();
+	if (hold_t)
+		return (int32_t)(hold_t - now) > 0 ? hold_t - now : 1;
+	if (!have_ui)
+		return UINT32_MAX;
+	if (stack_animating(now))
+		return 1;
+	uint32_t next = ui_next_ms();
+	return next ? next : 1;
 }
 
 void frame_ambient(int dx, int dy)

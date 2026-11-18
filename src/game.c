@@ -210,6 +210,13 @@ bool game_tick(uint32_t now)
 	return r;
 }
 
+uint32_t game_next_ms(uint32_t now)
+{
+	if (!settling)
+		return UINT32_MAX;
+	return (int32_t)(settle_t - now) > 0 ? settle_t - now : 1;
+}
+
 void game_save(void)
 {
 	if (!dirty)

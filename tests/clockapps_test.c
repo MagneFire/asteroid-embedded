@@ -86,6 +86,9 @@ static void test_timer(void)
 	clockapps_refresh(stub_ms);
 	CHECK(t_ms == 6000 && t_running);
 	CHECK(clockapps_next_ms(stub_ms) == 6000);
+	/* Awake, the next tenth of a second shown. */
+	CHECK(clockapps_awake_next_ms(stub_ms) == 1);
+	CHECK(clockapps_awake_next_ms(6050) == 51);
 	/* A second set while running is ignored. */
 	event(UI_EVENT_TIMER_SET, 20);
 	clockapps_refresh(stub_ms);
@@ -109,6 +112,7 @@ static void test_timer(void)
 	event(UI_EVENT_CLOCK, UI_TIMER_START);
 	stub_ms = 23000;
 	CHECK(clockapps_tick(stub_ms) && clockapps_ringing());
+	CHECK(clockapps_awake_next_ms(stub_ms) == 30000);
 	stub_ms = 23000 + 29999;
 	CHECK(!clockapps_tick(stub_ms) && clockapps_ringing());
 	stub_ms = 23000 + 30000;
@@ -149,6 +153,8 @@ static void test_stopwatch(void)
 	stub_ms = 53000;
 	clockapps_refresh(stub_ms);
 	CHECK(sw_ms == 3000 && sw_running);
+	CHECK(clockapps_awake_next_ms(stub_ms) == 100);
+	CHECK(clockapps_awake_next_ms(53030) == 70);
 	stub_ms = 55000;
 	event(UI_EVENT_CLOCK, UI_STOPWATCH_START);
 	stub_ms = 56000;

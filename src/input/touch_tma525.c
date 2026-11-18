@@ -140,6 +140,13 @@ static bool tma_poll(struct touch *t)
 	return decode(r, n, t);
 }
 
+/* The line stays low while reports are left, with no edge to wake for
+ * them. */
+static uint32_t tma_next_ms(void)
+{
+	return !asleep && (attention || have_pending) ? 1 : UINT32_MAX;
+}
+
 static void tma_sleep(bool on, bool wakes)
 {
 	asleep = on;
@@ -171,5 +178,5 @@ static void tma_stats(uint32_t *att, uint32_t *err)
 }
 
 const struct touch_driver touch_tma525 = {
-	.init = tma_init, .poll = tma_poll, .sleep = tma_sleep, .stats = tma_stats, .lend = tma_lend,
+	.init = tma_init, .poll = tma_poll, .sleep = tma_sleep, .stats = tma_stats, .lend = tma_lend, .next_ms = tma_next_ms,
 };

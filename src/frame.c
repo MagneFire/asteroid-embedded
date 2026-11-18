@@ -460,6 +460,7 @@ void frame_draw(uint32_t now)
 }
 
 uint32_t frame_waited_us(void) { return waited_us; }
+uint32_t frame_rest_ms(void) { return 0; }
 
 /* The last second's numbers, for the log. */
 void frame_log(void)

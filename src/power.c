@@ -157,7 +157,7 @@ static enum screen_state screen_wanted(uint32_t now)
 
 static struct auto_brightness autob;
 static bool light_on, light_reading;
-static uint32_t light_t, fade_t;
+static uint32_t light_t, fade_t, step_t;
 static int fade_from, fade_to, fade_now;
 
 static bool auto_brightness(void)
@@ -217,7 +217,6 @@ void power_light(uint32_t now, bool hold)
 	}
 	/* Without a backlight chip each step is a panel command that waits
 	 * for the frame being sent, so those panels take fewer steps. */
-	static uint32_t step_t;
 	if (fade_now != fade_to && (board->backlight || now - step_t >= DCS_FADE_STEP_MS)) {
 		uint32_t gone = now - fade_t;
 		int b = gone >= LIGHT_FADE_MS ? fade_to : fade_from + (fade_to - fade_from) * (int)gone / LIGHT_FADE_MS;
@@ -227,6 +226,24 @@ void power_light(uint32_t now, bool hold)
 			display_set_brightness((uint8_t)(b * 255 / 100));
 		}
 	}
+}
+
+/* Awake, the time until the screen goes off, the light sensor's next
+ * read or the fade's next step. */
+static uint32_t awake_next_ms(uint32_t now)
+{
+	uint32_t next = power_policy_awake_next_ms(&policy, have_display, now);
+	if (light_on) {
+		uint32_t light = ms_left(light_t, light_reading ? LIGHT_INTEGRATE_MS : LIGHT_READ_MS, now);
+		if (light < next)
+			next = light;
+	}
+	if (fade_now != fade_to) {
+		uint32_t step = board->backlight ? 1 : ms_left(step_t, DCS_FADE_STEP_MS, now);
+		if (step < next)
+			next = step;
+	}
+	return next;
 }
 
 /* Once a second while awake: the brightness follows nightstand mode. */
@@ -780,6 +797,37 @@ void power_backlight_fix(const struct backlight *b)
 	lit_is_fixed = b;
 	if (b)
 		lit_fixed = *b;
+}
+
+/* Awake with nothing to draw on a panel that keeps its own picture:
+ * the core waits for the next thing to do, not for each 1 ms tick,
+ * which kept it from deep sleep. Within a second, for the watchdog. */
+void power_rest(uint32_t next)
+{
+	if (!policy.awake || usb_busy() || sched_pending())
+		return;
+	uint32_t now = time_ms(), mine = awake_next_ms(now), bt = bt_idle_ms(), lpm = bt_lpm_next_ms();
+	if (mine < next)
+		next = mine;
+	if (bt < next)
+		next = bt;
+	if (lpm < next)
+		next = lpm;
+	bool hub_quiet = !have_hub || hub_can_sleep();
+	if (!hub_quiet && next > 50)
+		next = 50;
+	if (next > 1000)
+		next = 1000;
+	if (!next)
+		return;
+	bool deep = hub_quiet && usb_resting() && bt_can_sleep() && display_rest();
+	timer_set_period(next);
+	timer_next(next);
+	uint32_t i0 = time_us();
+	cpu_idle(deep);
+	idle_us += time_us() - i0;
+	timer_set_period(1);
+	timer_next(1);
 }
 
 uint32_t power_wakeups(void)

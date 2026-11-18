@@ -65,6 +65,8 @@ enum touch_use { TOUCH_USE, TOUCH_DROP, TOUCH_WAKE };
 /* What a touch does: asleep it may wake the watch, and that finger is
  * then kept from the UI until it lifts. */
 enum touch_use power_policy_touch(bool *wake_touch, bool awake, bool tap_wakes, bool down, bool up);
+/* Awake, the time until the screen goes off with no more activity. */
+uint32_t power_policy_awake_next_ms(const struct power_policy *p, bool have_display, uint32_t now);
 /* After waking: when the screen goes off again counts from `now`. */
 void power_policy_woke(struct power_policy *p, uint32_t now);
 #endif
