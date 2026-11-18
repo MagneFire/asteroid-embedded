@@ -136,6 +136,23 @@ static int link_write_block(void *ctx, uint32_t addr, const void *buf, uint32_t 
 	return 0;
 }
 
+/* For a running core. A block read stalled by a sleeping core keeps
+ * the driver busy for minutes in the kernel, where no signal ends it, so
+ * each short block follows a word read, which waits for the core to
+ * wake and gives up after a bounded time. */
+#define LIVE_CHUNK	512u
+
+static int link_read_live(void *ctx, uint32_t addr, void *buf, uint32_t n)
+{
+	for (uint32_t done = 0; done < n;) {
+		uint32_t w, step = n - done < LIVE_CHUNK ? n - done : LIVE_CHUNK;
+		if (link_read(ctx, addr + done, &w) || link_read_block(ctx, addr + done, (uint8_t *)buf + done, step))
+			return -1;
+		done += step;
+	}
+	return 0;
+}
+
 static struct swd_link swd = { .read = link_read, .write = link_write, .sleep_us = link_sleep };
 
 /* Blocks only from a driver whose read gives what a word read does. */
@@ -711,6 +728,8 @@ int main(int argc, char **argv)
 		return cmd_restore(argv[2]);
 	if (!strcmp(c, "ramrun") && argc == 4)
 		return cmd_ramrun(argv[2], argv[3]);
+	if (swd.read_block && (!strcmp(c, "log") || !strcmp(c, "shell")))
+		swd.read_block = link_read_live;
 	if (!strcmp(c, "log"))
 		return cmd_log();
 	if (!strcmp(c, "shell"))
