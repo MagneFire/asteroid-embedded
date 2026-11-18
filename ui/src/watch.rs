@@ -1359,6 +1359,8 @@ pub extern "C" fn ui_draw(panel: u32, whole: bool) -> bool {
             }
         }
         window.draw_if_needed(|renderer| {
+            // The RM69090 takes windows only at even columns and rows.
+            renderer.set_dirty_region_alignment(2, 2);
             renderer.render_by_line(&mut display);
         });
         if display.started {

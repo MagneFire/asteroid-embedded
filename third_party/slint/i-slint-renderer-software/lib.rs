@@ -205,6 +205,47 @@ fn expand_dirty_region_for_alignment(
     expanded
 }
 
+/// Merges the boxes of `dirty_region` that share a row of the panel once aligned, so that each
+/// line has one range. A line renderer that sends each range to the panel as a window of its own
+/// would otherwise start windows on every row, where the alignment allows only some.
+fn merge_boxes_sharing_rows(
+    dirty_region: &DirtyRegion,
+    factor: ScaleFactor,
+    rotation: RenderingRotation,
+    alignment: DirtyRegionAlignment,
+) -> DirtyRegion {
+    let granularity = if rotation.is_transpose() { alignment.horizontal } else { alignment.vertical };
+    let granularity = granularity as i32;
+    let rows = |b: &euclid::Box2D<Coord, i_slint_core::lengths::LogicalPx>| {
+        let (min, max) = if rotation.is_transpose() { (b.min.x, b.max.x) } else { (b.min.y, b.max.y) };
+        let min = (min as f32 * factor.get()).floor() as i32;
+        let max = (max as f32 * factor.get()).ceil() as i32;
+        (min.div_euclid(granularity), (max + granularity - 1).div_euclid(granularity))
+    };
+    let mut boxes: Vec<_> = dirty_region.iter().filter(|b| !b.is_empty()).collect();
+    let mut i = 0;
+    while i < boxes.len() {
+        let (min, max) = rows(&boxes[i]);
+        let shares_rows = (0..boxes.len()).find(|&j| {
+            let (other_min, other_max) = rows(&boxes[j]);
+            j != i && min < other_max && other_min < max
+        });
+        match shares_rows {
+            Some(j) => {
+                boxes[i] = boxes[i].union(&boxes[j]);
+                boxes.swap_remove(j);
+                i = 0;
+            }
+            None => i += 1,
+        }
+    }
+    let mut merged = DirtyRegion::default();
+    for b in boxes {
+        merged.add_box(b);
+    }
+    merged
+}
+
 fn snap_interval_to_grid(min: i16, max: i16, granularity: u16, limit: i16) -> (i16, i16) {
     let granularity = granularity as i32;
     let min = min as i32;
@@ -709,6 +750,10 @@ impl SoftwareRenderer {
 
         let alignment = self.dirty_region_alignment.get();
         let rotation = self.rotation.get();
+        if alignment != DirtyRegionAlignment::default() {
+            renderer.dirty_region =
+                merge_boxes_sharing_rows(&renderer.dirty_region, factor, rotation, alignment);
+        }
         let physical_region = to_physical_region(
             &renderer.dirty_region,
             factor,
