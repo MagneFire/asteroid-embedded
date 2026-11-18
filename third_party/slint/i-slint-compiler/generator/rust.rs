@@ -2212,6 +2212,13 @@ fn generate_sub_component_body(
         #[repr(C)]
         #pin_macro
         pub struct #inner_component_id {
+            // First: the generated code uses these most, and on Cortex-M a load from a small
+            // offset takes 2 bytes instead of 4.
+            pub(super) self_weak : sp::OnceCell<sp::VWeakMapped<sp::ItemTreeVTable, #inner_component_id>>,
+            pub(super) globals: sp::OnceCell<sp::Rc<SharedGlobals>>,
+            pub(super) tree_index: ::core::cell::Cell<u32>,
+            pub(super) tree_index_of_first_child: ::core::cell::Cell<u32>,
+            #(pub(super) parent : #parent_component_type,)*
             #(pub(super) #item_names : sp::#item_types,)*
             #(pub(super) #sub_component_names : #sub_component_types,)*
             #(pub(super) #popup_id_names : ::core::cell::Cell<sp::Option<::core::num::NonZeroU32>>,)*
@@ -2221,11 +2228,6 @@ fn generate_sub_component_body(
             #(pub(super) #repeated_element_components,)*
             #(pub(super) #change_tracker_names : sp::ChangeTracker,)*
             #(pub(super) #timer_names : sp::Timer,)*
-            pub(super) self_weak : sp::OnceCell<sp::VWeakMapped<sp::ItemTreeVTable, #inner_component_id>>,
-            #(pub(super) parent : #parent_component_type,)*
-            pub(super) globals: sp::OnceCell<sp::Rc<SharedGlobals>>,
-            pub(super) tree_index: ::core::cell::Cell<u32>,
-            pub(super) tree_index_of_first_child: ::core::cell::Cell<u32>,
         }
 
         impl #inner_component_id {
