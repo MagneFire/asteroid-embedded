@@ -161,6 +161,7 @@ fn main() {
 
     let mcu = std::env::var_os("CARGO_FEATURE_MCU").is_some();
     let leave_out = build_parts(&out, mcu);
+    apps(&out, &leave_out);
     ring(&out);
     heart_arc(&out);
     activity_arc(&out);
@@ -226,6 +227,42 @@ fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
     std::fs::write(out.join("build.slint"), slint).unwrap();
     std::fs::write(out.join("parts.rs"), rust).unwrap();
     leave_out
+}
+
+/// The launcher's apps with AsteroidOS's names, order and colours: part, id (enum ui_app), name,
+/// icon, and the mesh's centre and outer colours.
+const APPS: &[(&str, u32, &str, &str, &str, &str)] = &[
+    ("activity", 11, "Activity", "ios-walk", "#CC5200", "#0C0300"),
+    ("agenda", 10, "Agenda", "ios-calendar-outline", "#CC7700", "#0C0300"),
+    ("alarm", 2, "Alarm Clock", "ios-alarm-outline", "#CC9800", "#0C0500"),
+    ("calculator", 8, "Calculator", "ios-calculator-outline", "#7CA600", "#0C0B00"),
+    ("diamonds", 9, "Diamonds", "2048", "#009933", "#000C00"),
+    ("flashlight", 7, "Flashlight", "ios-bulb-outline", "#00A698", "#000C07"),
+    ("heart", 6, "Heart Rate", "ios-heart-outline", "#0097A6", "#00060C"),
+    ("music", 0, "Music", "ios-musical-notes-outline", "#2577B3", "#000619"),
+    ("settings", 1, "Settings", "ios-settings-outline", "#0044A6", "#00010C"),
+    ("stopwatch", 4, "Stopwatch", "ios-stopwatch-outline", "#9800A6", "#0C0009"),
+    ("timer", 3, "Timer", "ios-timer-outline", "#A6005F", "#0C0003"),
+    ("weather", 5, "Weather", "launcher-cloudy-outline", "#990019", "#0C0200"),
+];
+
+/// apps_built.slint: a `BuiltApps` global with the apps the build has, and the same without the
+/// Heart Rate app for a watch without the sensor.
+fn apps(out: &std::path::Path, leave_out: &[String]) {
+    let mut slint = String::from(
+        "export struct App {\n    id: int,\n    name: string,\n    icon: string,\n    center: color,\n    outer: color,\n}\n\nexport global BuiltApps {\n",
+    );
+    for (list, heart) in [("all", true), ("without-heart-rate", false)] {
+        writeln!(slint, "    out property <[App]> {list}: [").unwrap();
+        for (part, id, name, icon, center, outer) in APPS {
+            if (heart || *part != "heart") && !leave_out.iter().any(|p| p == part) {
+                writeln!(slint, "        {{ id: {id}, name: \"{name}\", icon: \"{icon}\", center: {center}, outer: {outer} }},").unwrap();
+            }
+        }
+        slint.push_str("    ];\n");
+    }
+    slint.push_str("}\n");
+    std::fs::write(out.join("apps_built.slint"), slint).unwrap();
 }
 
 /// The faces the Cortex-M build draws text with. The UI's other families are drawn with the

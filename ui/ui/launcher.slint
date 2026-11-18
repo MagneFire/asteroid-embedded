@@ -9,45 +9,12 @@ import { Codes } from "codes.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
 import { Build } from "build.slint";
+import { App, BuiltApps } from "apps_built.slint";
 
-export struct App {
-    id: int,
-    name: string,
-    icon: string,
-    center: color,
-    outer: color,
-}
+export { App }
 
 export global Apps {
-    // The Heart Rate app only where the watch has the sensor (Face.has-heart-rate).
-    property <[App]> all: [
-        { id: 11, name: "Activity", icon: "ios-walk", center: #CC5200, outer: #0C0300 },
-        { id: 10, name: "Agenda", icon: "ios-calendar-outline", center: #CC7700, outer: #0C0300 },
-        { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
-        { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },
-        { id: 9, name: "Diamonds", icon: "2048", center: #009933, outer: #000C00 },
-        { id: 7, name: "Flashlight", icon: "ios-bulb-outline", center: #00A698, outer: #000C07 },
-        { id: 6, name: "Heart Rate", icon: "ios-heart-outline", center: #0097A6, outer: #00060C },
-        { id: 0, name: "Music", icon: "ios-musical-notes-outline", center: #2577B3, outer: #000619 },
-        { id: 1, name: "Settings", icon: "ios-settings-outline", center: #0044A6, outer: #00010C },
-        { id: 4, name: "Stopwatch", icon: "ios-stopwatch-outline", center: #9800A6, outer: #0C0009 },
-        { id: 3, name: "Timer", icon: "ios-timer-outline", center: #A6005F, outer: #0C0003 },
-        { id: 5, name: "Weather", icon: "launcher-cloudy-outline", center: #990019, outer: #0C0200 },
-    ];
-    property <[App]> without-heart-rate: [
-        { id: 11, name: "Activity", icon: "ios-walk", center: #CC5200, outer: #0C0300 },
-        { id: 10, name: "Agenda", icon: "ios-calendar-outline", center: #CC7700, outer: #0C0300 },
-        { id: 2, name: "Alarm Clock", icon: "ios-alarm-outline", center: #CC9800, outer: #0C0500 },
-        { id: 8, name: "Calculator", icon: "ios-calculator-outline", center: #7CA600, outer: #0C0B00 },
-        { id: 9, name: "Diamonds", icon: "2048", center: #009933, outer: #000C00 },
-        { id: 7, name: "Flashlight", icon: "ios-bulb-outline", center: #00A698, outer: #000C07 },
-        { id: 0, name: "Music", icon: "ios-musical-notes-outline", center: #2577B3, outer: #000619 },
-        { id: 1, name: "Settings", icon: "ios-settings-outline", center: #0044A6, outer: #00010C },
-        { id: 4, name: "Stopwatch", icon: "ios-stopwatch-outline", center: #9800A6, outer: #0C0009 },
-        { id: 3, name: "Timer", icon: "ios-timer-outline", center: #A6005F, outer: #0C0003 },
-        { id: 5, name: "Weather", icon: "launcher-cloudy-outline", center: #990019, outer: #0C0200 },
-    ];
-    out property <[App]> list: Face.has-heart-rate ? all : without-heart-rate;
+    out property <[App]> list: Face.has-heart-rate ? BuiltApps.all : BuiltApps.without-heart-rate;
     out property <[string]> layouts: ["Horizontal", "Vertical", "Three icons", "Two columns", "Turbo list", "Three by three", "Speed dial"];
 }
 
@@ -265,7 +232,9 @@ component Pages {
         item: root.size;
         count: Apps.list.length;
         tapped => {
-            Face.app-opened(Apps.list[self.index].id);
+            if self.index < Apps.list.length {
+                Face.app-opened(Apps.list[self.index].id);
+            }
         }
     }
 }
@@ -982,7 +951,7 @@ component SpeedDial {
             }
             if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) && self.pressed-name {
                 // A tap on the name opens the app selected then, the wheel coasting on.
-                if e.kind == PointerEventKind.up && self.mouse-x >= 0 && self.on-name {
+                if e.kind == PointerEventKind.up && self.mouse-x >= 0 && self.on-name && root.selected < Apps.list.length {
                     Face.app-opened(Apps.list[root.selected].id);
                 }
             } else if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
