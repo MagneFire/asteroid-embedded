@@ -754,7 +754,7 @@ export component Page {
 // RemorseTimer: black at 80 % over the screen with the action's name over a 3 s countdown and
 // "Tap to cancel" below it, fading in over 300 ms; unless tapped, it then calls
 // Face.setting-toggled with code. Started by setting code, and back at -1 when done.
-export component Remorse inherits Rectangle {
+export component Remorse {
     in-out property <int> code: -1;
     in property <string> action;
     property <duration> started;
@@ -764,61 +764,64 @@ export component Remorse inherits Rectangle {
     y: 0;
     width: 100 * Theme.unit;
     height: 100 * Theme.unit;
-    background: #000000cc;
-    opacity: self.code >= 0 ? 1 : 0;
-    visible: self.code >= 0 || self.opacity > 0;
-    animate opacity {
-        duration: 300ms;
-    }
 
     changed code => {
         self.started = animation-tick();
     }
 
-    Text {
-        y: 32 * Theme.unit;
-        width: 100 * Theme.unit;
-        height: 6 * Theme.unit;
-        text: root.action;
-        color: white;
-        font-size: 6 * Theme.unit;
-        horizontal-alignment: center;
-    }
-
-    Text {
-        y: 39 * Theme.unit;
-        width: 100 * Theme.unit;
-        height: 22 * Theme.unit;
-        text: root.left;
-        color: white;
-        font-family: "Noto Sans SemiCondensed SemiBold";
-        font-size: 18 * Theme.unit;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    Text {
-        y: 62 * Theme.unit;
-        width: 100 * Theme.unit;
-        text: "Tap to cancel";
-        color: white;
-        font-size: 6 * Theme.unit;
-        horizontal-alignment: center;
-    }
-
-    TouchArea {
-        enabled: root.code >= 0;
-        clicked => {
-            root.code = -1;
+    Rectangle {
+        background: #000000cc;
+        opacity: root.code >= 0 ? 1 : 0;
+        visible: root.code >= 0 || self.opacity > 0;
+        animate opacity {
+            duration: 300ms;
         }
-    }
 
-    Timer {
-        interval: 3000ms;
-        running: root.code >= 0;
-        triggered => {
-            Face.setting-toggled(root.code);
-            root.code = -1;
+        Text {
+            y: 32 * Theme.unit;
+            width: 100 * Theme.unit;
+            height: 6 * Theme.unit;
+            text: root.action;
+            color: white;
+            font-size: 6 * Theme.unit;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            y: 39 * Theme.unit;
+            width: 100 * Theme.unit;
+            height: 22 * Theme.unit;
+            text: root.left;
+            color: white;
+            font-family: "Noto Sans SemiCondensed SemiBold";
+            font-size: 18 * Theme.unit;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            y: 62 * Theme.unit;
+            width: 100 * Theme.unit;
+            text: "Tap to cancel";
+            color: white;
+            font-size: 6 * Theme.unit;
+            horizontal-alignment: center;
+        }
+
+        TouchArea {
+            enabled: root.code >= 0;
+            clicked => {
+                root.code = -1;
+            }
+        }
+
+        Timer {
+            interval: 3000ms;
+            running: root.code >= 0;
+            triggered => {
+                Face.setting-toggled(root.code);
+                root.code = -1;
+            }
         }
     }
 }
