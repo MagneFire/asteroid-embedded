@@ -8,7 +8,9 @@
 // in steps of 10 %. Cinema mode turns the always-on face off until it is left again, and power
 // off and reboot count down 3 s first. While charging the bolt pulses and the bar's end swings.
 // The numbers passed to setting-toggled are the firmware's enum setting, 37 to lock, 38 for
-// Settings, 39 to reboot, 40 to power off and 41 for cinema mode.
+// Settings, 39 to reboot, 40 to power off and 41 for cinema mode. A build without Settings has
+// two more toggles for what only Settings has otherwise: tilt-to-wake, and forgetting the phone,
+// which counts down 3 s first.
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
@@ -61,7 +63,7 @@ export component QuickSettings {
     // from the toggles: an index into toggles, or -1.
     // The toggles in AsteroidOS's default order, without WiFi and sound: three to a page, the
     // last page's centred. A press is mapped to the toggle under it.
-    property <[{icon: string, on: bool, button: bool}]> toggles: [
+    property <[{icon: string, on: bool, button: bool}]> toggles: Build.settings ? [
         { icon: "ios-sunny", on: Face.brightness > 10 },
         { icon: Face.bluetooth-connected ? "ios-bluetooth-connected" : "ios-bluetooth", on: Face.bluetooth-on },
         { icon: "ios-watch-vibrating", on: Face.vibration-on },
@@ -69,6 +71,16 @@ export component QuickSettings {
         { icon: Face.aod-on ? "ios-watch-aod-on" : "ios-watch-aod-off", on: Face.aod-on },
         { icon: "ios-power-outline", button: true },
         { icon: "ios-sync", button: true },
+    ] : [
+        { icon: "ios-sunny", on: Face.brightness > 10 },
+        { icon: Face.bluetooth-connected ? "ios-bluetooth-connected" : "ios-bluetooth", on: Face.bluetooth-on },
+        { icon: "ios-watch-vibrating", on: Face.vibration-on },
+        { icon: "ios-film-outline", on: !Face.aod-on },
+        { icon: Face.aod-on ? "ios-watch-aod-on" : "ios-watch-aod-off", on: Face.aod-on },
+        { icon: "ios-power-outline", button: true },
+        { icon: "ios-sync", button: true },
+        { icon: "ios-tilttowake-outline", on: Face.tilt > 0 },
+        { icon: "ios-trash-outline", button: true },
     ];
     property <int> pages: Math.ceil(self.toggles.length / 3);
     property <length> local: strip-touch.pressed-x - root.pad(root.page);
@@ -120,6 +132,11 @@ export component QuickSettings {
         } else if i == 6 {
             remorse.action = "Reboot";
             remorse.code = Codes.ui-reboot;
+        } else if i == 7 {
+            Face.setting-set(Codes.setting-tilt, Face.tilt > 0 ? 0 : 1);
+        } else if i == 8 {
+            remorse.action = "Forget phone";
+            remorse.code = Codes.ui-forget-phone;
         }
     }
 

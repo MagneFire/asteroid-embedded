@@ -693,6 +693,46 @@ static void tour(void)
 		}
 	}
 	ui_set_app(-1);
+	/* Without Settings, the quick settings' last page: tilt-to-wake turned
+	 * off and the phone forgotten once its countdown runs out. */
+	if (ui_has_panel(UI_PANEL_TOP) && !ui_has_app(UI_APP_SETTINGS)) {
+		unsigned n = 0;
+		int row = unit / 2;
+		bool tilt = false, forget = false;
+		step_panel = UI_PANEL_TOP;
+		ui_set_screen(UI_PANEL_TOP);
+		backdrop.screen = UI_PANEL_TOP;
+		backdrop.edges = 8;
+		run(UI_PANEL_TOP, 300);
+		for (int i = 0; i < 2; i++) {
+			touch(UI_PANEL_TOP, UI_TOUCH_DOWN, W * 3 / 4, row);
+			run(UI_PANEL_TOP, 16);
+			for (int k = 1; k <= 6; k++) {
+				touch(UI_PANEL_TOP, UI_TOUCH_MOVE, W * 3 / 4 - W / 2 * k / 6, row);
+				run(UI_PANEL_TOP, 16);
+			}
+			touch(UI_PANEL_TOP, UI_TOUCH_UP, W / 4, row);
+			run(UI_PANEL_TOP, 400);
+		}
+		step("quick", n++);
+		for (int x = 0; x < 2; x++) {
+			int at = W / 2 + x * 32 * unit / 100;
+			touch(UI_PANEL_TOP, UI_TOUCH_DOWN, at, row);
+			run(UI_PANEL_TOP, 50);
+			touch(UI_PANEL_TOP, UI_TOUCH_UP, at, row);
+			run(UI_PANEL_TOP, 300);
+			step("quick", n++);
+		}
+		run(UI_PANEL_TOP, 3500);
+		step("quick", n++);
+		for (struct ui_event e; ui_next_event(&e);) {
+			tilt |= e.kind == UI_EVENT_SETTING_VALUE && e.arg == 0;
+			forget |= e.kind == UI_EVENT_SETTING && e.value == UI_FORGET_PHONE;
+		}
+		if (!tilt || !forget)
+			fail("quick: tilt-to-wake or forget phone does nothing");
+		step_panel = UI_PANEL_APP;
+	}
 	/* The nightstand's battery ring as the battery fills, and moved against
 	 * burn-in on the always-on face. */
 	static const uint8_t levels[] = { 76, 77, 78, 20, 1, 100, 50 };
