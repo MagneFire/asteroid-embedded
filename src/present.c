@@ -137,8 +137,11 @@ void present_settings(void)
 	};
 	ui_set_settings(&u);
 	present_activity();
-	ui_set_launcher(setting_get(SETTING_LAUNCHER));
-	stack_set_launcher(setting_get(SETTING_LAUNCHER));
+	int layout = setting_get(SETTING_LAUNCHER);
+	if (!ui_has_layout(layout))
+		layout = 0;
+	ui_set_launcher(layout);
+	stack_set_launcher(layout);
 	ui_set_face(setting_get(SETTING_WATCHFACE), setting_get(SETTING_NIGHTSTAND), power_nightstand());
 }
 

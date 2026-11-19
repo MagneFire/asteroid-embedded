@@ -784,6 +784,14 @@ pub extern "C" fn ui_has_face(watchface: i32) -> bool {
     watchface == 0 || (watchface == 1 && BUILD_CLASSIC)
 }
 
+/// Whether the build has the launcher layout, numbered as the Launcher setting numbers them.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_has_layout(layout: i32) -> bool {
+    const LAYOUTS: [bool; 7] =
+        [BUILD_LAUNCHER, BUILD_LAUNCHER, BUILD_THREE_ICONS, BUILD_TWO_COLUMNS, BUILD_TURBO_LIST, BUILD_THREE_BY_THREE, BUILD_SPEED_DIAL];
+    usize::try_from(layout).ok().and_then(|l| LAYOUTS.get(l)).copied().unwrap_or(false)
+}
+
 /// Which panel the stack has on screen, under any app.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_screen(panel: u32) {
