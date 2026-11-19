@@ -53,6 +53,8 @@ void stack_indicators_cpu(uint32_t *buf, uint32_t stride, int dx, int dy);
 unsigned stack_edges(void);
 bool stack_waiting(void);
 unsigned stack_screen(void);
+/* What is on show: the open app, or else the screen. */
+unsigned stack_panel(void);
 bool stack_moving(void);
 bool stack_app_still(void);
 bool stack_animating(uint32_t now_ms);

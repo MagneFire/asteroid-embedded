@@ -269,7 +269,7 @@ static void pass(uint32_t ms)
 		now_ms += 16;
 		stack_update(now_ms);
 		ui_tick();
-		ui_draw(ui_modal() ? UI_PANEL_OVERLAY : stack_screen(), false);
+		ui_draw(ui_modal() ? UI_PANEL_OVERLAY : stack_panel(), false);
 		for (struct ui_event e; ui_next_event(&e);)
 			if ((e.kind == UI_EVENT_APP && !ui_has_app(e.value)) ||
 			    (e.kind == UI_EVENT_SETTING && e.value == UI_OPEN_SETTINGS && !ui_has_app(UI_APP_SETTINGS)))
@@ -298,7 +298,7 @@ static void swipe(int x0, int y0, int x1, int y1)
 /* What the stack shows must be in the build and drawn. */
 static void check(const char *name)
 {
-	unsigned panel = ui_modal() ? UI_PANEL_OVERLAY : stack_screen();
+	unsigned panel = ui_modal() ? UI_PANEL_OVERLAY : stack_panel();
 	if (!ui_has_panel(panel))
 		fail_on("a screen the build left out", name);
 	if (!drawn(panel))
@@ -341,7 +341,7 @@ static void walk(void)
 				pass(16);
 				if (ui_app_open() >= 0 && !ui_has_app(ui_app_open()))
 					fail("walk: an app the build left out is open");
-				if (!drawn(ui_modal() ? UI_PANEL_OVERLAY : stack_screen()))
+				if (!drawn(ui_modal() ? UI_PANEL_OVERLAY : stack_panel()))
 					fail_on("blank after a tap", ways[i].name);
 			}
 		/* The remorse timers of reboot and power off run out. */
