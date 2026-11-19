@@ -87,10 +87,12 @@ void app_open(int app)
 		civil_from_epoch(rtc_read(), &c);
 		present_agenda_day((c.year - 2000) << 9 | c.month << 5 | c.day);
 	}
-	if (app == UI_APP_ACTIVITY) {
+	if (app == UI_APP_ACTIVITY || app == UI_APP_STEPS) {
 		if (have_hub)
 			steps_poll();
 		present_activity();
+	}
+	if (app == UI_APP_ACTIVITY) {
 		present_workout();
 		present_heart_log();
 	}

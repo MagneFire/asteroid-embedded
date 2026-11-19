@@ -6,8 +6,8 @@
  * each screen it reaches; a blank screen, a screen or an app the build
  * left out, or a panic fails it. Where the build has the strip of app
  * pages instead of a launcher, it turns through the pages both ways. First it goes through the pages of
- * Settings and the Heart Rate app step by step, where the build has them,
- * and the nightstand's battery ring.
+ * Settings, the Heart Rate app and the Steps page step by step, where the
+ * build has them, and the nightstand's battery ring.
  *
  * On the host, with a host build of the library (run-host.sh), the frames
  * are written out as PNG files.
@@ -670,6 +670,28 @@ static void tour(void)
 			}
 		}
 	}
+	/* The Steps page's ring as the day goes on, from the Heart Rate app
+	 * where the build has it and back to it. */
+	if (ui_has_app(UI_APP_STEPS)) {
+		static const uint32_t steps[] = { 0, 1, 2500, 2526, 7999, 8000, 12000, 6420 };
+		uint32_t days[7] = { 5200, 9100, 3000, 8000, 12000, 7600, 0 };
+		unsigned n = 0;
+		ui_set_app(UI_APP_STEPS);
+		for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+			days[6] = steps[i];
+			ui_set_activity(steps[i], 8000, 0, 0, days, 7);
+			run(UI_PANEL_APP, 100);
+			step("steps", n++);
+		}
+		if (ui_has_app(UI_APP_HEART_RATE)) {
+			ui_set_app(UI_APP_HEART_RATE);
+			run(UI_PANEL_APP, 100);
+			step("steps", n++);
+			ui_set_app(UI_APP_STEPS);
+			run(UI_PANEL_APP, 100);
+			step("steps", n++);
+		}
+	}
 	ui_set_app(-1);
 	/* The nightstand's battery ring as the battery fills, and moved against
 	 * burn-in on the always-on face. */
@@ -752,6 +774,8 @@ int main(int argc, char **argv)
 	int32_t ids[] = { 800, 500, 801, 600, 211 }, lo[] = { 4, 3, 1, -2, 0 }, hi[] = { 11, 9, 7, 3, 5 };
 	ui_set_weather("Amsterdam", 9, 5, ids, lo, hi);
 	ui_set_media("Clair de lune", 13, "Debussy", 7, "Suite bergamasque", 17, true, 60);
+	static const uint32_t week[7] = { 5200, 9100, 3000, 8000, 12000, 7600, 6420 };
+	ui_set_activity(6420, 8000, 4800, 260, week, 7);
 	static const struct ui_alarm alarms[] = { { 7, 30, 0x3e, true }, { 9, 0, 0x41, false } };
 	ui_set_alarms(alarms, 2);
 
@@ -788,9 +812,10 @@ int main(int argc, char **argv)
 		shot(UI_PANEL_BOTTOM, name);
 	}
 	ui_set_launcher(0);
-	static const char *const app_names[] = { "music", "settings", "alarm", "timer", "stopwatch",
-						 "weather", "heart", "flashlight", "calculator", "diamonds" };
-	for (int a = 0; a < 10; a++) {
+	static const char *const app_names[] = { "music",	  "settings", "alarm",	  "timer",    "stopwatch",
+						 "weather",	  "heart",    "flashlight", "calculator", "diamonds",
+						 "agenda",	  "activity", "steps" };
+	for (int a = 0; a < (int)(sizeof(app_names) / sizeof(app_names[0])); a++) {
 		if (!ui_has_app(a))
 			continue;
 		ui_set_app(a);

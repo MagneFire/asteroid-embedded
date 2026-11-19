@@ -1,4 +1,5 @@
-// The app panel: whichever app the launcher opened, full screen over the screen stack.
+// The app panel: whichever app the launcher or the app strip opened, full screen over the screen
+// stack.
 import { Face } from "face.slint";
 import { MusicScreen } from "music.slint";
 import { WeatherScreen } from "weather.slint";
@@ -11,6 +12,7 @@ import { CalculatorScreen } from "calc.slint";
 import { DiamondsScreen } from "game.slint";
 import { AgendaApp } from "agenda.slint";
 import { ActivityScreen } from "activity.slint";
+import { StepsScreen } from "steps.slint";
 import { Build } from "build.slint";
 
 export component AppScreen {
@@ -29,4 +31,5 @@ export component AppScreen {
     if Build.diamonds && Face.app == 9: DiamondsScreen { }
     if Build.agenda && Face.app == 10: AgendaApp { }
     if Build.activity && Face.app == 11: ActivityScreen { }
+    if Build.steps && !Build.launcher && Face.app == 12: StepsScreen { }
 }

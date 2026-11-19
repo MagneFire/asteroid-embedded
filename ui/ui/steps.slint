@@ -1,0 +1,82 @@
+// The Steps page of the Cortex-M build's app strip: Activity's first page, today's steps in the
+// middle of a ring that fills towards the daily goal, with the steps of the last seven days as
+// small bars under them. The firmware paints the ring (Face.steps-ring): Activity's ring images
+// take more flash than the watch has.
+import { Face } from "face.slint";
+import { Activity } from "activity.slint";
+import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
+
+export component StepsScreen {
+    property <int> today: Face.activity-today;
+    property <int> goal: Math.max(1, Face.activity-goal);
+    // In whole degrees from 3 o'clock, as Activity's ring: the filled run is 115..end.
+    property <int> end: 115 + Math.round(Math.min(1, self.today / self.goal) * 310);
+    property <[int]> days: Face.activity-days;
+    // The bars are tall for the best day or the goal, whichever is more.
+    property <int> best: Math.max(self.goal, self.days.length >= 7 ? Math.max(self.days[0], self.days[1], self.days[2], self.days[3], self.days[4], self.days[5], self.days[6]) : 0);
+
+    width: 100%;
+    height: 100%;
+
+    init => {
+        Face.steps-ring(self.end);
+    }
+    changed end => {
+        Face.steps-ring(self.end);
+    }
+
+    Image {
+        x: 44 * Theme.unit;
+        y: 21 * Theme.unit;
+        width: 12 * Theme.unit;
+        height: 12 * Theme.unit;
+        source: Icons.get("ios-walk", self.width, self.height);
+        colorize: white;
+    }
+
+    Text {
+        y: 33 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 22 * Theme.unit;
+        text: Activity.grouped(root.today);
+        color: white;
+        font-size: root.today >= 10000 ? 15 * Theme.unit : 18 * Theme.unit;
+        letter-spacing: -0.5 * Theme.unit;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Text {
+        y: 55 * Theme.unit;
+        width: 100 * Theme.unit;
+        height: 8 * Theme.unit;
+        text: "steps";
+        color: #ffffffcc;
+        font-size: 6 * Theme.unit;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    for steps[i] in root.days: Rectangle {
+        x: 35.9 * Theme.unit + i * 4.2 * Theme.unit;
+        y: 73 * Theme.unit - self.height;
+        width: 3 * Theme.unit;
+        height: Math.max(0.5 * Theme.unit, 8 * Theme.unit * steps / root.best);
+        border-radius: 0.5 * Theme.unit;
+        background: Activity.accent;
+        opacity: steps >= root.goal ? 1 : 0.55;
+    }
+
+    Text {
+        y: 78 * Theme.unit - Face.chin / 2;
+        width: 100 * Theme.unit;
+        height: 8 * Theme.unit;
+        text: root.today >= root.goal ? "Goal reached" : "of " + Activity.grouped(root.goal);
+        color: root.today >= root.goal ? Activity.accent : #ffffffcc;
+        font-size: 5 * Theme.unit;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

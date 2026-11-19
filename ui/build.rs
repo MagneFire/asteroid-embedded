@@ -189,8 +189,8 @@ fn main() {
 /// The parts of the UI a build can leave out: screens, apps and launcher layouts.
 const PARTS: &[&str] = &[
     "classic", "notes", "today", "launcher", "quick", "music", "settings", "alarm", "timer", "stopwatch", "weather",
-    "heart", "flashlight", "calculator", "diamonds", "agenda", "activity", "three-icons", "two-columns", "turbo-list",
-    "three-by-three", "speed-dial", "halo",
+    "heart", "flashlight", "calculator", "diamonds", "agenda", "activity", "steps", "three-icons", "two-columns",
+    "turbo-list", "three-by-three", "speed-dial", "halo",
 ];
 
 /// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
@@ -199,8 +199,8 @@ const PARTS: &[&str] = &[
 /// as long to draw as the labels themselves.
 const MCU_LEAVE_OUT: &[&str] = &[
     "classic", "launcher", "settings", "music", "alarm", "timer", "stopwatch", "weather", "heart", "flashlight",
-    "calculator", "diamonds", "agenda", "activity", "three-icons", "two-columns", "turbo-list", "three-by-three",
-    "speed-dial", "halo",
+    "calculator", "diamonds", "agenda", "activity", "steps", "three-icons", "two-columns", "turbo-list",
+    "three-by-three", "speed-dial", "halo",
 ];
 
 /// The app pages swiped through below the watchface in a build without a launcher, in their
@@ -211,6 +211,7 @@ const PAGES: &[(&str, i32, bool)] = &[
     ("music", 0, false),
     ("heart", 6, false),
     ("flashlight", 7, false),
+    ("steps", 12, false),
     ("alarm", 2, true),
     ("stopwatch", 4, true),
     ("calculator", 8, false),

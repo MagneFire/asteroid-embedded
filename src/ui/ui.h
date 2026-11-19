@@ -93,6 +93,7 @@ enum ui_app {
 	UI_APP_DIAMONDS,
 	UI_APP_AGENDA,
 	UI_APP_ACTIVITY,
+	UI_APP_STEPS,
 };
 enum ui_clock_action {
 	UI_TIMER_START = 20,

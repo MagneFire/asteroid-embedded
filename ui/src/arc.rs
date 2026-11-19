@@ -1,15 +1,20 @@
-// The Cortex-M build's Heart Rate arc and the arrow by the previous rate, painted under the
-// screen's items as each line is drawn. As images, a piece per degree with its round ends, they
-// take more flash and heap than the watch has.
+// The Cortex-M build's Heart Rate arc and the arrow by the previous rate, and the Steps page's
+// ring on the same circle, painted under the screen's items as each line is drawn. As images, a
+// piece per degree with its round ends, they take more flash and heap than the watch has.
 use core::cell::UnsafeCell;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, Rgb565Pixel, TargetPixel};
 
 /// asteroid-hrm's green, at 40 %.
 const COLOR: (u32, u32, u32) = (0x38, 0xff, 0x12);
 const OPACITY: f32 = 0.4;
+/// Activity's ring: the filled run in its accent over the whole of it in white at 25 %.
+const STEPS_COLOR: (u32, u32, u32) = (0xff, 0xc9, 0x4a);
+const TRACK_OPACITY: f32 = 0.25;
+const TRACK: (i32, i32) = (115, 425);
 
 /// What heart.slint shows, in whole degrees clockwise from 3 o'clock: the arc from start to e1 and,
 /// where end is past g2, from g2 to end, each with round ends, and the arrow at arrow, 0 for none.
+/// With steps, the Steps page's ring instead.
 #[derive(Clone, Copy, Default, PartialEq)]
 pub struct Arc {
     pub start: i32,
@@ -17,6 +22,7 @@ pub struct Arc {
     pub g2: i32,
     pub end: i32,
     pub arrow: i32,
+    pub steps: bool,
 }
 
 /// A run of the arc: the directions of its ends, and whether it is over half a turn.
@@ -25,6 +31,29 @@ struct Run {
     from: (f32, f32),
     to: (f32, f32),
     wide: bool,
+}
+
+impl Run {
+    fn new(from: i32, to: i32) -> Self {
+        Run { from: dir(from as f64), to: dir(to as f64), wide: to - from > 180 }
+    }
+
+    /// How much of the pixel at (px, py) from the centre the run covers, round ends included, of
+    /// the part band that the circle of radius r covers.
+    fn cover(&self, px: f32, py: f32, r: f32, band: f32, round: f32) -> f32 {
+        // How far past each end's radius, towards the other end.
+        let (a, b) = (self.from.0 * py - self.from.1 * px, self.to.1 * px - self.to.0 * py);
+        let within = if self.wide { a.max(b) } else { a.min(b) };
+        let mut cover = band.min((within + 0.5).clamp(0.0, 1.0));
+        for end in [self.from, self.to] {
+            let (ex, ey) = (px - r * end.0, py - r * end.1);
+            let d2 = ex * ex + ey * ey;
+            if d2 < round * round {
+                cover = cover.max((round - sqrt(d2)).min(1.0));
+            }
+        }
+        cover
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -39,6 +68,8 @@ struct State {
     runs: [Run; 2],
     count: usize,
     arrow: Option<[(f32, f32); 3]>,
+    /// The Steps ring's whole circle, for steps.
+    track: Option<Run>,
 }
 
 struct Shared(UnsafeCell<Option<State>>);
@@ -123,9 +154,10 @@ impl State {
         let (runs, n) = Self::runs(&arc);
         self.count = n;
         for i in 0..n {
-            self.runs[i] = Run { from: dir(runs[i].0 as f64), to: dir(runs[i].1 as f64), wide: runs[i].1 - runs[i].0 > 180 };
+            self.runs[i] = Run::new(runs[i].0, runs[i].1);
         }
         self.arrow = (arc.arrow != 0).then(|| self.arrow(arc.arrow));
+        self.track = arc.steps.then(|| Run::new(TRACK.0, TRACK.1));
     }
 }
 
@@ -165,6 +197,15 @@ pub fn set(arc: Arc, width: u32, height: u32, mut dirty: impl FnMut(u32, u32, u3
     if !new.on || was == arc {
         return;
     }
+    if was.steps != arc.steps {
+        mark(new.band_box(0, 360), &mut dirty);
+        for deg in [was.arrow, arc.arrow] {
+            if deg != 0 {
+                mark(triangle_box(&new.arrow(deg)), &mut dirty);
+            }
+        }
+        return;
+    }
     // The degrees one of the two covers and the other does not, in runs between their ends.
     let mut ends = [was.start, was.e1, was.g2, was.end, arc.start, arc.e1, arc.g2, arc.end];
     ends.sort_unstable();
@@ -182,8 +223,8 @@ pub fn set(arc: Arc, width: u32, height: u32, mut dirty: impl FnMut(u32, u32, u3
     }
 }
 
-/// Paints the arc or not, as the Heart Rate app is on screen or not; the box to draw again if
-/// that changed.
+/// Paints the arc or not, as the Heart Rate app or the Steps page is on screen or not; the box to
+/// draw again if that changed.
 pub fn show(on: bool) -> Option<(u32, u32, u32, u32)> {
     let s = state().as_mut()?;
     if s.on == on {
@@ -239,9 +280,10 @@ pub fn paint(line: usize, start: usize, buf: &mut [Rgb565Pixel]) {
         }
     }
     let outer = s.r + s.half + 1.0;
-    if s.count == 0 || py.abs() >= outer {
+    if (s.count == 0 && !s.arc.steps) || py.abs() >= outer {
         return;
     }
+    let (color, opacity) = if s.arc.steps { (STEPS_COLOR, 1.0) } else { (COLOR, OPACITY) };
     let reach = sqrt(outer * outer - py * py);
     let inner = s.r - s.half - 1.0;
     let hole = if py.abs() < inner { sqrt(inner * inner - py * py) } else { 0.0 };
@@ -254,22 +296,18 @@ pub fn paint(line: usize, start: usize, buf: &mut [Rgb565Pixel]) {
             if band <= 0.0 {
                 continue;
             }
-            let mut cover = 0.0f32;
-            for run in &s.runs[..s.count] {
-                // How far past each end's radius, towards the other end.
-                let (a, b) = (run.from.0 * py - run.from.1 * px, run.to.1 * px - run.to.0 * py);
-                let within = if run.wide { a.max(b) } else { a.min(b) };
-                cover = cover.max(band.min((within + 0.5).clamp(0.0, 1.0)));
-                for end in [run.from, run.to] {
-                    let (ex, ey) = (px - s.r * end.0, py - s.r * end.1);
-                    let d2 = ex * ex + ey * ey;
-                    if d2 < round * round {
-                        cover = cover.max((round - sqrt(d2)).min(1.0));
-                    }
+            if let Some(track) = &s.track {
+                let cover = track.cover(px, py, s.r, band, round);
+                if cover > 0.0 {
+                    blend(&mut buf[x - start], (255, 255, 255), cover * TRACK_OPACITY);
                 }
             }
+            let mut cover = 0.0f32;
+            for run in &s.runs[..s.count] {
+                cover = cover.max(run.cover(px, py, s.r, band, round));
+            }
             if cover > 0.0 {
-                blend(&mut buf[x - start], COLOR, cover * OPACITY);
+                blend(&mut buf[x - start], color, cover * opacity);
             }
         }
     }

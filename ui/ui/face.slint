@@ -235,6 +235,9 @@ export global Face {
     // from 3 o'clock: from start to e1 and, with end past g2, from g2 to end, and the arrow by the
     // previous rate, 0 for none.
     callback heart-arc(int, int, int, int, int);
+    // The Steps page's ring where the firmware paints it (Build.mcu): where its filled run from
+    // 115 degrees ends.
+    callback steps-ring(int);
     // The nightstand's battery ring where the firmware paints it (Build.mcu): how many of its
     // segments show, 0 for no ring, their colour, and where the face is on the screen.
     callback battery-ring(int, color, length, length);

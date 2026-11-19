@@ -36,8 +36,10 @@ const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
 const QUICK: usize = 5;
 const APP: usize = 6;
-/// The Heart Rate app, as apps.slint numbers them.
+/// The Heart Rate app and the Steps page, as apps.slint numbers them.
 const HEART_APP: i32 = 6;
+#[cfg(feature = "mcu")]
+const STEPS_APP: i32 = 12;
 
 struct Static<T>(UnsafeCell<T>);
 unsafe impl<T> Sync for Static<T> {}
@@ -423,9 +425,18 @@ pub unsafe extern "C" fn ui_init(
             let window = panel.window.clone();
             face.on_heart_arc(move |start, e1, g2, end, arrow| {
                 let size = window.size();
-                crate::arc::set(crate::arc::Arc { start, e1, g2, end, arrow }, size.width, size.height, |x, y, w, h| {
+                crate::arc::set(crate::arc::Arc { start, e1, g2, end, arrow, steps: false }, size.width, size.height, |x, y, w, h| {
                     mark_dirty(&window, x, y, w, h)
                 });
+            });
+        }
+        #[cfg(feature = "mcu")]
+        if BUILD_STEPS && !BUILD_LAUNCHER {
+            let window = panel.window.clone();
+            face.on_steps_ring(move |end| {
+                let size = window.size();
+                let ring = crate::arc::Arc { start: 115, e1: end, steps: true, ..Default::default() };
+                crate::arc::set(ring, size.width, size.height, |x, y, w, h| mark_dirty(&window, x, y, w, h));
             });
         }
         screens.push(screen);
@@ -770,9 +781,9 @@ pub extern "C" fn ui_has_panel(panel: u32) -> bool {
 /// Whether the build has app.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_has_app(app: i32) -> bool {
-    const APPS: [bool; 12] = [
+    const APPS: [bool; 13] = [
         BUILD_MUSIC, BUILD_SETTINGS, BUILD_ALARM, BUILD_TIMER, BUILD_STOPWATCH, BUILD_WEATHER, BUILD_HEART, BUILD_FLASHLIGHT,
-        BUILD_CALCULATOR, BUILD_DIAMONDS, BUILD_AGENDA, BUILD_ACTIVITY,
+        BUILD_CALCULATOR, BUILD_DIAMONDS, BUILD_AGENDA, BUILD_ACTIVITY, BUILD_STEPS && !BUILD_LAUNCHER,
     ];
     usize::try_from(app).ok().and_then(|a| APPS.get(a)).copied().unwrap_or(false)
 }
@@ -1274,7 +1285,7 @@ impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_>
 
     fn fill_background(line: usize, start: usize, buffer: &mut [Self::TargetPixel]) -> bool {
         unsafe { ui_line_under(line as u32, start as u32, buffer.len() as u32, buffer.as_mut_ptr() as *mut u16) };
-        if BUILD_HEART {
+        if BUILD_HEART || BUILD_STEPS {
             crate::arc::paint(line, start, buffer);
         }
         crate::ring::paint(line, start, buffer);
@@ -1335,9 +1346,10 @@ pub extern "C" fn ui_draw(panel: u32, whole: bool) -> bool {
         i_slint_core::window::WindowInner::from_pub(window.window()).ensure_tree_instantiated();
         let digital = !BUILD_CLASSIC || ui.screens[0].global::<Face>().get_watchface() == 0;
         crate::ring::show(ui.shown == 0 && digital, |x, y, w, h| mark_dirty(window, x, y, w, h));
-        if BUILD_HEART {
-            let heart = ui.shown == APP && ui.screens[0].global::<Face>().get_app() == HEART_APP;
-            if let Some((x, y, w, h)) = crate::arc::show(heart) {
+        if BUILD_HEART || BUILD_STEPS {
+            let app = ui.screens[0].global::<Face>().get_app();
+            let arc = ui.shown == APP && ((BUILD_HEART && app == HEART_APP) || (BUILD_STEPS && app == STEPS_APP));
+            if let Some((x, y, w, h)) = crate::arc::show(arc) {
                 mark_dirty(window, x, y, w, h);
             }
         }
