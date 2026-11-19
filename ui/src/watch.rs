@@ -971,6 +971,16 @@ pub extern "C" fn ui_set_stopwatch(ms: u32, running: bool) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_app(app: i32) {
+    // As show(): the app on show goes before the next one is made.
+    #[cfg(feature = "mcu")]
+    with_ui(|ui| {
+        let face = ui.screens[0].global::<Face>();
+        let open = face.get_app();
+        if app >= 0 && open >= 0 && open != app {
+            face.set_app(-1);
+            i_slint_core::window::WindowInner::from_pub(ui.panels[0].window.window()).ensure_tree_instantiated();
+        }
+    });
     each(|face| {
         face.set_app(app);
         face.set_app_depth(0);
