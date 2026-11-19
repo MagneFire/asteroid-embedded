@@ -194,13 +194,13 @@ const PARTS: &[&str] = &[
 ];
 
 /// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
-/// empty for none): what does not fit its flash after the watchface, the notifications and the
-/// quick settings, and the digital face's halo, which is not visible on black and takes four times
-/// as long to draw as the labels themselves.
+/// empty for none): what does not fit its flash after the watchface, the notifications, the
+/// quick settings and the pages of Timer, Music, Flashlight, Heart Rate and Steps in place of the
+/// launcher, and the digital face's halo, which is not visible on black and takes four times as
+/// long to draw as the labels themselves.
 const MCU_LEAVE_OUT: &[&str] = &[
-    "classic", "launcher", "settings", "music", "alarm", "timer", "stopwatch", "weather", "heart", "flashlight",
-    "calculator", "diamonds", "agenda", "activity", "steps", "three-icons", "two-columns", "turbo-list",
-    "three-by-three", "speed-dial", "halo",
+    "classic", "launcher", "settings", "alarm", "stopwatch", "weather", "calculator", "diamonds", "agenda", "activity",
+    "three-icons", "two-columns", "turbo-list", "three-by-three", "speed-dial", "halo",
 ];
 
 /// The app pages swiped through below the watchface in a build without a launcher, in their
@@ -209,8 +209,8 @@ const MCU_LEAVE_OUT: &[&str] = &[
 const PAGES: &[(&str, i32, bool)] = &[
     ("timer", 3, false),
     ("music", 0, false),
-    ("heart", 6, false),
     ("flashlight", 7, false),
+    ("heart", 6, false),
     ("steps", 12, false),
     ("alarm", 2, true),
     ("stopwatch", 4, true),
