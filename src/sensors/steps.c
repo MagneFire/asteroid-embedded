@@ -42,7 +42,8 @@ static bool ready, changed;
  * watch is off. Its count is taken once after a boot on the same day as
  * the last save, and only the steps it has above ours: from another day
  * it can be one the hub never saw end, and what it saved can lag ours.
- * Its LCD then shows ours, from then on and from each midnight. */
+ * From then on its LCD gets ours whenever the two differ, as the hub
+ * drops the first steps it counts after it starts. */
 static void end_day(uint32_t day);
 static uint32_t boot_day;
 static bool hub_today_read;
@@ -57,8 +58,6 @@ static void take_hub_today(uint32_t day)
 		now_state.total += t - steps_today();
 		changed = true;
 	}
-	if (t != steps_today())
-		hub_sync_steps_today(steps_today());
 }
 
 void steps_init(void)
@@ -130,11 +129,13 @@ bool steps_poll(void)
 		}
 	}
 	take_hub_today(day);
-	if (day != now_state.day) {
+	bool new_day = day != now_state.day;
+	if (new_day)
 		end_day(day);
-		hub_sync_steps_today(0);
+	if (hub_today_read && hub_steps_today() != steps_today())
+		hub_sync_steps_today(steps_today());
+	if (new_day)
 		return true;
-	}
 	struct activity after = steps_activity_today();
 	return steps_today() != today || after.distance_m != before.distance_m || after.kcal != before.kcal;
 }

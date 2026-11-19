@@ -52,7 +52,7 @@ static unsigned syncs;
 uint32_t hub_steps_today(void) { return fake_today; }
 void hub_sync_steps_today(uint32_t steps)
 {
-	synced = steps;
+	synced = fake_today = steps;
 	syncs++;
 }
 bool hub_measures_activity(void) { return measures; }
@@ -241,17 +241,24 @@ int main(void)
 	unsigned before = syncs;
 	CHECK(steps_poll());
 	CHECK(steps_today() == 1000 && syncs == before);
-	/* Later on its count is not taken. */
+	/* Later on its count is not taken, and its LCD gets ours. */
 	fake_today = 5000;
 	at(d, 7300, 10);
-	CHECK(steps_today() == 1010 && syncs == before);
+	CHECK(steps_today() == 1010 && syncs == before + 1 && synced == 1010);
+	/* It dropped the first steps it counted: its LCD gets ours again,
+	 * and nothing is written while the two agree. */
+	fake_today = 1010 - 23;
+	at(d, 7310, 10);
+	CHECK(steps_today() == 1010 && syncs == before + 2 && synced == 1010);
+	at(d, 7320, 10);
+	CHECK(syncs == before + 2);
 
 	/* What it saved lags ours: ours stays and goes to its LCD. */
 	steps_save();
 	steps_init();
 	fake_today = 990;
 	at(d, 7400, 0);
-	CHECK(steps_today() == 1010 && syncs == before + 1 && synced == 1010);
+	CHECK(steps_today() == 1010 && syncs == before + 3 && synced == 1010);
 
 	/* Booted on another day with the count of a day the hub never saw
 	 * end: not taken, and its LCD gets ours. */
@@ -276,12 +283,13 @@ int main(void)
 		at(d + 2 + n, 5, c);
 		CHECK(steps_today() == 0 && steps_day(1) == ended && synced == 0);
 		at(d + 2 + n, 130, c);
+		/* Its held-back count of yesterday comes in: ours goes back. */
+		fake_today = ended;
 		at(d + 2 + n, 3600, c);
-		CHECK(steps_today() == 0 && steps_day(1) == ended);
-		fake_today = 0;
+		CHECK(steps_today() == 0 && steps_day(1) == ended && synced == 0);
 		c += 3;
 		at(d + 2 + n, 3700, c);
-		CHECK(steps_today() == 3 && synced == 0);
+		CHECK(steps_today() == 3 && synced == 3);
 	}
 
 	printf(failures ? "steps_test: %d failures\n" : "steps_test: ok\n", failures);
