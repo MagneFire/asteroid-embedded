@@ -357,10 +357,11 @@ void app_flashlight(uint32_t now)
 {
 	/* The Flashlight app keeps the screen on and, while its light
 	 * is on, at full brightness, as asteroid-flashlight sets the
-	 * maximum brightness and puts the setting back when it ends. */
+	 * maximum brightness and puts the setting back when it ends.
+	 * As a page of the strip it keeps it on only while lit. */
 	bool flashlight = have_ui && ui_app_open() == UI_APP_FLASHLIGHT;
 	bool lit = flashlight && ui_flashlight_on();
-	if (flashlight && power_awake())
+	if (flashlight && (lit || ui_has_panel(UI_PANEL_BOTTOM)) && power_awake())
 		power_activity(now);
 	if (lit != was_lit && power_awake()) {
 		was_lit = lit;
