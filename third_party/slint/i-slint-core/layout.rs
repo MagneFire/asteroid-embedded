@@ -1260,8 +1260,15 @@ pub fn solve_box_layout(data: &BoxLayoutData, repeater_indices: Slice<u32>) -> S
     // below, as a cell's cache slot is fixed by its declaration index.
     let order_map: Vec<usize> = if data.cells.iter().any(|c| c.layout_order != 0) {
         let mut indices: Vec<usize> = (0..layout_data.len()).collect();
-        // sort_by_key is a stable sort, so equal orders keep declaration order
-        indices.sort_by_key(|&i| data.cells[i].layout_order);
+        // An insertion sort, which is stable, so equal orders keep declaration order: it sorts
+        // the few cells of a layout in a fraction of the code of `sort_by_key`.
+        for i in 1..indices.len() {
+            let mut j = i;
+            while j > 0 && data.cells[indices[j - 1]].layout_order > data.cells[indices[j]].layout_order {
+                indices.swap(j - 1, j);
+                j -= 1;
+            }
+        }
         layout_data = indices.iter().map(|&i| layout_data[i].clone()).collect();
         indices
     } else {
