@@ -10,6 +10,8 @@ compile_error!("the mcu build has its glyphs and icons made at build time: build
 mod arc;
 #[cfg(feature = "mcu")]
 mod fonts;
+#[cfg(feature = "mcu")]
+mod ring;
 #[cfg_attr(feature = "mcu", path = "icon_fields.rs")]
 mod icons;
 #[cfg(not(feature = "mcu"))]

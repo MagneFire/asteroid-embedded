@@ -412,6 +412,14 @@ pub unsafe extern "C" fn ui_init(
             return false;
         };
         #[cfg(feature = "mcu")]
+        {
+            let window = panel.window.clone();
+            face.on_battery_ring(move |shown, color, dx, dy| {
+                let (size, k) = (window.size(), window.window().scale_factor());
+                crate::ring::set(shown, color, dx * k, dy * k, size.width, size.height, |x, y, w, h| mark_dirty(&window, x, y, w, h));
+            });
+        }
+        #[cfg(feature = "mcu")]
         if BUILD_HEART {
             let window = panel.window.clone();
             face.on_heart_arc(move |start, e1, g2, end, arrow| {
@@ -1239,6 +1247,7 @@ impl slint::platform::software_renderer::LineBufferProvider for &mut Display<'_>
         if BUILD_HEART {
             crate::arc::paint(line, start, buffer);
         }
+        crate::ring::paint(line, start, buffer);
         true
     }
 }
@@ -1291,6 +1300,11 @@ pub extern "C" fn ui_draw(panel: u32, whole: bool) -> bool {
             let size = window.size();
             mark_dirty(window, 0, 0, size.width, size.height);
         }
+        // A screen made in this draw tells the ring and arc where they are as it starts, so it is
+        // made first: shown before that, they would wait for the next draw.
+        i_slint_core::window::WindowInner::from_pub(window.window()).ensure_tree_instantiated();
+        let digital = !BUILD_CLASSIC || ui.screens[0].global::<Face>().get_watchface() == 0;
+        crate::ring::show(ui.shown == 0 && digital, |x, y, w, h| mark_dirty(window, x, y, w, h));
         if BUILD_HEART {
             let heart = ui.shown == APP && ui.screens[0].global::<Face>().get_app() == HEART_APP;
             if let Some((x, y, w, h)) = crate::arc::show(heart) {

@@ -50,13 +50,13 @@ fn state() -> &'static mut Option<State> {
     unsafe { &mut *STATE.0.get() }
 }
 
-fn dir(deg: i32) -> (f32, f32) {
-    let a = (deg as f64).to_radians();
+pub fn dir(deg: f64) -> (f32, f32) {
+    let a = deg.to_radians();
     (libm::cos(a) as f32, libm::sin(a) as f32)
 }
 
 #[cfg(all(target_arch = "arm", target_abi = "eabihf"))]
-fn sqrt(x: f32) -> f32 {
+pub fn sqrt(x: f32) -> f32 {
     // Through a core register: Rust takes the M4F's single-precision unit for less than the
     // `vfp2` that the `sreg` class asks for.
     let mut bits = x.to_bits();
@@ -68,7 +68,7 @@ fn sqrt(x: f32) -> f32 {
 }
 
 #[cfg(not(all(target_arch = "arm", target_abi = "eabihf")))]
-fn sqrt(x: f32) -> f32 {
+pub fn sqrt(x: f32) -> f32 {
     libm::sqrtf(x)
 }
 
@@ -94,30 +94,28 @@ impl State {
     }
 
     fn at(&self, deg: i32, r: f32) -> (f32, f32) {
-        let d = dir(deg);
+        let d = dir(deg as f64);
         (self.cx + r * d.0, self.cy + r * d.1)
     }
 
     /// The arrow's corners: 20 px long and 22 wide on a 400 px screen, its tip 58 px inside the arc.
     fn arrow(&self, deg: i32) -> [(f32, f32); 3] {
-        let d = dir(deg);
+        let d = dir(deg as f64);
         let base = self.at(deg, self.r - 9.5 * self.unit);
         let w = 2.75 * self.unit;
         [self.at(deg, self.r - 14.5 * self.unit), (base.0 - w * d.1, base.1 + w * d.0), (base.0 + w * d.1, base.1 - w * d.0)]
     }
 
-    /// The box around the band from lo to hi degrees with its round ends.
+    /// A box around the band from lo to hi degrees with its round ends: around its ends, or
+    /// around all of the arc if it goes round a quarter's end.
     fn band_box(&self, lo: i32, hi: i32) -> Box {
-        let mut b = NONE;
-        grow(&mut b, self.at(lo, self.r));
-        grow(&mut b, self.at(hi, self.r));
-        let mut quarter = lo.div_euclid(90) * 90 + 90;
-        while quarter < hi {
-            grow(&mut b, self.at(quarter, self.r));
-            quarter += 90;
-        }
         let pad = self.half + 2.0;
-        (b.0 - pad, b.1 - pad, b.2 + pad, b.3 + pad)
+        if lo.div_euclid(90) != hi.div_euclid(90) {
+            let r = self.r + pad;
+            return (self.cx - r, self.cy - r, self.cx + r, self.cy + r);
+        }
+        let (a, b) = (self.at(lo, self.r), self.at(hi, self.r));
+        (a.0.min(b.0) - pad, a.1.min(b.1) - pad, a.0.max(b.0) + pad, a.1.max(b.1) + pad)
     }
 
     fn set(&mut self, arc: Arc) {
@@ -125,7 +123,7 @@ impl State {
         let (runs, n) = Self::runs(&arc);
         self.count = n;
         for i in 0..n {
-            self.runs[i] = Run { from: dir(runs[i].0), to: dir(runs[i].1), wide: runs[i].1 - runs[i].0 > 180 };
+            self.runs[i] = Run { from: dir(runs[i].0 as f64), to: dir(runs[i].1 as f64), wide: runs[i].1 - runs[i].0 > 180 };
         }
         self.arrow = (arc.arrow != 0).then(|| self.arrow(arc.arrow));
     }
@@ -202,12 +200,13 @@ pub fn show(on: bool) -> Option<(u32, u32, u32, u32)> {
     out
 }
 
-fn blend(px: &mut Rgb565Pixel, cover: f32) {
-    let a = (cover * OPACITY * 255.0 + 0.5) as u32;
+/// Blends color over px at opacity, 0 to 1.
+pub fn blend(px: &mut Rgb565Pixel, color: (u32, u32, u32), opacity: f32) {
+    let a = (opacity * 255.0 + 0.5) as u32;
     px.blend(PremultipliedRgbaColor {
-        red: (COLOR.0 * a / 255) as u8,
-        green: (COLOR.1 * a / 255) as u8,
-        blue: (COLOR.2 * a / 255) as u8,
+        red: (color.0 * a / 255) as u8,
+        green: (color.1 * a / 255) as u8,
+        blue: (color.2 * a / 255) as u8,
         alpha: a as u8,
     });
 }
@@ -234,7 +233,7 @@ pub fn paint(line: usize, start: usize, buf: &mut [Rgb565Pixel]) {
                 }
                 let cover = (inside + 0.5).clamp(0.0, 1.0);
                 if cover > 0.0 {
-                    blend(&mut buf[x - start], cover);
+                    blend(&mut buf[x - start], COLOR, cover * OPACITY);
                 }
             }
         }
@@ -270,7 +269,7 @@ pub fn paint(line: usize, start: usize, buf: &mut [Rgb565Pixel]) {
                 }
             }
             if cover > 0.0 {
-                blend(&mut buf[x - start], cover);
+                blend(&mut buf[x - start], COLOR, cover * OPACITY);
             }
         }
     }
