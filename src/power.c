@@ -400,6 +400,14 @@ static uint32_t lux_next_ms(uint32_t now)
 	return gone >= LUX_WAIT_MS ? 1 : LUX_WAIT_MS - gone;
 }
 
+static uint32_t hub_screen_next_ms(uint32_t now)
+{
+	if (!lit_pending)
+		return UINT32_MAX;
+	uint32_t gone = now - hub_ambient_t;
+	return gone >= HUB_SCREEN_MS ? 1 : HUB_SCREEN_MS - gone;
+}
+
 static void backlight_done(void)
 {
 	if (lux_state == LUX_READING)
@@ -619,9 +627,8 @@ void power_idle(uint32_t app_next_ms, const char *why)
 	/* A USB completion that landed after this pass's poll would wait
 	 * for the next tick, a second asleep, and adb needs several per
 	 * message: go round again instead, at full speed, as a pass on the
-	 * sleep clock takes over 100 ms. The wait for the hub's display is
-	 * too short for the sleep timer as well. */
-	if (usb_busy() || lit_pending) {
+	 * sleep clock takes over 100 ms. */
+	if (usb_busy()) {
 		if (!policy.awake && cpu_clock_is_slow())
 			cpu_clock_slow(false);
 		if (!policy.awake)
@@ -670,17 +677,21 @@ void power_idle(uint32_t app_next_ms, const char *why)
 			why = "longest sleep";
 		}
 	}
-	uint32_t lux = lux_next_ms(time_ms());
+	uint32_t lux = lux_next_ms(time_ms()), hub = hub_screen_next_ms(time_ms());
 	if (lux < next) {
 		next = lux;
 		why = "light";
+	}
+	if (hub < next) {
+		next = hub;
+		why = "hub screen";
 	}
 	/* The watchdog counts on the sleep clock through a cluster power
 	 * collapse, where its bark cannot wake the core, so a wake that
 	 * comes late would end in a bite with no record. As the vendor
 	 * kernel does for suspend, it is off across a long or cluster sleep,
 	 * and a wake later than planned is logged instead. */
-	bool long_sleep = !policy.awake && (next > 1000 || cluster || lux != UINT32_MAX);
+	bool long_sleep = !policy.awake && (next > 1000 || cluster || lux != UINT32_MAX || hub != UINT32_MAX);
 	if (long_sleep) {
 		timer_set_period(next);
 		timer_next(next);
