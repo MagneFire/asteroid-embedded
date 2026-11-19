@@ -1,7 +1,7 @@
 /* The screen stack on the host: swipes between the screens, drags
  * that belong to a scrolling screen, an app opening, going back and
- * closing, the app kept across a short sleep, and the band scan that
- * finds a layer's content. */
+ * closing, the app kept across a short sleep, the strip of app pages,
+ * and the band scan that finds a layer's content. */
 #include <stdio.h>
 #include <string.h>
 #include "asteroid.h"
@@ -29,6 +29,8 @@ void ui_touch(uint32_t panel, int kind, int x, int y)
 	last_panel = (int)panel;
 }
 void ui_set_screen(unsigned panel) { screen_set = panel; }
+static bool modal;
+bool ui_modal(void) { return modal; }
 void ui_set_app(int app) { app_set = app; }
 static bool no_launcher;
 bool ui_has_panel(unsigned panel) { return !(no_launcher && panel == UI_PANEL_BOTTOM); }
@@ -61,6 +63,23 @@ void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint3
 {
 	if (x == W / 2 - (int)width / 2 && y > H / 2)
 		bottom_y = y + (int)height / 2;
+}
+/* The strip: Timer, Music and the Stopwatch, which takes sideways drags. */
+static const int page_apps[] = { 3, 0, 4 };
+static unsigned page_count;
+int ui_page(unsigned i, bool *sideways)
+{
+	if (i >= page_count)
+		return -1;
+	if (sideways)
+		*sideways = page_apps[i] == 4;
+	return page_apps[i];
+}
+int ui_app_open(void) { return app_set; }
+static void open_page(int app)
+{
+	ui_set_app(app);
+	stack_open_app();
 }
 static int app_x = -1;
 static void background(int x, int y, float alpha) { app_x = x; }
@@ -263,6 +282,89 @@ static void test_no_launcher(void)
 	stack_init(W, H, layers[0], W * H);
 }
 
+/* Without the launcher, the app pages: up from the watchface opens the
+ * page last shown, a sideways drag turns to the next or previous one on
+ * release, wrapping round, an app with its own sideways drags keeps
+ * those in its middle, and a short slow drag stays. */
+static void test_pages(void)
+{
+	unsigned n;
+	int next;
+	no_launcher = true;
+	page_count = 3;
+	stack_init(W, H, layers[0], W * H);
+	stack_set_pages(open_page);
+	stack_update(stub_ms);
+	app_set = -1;
+	drag(200, 350, 200, 150, 4);
+	settle();
+	CHECK(app_set == 3 && stack_panel() == UI_PANEL_APP);
+	CHECK(stack_page(&n, &next) == 0 && n == 3 && next == -1 && stack_edges() == 4);
+	touch(UI_TOUCH_DOWN, 300, 200);
+	for (int i = 1; i <= 4; i++) {
+		stub_ms += 10;
+		touch(UI_TOUCH_MOVE, 300 - 40 * i, 200);
+	}
+	CHECK(app_set == 3 && stack_page(&n, &next) == 0 && next == 1);
+	CHECK(last_panel == UI_PANEL_APP && last_kind == UI_TOUCH_UP);
+	stub_ms += 10;
+	touch(UI_TOUCH_UP, 140, 200);
+	CHECK(app_set == 0 && stack_page(&n, &next) == 1 && next == -1);
+	settle();
+	/* A pop-up that comes and goes during a turn ends it. */
+	touch(UI_TOUCH_DOWN, 300, 200);
+	for (int i = 1; i <= 4; i++) {
+		stub_ms += 10;
+		touch(UI_TOUCH_MOVE, 300 - 40 * i, 200);
+	}
+	modal = true;
+	touch(UI_TOUCH_MOVE, 130, 200);
+	modal = false;
+	CHECK(stack_page(&n, &next) == 1 && next == -1);
+	touch(UI_TOUCH_MOVE, 120, 200);
+	touch(UI_TOUCH_UP, 120, 200);
+	CHECK(app_set == 0 && stack_page(&n, &next) == 1);
+	drag(10, 200, 250, 200, 4);
+	CHECK(app_set == 3);
+	drag(100, 200, 300, 200, 4);
+	CHECK(app_set == 4 && stack_page(&n, &next) == 2);
+	settle();
+	touches[UI_PANEL_APP] = 0;
+	drag(300, 200, 100, 200, 4);
+	CHECK(app_set == 4 && touches[UI_PANEL_APP] == 6);
+	drag(395, 200, 150, 200, 4);
+	CHECK(app_set == 3);
+	drag(200, 200, 150, 200, 10);
+	CHECK(app_set == 3);
+	/* A short flick turns, a tap that slips a little stays the app's. */
+	drag(200, 200, 168, 200, 2);
+	CHECK(app_set == 0);
+	drag(200, 200, 232, 200, 2);
+	CHECK(app_set == 3);
+	touches[UI_PANEL_APP] = 0;
+	drag(200, 200, 191, 200, 1);
+	CHECK(app_set == 3 && touches[UI_PANEL_APP] == 3 && last_kind == UI_TOUCH_UP);
+	drag(300, 200, 100, 200, 4);
+	CHECK(app_set == 0);
+	settle();
+	drag(200, 10, 200, 300, 4);
+	settle();
+	CHECK(app_set == -1 && stack_panel() == UI_PANEL_FACE && stack_edges() == 0xf);
+	drag(200, 350, 200, 150, 4);
+	settle();
+	CHECK(app_set == 0);
+	/* A swipe while it closes does not open another page. */
+	drag(200, 10, 200, 300, 4);
+	drag(300, 200, 100, 200, 4);
+	settle();
+	CHECK(app_set == -1 && stack_panel() == UI_PANEL_FACE);
+	stack_home();
+	page_count = 0;
+	no_launcher = false;
+	stack_init(W, H, layers[0], W * H);
+	stack_set_pages(open_page);
+}
+
 static void test_damage(void)
 {
 	uint32_t *face = layers[UI_PANEL_FACE];
@@ -348,6 +450,7 @@ int main(void)
 	test_swipes();
 	test_app();
 	test_no_launcher();
+	test_pages();
 	test_app_round();
 	test_damage();
 	test_chin();

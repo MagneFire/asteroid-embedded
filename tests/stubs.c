@@ -129,6 +129,8 @@ __attribute__((weak)) bool ui_has_panel(unsigned panel) { return true; }
 __attribute__((weak)) unsigned ui_launcher_edges(void) { return 0; }
 __attribute__((weak)) unsigned ui_notes_edges(void) { return 0; }
 __attribute__((weak)) void ui_set_app(int app) {}
+__attribute__((weak)) int ui_app_open(void) { return -1; }
+__attribute__((weak)) int ui_page(unsigned i, bool *sideways) { return -1; }
 __attribute__((weak)) void ui_hide_notification(void) {}
 __attribute__((weak)) void *gpu_alloc(uint32_t size, uint32_t align) { return NULL; }
 __attribute__((weak)) void gpu_draw_layer_at(uint32_t tex_addr, uint32_t width, uint32_t height, uint32_t pitch_bytes, int x, int y, float alpha) {}

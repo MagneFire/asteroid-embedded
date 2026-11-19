@@ -20,6 +20,16 @@
 #define IND_LOW_A	0.6f
 #define IND_HIGH_A	0.8f
 #define IND_FAR		12
+/* The strip's dots: diamonds along the bottom, the page on show large
+ * and bright, the one a drag would turn to large. */
+#define DOTS		12
+#define DOT_GAP		16.0f
+#define DOT_UP		14
+#define DOT_W		5.0f
+#define DOT_A		0.4f
+#define DOT_ON_W	7.0f
+#define DOT_ON_A	0.9f
+#define DOT_NEXT_A	0.6f
 
 typedef uint32_t __attribute__((may_alias)) word;
 
@@ -41,7 +51,7 @@ static struct view {
 struct ind {
 	float x, y, w, a;
 };
-static struct ind inds[4];
+static struct ind inds[4 + DOTS];
 static unsigned n_inds;
 
 void flatmesh_mcu_init(uint32_t width, uint32_t height)
@@ -228,6 +238,12 @@ static unsigned indicators(const struct backdrop *b, struct ind *out)
 					 e == 2 ? in : e == 3 ? (float)screen_h - in : (float)(screen_h / 2),
 					 kept ? IND_HIGH_W : IND_LOW_W, kept ? IND_HIGH_A : IND_LOW_A };
 	}
+	for (unsigned i = 0; i < b->pages && i < DOTS; i++) {
+		bool on = i == b->page, next = (int)i == b->next;
+		out[n++] = (struct ind){ (float)screen_w / 2 + ((float)i - (float)(b->pages - 1) / 2) * DOT_GAP,
+					 (float)(screen_h - DOT_UP), on || next ? DOT_ON_W : DOT_W,
+					 on ? DOT_ON_A : next ? DOT_NEXT_A : DOT_A };
+	}
 	return n;
 }
 
@@ -247,7 +263,7 @@ bool flatmesh_mcu_draw(unsigned panel, const struct backdrop *b, bool whole)
 		n_crossing = next = 0;
 		whole = true;
 	}
-	struct ind now[4];
+	struct ind now[4 + DOTS];
 	unsigned n = indicators(b, now);
 	bool same = n == n_inds;
 	for (unsigned i = 0; i < n && same; i++)

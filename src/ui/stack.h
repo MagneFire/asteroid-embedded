@@ -55,6 +55,12 @@ bool stack_waiting(void);
 unsigned stack_screen(void);
 /* What is on show: the open app, or else the screen. */
 unsigned stack_panel(void);
+/* The strip's page on show, and with count how many there are, 0 while
+ * no page is up, and the one a drag would turn to, -1 for none. */
+unsigned stack_page(unsigned *count, int *next);
+/* The strip of app pages, where the build has one, opening them with
+ * open. */
+void stack_set_pages(void (*open)(int app));
 bool stack_moving(void);
 bool stack_app_still(void);
 bool stack_animating(uint32_t now_ms);

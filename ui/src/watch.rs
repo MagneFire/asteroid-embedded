@@ -37,7 +37,6 @@ const OVERLAY: usize = 4;
 const QUICK: usize = 5;
 const APP: usize = 6;
 /// The Heart Rate app, as apps.slint numbers them.
-#[cfg(feature = "mcu")]
 const HEART_APP: i32 = 6;
 
 struct Static<T>(UnsafeCell<T>);
@@ -985,6 +984,19 @@ pub extern "C" fn ui_set_app(app: i32) {
         face.set_app(app);
         face.set_app_depth(0);
     });
+}
+
+/// The app on page i of the strip, -1 past its end, and whether that app takes sideways drags
+/// of its own. Only a build without a launcher has the strip, and only a watch with the sensor
+/// has the Heart Rate page.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ui_page(i: u32, sideways: *mut bool) -> i32 {
+    let heart = with_ui(|ui| ui.screen(APP).global::<Face>().get_has_heart_rate()).unwrap_or(false);
+    let page = PAGES.iter().filter(|p| !BUILD_LAUNCHER && (heart || p.0 != HEART_APP)).nth(i as usize);
+    if let (Some(p), false) = (page, sideways.is_null()) {
+        unsafe { *sideways = p.1 };
+    }
+    page.map_or(-1, |p| p.0)
 }
 
 /// How many pages deep the open app is.

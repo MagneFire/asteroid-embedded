@@ -4,7 +4,8 @@
  * an abort on the host. Then it walks the screens with the firmware's
  * screen stack, swiping each way from the watchface and tapping across
  * each screen it reaches; a blank screen, a screen or an app the build
- * left out, or a panic fails it. First it goes through the pages of
+ * left out, or a panic fails it. Where the build has the strip of app
+ * pages instead of a launcher, it turns through the pages both ways. First it goes through the pages of
  * Settings and the Heart Rate app step by step, where the build has them,
  * and the nightstand's battery ring.
  *
@@ -261,6 +262,26 @@ static void shot(uint32_t panel, const char *name)
 	save(name);
 }
 
+/* With the backdrop frame_mcu.c draws around the UI, or (for the frames
+ * the walk had before the strip) without. */
+static bool framed;
+
+static struct backdrop stack_backdrop(void)
+{
+	struct backdrop b = { .screen = stack_screen(), .modal = ui_modal(), .edges = stack_edges(), .pending = true };
+	b.page = stack_page(&b.pages, &b.next);
+	return b;
+}
+
+static void draw_stack(bool whole)
+{
+	struct backdrop b = stack_backdrop();
+	if (framed)
+		flatmesh_mcu_draw(b.modal ? UI_PANEL_OVERLAY : stack_panel(), &b, whole);
+	else
+		ui_draw(b.modal ? UI_PANEL_OVERLAY : stack_panel(), whole);
+}
+
 /* The firmware's pass (frame_mcu.c), with the events the UI sent: none
  * may open an app the build left out. */
 static void pass(uint32_t ms)
@@ -269,7 +290,7 @@ static void pass(uint32_t ms)
 		now_ms += 16;
 		stack_update(now_ms);
 		ui_tick();
-		ui_draw(ui_modal() ? UI_PANEL_OVERLAY : stack_panel(), false);
+		draw_stack(false);
 		for (struct ui_event e; ui_next_event(&e);)
 			if ((e.kind == UI_EVENT_APP && !ui_has_app(e.value)) ||
 			    (e.kind == UI_EVENT_SETTING && e.value == UI_OPEN_SETTINGS && !ui_has_app(UI_APP_SETTINGS)))
@@ -306,6 +327,150 @@ static void check(const char *name)
 	save(name);
 }
 
+static void open_page(int app)
+{
+	ui_set_app(app);
+	stack_open_app();
+}
+
+static uint16_t pieces[H][W];
+
+static void keep_pieces(void)
+{
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			pieces[y][x] = frame[y][x];
+}
+
+/* The frame as it was drawn piece by piece must be what drawing it whole
+ * gives. */
+static void match_pieces(const char *name)
+{
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			if (pieces[y][x] != frame[y][x])
+				fail_on("stale pixels", name);
+}
+
+/* As check, with the backdrop and against the frame drawn piece by
+ * piece. */
+static void strip_check(const char *name)
+{
+	keep_pieces();
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			frame[y][x] = 0;
+	draw_stack(true);
+	bool blank = true;
+	for (int y = 0; y < H && blank; y++)
+		for (int x = 0; x < W && blank; x++)
+			blank = !frame[y][x];
+	if (blank)
+		fail_on("blank", name);
+	match_pieces(name);
+	save(name);
+}
+
+static void strip_name(char *name, const char *what, unsigned n)
+{
+	size_t len = 0;
+	while (*what)
+		name[len++] = *what++;
+	name[len++] = '-';
+	name[len++] = '0' + n / 10 % 10;
+	name[len++] = '0' + n % 10;
+	name[len] = 0;
+}
+
+static void on_page(unsigned page, const char *why)
+{
+	if (stack_panel() != UI_PANEL_APP || ui_app_open() != ui_page(page, NULL))
+		fail(why);
+}
+
+/* The strip, opened from the watchface on its first page: each page
+ * tapped across, dragged up and down and turned to the next, round
+ * and back again, a drag that goes back before the end, a short and a
+ * long sleep, and closed from the top edge. An app with sideways drags
+ * of its own keeps the ones in its middle. */
+static void strip(void)
+{
+	unsigned n, page = 0;
+	int next;
+	stack_page(&n, &next);
+	char name[32];
+	framed = true;
+	draw_stack(true);
+	on_page(0, "strip: the watchface swiped up opens no page");
+	strip_check("strip-00");
+	for (int back = 0; back < 2 && n > 1; back++)
+		for (unsigned i = 0; i <= n; i++) {
+			bool sideways;
+			ui_page(page, &sideways);
+			if (!back) {
+				for (int y = 1; y < 5; y++)
+					for (int x = 1; x < 5; x++) {
+						stack_at(UI_TOUCH_DOWN, W * x / 5, H * y / 5);
+						pass(50);
+						stack_at(UI_TOUCH_UP, W * x / 5, H * y / 5);
+						pass(300);
+					}
+				/* A tap that went a level in: back from the left edge. */
+				for (int k = 0; k < 4 && ui_app_depth(); k++)
+					swipe(8, H / 2, W * 3 / 4, H / 2);
+				swipe(W / 2, H * 3 / 4, W / 2, H / 4);
+				swipe(W / 2, H / 4, W / 2, H * 3 / 4);
+				on_page(page, "strip: a drag up or down turns the page");
+			}
+			int dir = back ? 1 : -1, from = W / 2 - dir * W / 4;
+			if (sideways) {
+				swipe(from, H / 2, W / 2 + dir * W / 4, H / 2);
+				on_page(page, "strip: a drag in the middle of an app with its own turns the page");
+				from = back ? 8 : W - 8;
+			}
+			swipe(from, H / 2, from + dir * W / 2, H / 2);
+			page = (page + (back ? n - 1 : 1)) % n;
+			on_page(page, "strip: a drag sideways does not turn the page");
+			strip_name(name, back ? "strip-back" : "strip-on", i);
+			strip_check(name);
+		}
+	if (n > 1) {
+		stack_at(UI_TOUCH_DOWN, W * 3 / 4, H / 2);
+		pass(16);
+		for (int i = 1; i <= 4; i++) {
+			stack_at(UI_TOUCH_MOVE, W * 3 / 4 - W * i / 10, H / 2);
+			pass(16);
+		}
+		strip_check("strip-drag");
+		stack_at(UI_TOUCH_MOVE, W * 3 / 4 - W / 20, H / 2);
+		pass(16);
+		strip_check("strip-drag-back");
+		stack_at(UI_TOUCH_UP, W * 3 / 4 - W / 20, H / 2);
+		pass(400);
+		on_page(page, "strip: a drag gone back turns the page");
+	}
+	stack_sleep(now_ms);
+	now_ms += 1000;
+	stack_wake(now_ms);
+	pass(100);
+	on_page(page, "strip: a quick wake does not come back to the page");
+	stack_sleep(now_ms);
+	now_ms += 6000;
+	stack_wake(now_ms);
+	pass(100);
+	if (stack_panel() != UI_PANEL_FACE)
+		fail("strip: a long sleep keeps the page");
+	strip_check("strip-face");
+	swipe(W / 2, H * 4 / 5, W / 2, H / 5);
+	on_page(page, "strip: the watchface swiped up does not open the last page");
+	strip_check("strip-again");
+	swipe(W / 2, 8, W / 2, H * 3 / 4);
+	if (stack_panel() != UI_PANEL_FACE)
+		fail("strip: a drag down from the top does not close the page");
+	strip_check("strip-closed");
+	framed = false;
+}
+
 /* From the watchface each way (the finger's direction) and, where that
  * leads somewhere, taps and a long press across the screen, then back. */
 static void walk(void)
@@ -315,6 +480,7 @@ static void walk(void)
 		int dx, dy;
 	} ways[] = { { "walk-right", 1, 0 }, { "walk-left", -1, 0 }, { "walk-down", 0, 1 }, { "walk-up", 0, -1 } };
 	stack_init(W, H, NULL, 0);
+	stack_set_pages(open_page);
 	pass(100);
 	check("walk-face");
 	for (int y = 1; y < 5; y++)
@@ -329,6 +495,10 @@ static void walk(void)
 		int cx = W / 2, cy = H / 2, ax = W * 3 / 10 * ways[i].dx, ay = H * 3 / 10 * ways[i].dy;
 		swipe(cx - ax, cy - ay, cx + ax, cy + ay);
 		check(ways[i].name);
+		if (stack_panel() == UI_PANEL_APP) {
+			strip();
+			continue;
+		}
 		if (stack_screen() == UI_PANEL_FACE)
 			continue;
 		for (int y = 1; y < 5; y++)
@@ -367,11 +537,9 @@ static void walk(void)
 
 static uint32_t step_panel = UI_PANEL_APP;
 
-/* The frame as it was drawn piece by piece, which must be what drawing it
- * whole gives: saved as tour-PART-N. */
+/* The frame, matched against drawing it whole, saved as tour-PART-N. */
 static void step(const char *part, unsigned n)
 {
-	static uint16_t pieces[H][W];
 	char name[32] = "tour-";
 	size_t len = 5;
 	while (*part && len < sizeof(name) - 5)
@@ -381,15 +549,10 @@ static void step(const char *part, unsigned n)
 	name[len++] = '0' + n / 10 % 10;
 	name[len++] = '0' + n % 10;
 	name[len] = 0;
-	for (int y = 0; y < H; y++)
-		for (int x = 0; x < W; x++)
-			pieces[y][x] = frame[y][x];
+	keep_pieces();
 	if (!drawn(step_panel))
 		fail_on("blank", name);
-	for (int y = 0; y < H; y++)
-		for (int x = 0; x < W; x++)
-			if (pieces[y][x] != frame[y][x])
-				fail_on("stale pixels", name);
+	match_pieces(name);
 	save(name);
 }
 

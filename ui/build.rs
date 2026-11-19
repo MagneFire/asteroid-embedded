@@ -203,10 +203,28 @@ const MCU_LEAVE_OUT: &[&str] = &[
     "speed-dial", "halo",
 ];
 
+/// The app pages swiped through below the watchface in a build without a launcher, in their
+/// order: part, id (enum ui_app), and whether the app takes sideways drags of its own, so only a
+/// drag from the side edges turns its page.
+const PAGES: &[(&str, i32, bool)] = &[
+    ("timer", 3, false),
+    ("music", 0, false),
+    ("heart", 6, false),
+    ("flashlight", 7, false),
+    ("alarm", 2, true),
+    ("stopwatch", 4, true),
+    ("calculator", 8, false),
+    ("weather", 5, true),
+    ("activity", 11, true),
+    ("agenda", 10, true),
+    ("diamonds", 9, true),
+    ("settings", 1, false),
+];
+
 /// build.slint: a `Build` global with whether the build has each of PARTS, which the UI checks
 /// where it shows the part; a part left out folds away with its code. `mcu` is the Cortex-M
-/// build. parts.rs: the same as Rust constants (BUILD_MUSIC), for the firmware to ask. Only the
-/// Cortex-M build leaves any out.
+/// build. parts.rs: the same as Rust constants (BUILD_MUSIC), for the firmware to ask, and the
+/// PAGES the build has. Only the Cortex-M build leaves any out.
 fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
     println!("cargo:rerun-if-env-changed=UI_LEAVE_OUT");
     let leave_out: Vec<String> = match std::env::var("UI_LEAVE_OUT") {
@@ -224,6 +242,12 @@ fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
         writeln!(slint, "    out property <bool> {part}: {has};").unwrap();
         writeln!(rust, "pub const BUILD_{}: bool = {has};", part.to_uppercase().replace('-', "_")).unwrap();
     }
+    let pages: Vec<String> = PAGES
+        .iter()
+        .filter(|(part, ..)| !leave_out.iter().any(|p| p == part))
+        .map(|(_, id, sideways)| format!("({id}, {sideways})"))
+        .collect();
+    writeln!(rust, "pub const PAGES: [(i32, bool); {}] = [{}];", pages.len(), pages.join(", ")).unwrap();
     writeln!(slint, "    out property <bool> mcu: {mcu};").unwrap();
     slint.push_str("}\n");
     std::fs::write(out.join("build.slint"), slint).unwrap();

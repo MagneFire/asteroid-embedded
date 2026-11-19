@@ -14,6 +14,13 @@
  * back to the watchface but keeps the app for APP_KEEP_MS, so a quick
  * wake returns to it.
  *
+ * A build without a launcher has a strip of app pages there instead
+ * (ui_page): swiped up, the watchface opens the page last shown, and a
+ * sideways drag on a page's first level opens the next or previous one
+ * on release, wrapping round, if it went past 15 % of the screen or was
+ * a flick. Drawing a page takes too long for it to follow the finger.
+ * An app with sideways drags of its own pages only from the side edges.
+ *
  * Swipes between screens follow AsteroidOS's gesture filter: the
  * average move per touch event decides, taking the drag once it passes
  * 1 % of the screen along one axis (and the finger is LOCK_PX away).
@@ -48,13 +55,15 @@ static bool round_panel;
 _Static_assert(BAND == PAINT_BAND && BANDS == PAINT_BANDS, "paint.h's bands are not the stack's");
 #endif
 
-enum { IDLE, PENDING, SCROLL, SWIPE };
+enum { IDLE, PENDING, SCROLL, SWIPE, PAGE };
 enum { LEFT, RIGHT, UP, DOWN };
 
 static const bool scrolls[UI_PANELS] = { [UI_PANEL_LEFT] = true, [UI_PANEL_RIGHT] = true, [UI_PANEL_APP] = true };
 static const bool pages[UI_PANELS] = { [UI_PANEL_BOTTOM] = true, [UI_PANEL_TOP] = true };
 
-static unsigned launcher;
+static unsigned launcher, n_pages, page;
+static int target = -1;
+static void (*open_page)(int app);
 static const uint32_t *layers;
 static uint32_t layer_px;
 static int W, H, fx, fy, from_x, from_y, off, from_off, peek;
@@ -98,6 +107,19 @@ void stack_init(uint32_t width, uint32_t height, const uint32_t *layer_base, uin
 	stack_home();
 }
 
+void stack_set_pages(void (*open)(int app))
+{
+	open_page = open;
+	for (n_pages = 0; ui_page(n_pages, NULL) >= 0;)
+		n_pages++;
+}
+
+/* Whether the open app is the strip's page, on its first level. */
+static bool on_page(bool *sideways)
+{
+	return n_pages > 1 && app_open && !ui_app_depth() && ui_app_open() == ui_page(page, sideways);
+}
+
 static void close_app(void)
 {
 	app_open = false;
@@ -114,6 +136,7 @@ void stack_home(void)
 		close_app();
 	animating = dragging = app_closing = peeking = opening = false;
 	gesture = IDLE;
+	target = -1;
 	fade = 0.0f;
 }
 
@@ -166,6 +189,9 @@ void stack_open_app(void)
 	off = W;
 	depth = 0;
 	app_t0 = time_ms();
+	for (unsigned i = 0; i < n_pages; i++)
+		if (ui_page(i, NULL) == ui_app_open())
+			page = i;
 	stack_indicators();
 }
 
@@ -181,6 +207,12 @@ static float app_alpha(void)
 
 unsigned stack_screen(void) { return screen; }
 unsigned stack_panel(void) { return app_open ? UI_PANEL_APP : screen; }
+unsigned stack_page(unsigned *count, int *next)
+{
+	*count = on_page(NULL) ? n_pages : 0;
+	*next = gesture == PAGE ? target : -1;
+	return page;
+}
 bool stack_moving(void) { return animating || dragging || opening; }
 bool stack_app_still(void) { return app_open && !app_closing && !stack_moving() && off == 0 && app_alpha() >= 1.0f; }
 void stack_offset(int *x, int *y) { *x = fx; *y = fy; }
@@ -198,6 +230,11 @@ static void slide_to(unsigned s)
 static void swipe(int dir)
 {
 	unsigned s = screen;
+	if (screen == UI_PANEL_FACE && dir == UP && n_pages) {
+		slide_to(screen);
+		open_page(ui_page(page, NULL));
+		return;
+	}
 	if (screen == UI_PANEL_FACE)
 		s = dir == RIGHT ? UI_PANEL_LEFT : dir == LEFT ? UI_PANEL_RIGHT : dir == UP ? UI_PANEL_BOTTOM : UI_PANEL_TOP;
 	else if ((screen == UI_PANEL_LEFT && dir == LEFT) || (screen == UI_PANEL_RIGHT && dir == RIGHT) ||
@@ -215,7 +252,7 @@ static void drag(int dx, int dy)
 	switch (screen) {
 	case UI_PANEL_FACE:
 		dx = clampi(dx, has[UI_PANEL_RIGHT] ? -W : 0, has[UI_PANEL_LEFT] ? W : 0);
-		dy = clampi(dy, has[UI_PANEL_BOTTOM] ? -H : 0, has[UI_PANEL_TOP] ? H : 0);
+		dy = clampi(dy, has[UI_PANEL_BOTTOM] || n_pages ? -H : 0, has[UI_PANEL_TOP] ? H : 0);
 		break;
 	case UI_PANEL_TOP:
 		dx = 0;
@@ -282,19 +319,39 @@ static void cancel_press(void)
 }
 
 /* On an open app only a drag that starts at the left edge going right
- * (back) or at the top edge going down (close) moves the app; anything
- * else is the app's. */
+ * (back) or at the top edge going down (close) moves the app, and a
+ * sideways drag on a strip page turns the page; anything else is the
+ * app's. */
 static void touch_app(int kind, int x, int y, int dx, int dy, bool far)
 {
-	static bool from_left, from_top;
+	static bool from_left, from_top, from_side;
+	bool sideways, flick;
 	switch (kind) {
 	case UI_TOUCH_DOWN:
 		from_left = x < edge_px;
 		from_top = y < edge_px;
+		from_side = from_left || x >= W - edge_px;
 		ui_touch(UI_PANEL_APP, kind, x, y);
 		break;
 	case UI_TOUCH_MOVE:
 	case UI_TOUCH_UP:
+		/* A short flick across a page is a turn, not a tap. */
+		flick = dx * dx + dy * dy > LOCK_PX * LOCK_PX && (dx < 0 ? vx < -FLICK_PX : vx > FLICK_PX);
+		if (gesture == PENDING && (far || flick) && absi(dx) > absi(dy) && !app_closing && on_page(&sideways) &&
+		    (!sideways || from_side)) {
+			gesture = PAGE;
+			cancel_press();
+		}
+		if (gesture == PAGE) {
+			bool past = absi(dx) * 100 > W * 15 || (dx < 0 ? vx < -FLICK_PX : vx > FLICK_PX);
+			unsigned next = (page + (dx < 0 ? 1 : n_pages - 1)) % n_pages;
+			target = past && kind == UI_TOUCH_MOVE ? (int)next : -1;
+			if (past && kind == UI_TOUCH_UP) {
+				page = next;
+				open_page(ui_page(page, NULL));
+			}
+			break;
+		}
 		if (gesture == PENDING && far) {
 			bool back = from_left && dx > 0 && absi(dx) > absi(dy), down = from_top && dy > 0 && absi(dy) > absi(dx);
 			gesture = back || down ? SWIPE : SCROLL;
@@ -331,6 +388,10 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 	int dx = x - down_x, dy = y - down_y;
 	bool far = dx * dx + dy * dy > SWIPE_PX * SWIPE_PX;
 	if (ui_modal()) {
+		if (gesture == PAGE) {
+			gesture = IDLE;
+			target = -1;
+		}
 		if (kind == UI_TOUCH_DOWN) {
 			gesture = PENDING;
 			down_x = x;
@@ -690,7 +751,7 @@ static void diamond(uint32_t *tex, unsigned stride, float w, float alpha)
 static unsigned ind_edges(void)
 {
 	if (app_open)
-		return 1 | 4;
+		return on_page(NULL) ? 4 : 1 | 4;
 	switch (screen) {
 	case UI_PANEL_FACE:
 		return 0xf;

@@ -146,6 +146,7 @@ void main(uint32_t machtype, const void *fdt)
 		ui_set_timepiece(hub_has_timepiece());
 		ui_set_tilt_light(hub_has_screen());
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
+		stack_set_pages(app_open);
 		if (board->panel.edge_px)
 			stack_set_edge(board->panel.edge_px);
 		stack_set_round(board->panel.round);

@@ -296,6 +296,9 @@ void ui_set_timer(uint32_t ms, uint32_t set_ms, bool running);
 void ui_set_stopwatch(uint32_t ms, bool running);
 void ui_set_laps(const uint32_t *ms, uint32_t n);
 void ui_set_app(int app);
+/* The app on page i of the strip a build without a launcher has below
+ * the watchface, -1 past its end, and whether it takes sideways drags. */
+int ui_page(unsigned i, bool *sideways);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,
 		    const int32_t *max_c);
 bool ui_modal(void);
