@@ -420,6 +420,10 @@ static void screen_set(enum screen_state to)
 			ambient_leave();
 		display_sleep();
 	} else {
+		/* The level goes in before sleep out, as the vendor sets it,
+		 * so a panel that ramps to it does so out of sight. */
+		if (to == SCREEN_LIT && from == SCREEN_OFF)
+			display_set_brightness(lit.dbv);
 		if (from == SCREEN_OFF)
 			display_wake_hidden();
 		if (to == SCREEN_AMBIENT) {
@@ -427,9 +431,11 @@ static void screen_set(enum screen_state to)
 			ambient_enter();
 		} else {
 			light_fill();
-			if (from == SCREEN_AMBIENT)
-				ambient_leave();
-			display_set_brightness(lit.dbv);
+			if (from == SCREEN_AMBIENT) {
+				ui_set_ambient(false);
+				display_idle(false);
+				display_set_brightness(lit.dbv);
+			}
 			lit_shown = true;
 		}
 		if (from == SCREEN_OFF)

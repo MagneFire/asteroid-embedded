@@ -192,6 +192,10 @@ struct board {
 		/* For the panel of the first height only. */
 		const struct dcs_step *idle_on, *idle_off;
 		uint8_t idle_on_n, idle_off_n;
+		/* For a panel that keeps its power: commands before each
+		 * sleep out, as it can lose them asleep. */
+		const struct dcs_step *wake;
+		uint8_t wake_n;
 		/* A panel switched off with the screen: its commands from
 		 * reset to out of sleep, its reset line, the line that
 		 * enables its bias supply and the LDO for its logic. */

@@ -1,7 +1,11 @@
 /* Mobvoi TicWatch Pro (catfish): APQ8009W with a PM8916. */
 #include "asteroid.h"
+#include "display/display.h"
 
 static const char *const firmware_dirs[] = { "/firmware/", NULL };
+/* Brightness control on with its dimming off, as the vendor sets it:
+ * with dimming on, a new level ramps in over several frames. */
+static const struct dcs_step panel_wake[] = { { 0x53, 1, 0, { 0x20 } } };
 
 const struct board board_catfish = {
 	.name = "catfish",
@@ -12,6 +16,7 @@ const struct board board_catfish = {
 	.panel = {
 		.width = 400, .height = 400,
 		.hz = 60, .te_gpio = 24, .round = true, .reset_gpio = 25,
+		.wake = panel_wake, .wake_n = 1,
 	},
 	.firmware_dirs = firmware_dirs,
 	.firmware_part = "vendor",

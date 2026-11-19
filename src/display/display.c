@@ -606,6 +606,7 @@ void display_wake_hidden(void)
 	uint32_t gone = time_ms() - sleep_in_t;
 	if (gone < PANEL_SLEEP_IN_MS)
 		delay_ms(PANEL_SLEEP_IN_MS - gone);
+	dcs_sequence(board->panel.wake, board->panel.wake_n);
 	dsi_dcs_write(0x11, NULL, 0);
 	delay_ms(120);
 }
