@@ -35,6 +35,9 @@
 #define BT_START_MS 2000
 /* Turning with the watch reads the accelerometer from the main loop. */
 #define ACCEL_POLL_MS 100
+/* A sensor that gives no second reading lets the screen go off after
+ * this, rather than holding it and the sensor on. */
+#define HR_HOLD_MS 60000
 
 static const char wake_by_touch[] = "touch";
 
@@ -46,8 +49,8 @@ static struct app_caps caps;
 #define have_hub caps.hub
 #define have_heart_rate caps.heart_rate
 
-static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen, turning;
-static uint32_t shown_bpm, key_down_t, down_t;
+static bool was_logging, steps_awake, was_lit, was_diamonds, key_was, wake_touch, down_seen, turning, was_measuring;
+static uint32_t shown_bpm, key_down_t, down_t, measure_t;
 static unsigned seen_readings;
 static int down_x, down_y, last_x, last_y;
 /* For the gesture line: how the reports and the passes kept up while the
@@ -338,7 +341,10 @@ void app_sensors(uint32_t now)
 			if (workout_running())
 				present_workout();
 		}
-		if (measure && readings < 2)
+		if (measure && !was_measuring)
+			measure_t = now;
+		was_measuring = measure;
+		if (measure && readings < 2 && now - measure_t < HR_HOLD_MS)
 			power_activity(now);
 		/* In nightstand mode the screen turns with the watch, as
 		 * the launcher's OrientationSensor turns it, the sensor on
