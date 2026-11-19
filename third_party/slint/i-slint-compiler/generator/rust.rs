@@ -2619,12 +2619,17 @@ fn generate_item_tree(
             }
 
             fn get_item_ref(self: ::core::pin::Pin<&Self>, index: u32) -> ::core::pin::Pin<sp::ItemRef<'_>> {
-                match &self.get_item_tree().as_slice()[index as usize] {
-                    sp::ItemTreeNode::Item { item_array_index, .. } => {
-                        Self::item_array()[*item_array_index as usize].apply_pin(self)
+                // Without an index check that panics with its own location.
+                let node = self.get_item_tree().as_slice().get(index as usize);
+                let item = match node {
+                    sp::Some(sp::ItemTreeNode::Item { item_array_index, .. }) => {
+                        Self::item_array().get(*item_array_index as usize)
                     }
-                    sp::ItemTreeNode::DynamicTree { .. } => sp::no_such_child(),
-
+                    _ => sp::None,
+                };
+                match item {
+                    sp::Some(item) => item.apply_pin(self),
+                    sp::None => sp::no_such_child(),
                 }
             }
 
