@@ -138,6 +138,18 @@ static bool answer_mode(bool level)
 	return true;
 }
 
+/* The hub sets up for the next packet only once the last exchange has
+ * ended, in an interrupt of its own. When its line is already low for
+ * data, the wake handshake does not show that it did, and a packet sent
+ * too soon after the wake line went high fails its CRC. */
+static uint32_t turnaround_us = 1000, wake_high_us, failed_tries;
+
+static void wake_release(void)
+{
+	gpio_set(PINS.wake_mcu, 1);
+	wake_high_us = time_us();
+}
+
 /* One command and its reply; the reply's payload is left in payload[].
  * Returns its length, or a negative error. A hub that stops answering
  * is taken as down after a few failed exchanges, and one that does not
@@ -154,26 +166,36 @@ static int exchange(uint32_t cmd, const uint8_t *data, unsigned len)
 	for (int attempt = 0; attempt < RETRIES; attempt++) {
 		wdt_feed();
 		answer_mode(true);
+		bool was_low = hub_irq_low();
 		gpio_set(PINS.wake_mcu, 0);
 		uint32_t t0 = time_ms();
 		while (!hub_irq_low() && time_ms() - t0 < WAKE_MS)
 			;
 		if (!hub_irq_low()) {
-			gpio_set(PINS.wake_mcu, 1);
+			wake_release();
+			failed_tries++;
+			log_printf("hub: %04lx try %d no wake, irq %s before\n", cmd, attempt + 1, was_low ? "low" : "high");
 			break;
 		}
 		delay_us(40);
+		uint32_t gap = time_us() - wake_high_us;
+		if ((was_low || attempt) && gap < turnaround_us)
+			delay_us(turnaround_us - gap);
 		gpio_set(PINS.cs, 0);
 		delay_us(30);
+		gap = time_us() - wake_high_us;
 		int r = spi_xfer(PINS.spi, tx, rx, sizeof tx);
 		unsigned from = WRITE_PAD, to = sizeof tx;
 		struct nanohub_packet p = { 0 };
+		bool acked = false;
 		if (!r)
 			r = receive(&from, &to, ACK_MS, &p);
-		if (!r && p.reason == NANOHUB_ACK)
+		if (!r && p.reason == NANOHUB_ACK) {
+			acked = true;
 			r = receive(&from, &to, REPLY_MS, &p);
+		}
 		gpio_set(PINS.cs, 1);
-		gpio_set(PINS.wake_mcu, 1);
+		wake_release();
 		delay_us(60);
 		if (!r && p.seq == seq && p.reason == cmd) {
 			memcpy(payload, p.payload, p.len);
@@ -181,6 +203,14 @@ static int exchange(uint32_t cmd, const uint8_t *data, unsigned len)
 			failures = 0;
 			return p.len;
 		}
+		const char *why = "bad reply";
+		if (r)
+			why = r == -2 ? "spi error" : acked ? "no reply" : "no ACK";
+		else if (p.reason == NANOHUB_NAK || p.reason == NANOHUB_BUSY)
+			why = p.reason == NANOHUB_NAK ? "NAK" : "busy";
+		failed_tries++;
+		log_printf("hub: %04lx try %d %s, irq %s before wake, clock %lu us after the last\n", cmd, attempt + 1, why,
+			   was_low ? "low" : "high", gap);
 		if (!r && p.reason == NANOHUB_BUSY) {
 			delay_ms(100);
 			wdt_feed();
@@ -592,6 +622,7 @@ static bool nanohub_init(void)
 	out(PINS.boot0, 0);
 	out(PINS.cs, 1);
 	out(PINS.wake_mcu, 1);
+	wake_high_us = time_us();
 	out(PINS.strobe, 0);
 	for (unsigned i = 0; i < 4; i++)
 		out(PINS.mode[i], 0);
@@ -910,16 +941,23 @@ static void nanohub_status(void (*say)(const char *fmt, ...))
 	    versions[0], versions[1], present ? "up" : "not up", mode, events, batched, unknown, bad, errors);
 	say("hub: its own log %lu warnings and %lu errors, steps %ld today %ld, gauge %s %lu mV %lu%%\n", hub_warnings, hub_errors,
 	    (long)steps, (long)steps_today, have_gauge ? "" : "none", gauge.mv, gauge.percent);
-	say("hub: non-wakeup interrupt %s%s, %lu mask errors\n", !mask_known ? "unknown" : masked ? "masked" : "unmasked",
-	    mask_on ? "" : " (masking off)", mask_errors);
+	say("hub: non-wakeup interrupt %s%s, %lu mask errors, %lu failed tries, turnaround %lu us\n",
+	    !mask_known ? "unknown" : masked ? "masked" : "unmasked", mask_on ? "" : " (masking off)", mask_errors,
+	    failed_tries, turnaround_us);
 }
 
-/* mask 0 keeps the non-wakeup interrupt unmasked asleep, for comparing. */
+/* mask 0 keeps the non-wakeup interrupt unmasked asleep, and
+ * turnaround is the least time from the end of an exchange to the next
+ * packet, for comparing. */
 static int nanohub_option(const char *name, uint32_t v)
 {
 	if (!strcmp(name, "mask")) {
 		mask_on = v;
 		mask_update();
+		return 0;
+	}
+	if (!strcmp(name, "turnaround")) {
+		turnaround_us = v;
 		return 0;
 	}
 	return -1;

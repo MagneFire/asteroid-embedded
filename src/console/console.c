@@ -1046,6 +1046,16 @@ static void cmd_hub(const char *args)
 		say("hub: mode %u: %s\n", code, hub_mode(code) ? "refused (1 band, 2 ambient, 3 normal)" : "sent");
 		return;
 	}
+	if (!strncmp(args, "turnaround ", 11)) {
+		const char *p = args + 11;
+		uint32_t us;
+		if (!parse_num(&p, 10, &us) || us > 10000) {
+			say("usage: hub turnaround <0-10000 us>\n");
+			return;
+		}
+		say("hub: turnaround %lu us: %s\n", us, hub_option("turnaround", us) ? "not on this watch" : "set");
+		return;
+	}
 	if (!strncmp(args, "mask ", 5)) {
 		bool on = !strcmp(args + 5, "on");
 		if (!on && strcmp(args + 5, "off")) {
@@ -1701,7 +1711,7 @@ static const struct command commands[] = {
 	{ "btinfo", "", cmd_btinfo },
 	{ "amp", "", cmd_amp },
 	{ "buzz", "[ms]", cmd_buzz },
-	{ "hub", "[send <hex bytes> | mode 1|2|3 | timepiece | mask on|off]", cmd_hub },
+	{ "hub", "[send <hex bytes> | mode 1|2|3 | timepiece | mask on|off | turnaround <us>]", cmd_hub },
 	{ "m4", "rd <bank> <offset> <n> | wr <bank> <offset> <bytes> | pm 0|1", cmd_m4 },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "prof", "[samples]", cmd_prof },
