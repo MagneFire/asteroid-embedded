@@ -565,6 +565,8 @@ static void apply_state(void)
 	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns());
 	accel_on = want_accel && configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_ENABLE, NANOHUB_HZ(10), 0);
 	light_on = want_light && configure(NANOHUB_SENSOR_LIGHT, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
+	if (asleep)
+		send_mode(MODE_SUSPEND);
 	mask_update();
 }
 
@@ -787,17 +789,21 @@ static bool nanohub_can_sleep(void)
  * stays low until it is read, the mode ask is a pulse. */
 static void nanohub_sleep(bool asleep)
 {
-	/* As the vendor kernel does at every suspend and resume. */
-	if (present)
-		send_mode(asleep ? MODE_SUSPEND : MODE_RESUME);
 	wake_pin(PINS.mpm, asleep, false);
 	wake_pin_falling(PINS.mode_mpm, asleep);
 }
 
+/* As the vendor kernel does at suspend and resume: masked, then
+ * SUSPEND, and RESUME before it is unmasked. */
 static void nanohub_asleep(bool a)
 {
 	asleep = a;
-	mask_update();
+	if (asleep)
+		mask_update();
+	if (present)
+		send_mode(asleep ? MODE_SUSPEND : MODE_RESUME);
+	if (!asleep)
+		mask_update();
 }
 
 /* With the screen off the hub draws the time on its own LCD. */
