@@ -26,7 +26,8 @@
  * Notifications are set as a list, newest first; ui_show_notification
  * pops one of them up by id. Weather days start today, temperatures in
  * degrees Celsius, a volume below 0 is unknown. ui_set_ambient switches
- * the watchface to its always-on form. The app panel shows the app set
+ * the watchface to its always-on form; ui_slept cancels a countdown to
+ * power off, reboot or forget the phone. The app panel shows the app set
  * with ui_set_app, none for -1. ui_set_settings shows the settings,
  * ui_set_face selects the watchface and whether nightstand mode is on
  * and in effect, ui_set_launcher the launcher layout.
@@ -263,6 +264,7 @@ void ui_set_agenda(const struct ui_agenda *events, uint32_t n);
 void ui_set_today(const struct ui_agenda *events, uint32_t n);
 void ui_set_battery(uint32_t percent, bool charging);
 void ui_set_ambient(bool ambient);
+void ui_slept(void);
 void ui_set_passkey(int32_t passkey);
 void ui_clear_notifications(void);
 void ui_add_notification(int32_t id, const char *app, uint32_t app_len, const char *summary, uint32_t summary_len,

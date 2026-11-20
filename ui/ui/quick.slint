@@ -127,16 +127,13 @@ export component QuickSettings {
         } else if i == 4 {
             Face.setting-toggled(Codes.setting-aod);
         } else if i == 5 {
-            remorse.action = "Power Off";
-            remorse.code = Codes.ui-power-off;
+            remorse.start("Power Off", Codes.ui-power-off);
         } else if i == 6 {
-            remorse.action = "Reboot";
-            remorse.code = Codes.ui-reboot;
+            remorse.start("Reboot", Codes.ui-reboot);
         } else if i == 7 {
             Face.setting-set(Codes.setting-tilt, Face.tilt > 0 ? 0 : 1);
         } else if i == 8 {
-            remorse.action = "Forget phone";
-            remorse.code = Codes.ui-forget-phone;
+            remorse.start("Forget phone", Codes.ui-forget-phone);
         }
     }
 

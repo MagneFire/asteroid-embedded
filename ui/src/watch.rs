@@ -656,6 +656,11 @@ pub extern "C" fn ui_set_ambient(ambient: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_slept() {
+    each(|face| face.set_sleeps(face.get_sleeps().wrapping_add(1)));
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_passkey(passkey: i32) {
     each(|face| face.set_passkey(passkey));
 }

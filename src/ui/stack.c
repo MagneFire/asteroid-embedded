@@ -158,6 +158,7 @@ void stack_sleep(uint32_t now_ms)
 	app_open = open;
 	slept_t = now_ms;
 	ui_set_screen(screen);
+	ui_slept();
 }
 
 void stack_wake(uint32_t now_ms)

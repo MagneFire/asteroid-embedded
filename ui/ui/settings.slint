@@ -606,8 +606,7 @@ export component SettingsApp {
                 icon: "ios-power-outline";
                 title: "Power Off";
                 clicked => {
-                    remorse.action = self.title;
-                    remorse.code = Codes.ui-power-off;
+                    remorse.start(self.title, Codes.ui-power-off);
                 }
             }
 
@@ -615,8 +614,7 @@ export component SettingsApp {
                 icon: "ios-sync";
                 title: "Reboot";
                 clicked => {
-                    remorse.action = self.title;
-                    remorse.code = Codes.ui-reboot;
+                    remorse.start(self.title, Codes.ui-reboot);
                 }
             }
 
@@ -625,8 +623,7 @@ export component SettingsApp {
                 icon: "ios-clock-outline";
                 title: "Timepiece";
                 clicked => {
-                    remorse.action = "Timepiece";
-                    remorse.code = Codes.ui-timepiece;
+                    remorse.start("Timepiece", Codes.ui-timepiece);
                 }
             }
         }

@@ -64,6 +64,8 @@ export global Face {
     in-out property <int> battery-percent;
     in-out property <bool> charging;
     in-out property <bool> ambient;
+    // Counts the times the watch went to sleep.
+    in-out property <int> sleeps;
     // How far the always-on face is moved against burn-in (Cortex-M).
     in-out property <length> shift-x;
     in-out property <length> shift-y;
