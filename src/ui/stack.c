@@ -68,7 +68,7 @@ static const uint32_t *layers;
 static uint32_t layer_px;
 static int W, H, fx, fy, from_x, from_y, off, from_off, peek;
 static unsigned screen, gesture;
-static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back, opening;
+static bool animating, dragging, horizontal, app_open, app_closing, app_top, peeking, peek_back, opening, modal_down;
 static uint32_t app_t0, slept_t;
 static int down_x, down_y, prev_x, prev_y, moves, depth;
 static uint32_t anim_t0, fade_t;
@@ -126,8 +126,19 @@ static void close_app(void)
 	ui_set_app(-1);
 }
 
+/* The stack stops following the touch, and what it pressed lets go:
+ * otherwise the release would still click it. */
+static void drop_touch(void)
+{
+	if (gesture == PENDING || gesture == SCROLL)
+		ui_touch(modal_down ? UI_PANEL_OVERLAY : app_open ? UI_PANEL_APP : screen, UI_TOUCH_UP, -10000, -10000);
+	gesture = IDLE;
+	target = -1;
+}
+
 void stack_home(void)
 {
+	drop_touch();
 	screen = UI_PANEL_FACE;
 	fx = fy = 0;
 	if (peeking)
@@ -135,14 +146,13 @@ void stack_home(void)
 	if (app_open)
 		close_app();
 	animating = dragging = app_closing = peeking = opening = false;
-	gesture = IDLE;
-	target = -1;
 	fade = 0.0f;
 }
 
 void stack_sleep(uint32_t now_ms)
 {
 	bool open = app_open;
+	drop_touch();
 	app_open = false;
 	stack_home();
 	app_open = open;
@@ -387,11 +397,15 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 {
 	int dx = x - down_x, dy = y - down_y;
 	bool far = dx * dx + dy * dy > SWIPE_PX * SWIPE_PX;
+	if (kind == UI_TOUCH_DOWN)
+		modal_down = ui_modal();
+	if (ui_modal() && !modal_down) {
+		/* A pop-up came up during the touch: the rest of it is ignored. */
+		if (gesture != SWIPE || kind == UI_TOUCH_UP)
+			drop_touch();
+		return;
+	}
 	if (ui_modal()) {
-		if (gesture == PAGE) {
-			gesture = IDLE;
-			target = -1;
-		}
 		if (kind == UI_TOUCH_DOWN) {
 			gesture = PENDING;
 			down_x = x;
@@ -430,6 +444,8 @@ void stack_touch(int kind, int x, int y, uint32_t now_ms)
 			gesture = PENDING;
 			down_x = x;
 			down_y = y;
+		} else if (gesture == IDLE) {
+			return;
 		}
 		touch_app(kind, x, y, dx, dy, far);
 		if (kind == UI_TOUCH_UP)

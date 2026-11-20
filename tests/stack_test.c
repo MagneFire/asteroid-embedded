@@ -15,7 +15,7 @@
 #define H 400
 
 static uint32_t layers[UI_PANELS][W * H];
-static int touches[UI_PANELS], last_kind = -1, last_panel = -1;
+static int touches[UI_PANELS], last_kind = -1, last_panel = -1, last_x;
 static unsigned screen_set = UI_PANELS;
 static int app_set = 1;
 static struct gpu_rect face_parts[32];
@@ -27,6 +27,7 @@ void ui_touch(uint32_t panel, int kind, int x, int y)
 	touches[panel]++;
 	last_kind = kind;
 	last_panel = (int)panel;
+	last_x = x;
 }
 void ui_set_screen(unsigned panel) { screen_set = panel; }
 static bool modal;
@@ -233,6 +234,29 @@ static void test_app(void)
 	drag(10, 200, 50, 200, 4);
 	settle();
 	CHECK(app_set == 1);
+	/* A pop-up during a press lets go of it outside the button, and the
+	 * release does not reach the app, also once the pop-up is gone. */
+	touches[UI_PANEL_APP] = touches[UI_PANEL_OVERLAY] = 0;
+	touch(UI_TOUCH_DOWN, 200, 200);
+	modal = true;
+	touch(UI_TOUCH_MOVE, 201, 200);
+	CHECK(touches[UI_PANEL_APP] == 2 && last_kind == UI_TOUCH_UP && last_x == -10000);
+	touch(UI_TOUCH_UP, 201, 200);
+	modal = false;
+	touch(UI_TOUCH_DOWN, 200, 200);
+	modal = true;
+	touch(UI_TOUCH_MOVE, 201, 200);
+	modal = false;
+	touch(UI_TOUCH_UP, 201, 200);
+	CHECK(touches[UI_PANEL_APP] == 4 && touches[UI_PANEL_OVERLAY] == 0 && last_x == -10000);
+	/* So does a sleep and quick wake. */
+	touch(UI_TOUCH_DOWN, 200, 200);
+	stack_sleep(stub_ms);
+	CHECK(touches[UI_PANEL_APP] == 6 && last_kind == UI_TOUCH_UP && last_x == -10000);
+	stack_wake(stub_ms + 100);
+	touch(UI_TOUCH_UP, 200, 200);
+	CHECK(app_set == 1 && touches[UI_PANEL_APP] == 6);
+	settle();
 	/* Kept across a short sleep, closed after a long one. */
 	stack_sleep(stub_ms);
 	stub_ms += 4999;
