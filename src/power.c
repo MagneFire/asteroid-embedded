@@ -613,10 +613,11 @@ const char *power_woke_by(void)
 		if (!top || len >= sizeof s - 1)
 			break;
 		int w;
-		if (!top->name)
+		if (!top->name) {
+			unsigned base = top->irq >= IRQ_LAST_MPM ? IRQ_LAST_MPM : top->irq >= IRQ_LAST_GPIO ? IRQ_LAST_GPIO : 0;
 			w = snprintf(s + len, sizeof s - len, "%s%lu %s %u", len ? ", " : "", top->n,
-				     top->irq >= IRQ_LAST_GPIO ? "gpio" : "irq", top->irq >= IRQ_LAST_GPIO ? top->irq - IRQ_LAST_GPIO : top->irq);
-		else
+				     base == IRQ_LAST_MPM ? "mpm" : base ? "gpio" : "irq", top->irq - base);
+		} else
 			w = snprintf(s + len, sizeof s - len, "%s%lu %s", len ? ", " : "", top->n, top->name);
 		if (w > 0)
 			len += (unsigned)w;

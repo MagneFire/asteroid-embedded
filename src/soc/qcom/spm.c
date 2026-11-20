@@ -156,14 +156,24 @@ static void qtmr_irq(void)
 	writel(0, QTMR_CNTP_CTL);
 }
 
-static void mpm_wake_irq(void)
-{
-}
-
 /* The MPM watches the wake-up sources while the cluster is off. Its
  * register image in RPM memory is copied into the hardware when the RPM
- * is interrupted; the wake-up time is in system counter ticks. */
-static uint32_t extra_pins[2], extra_high[2], extra_falling[2];
+ * is interrupted, and the pins that woke it come back in its status
+ * words, as the vendor kernel reads them; the wake-up time is in system
+ * counter ticks. */
+static uint32_t extra_pins[2], extra_high[2], extra_falling[2], armed[2];
+
+static void mpm_wake_irq(void)
+{
+	volatile uint32_t *v = (volatile uint32_t *)(uintptr_t)VMPM;
+	for (unsigned i = 0; i < 2; i++) {
+		uint32_t pending = v[10 + i] & armed[i];
+		if (pending) {
+			irq_last = IRQ_LAST_MPM + 32 * i + (unsigned)__builtin_ctz(pending);
+			return;
+		}
+	}
+}
 static bool touch_wakes = true;
 
 void wake_pin_touch(bool on)
@@ -199,6 +209,7 @@ static void mpm_arm(uint64_t wake)
 	uint32_t enable[2] = { (touch_wakes ? BIT(MPM_PIN_TOUCH) : 0) | extra_pins[0], BIT(MPM_PIN_PMIC - 32) | extra_pins[1] };
 	uint32_t polarity[2] = { extra_high[0], BIT(MPM_PIN_PMIC - 32) | extra_high[1] };
 	for (unsigned i = 0; i < 2; i++) {
+		armed[i] = enable[i];
 		v[0 + i] = (uint32_t)(wake >> (32 * i));
 		v[2 + i] = enable[i];
 		v[4 + i] = extra_falling[i];

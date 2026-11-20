@@ -179,8 +179,10 @@ void irq_disable(void);
 uint32_t irq_save(void);	/* mask IRQs, returning the state for irq_restore */
 void irq_restore(uint32_t cpsr);
 bool in_irq(void);	/* true inside an interrupt handler */
-/* The last interrupt taken, a GPIO one as IRQ_LAST_GPIO + its pin. */
+/* The last interrupt taken, a GPIO one as IRQ_LAST_GPIO + its pin, a
+ * wake by the MPM as IRQ_LAST_MPM + the lowest pin it saw. */
 #define IRQ_LAST_GPIO 0x1000u
+#define IRQ_LAST_MPM 0x2000u
 extern volatile unsigned irq_last;
 void timer_init(void);
 void timer_resume(void);
