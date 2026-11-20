@@ -97,7 +97,9 @@ struct hub_driver {
 	/* The watch's screen on or off, for a hub with a display of its own. */
 	void (*screen)(bool on);
 	bool (*gauge)(struct hub_gauge *g);
-	void (*poll_gauge)(void);
+	/* Asks the gauge for a reading when one is due, or with now unless
+	 * one was just asked for. */
+	void (*poll_gauge)(bool now);
 	/* Leave the hub showing the time on its own display, before the
 	 * watch powers off. */
 	void (*timepiece)(void);

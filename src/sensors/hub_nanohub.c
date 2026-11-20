@@ -55,7 +55,7 @@ static struct hr_accept heart_accept;
 static float hr_y, hr_z;
 static bool tilted, have_gauge, flushing;
 static struct hub_gauge gauge;
-static uint32_t gauge_asked_t, gauge_t, level_t, failures, down_t;
+static uint32_t gauge_asked_t, gauge_ask_t, gauge_t, level_t, failures, down_t;
 static bool started, reconfigure;
 static int16_t accel_v[3];
 static bool have_accel;
@@ -662,7 +662,7 @@ static bool nanohub_init(void)
 	return true;
 }
 
-static void poll_gauge(void)
+static void poll_gauge(bool now_wanted)
 {
 	if (!present)
 		return;
@@ -671,8 +671,8 @@ static void poll_gauge(void)
 		gauge_asked_t = now;
 		mask_update();
 		send_mode(MODE_GAUGE_FORCE);
-	} else if (!gauge_asked_t && (!have_gauge || now - gauge_t >= GAUGE_MS)) {
-		gauge_asked_t = now;
+	} else if (!gauge_asked_t && (now_wanted || !have_gauge || now - gauge_ask_t >= GAUGE_MS)) {
+		gauge_asked_t = gauge_ask_t = now;
 		mask_update();
 		send_mode(MODE_GAUGE);
 	}
@@ -716,7 +716,7 @@ static void nanohub_poll(void)
 	log_poll();
 	/* With the screen off the charger asks when it needs a reading. */
 	if (!screen_off)
-		poll_gauge();
+		poll_gauge(false);
 	mask_update();
 }
 

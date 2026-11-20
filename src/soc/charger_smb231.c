@@ -24,12 +24,14 @@
 #define CFG8		0x08
 #define IRQ_CFG		0x09
 #define I2C_COMM_CFG	0x0a
+#define NV_CFG		0x14
 #define CMD0		0x30
 #define CMD1		0x31
 #define IRQ_A		0x38
 #define IRQ_C		0x3a
 #define STATUS_A	0x3c
 #define STATUS_B	0x3d
+#define NV_UNPLUG_KEEP	BIT(2)
 #define CMD0_VOLATILE	BIT(7)
 #define CMD0_SUSPEND	BIT(2)
 #define CMD0_CHARGE	BIT(1)
@@ -39,13 +41,15 @@
 #define STATUS_A_UV	BIT(4)
 #define POLL_MS		60000
 #define CABLE_POLL_MS	1000
+#define GAUGE_ASK_MS	60000
 
 #define EMPTY_POLLS	2
 #define CELL_MAH	415
 #define CHARGER_TASK_MS	500
 
 static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale;
-static uint32_t poll_t, errors, empty_polls, quiet_polls;
+static uint32_t poll_t, gauge_ask_t, errors, empty_polls, quiet_polls;
+static bool gauge_asked;
 static bool empty_from_pmic;
 /* The last gauge reading taken in. */
 static struct hub_gauge seen;
@@ -129,6 +133,13 @@ static void smb231_init(void)
 		return;
 	}
 	ready = true;
+	/* As the vendor driver reads it: without the bit the chip reloads
+	 * its defaults when the cable goes, and its STAT interrupt cannot be
+	 * counted on while plugged in. */
+	uint8_t nv;
+	if (!rd(NV_CFG, &nv))
+		log_printf("charger: nv cfg %02x, %s\n", nv,
+			   nv & NV_UNPLUG_KEEP ? "settings kept on unplug, irq only" : "defaults on unplug, needs polling");
 	configured = configure();
 	cable_now = cable_told = vbus();
 	log_printf("charger: smb231 %s, usb %u\n", configured ? "set up" : "not set up", cable_now);
@@ -165,8 +176,9 @@ static bool gauge(struct hub_gauge *g);
 static bool reading_new(void);
 static uint32_t percent_from_mv(uint32_t mv);
 
-/* A hub that sent nothing over two polls, while it was asked for a
- * reading, is not believed: the PMIC's voltage stands in. */
+/* The gauge is asked at most every GAUGE_ASK_MS, and on a cable change.
+ * A hub that sent nothing over two of those is not believed: the PMIC's
+ * voltage stands in. */
 static void smb231_poll(void)
 {
 	uint32_t now = time_ms();
@@ -179,15 +191,19 @@ static void smb231_poll(void)
 		uint8_t irqs[4];
 		uint8_t reg = IRQ_A;
 		i2c_xfer(BUS, ADDR, &reg, 1, irqs, sizeof irqs);
-		bool c = vbus();
-		if (c != cable_now || !configured)
+		bool c = vbus(), changed = c != cable_now;
+		if (changed || !configured)
 			configured = configure();
 		cable_now = c;
-		if (board->hub && board->hub->poll_gauge)
-			board->hub->poll_gauge();
-		quiet_polls = fresh || reading_new() ? 0 : quiet_polls + 1;
-		stale = quiet_polls >= 2;
-		fresh = false;
+		if (changed || !gauge_asked || now - gauge_ask_t >= GAUGE_ASK_MS) {
+			gauge_asked = true;
+			gauge_ask_t = now;
+			if (board->hub && board->hub->poll_gauge)
+				board->hub->poll_gauge(changed);
+			quiet_polls = fresh || reading_new() ? 0 : quiet_polls + 1;
+			stale = quiet_polls >= 2;
+			fresh = false;
+		}
 	}
 	/* After the cable is known, so a plug-in is not taken for empty. */
 	if (reading_new()) {
