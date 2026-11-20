@@ -30,6 +30,7 @@
 #define ACCEL_RETRY_MS	5000
 #define GAUGE_FORCE_MS	20000
 #define READS_PER_POLL	8
+#define EXTRA_PASSES	2
 #define LEVEL_MS	100
 #define DOWN_AFTER	3
 #define RETRY_DOWN_MS	60000
@@ -300,8 +301,9 @@ static void handle_event(const struct nanohub_event *ev)
 
 /* Fetches events until the hub has none, a few per pass, and then
  * clears its two data-pending bits so it lets its line go. One answer
- * can hold several sensor events, a hand-up behind the steps. */
-static void read_events(void)
+ * can hold several sensor events, a hand-up behind the steps. False if
+ * an exchange failed. */
+static bool read_events(void)
 {
 	for (unsigned i = 0; i < READS_PER_POLL; i++) {
 		uint8_t b[8];
@@ -310,8 +312,7 @@ static void read_events(void)
 		struct nanohub_event ev;
 		if (len <= 0 || !nanohub_event(payload, (unsigned)len, &ev) || ev.kind == NANOHUB_EV_EMPTY) {
 			uint8_t clear[NANOHUB_ACK_INTR_SIZE] = { 6 };
-			exchange(NANOHUB_CLR_GET_INTR, clear, sizeof clear);
-			break;
+			return exchange(NANOHUB_CLR_GET_INTR, clear, sizeof clear) >= 0 && len >= 0;
 		}
 		struct nanohub_walk w = { 0 };
 		unsigned k = 0;
@@ -324,6 +325,7 @@ static void read_events(void)
 		unknown += w.unknown;
 		bad += w.bad;
 	}
+	return true;
 }
 
 /* The log the hub keeps in band mode (Timepiece): read once per boot, a
@@ -673,9 +675,12 @@ static void nanohub_poll(void)
 		reconfigure = false;
 		apply_state();
 	}
+	/* A line still low after a pass is data that came in meanwhile,
+	 * read right away rather than at the next level check. */
 	if (data_irq || (level_due && hub_irq_low())) {
 		data_irq = false;
-		read_events();
+		for (unsigned i = 0; read_events() && i < EXTRA_PASSES && hub_irq_low(); i++)
+			;
 	}
 	log_poll();
 	/* With the screen off the charger asks when it needs a reading. */
