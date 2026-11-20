@@ -643,6 +643,10 @@ void app_power_changed(enum power_change change)
 			touch_sleep(false, true);
 		frame_wake();
 		present_clock_soon();
+		/* The panel wakes at the brightness it slept with, and the app
+		 * may have closed while asleep. */
+		if (was_lit && have_display)
+			power_set_brightness();
 		was_lit = false;
 		break;
 	case POWER_NONE:
