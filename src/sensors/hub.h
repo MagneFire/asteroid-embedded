@@ -42,6 +42,7 @@ void hub_accel_on(bool on);
 bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);
+void hub_asleep(bool asleep);
 void hub_screen(bool on);
 void hub_status(void (*say)(const char *fmt, ...));
 /* A register access for the console: wn bytes written after the bank
@@ -49,4 +50,7 @@ void hub_status(void (*say)(const char *fmt, ...));
 int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 /* The hub's own power management on or off, for the console. */
 int hub_power_management(bool on);
+/* A setting of the hub's driver, for the console: < 0 if it has none
+ * by that name. */
+int hub_option(const char *name, uint32_t v);
 #endif

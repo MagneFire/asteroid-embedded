@@ -159,6 +159,12 @@ void hub_sleep(bool asleep)
 	if (HUB(sleep))
 		board->hub->sleep(asleep);
 }
+void hub_asleep(bool asleep)
+{
+	if (HUB(asleep))
+		board->hub->asleep(asleep);
+}
+int hub_option(const char *name, uint32_t v) { return HUB(option) ? board->hub->option(name, v) : -1; }
 void hub_screen(bool on)
 {
 	if (HUB(screen))

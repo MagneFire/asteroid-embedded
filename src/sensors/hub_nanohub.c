@@ -52,7 +52,7 @@ static uint32_t heart_kept = HUB_NONE, heart_kept_t;
 static struct hr_accept heart_accept;
 /* The trust and gain jump of a heart rate, logged when they change. */
 static float hr_y, hr_z;
-static bool tilted, have_gauge;
+static bool tilted, have_gauge, flushing;
 static struct hub_gauge gauge;
 static uint32_t gauge_asked_t, gauge_t, level_t, failures, down_t;
 static bool started, reconfigure;
@@ -228,6 +228,7 @@ static void sensor_event(const struct nanohub_event *ev)
 	case NANOHUB_SENSOR_STEPS_TODAY:
 		if (ev->sensor.header && nanohub_sample(ev, last, 4, &ns, &d))
 			memcpy(&steps_today, d, 4);
+		flushing = false;
 		break;
 	case NANOHUB_SENSOR_HEART_RATE:
 		for (unsigned i = 0; ev->sensor.header && nanohub_sample(ev, i, 12, &ns, &d); i++) {
@@ -269,6 +270,7 @@ static void sensor_event(const struct nanohub_event *ev)
 
 static void log_event(const struct nanohub_event *ev);
 static bool flash_cmd(uint8_t sub, uint8_t arg);
+static void mask_update(void);
 
 static void handle_event(const struct nanohub_event *ev)
 {
@@ -353,6 +355,7 @@ static void log_request(void)
 		log_state = LOG_PAUSED;
 		return;
 	}
+	mask_update();
 	if (flash_cmd(1, 1)) {
 		log_state = LOG_WAIT;
 		log_t = time_ms();
@@ -457,6 +460,57 @@ static void out(uint8_t pin, unsigned v)
 /* What the hub should be doing, sent again after it restarted. */
 static bool want_tilt, want_hr, want_accel, want_light;
 
+/* Every log line and sensor batch of the hub pulls its one line to the
+ * AP, which wakes it. As the vendor kernel does at suspend, its
+ * non-wakeup interrupt is masked while the watch sleeps, unless
+ * something waits for such data: the sensors on, a flush of the steps,
+ * the fuel gauge, the band log, or Timepiece. The tilt, touch and app messages still
+ * come, and a read takes in whatever else is waiting. The hub starts
+ * unmasked. */
+#define FLUSH_MS	2000
+#define MASK_TRIES	3
+#define MASK_RETRY_MS	1000
+static bool asleep, ending, mask_on = true, masked, mask_known, mask_failed;
+static uint32_t flush_t, mask_t, mask_errors;
+
+static bool mask_wanted(void)
+{
+	uint32_t now = time_ms();
+	if (!mask_on || !asleep || ending || want_hr || hr_on || want_light || light_on || want_accel || accel_on)
+		return false;
+	if (log_state == LOG_START || log_state == LOG_WAIT)
+		return false;
+	if (flushing && now - flush_t < FLUSH_MS)
+		return false;
+	return !gauge_asked_t || now - gauge_asked_t >= GAUGE_FORCE_MS;
+}
+
+/* Called wherever what it depends on changes, and on every poll, so a
+ * change the hub did not take is tried again. */
+static void mask_update(void)
+{
+	bool want = mask_wanted();
+	if (!present || (mask_known && want == masked) || (mask_failed && time_ms() - mask_t < MASK_RETRY_MS))
+		return;
+	uint8_t b[1] = { NANOHUB_INT_NONWAKEUP };
+	for (int i = 0; i < MASK_TRIES; i++) {
+		int len = exchange(want ? NANOHUB_MASK_INTR : NANOHUB_UNMASK_INTR, b, sizeof b);
+		if (len >= 1 && payload[0] == 1) {
+			masked = want;
+			mask_known = true;
+			mask_failed = false;
+			return;
+		}
+		if (len < 0)
+			break;
+	}
+	mask_known = false;
+	mask_failed = true;
+	mask_t = time_ms();
+	mask_errors++;
+	log_printf("hub: interrupt %s not taken\n", want ? "mask" : "unmask");
+}
+
 /* The steps come once a minute even when they don't change, and every
  * event wakes the AP: with the screen off the hub holds them back for
  * up to an hour, until the screen turns on or the day ends. */
@@ -474,6 +528,9 @@ static uint64_t hr_latency_ns(void)
 
 static void nanohub_flush_steps(void)
 {
+	flushing = true;
+	flush_t = time_ms();
+	mask_update();
 	configure(NANOHUB_SENSOR_STEPS, NANOHUB_CMD_FLUSH, 0, 0);
 }
 
@@ -490,6 +547,7 @@ static void enable_steps(void)
 
 static void apply_state(void)
 {
+	mask_known = false;
 	set_time();
 	enable_steps();
 	/* What the hub logs in band mode: steps and activity, and the heart
@@ -507,6 +565,7 @@ static void apply_state(void)
 	hr_on = want_hr && configure(NANOHUB_SENSOR_HEART_RATE, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, hr_latency_ns());
 	accel_on = want_accel && configure(NANOHUB_SENSOR_ACCEL, NANOHUB_CMD_ENABLE, NANOHUB_HZ(10), 0);
 	light_on = want_light && configure(NANOHUB_SENSOR_LIGHT, NANOHUB_CMD_ENABLE, NANOHUB_RATE_ON_CHANGE, 0);
+	mask_update();
 }
 
 static bool answers(void)
@@ -574,11 +633,13 @@ static void poll_gauge(void)
 		return;
 	uint32_t now = time_ms();
 	if (gauge_asked_t && now - gauge_asked_t >= GAUGE_FORCE_MS) {
+		gauge_asked_t = now;
+		mask_update();
 		send_mode(MODE_GAUGE_FORCE);
-		gauge_asked_t = now;
 	} else if (!gauge_asked_t && (!have_gauge || now - gauge_t >= GAUGE_MS)) {
-		send_mode(MODE_GAUGE);
 		gauge_asked_t = now;
+		mask_update();
+		send_mode(MODE_GAUGE);
 	}
 }
 
@@ -618,6 +679,7 @@ static void nanohub_poll(void)
 	/* With the screen off the charger asks when it needs a reading. */
 	if (!screen_off)
 		poll_gauge();
+	mask_update();
 }
 
 static bool get_gauge(struct hub_gauge *g)
@@ -644,6 +706,7 @@ static void nanohub_heart_rate_on(bool on)
 	want_hr = on;
 	if (on == hr_on)
 		return;
+	mask_update();
 	heart_rate = HUB_NONE;
 	heart_readings = 0;
 	heart_kept = HUB_NONE;
@@ -652,6 +715,7 @@ static void nanohub_heart_rate_on(bool on)
 		hr_on = on;
 	else
 		log_printf("hub: heart rate %s not taken\n", on ? "on" : "off");
+	mask_update();
 }
 
 static uint32_t nanohub_heart_rate(uint8_t *status, unsigned *readings)
@@ -696,10 +760,12 @@ static void nanohub_accel_on(bool on)
 	if (refused && now - refused_t < ACCEL_RETRY_MS)
 		return;
 	have_accel = false;
+	mask_update();
 	refused = !configure(NANOHUB_SENSOR_ACCEL, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_HZ(10), 0);
 	refused_t = now;
 	if (!refused)
 		accel_on = on;
+	mask_update();
 }
 
 static bool nanohub_accel(int16_t v[3])
@@ -728,6 +794,12 @@ static void nanohub_sleep(bool asleep)
 	wake_pin_falling(PINS.mode_mpm, asleep);
 }
 
+static void nanohub_asleep(bool a)
+{
+	asleep = a;
+	mask_update();
+}
+
 /* With the screen off the hub draws the time on its own LCD. */
 static void nanohub_screen(bool on)
 {
@@ -753,6 +825,8 @@ static void nanohub_timepiece(void)
 {
 	if (!started)
 		return;
+	ending = true;
+	mask_update();
 	want_tilt = want_hr = want_accel = false;
 	tilt_on = hr_on = accel_on = false;
 	if (present) {
@@ -825,6 +899,19 @@ static void nanohub_status(void (*say)(const char *fmt, ...))
 	    versions[0], versions[1], present ? "up" : "not up", mode, events, batched, unknown, bad, errors);
 	say("hub: its own log %lu warnings and %lu errors, steps %ld today %ld, gauge %s %lu mV %lu%%\n", hub_warnings, hub_errors,
 	    (long)steps, (long)steps_today, have_gauge ? "" : "none", gauge.mv, gauge.percent);
+	say("hub: non-wakeup interrupt %s%s, %lu mask errors\n", !mask_known ? "unknown" : masked ? "masked" : "unmasked",
+	    mask_on ? "" : " (masking off)", mask_errors);
+}
+
+/* mask 0 keeps the non-wakeup interrupt unmasked asleep, for comparing. */
+static int nanohub_option(const char *name, uint32_t v)
+{
+	if (!strcmp(name, "mask")) {
+		mask_on = v;
+		mask_update();
+		return 0;
+	}
+	return -1;
 }
 
 /* The hub's light sensor: on while it is wanted, the last lux it
@@ -846,10 +933,12 @@ static void light_set(bool on)
 	uint32_t now = time_ms();
 	if (on && refused && now - refused_t < LIGHT_RETRY_MS)
 		return;
+	mask_update();
 	if (configure(NANOHUB_SENSOR_LIGHT, on ? NANOHUB_CMD_ENABLE : NANOHUB_CMD_DISABLE, NANOHUB_RATE_ON_CHANGE, 0))
 		light_on = on;
 	refused = on && !light_on;
 	refused_t = now;
+	mask_update();
 }
 
 static bool nanohub_light_init(void) { return true; }
@@ -880,6 +969,8 @@ const struct hub_driver hub_nanohub = {
 	.accel = nanohub_accel,
 	.can_sleep = nanohub_can_sleep,
 	.sleep = nanohub_sleep,
+	.asleep = nanohub_asleep,
+	.option = nanohub_option,
 	.screen = nanohub_screen,
 	.status = nanohub_status,
 	.gauge = get_gauge,

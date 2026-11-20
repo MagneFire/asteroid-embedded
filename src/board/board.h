@@ -83,11 +83,17 @@ struct hub_driver {
 	void (*accel_on)(bool on);
 	bool (*accel)(int16_t v[3]);
 	bool (*can_sleep)(void);
+	/* Around each cluster power-down. */
 	void (*sleep)(bool asleep);
+	/* The watch going to sleep or waking up, once per change. */
+	void (*asleep)(bool asleep);
 	void (*status)(void (*say)(const char *fmt, ...));
 	/* A register of the hub, written then read, for the console. */
 	int (*raw)(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn);
 	int (*power_management)(bool on);
+	/* A runtime setting of the driver, for the console; < 0 if it has
+	 * no such setting. */
+	int (*option)(const char *name, uint32_t v);
 	/* The watch's screen on or off, for a hub with a display of its own. */
 	void (*screen)(bool on);
 	bool (*gauge)(struct hub_gauge *g);
