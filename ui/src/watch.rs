@@ -1068,6 +1068,13 @@ pub unsafe extern "C" fn ui_set_weather(
     with_ui(|ui| ui.forecast.set_vec((1..n).map(day).collect::<Vec<_>>()));
 }
 
+/// The notification pop-up is up: the Cortex-M build leaves its black at 80 % to the display.
+#[cfg(feature = "mcu")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_popup() -> bool {
+    with_ui(|ui| ui.screen(OVERLAY).global::<Face>().get_notification_shown()).unwrap_or(false)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_modal() -> bool {
     with_ui(|ui| {

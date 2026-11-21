@@ -199,6 +199,7 @@ static void run(uint32_t panel, uint32_t ms)
 		now_ms += 16;
 		ui_tick();
 		backdrop.modal = ui_modal();
+		backdrop.popup = ui_popup();
 		flatmesh_mcu_draw(backdrop.modal ? UI_PANEL_OVERLAY : panel, &backdrop, false);
 	}
 }
@@ -279,7 +280,8 @@ static bool framed;
 
 static struct backdrop stack_backdrop(void)
 {
-	struct backdrop b = { .screen = stack_screen(), .modal = ui_modal(), .edges = stack_edges(), .pending = true };
+	struct backdrop b = { .screen = stack_screen(), .modal = ui_modal(), .popup = ui_popup(), .edges = stack_edges(),
+			      .pending = true };
 	b.page = stack_page(&b.pages, &b.next);
 	return b;
 }
@@ -532,7 +534,9 @@ static void walk(void)
 			fail("walk: no way back to the watchface");
 		check("walk-back");
 	}
-	/* A pop-up, tapped and swiped away. */
+	/* A pop-up, tapped and swiped away, with the backdrop that shades
+	 * the mesh under it. */
+	framed = true;
 	ui_show_notification(1);
 	pass(400);
 	check("walk-popup");

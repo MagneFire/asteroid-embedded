@@ -306,6 +306,9 @@ int ui_page(unsigned i, bool *sideways);
 void ui_set_weather(const char *city, uint32_t city_len, uint32_t days, const int32_t *ids, const int32_t *min_c,
 		    const int32_t *max_c);
 bool ui_modal(void);
+/* The notification pop-up is up: the Cortex-M build draws it without
+ * the screen under it, for the display to shade the mesh by 80 %. */
+bool ui_popup(void);
 void ui_touch(uint32_t panel, int kind, int x, int y);
 /* When the touch handed to ui_touch next was reported, in ms. */
 void ui_set_touch_ms(uint32_t ms);

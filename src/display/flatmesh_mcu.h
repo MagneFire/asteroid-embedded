@@ -15,6 +15,9 @@ struct backdrop {
 	/* The stack's screen, under the overlay while that is up. */
 	unsigned screen;
 	bool ambient, modal;
+	/* The notification pop-up is up: the mesh is shaded as by its
+	 * black at 80 %. */
+	bool popup;
 	/* Edges with an indicator: left, right, top, bottom as bits 0-3. */
 	unsigned edges;
 	bool pending;

@@ -15,6 +15,8 @@
  * screen over and 40 % darker, in 1/256. */
 #define MOVE_PCT	5
 #define DIMMED		154
+/* Under the notification pop-up, as its #000000cc leaves it. */
+#define POPUP_SHADE	51
 #define IND_LOW_W	7.2f
 #define IND_HIGH_W	12.0f
 #define IND_LOW_A	0.6f
@@ -254,6 +256,8 @@ bool flatmesh_mcu_draw(unsigned panel, const struct backdrop *b, bool whole)
 	struct view v = { !b->ambient, s == UI_PANEL_LEFT ? mx : s == UI_PANEL_RIGHT ? -mx : 0,
 			  s == UI_PANEL_TOP ? my : s == UI_PANEL_BOTTOM ? -my : 0,
 			  s == UI_PANEL_LEFT || s == UI_PANEL_RIGHT || s == UI_PANEL_TOP ? DIMMED : 256 };
+	if (b->popup)
+		v.shade = v.shade * POPUP_SHADE / 255;
 	if (v.mesh && v.shade != mixed) {
 		mix(v.shade);
 		mixed = v.shade;

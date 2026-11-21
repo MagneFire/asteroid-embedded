@@ -43,7 +43,8 @@ void frame_draw(uint32_t now)
 		ui_tick();
 		uint32_t t0 = time_us();
 		bool modal = ui_modal();
-		struct backdrop b = { .screen = stack_screen(), .modal = modal, .edges = stack_edges(), .pending = stack_waiting() };
+		struct backdrop b = { .screen = stack_screen(), .modal = modal, .popup = modal && ui_popup(),
+				      .edges = stack_edges(), .pending = stack_waiting() };
 		b.page = stack_page(&b.pages, &b.next);
 		drawn = flatmesh_mcu_draw(modal ? UI_PANEL_OVERLAY : stack_panel(), &b, display_lost());
 		if (drawn) {

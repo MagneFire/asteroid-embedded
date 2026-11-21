@@ -13,8 +13,10 @@ export component Overlay {
 
     // NotificationPreview: black at 80 % over the screen with the icon, summary and body as a
     // centred block; hides itself after 5 s or on a tap, leaving the notification in the list.
+    // The Cortex-M build leaves the black to the display (see Screen) and does not darken it on a
+    // press: each is a draw of the whole screen.
     if Face.notification-shown: Rectangle {
-        background: preview-touch.pressed ? #000000d9 : #000000cc;
+        background: Build.mcu ? transparent : preview-touch.pressed ? #000000d9 : #000000cc;
 
         VerticalLayout {
             x: 0;
