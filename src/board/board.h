@@ -13,6 +13,7 @@ struct touch;
 struct max17050_model;
 struct stc3117_cell;
 struct m4_variant;
+struct tsl258x_profile;
 
 /* An I2C device: its bus and, where the SoC routes them by hand, the pins
  * and their function. */
@@ -492,6 +493,8 @@ struct board {
 		/* TSL2584 lux coefficients for the panel's height and for
 		 * height_alt: lux1's channels 0 and 1, then lux2's. */
 		uint16_t coeff[2][4];
+		/* The TSL258x's size of watch. */
+		const struct tsl258x_profile *profile;
 	} light_pins;
 
 	const struct motor_driver *motor;

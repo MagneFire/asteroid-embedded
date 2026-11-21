@@ -5,10 +5,12 @@
  * one of two chunk buffers, and DMA sends one while the other fills. A
  * picture starts with its window and a memory write, each further chunk
  * with a memory write continue, after the panel's tearing signal. The
- * panel takes its brightness as a command. */
+ * panel takes its brightness as a command. The light sensor under the
+ * panel sees each line too, for the screen's own light. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
+#include "sensors/tsl258x.h"
 
 #define DCS_POWER_MODE	0x0a
 #define DCS_SLEEP_IN	0x10
@@ -296,6 +298,7 @@ void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *px)
 		return;
 	if (!open_window || x != win_x || w != win_w || y != next_y)
 		begin_run((uint16_t)x, (uint16_t)y, (uint16_t)w);
+	tsl258x_crop_line(y, x, w, px);
 	/* The panel takes each pixel high byte first: two at a time are
 	 * swapped in one word. */
 	for (uint32_t i = 0; i < w;) {
@@ -357,6 +360,8 @@ void display_set_brightness(uint8_t value)
 		command(DCS_BRIGHTNESS, &level, 1);
 	}
 }
+
+uint8_t display_brightness(void) { return level; }
 
 void display_set_backlight_code(uint8_t code)
 {

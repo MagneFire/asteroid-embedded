@@ -16,6 +16,7 @@
 #define STORE_FLASH_BASE	0x000e8000	/* two pages of settings */
 #define STORE_FLASH_SIZE	0x00004000
 #define VENDOR_DATA_BASE	0x000ec000
+#define VENDOR_FACTORY_BASE	0x000f0000	/* its factory record, read only */
 
 #define SRAM_BASE		0x10000000
 #define SRAM_END		0x10060000

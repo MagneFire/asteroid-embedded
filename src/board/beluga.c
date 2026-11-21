@@ -4,6 +4,7 @@
  * same but for one enable line. Pins are the Apollo3's pad numbers. */
 #include "asteroid.h"
 #include "display/display.h"
+#include "sensors/tsl258x.h"
 
 /* The panel's SPI master, IOM5: MOSI, SCK, MISO, and its chip select 3
  * on pad 45. Pads 4 and 14 go high, as the vendor's firmware has them
@@ -102,7 +103,7 @@ static const struct dcs_step panel_on_41[] = {
 	.hub = &hub_lsm6dso, .hub_pins = { .i2c = { .bus = 3, .sda = 43, .scl = 42, .func = 4, .addr = 0x6a }, .irq = 13 }, \
 	.hr_pins = { .pads = hr_pads, .spi_bus = 2, .spi_cs = 3, .spi_hz = 4000000, .power = 31, .reset = 19, .irq = 18 }, \
 	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x5a }, .enable = 26 }, \
-	.light = &light_tsl258x, .light_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x29 } }, \
+	.light = &light_tsl258x,                                                                                       \
 	.ap_link = { .up_int = 29, .up_ack = 33, .dn_int = 30, .dn_ack = 32, .own_gpio = 36, .release_gpio = 14 }, \
 	.ble_gpio = 4
 
@@ -117,6 +118,7 @@ const struct board board_beluga = {
 		.spi_pads = { 45, 47, 48, 49 },
 		.col_offset = 40,
 	},
+	.light_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x29 }, .profile = &tsl258x_46mm },
 	.touch_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x24 }, .irq = 23, .reset = 22,
 			.grid_w = 368, .grid_h = 448 },
 };
@@ -134,5 +136,6 @@ const struct board board_beluga_41 = {
 		.spi_pads = { 45, 47, 48, 49 },
 		.col_offset = 20,
 	},
+	.light_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x29 }, .profile = &tsl258x_41mm },
 	.touch_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x24 }, .irq = 23, .reset = 22, .power_gpio = 12 },
 };

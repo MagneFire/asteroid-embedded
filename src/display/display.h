@@ -26,6 +26,8 @@ uint32_t display_waits(void);
 uint32_t display_timeouts(void);
 void display_set_brightness(uint8_t level);
 void display_set_backlight_code(uint8_t code);
+/* The brightness last set, as the panel's own code (the RM69090's). */
+uint8_t display_brightness(void);
 void display_sleep(void);
 void display_wake(void);
 void display_wake_hidden(void);
