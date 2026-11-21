@@ -681,10 +681,6 @@ void power_idle(uint32_t app_next_ms, const char *why)
 			next = lpm;
 			why = "bt sleep";
 		}
-		if (have_hub && !hub_can_sleep() && next > 50) {
-			next = 50;
-			why = "hub busy";
-		}
 		uint32_t minute = (60 - rtc_read() % 60) * 1000;
 		if (screen == SCREEN_AMBIENT && minute < next) {
 			next = minute;
@@ -694,6 +690,10 @@ void power_idle(uint32_t app_next_ms, const char *why)
 			next = MAX_SLEEP_MS;
 			why = "longest sleep";
 		}
+	}
+	if (!policy.awake && have_hub && !hub_can_sleep() && next > 50) {
+		next = 50;
+		why = "hub busy";
 	}
 	uint32_t lux = lux_next_ms(time_ms()), hub = hub_screen_next_ms(time_ms());
 	if (lux < next) {
