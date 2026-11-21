@@ -1,6 +1,6 @@
 // The flashlight, laid out as asteroid-flashlight: a white disc filling the screen while the
-// light is on (a square on a square screen), with a bulb outline in it, that a tap shrinks to a
-// grey disc with a filled bulb.
+// light is on (the whole screen on a screen that is not round), with a bulb outline in it, that
+// a tap shrinks to a grey disc with a filled bulb.
 // The firmware reads Face.flashlight-on for the brightness. A page of the app strip, which is
 // swiped past on the way to others, starts with the light off.
 import { Face } from "face.slint";
@@ -12,6 +12,12 @@ export component FlashlightScreen {
     property <bool> on: Face.flashlight-on;
     property <length> size: self.on ? 100 * Theme.unit : 45 * Theme.unit;
     animate size {
+        duration: 100ms;
+        easing: ease-in;
+    }
+    // Past the middle square to the screen's edges, while the light is on.
+    property <float> stretch: self.on && !Face.round-screen ? 1 : 0;
+    animate stretch {
         duration: 100ms;
         easing: ease-in;
     }
@@ -29,10 +35,10 @@ export component FlashlightScreen {
     }
 
     disc := Rectangle {
-        x: 50 * Theme.unit - root.size / 2;
-        y: 50 * Theme.unit - root.size / 2;
-        width: root.size;
-        height: root.size;
+        x: 50 * Theme.unit - self.width / 2;
+        y: 50 * Theme.unit - self.height / 2;
+        width: root.size + root.stretch * Theme.extra-width;
+        height: root.size + root.stretch * Theme.extra-height;
         border-radius: root.radius;
         background: root.on ? #ffffff : #44444466;
         animate background {
@@ -41,8 +47,8 @@ export component FlashlightScreen {
         }
 
         Image {
-            width: parent.width * 0.7;
-            height: parent.height * 0.7;
+            width: root.size * 0.7;
+            height: root.size * 0.7;
             source: Icons.get(root.on ? "ios-bulb-outline" : "ios-bulb", self.width, self.height);
             colorize: root.on ? #f0f0f0 : white;
         }
