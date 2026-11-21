@@ -47,7 +47,7 @@
 #define CELL_MAH	415
 #define CHARGER_TASK_MS	500
 
-static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale;
+static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale, keeps_settings;
 static uint32_t poll_t, gauge_ask_t, errors, empty_polls, quiet_polls;
 static bool gauge_asked;
 static bool empty_from_pmic;
@@ -137,9 +137,11 @@ static void smb231_init(void)
 	 * its defaults when the cable goes, and its STAT interrupt cannot be
 	 * counted on while plugged in. */
 	uint8_t nv;
-	if (!rd(NV_CFG, &nv))
+	if (!rd(NV_CFG, &nv)) {
+		keeps_settings = nv & NV_UNPLUG_KEEP;
 		log_printf("charger: nv cfg %02x, %s\n", nv,
 			   nv & NV_UNPLUG_KEEP ? "settings kept on unplug, irq only" : "defaults on unplug, needs polling");
+	}
 	configured = configure();
 	cable_now = cable_told = vbus();
 	log_printf("charger: smb231 %s, usb %u\n", configured ? "set up" : "not set up", cable_now);
@@ -170,7 +172,7 @@ static void check_empty(uint32_t percent, bool pmic)
 	reboot();
 }
 
-static uint32_t poll_ms(void) { return cable_now || !configured ? CABLE_POLL_MS : POLL_MS; }
+static uint32_t poll_ms(void) { return (cable_now && !keeps_settings) || !configured ? CABLE_POLL_MS : POLL_MS; }
 
 static bool gauge(struct hub_gauge *g);
 static bool reading_new(void);
