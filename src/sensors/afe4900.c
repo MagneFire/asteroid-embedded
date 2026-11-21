@@ -247,8 +247,11 @@ static void power_down(void)
 		pad_config(p->pad, PAD_FUNC_GPIO, 0);
 }
 
-void afe4900_on(bool on)
+static bool own, shared;
+
+static void apply(void)
 {
+	bool on = own || shared;
 	if (!P.pads || on == (state != OFF))
 		return;
 	rate = HUB_NONE;
@@ -268,6 +271,18 @@ void afe4900_on(bool on)
 	wr(TIMER, t | TIMEREN);
 	irq_seen = false;
 	log_printf("hr: AFE4900 on, timer %06lx\n", t);
+}
+
+void afe4900_on(bool on)
+{
+	own = on;
+	apply();
+}
+
+void afe4900_share(bool on)
+{
+	shared = on;
+	apply();
 }
 
 void afe4900_poll(void)
@@ -319,7 +334,7 @@ uint32_t afe4900_rate(uint8_t *status, unsigned *n)
 void afe4900_status(void (*say)(const char *fmt, ...))
 {
 	if (P.pads)
-		say("hr: AFE4900 %s, %lu batches %lu errors %lu restarts, code %u gain %u off %d/%d, %lu bpm\n",
-		    state == OFF ? "off" : state == RUN ? "running" : "calibrating", batches, errors, restarts, led, gain,
-		    off_led, off_rest, rate);
+		say("hr: AFE4900 %s%s, %lu batches %lu errors %lu restarts, code %u gain %u off %d/%d, %lu bpm\n",
+		    state == OFF ? "off" : state == RUN ? "running" : "calibrating", shared ? " (AP)" : "", batches,
+		    errors, restarts, led, gain, off_led, off_rest, rate);
 }

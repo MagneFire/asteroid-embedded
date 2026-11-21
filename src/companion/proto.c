@@ -282,12 +282,20 @@ unsigned proto_sns_report(uint8_t *out, unsigned cap, const struct proto_sns_eve
 		uint8_t vec[20], raw[22], ev[PROTO_SNS_EVENT_LEN];
 		struct writer vw = { vec, 0, sizeof vec, false }, rw = { raw, 0, sizeof raw, false },
 			      ew = { ev, 0, sizeof ev, false };
-		for (unsigned k = 0; k < 4; k++)
-			put_fixed(&vw, k + 1, e[i].word[k], 4);
-		put_bytes(&rw, 1, vec, vw.n);
+		/* Required, so a status of 0 is written too. */
+		if (e[i].handle == PROTO_SNS_HEART_RATE) {
+			put_fixed(&vw, 1, e[i].word[0], 4);
+			put_varint(&vw, 2 << 3 | VARINT);
+			put_varint(&vw, proto_zigzag((int32_t)e[i].word[1]));
+			put_bytes(&rw, 3, vec, vw.n);
+		} else {
+			for (unsigned k = 0; k < 4; k++)
+				put_fixed(&vw, k + 1, e[i].word[k], 4);
+			put_bytes(&rw, 1, vec, vw.n);
+		}
 		put_fixed(&ew, 1, e[i].handle, 4);
 		put_fixed(&ew, 2, e[i].time_ns, 8);
-		put_bytes(&ew, 3, raw, rw.n);
+		put_bytes(&ew, e[i].handle == PROTO_SNS_HEART_RATE ? 4 : 3, raw, rw.n);
 		put_bytes(&w, 2, ev, ew.n);
 	}
 	return w.full ? 0 : w.n;

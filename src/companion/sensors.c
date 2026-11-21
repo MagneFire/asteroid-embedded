@@ -9,6 +9,7 @@
  * early by the time the reset took. */
 #include <string.h>
 #include "asteroid.h"
+#include "sensors/afe4900.h"
 #include "sensors/hub.h"
 #include "companion/link.h"
 #include "companion/proto.h"
@@ -21,6 +22,9 @@
 #define STEPS_MS	1000
 #define DETECTOR_MAX	4
 #define FLUSH_MAX	8
+/* Longer than a start takes: the AFE4900's calibration (up to 4 s) and
+ * the five intervals of a first reading. */
+#define NO_CONTACT_MS	15000
 /* Keeps the deadlines' differences in an int32_t. */
 #define LONGEST_MS	3600000
 #define ACCURACY_HIGH	3
@@ -38,9 +42,9 @@ struct sub {
 	uint32_t period_ms, latency_ms;
 };
 
-enum { ACCEL, COUNTER, DETECTOR, TILT, SUBS };
+enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, SUBS };
 static const uint32_t handles[SUBS] = { PROTO_SNS_ACCEL, PROTO_SNS_STEP_COUNTER, PROTO_SNS_STEP_DETECTOR,
-					PROTO_SNS_WRIST_TILT };
+					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE };
 static struct kept {
 	uint32_t magic;
 	struct sub subs[SUBS];
@@ -52,8 +56,9 @@ static struct kept {
 } kept KEPT;
 static struct proto_sns_event queue[PROTO_SNS_EVENTS];
 static unsigned queued, per_report, taken;
-static uint32_t first_ms, accel_ms, steps_ms, last_steps = HUB_NONE, seen_tilts;
-static bool urgent;
+static uint32_t first_ms, accel_ms, steps_ms, last_steps = HUB_NONE, seen_tilts, heart_ms;
+static unsigned seen_readings;
+static bool urgent, no_contact;
 static uint32_t flushes[FLUSH_MAX];
 static unsigned flush_n;
 static struct {
@@ -113,7 +118,18 @@ static void push_value(uint32_t handle, float v)
 	push(handle, mcu_ns(), w, true);
 }
 
-static void accel_share(void) { hub_accel_share(kept.subs[ACCEL].on); }
+static void share(void)
+{
+	hub_accel_share(kept.subs[ACCEL].on);
+	afe4900_share(kept.subs[HEART].on);
+}
+
+static void heart_start(uint32_t now)
+{
+	afe4900_rate(NULL, &seen_readings);
+	heart_ms = now;
+	no_contact = false;
+}
 
 static void activate(int i, bool on)
 {
@@ -121,10 +137,12 @@ static void activate(int i, bool on)
 		return;
 	kept.subs[i].on = on;
 	uint32_t now = time_ms();
-	if (i == ACCEL) {
-		accel_share();
+	share();
+	if (i == ACCEL)
 		accel_ms = now;
-	} else if (i == COUNTER || i == DETECTOR) {
+	else if (i == HEART)
+		heart_start(now);
+	else if (i == COUNTER || i == DETECTOR) {
 		steps_ms = now;
 		if (on)
 			last_steps = HUB_NONE;
@@ -171,7 +189,7 @@ void sns_reset(void)
 {
 	for (int i = 0; i < SUBS; i++)
 		kept.subs[i] = (struct sub){ 0 };
-	accel_share();
+	share();
 	queued = flush_n = taken = 0;
 	urgent = kept.synced = false;
 	kept.offset_ns = 0;
@@ -205,7 +223,8 @@ void sns_start(bool keep_subs)
 	uint32_t now = time_ms();
 	accel_ms = steps_ms = now;
 	seen_tilts = hub_tilts();
-	accel_share();
+	share();
+	heart_start(now);
 	log_printf("sensors: the AP's subscriptions kept from before the reset\n");
 }
 
@@ -251,11 +270,38 @@ static void sample_steps(uint32_t now)
 	last_steps = s;
 }
 
+/* Each new reading goes out as it comes, with the quality of its
+ * intervals as the accuracy; with none for NO_CONTACT_MS, one event
+ * says there is no contact. */
+static void sample_heart(uint32_t now)
+{
+	if (!kept.subs[HEART].on)
+		return;
+	uint8_t quality;
+	unsigned readings;
+	uint32_t bpm = afe4900_rate(&quality, &readings);
+	uint32_t w[4] = { 0 };
+	bool fresh = readings != seen_readings && bpm && bpm != HUB_NONE;
+	seen_readings = readings;
+	if (fresh) {
+		w[0] = proto_float_bits((float)bpm);
+		w[1] = quality >= 2 ? PROTO_SNS_HIGH : PROTO_SNS_MEDIUM;
+		heart_ms = now;
+		no_contact = false;
+	} else if (!no_contact && now - heart_ms >= NO_CONTACT_MS) {
+		w[1] = (uint32_t)PROTO_SNS_NO_CONTACT;
+		no_contact = true;
+	} else
+		return;
+	push(PROTO_SNS_HEART_RATE, mcu_ns(), w, true);
+}
+
 void sns_pass(void)
 {
 	uint32_t now = time_ms();
 	sample_accel(now);
 	sample_steps(now);
+	sample_heart(now);
 	uint32_t t = hub_tilts();
 	if (kept.subs[TILT].on && t != seen_tilts)
 		push_value(PROTO_SNS_WRIST_TILT, 1.0f);
@@ -347,6 +393,13 @@ uint32_t sns_next_ms(bool link_free)
 	uint32_t r = report_in(now);
 	if (s < ms)
 		ms = s;
+	if (kept.subs[HEART].on) {
+		unsigned readings;
+		afe4900_rate(NULL, &readings);
+		uint32_t h = readings != seen_readings ? 1 : no_contact ? UINT32_MAX : until(heart_ms + NO_CONTACT_MS, now);
+		if (h < ms)
+			ms = h;
+	}
 	if ((r || link_free) && r < ms)
 		ms = r;
 	return ms;
@@ -354,7 +407,8 @@ uint32_t sns_next_ms(bool link_free)
 
 void sns_status(void (*say)(const char *fmt, ...))
 {
-	static const char *const names[SUBS] = { "accelerometer", "step counter", "step detector", "wrist tilt" };
+	static const char *const names[SUBS] = { "accelerometer", "step counter", "step detector", "wrist tilt",
+						 "heart rate" };
 	for (int i = 0; i < SUBS; i++)
 		if (kept.subs[i].on)
 			say("sensors: %s every %lu ms, latency %lu ms\n", names[i], period(i), kept.subs[i].latency_ms);

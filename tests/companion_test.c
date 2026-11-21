@@ -146,7 +146,10 @@ static unsigned staged_n;
 static int kv_mode = -1;
 static int32_t kv_zone;
 static uint32_t steps = HUB_NONE, tilts, clock_from_ms, ms_per_read;
-static bool accel_shared;
+static bool accel_shared, hr_shared;
+static uint32_t hr_bpm = HUB_NONE;
+static uint8_t hr_quality;
+static unsigned hr_readings;
 
 uint32_t time_ms(void) { return now_ms += ms_per_read; }
 uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
@@ -238,6 +241,19 @@ bool hub_accel(int16_t v[3])
 	v[0] = 0, v[1] = -1000, v[2] = 500;
 	return accel_shared;
 }
+void afe4900_share(bool on)
+{
+	if (on != hr_shared)
+		hr_readings = 0, hr_bpm = HUB_NONE;
+	hr_shared = on;
+}
+uint32_t afe4900_rate(uint8_t *status, unsigned *readings)
+{
+	if (status)
+		*status = hr_quality;
+	*readings = hr_shared ? hr_readings : 0;
+	return hr_bpm;
+}
 uint32_t hub_steps(void) { return steps; }
 uint32_t hub_tilts(void) { return tilts; }
 /* The MCU's clock in µs, which starts over at a reset. */
@@ -260,9 +276,26 @@ static uint64_t le(const uint8_t *p, unsigned n)
 
 /* The HAL's decode of a ResponseBody: field 1 a varint, field 2 the
  * repeated SensorsEvtT (1 fixed32 id, 2 fixed64 time, 3 SensorsRawData
- * whose field 1 is SensorsVecT, four fixed32). Every field is checked
- * for its wire type; -1 for anything else. */
-struct ap_event { uint32_t id; uint64_t time; uint32_t w[4]; unsigned words; };
+ * whose field 1 is SensorsVecT, four fixed32, or 4 SensorsCustData
+ * whose field 3 is heart_rate_android_t, a fixed32 rate and a sint32
+ * status, both there). Every field is checked for its wire type; -1
+ * for anything else. */
+struct ap_event { uint32_t id; uint64_t time; uint32_t w[4]; unsigned words; bool heart; float bpm; int32_t status; };
+
+static int ap_heart(const uint8_t *p, unsigned n, struct ap_event *e)
+{
+	unsigned i = 0;
+	if (n < 7 || p[0] != (1 << 3 | 5))
+		return -1;
+	memcpy(&e->bpm, p + 1, 4);
+	i = 5;
+	if (ap_varint(p, n, &i) != (2 << 3 | 0))
+		return -1;
+	uint32_t z = (uint32_t)ap_varint(p, n, &i);
+	e->status = (int32_t)(z >> 1 ^ (0u - (z & 1)));
+	e->heart = true;
+	return i == n ? 0 : -1;
+}
 
 static int ap_vec(const uint8_t *p, unsigned n, struct ap_event *e)
 {
@@ -299,12 +332,16 @@ static int ap_events(const uint8_t *p, unsigned n, struct ap_event *ev, unsigned
 		e->time = le(q + 6, 8);
 		j = 14;
 		uint64_t k3 = ap_varint(q, m, &j), l3 = ap_varint(q, m, &j);
-		if (k3 != (3 << 3 | 2) || j + l3 != m)
+		bool cust = k3 == (4 << 3 | 2);
+		if ((k3 != (3 << 3 | 2) && !cust) || j + l3 != m)
 			return -1;
 		const uint8_t *r = q + j;
 		unsigned rn = (unsigned)l3, t = 0;
 		uint64_t k1 = ap_varint(r, rn, &t), l1 = ap_varint(r, rn, &t);
-		if (k1 != (1 << 3 | 2) || t + l1 != rn || ap_vec(r + t, (unsigned)l1, e))
+		if (t + l1 != rn)
+			return -1;
+		if (cust ? k1 != (3 << 3 | 2) || ap_heart(r + t, (unsigned)l1, e) :
+			   k1 != (1 << 3 | 2) || ap_vec(r + t, (unsigned)l1, e))
 			return -1;
 	}
 	return (int)count;
@@ -753,6 +790,22 @@ static void sensor_tests(void)
 	CHECK(a[1].id == 19 && a[1].time == 5000000000ull && (uint64_t)bits_float(a[1].w[0]) == 1234);
 	CHECK(a[2].id == 0 && a[2].w[0] == 1 && a[2].words == 4);
 
+	/* A heart rate as the HAL's heart_rate_android_t, the status
+	 * zigzagged and written also when it is 0. */
+	struct proto_sns_event hr[3] = {
+		{ PROTO_SNS_HEART_RATE, 9, { proto_float_bits(72.0f), PROTO_SNS_HIGH, 0, 0 } },
+		{ PROTO_SNS_HEART_RATE, 10, { 0, (uint32_t)PROTO_SNS_NO_CONTACT, 0, 0 } },
+		{ PROTO_SNS_HEART_RATE, 11, { proto_float_bits(55.0f), PROTO_SNS_UNRELIABLE, 0, 0 } },
+	};
+	n = proto_sns_report(out, sizeof out, hr, 3);
+	static const uint8_t hr_event[] = { 0x12, 0x19, 0x0d, 0x15, 0x00, 0x00, 0x00, 0x11, 0x09, 0, 0, 0, 0, 0, 0, 0,
+					    0x22, 0x09, 0x1a, 0x07, 0x0d, 0x00, 0x00, 0x90, 0x42, 0x10, 0x06 };
+	CHECK(n == 2 + 3 * 27 && !memcmp(out + 2, hr_event, sizeof hr_event));
+	CHECK(ap_events(out, n, a, PROTO_SNS_EVENTS, &field1) == 3);
+	CHECK(a[0].id == 21 && a[0].heart && a[0].bpm == 72.0f && a[0].status == 3 && a[0].time == 9);
+	CHECK(a[1].heart && a[1].bpm == 0 && a[1].status == -1);
+	CHECK(a[2].heart && a[2].bpm == 55.0f && a[2].status == 0);
+
 	/* Nine events fit, in what the HAL reads at once with the envelope. */
 	struct proto_sns_event nine[PROTO_SNS_EVENTS];
 	for (unsigned i = 0; i < PROTO_SNS_EVENTS; i++)
@@ -909,12 +962,46 @@ static void sensor_scenario(void)
 	ap_sensors(2000);
 	CHECK(got.reports == 0);
 
+	/* The heart rate sensor runs while the AP wants it; each new
+	 * reading goes out at once, and one no-contact event after 15 s
+	 * without one. */
+	ap_activate(PROTO_SNS_HEART_RATE, true, 0);
+	CHECK(hr_shared);
+	memset(&got, 0, sizeof got);
+	ap_sensors(2000);
+	CHECK(got.reports == 0);
+	hr_bpm = 64, hr_quality = 2, hr_readings = 1;
+	ap_sensors(5);
+	CHECK(got.events == 1 && got.ev[0].id == PROTO_SNS_HEART_RATE && got.ev[0].heart && got.ev[0].bpm == 64.0f &&
+	      got.ev[0].status == PROTO_SNS_HIGH);
+	CHECK(companion_next_ms() > 1000);
+	hr_bpm = 66, hr_quality = 1, hr_readings = 2;
+	CHECK(companion_next_ms() == 1);
+	ap_sensors(5);
+	CHECK(got.events == 2 && got.ev[1].bpm == 66.0f && got.ev[1].status == PROTO_SNS_MEDIUM);
+	ap_sensors(14900);
+	CHECK(got.events == 2);
+	ap_sensors(200);
+	CHECK(got.events == 3 && got.ev[2].heart && got.ev[2].bpm == 0 && got.ev[2].status == PROTO_SNS_NO_CONTACT);
+	ap_sensors(20000);
+	CHECK(got.events == 3);
+	hr_readings = 3;
+	ap_sensors(5);
+	CHECK(got.events == 4 && got.ev[3].bpm == 66.0f);
+	ap_activate(PROTO_SNS_HEART_RATE, false, 0);
+	CHECK(!hr_shared);
+	hr_readings = 4;
+	ap_sensors(20000);
+	CHECK(got.events == 4);
+	ap_activate(PROTO_SNS_HEART_RATE, true, 0);
+	CHECK(hr_shared);
+
 	/* Power off drops them. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);
 	ap_activate(PROTO_SNS_ACCEL, true, 0);
 	CHECK(accel_shared);
 	mode_message(374, NULL, 0, &a);
-	CHECK(a.mode == PROTO_MODE_POWER_OFF && !accel_shared);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF && !accel_shared && !hr_shared);
 	memset(&got, 0, sizeof got);
 	ap_sensors(2000);
 	CHECK(got.reports == 0);

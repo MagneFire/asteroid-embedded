@@ -1,8 +1,8 @@
 /* The sensors the AP's sensor HAL asks for on channel 4, from the hub:
- * the accelerometer in m/s², the step counter and detector and the
- * wrist tilt. The AP's subscriptions only add reports; the watch's own
- * use of the hub goes on as before. Other handles are taken and never
- * reported. */
+ * the accelerometer in m/s², the step counter and detector, the wrist
+ * tilt and the heart rate. The AP's subscriptions only add reports; the
+ * watch's own use of the hub goes on as before. Other handles are
+ * taken and never reported. */
 #ifndef COMPANION_SENSORS_H
 #define COMPANION_SENSORS_H
 #include <stdbool.h>

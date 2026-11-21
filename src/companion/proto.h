@@ -63,8 +63,11 @@ enum proto_sns_handle {
 	PROTO_SNS_ACCEL = 1,
 	PROTO_SNS_STEP_DETECTOR = 18,
 	PROTO_SNS_STEP_COUNTER = 19,
+	PROTO_SNS_HEART_RATE = 21,
 	PROTO_SNS_WRIST_TILT = 26,
 };
+/* Android's SENSOR_STATUS_*. */
+enum { PROTO_SNS_NO_CONTACT = -1, PROTO_SNS_UNRELIABLE, PROTO_SNS_LOW, PROTO_SNS_MEDIUM, PROTO_SNS_HIGH };
 enum proto_sns_op { PROTO_SNS_FLUSH = 2, PROTO_SNS_ACTIVATE = 3, PROTO_SNS_BATCH = 7 };
 #define PROTO_SNS_EVENTS	9
 #define PROTO_SNS_EVENT_LEN	40u
@@ -82,7 +85,9 @@ bool proto_sns_cmd(const uint8_t *p, unsigned n, struct proto_sns_cmd *c);
 
 /* The HAL copies the four words as they are: x, y and z as floats and
  * the accuracy, or a scalar in the first. A flush is completed by a
- * PROTO_SNS_META event with the handle in its first word. */
+ * PROTO_SNS_META event with the handle in its first word. The heart
+ * rate goes as the HAL's heart_rate_android_t instead: the bpm as a
+ * float in the first word, the status (an int32) in the second. */
 struct proto_sns_event {
 	uint32_t handle;
 	uint64_t time_ns;

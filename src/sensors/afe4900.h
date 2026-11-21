@@ -6,6 +6,8 @@
 #include <stdint.h>
 
 void afe4900_on(bool on);
+/* A second user of the readings, the AP's: on while either wants it. */
+void afe4900_share(bool on);
 uint32_t afe4900_rate(uint8_t *status, unsigned *readings);
 void afe4900_poll(void);
 bool afe4900_can_sleep(void);
