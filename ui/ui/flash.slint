@@ -2,7 +2,8 @@
 // light is on (the whole screen on a screen that is not round), with a bulb outline in it, that
 // a tap shrinks to a grey disc with a filled bulb.
 // The firmware reads Face.flashlight-on for the brightness. A page of the app strip, which is
-// swiped past on the way to others, starts with the light off.
+// swiped past on the way to others, starts with the light off. The Cortex-M build switches at
+// once: each step of the disc growing is a draw of most of the screen there.
 import { Face } from "face.slint";
 import { Icons } from "icons.slint";
 import { Theme } from "theme.slint";
@@ -12,18 +13,18 @@ export component FlashlightScreen {
     property <bool> on: Face.flashlight-on;
     property <length> size: self.on ? 100 * Theme.unit : 45 * Theme.unit;
     animate size {
-        duration: 100ms;
+        duration: Build.mcu ? 0ms : 100ms;
         easing: ease-in;
     }
     // Past the middle square to the screen's edges, while the light is on.
     property <float> stretch: self.on && !Face.round-screen ? 1 : 0;
     animate stretch {
-        duration: 100ms;
+        duration: Build.mcu ? 0ms : 100ms;
         easing: ease-in;
     }
     property <length> radius: Face.round-screen || !self.on ? self.size / 2 : 0;
     animate radius {
-        duration: 100ms;
+        duration: Build.mcu ? 0ms : 100ms;
         easing: ease-out-quint;
     }
 
@@ -42,7 +43,7 @@ export component FlashlightScreen {
         border-radius: root.radius;
         background: root.on ? #ffffff : #44444466;
         animate background {
-            duration: 150ms;
+            duration: Build.mcu ? 0ms : 150ms;
             easing: ease-in;
         }
 
