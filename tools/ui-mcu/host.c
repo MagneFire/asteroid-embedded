@@ -705,11 +705,12 @@ static void tour(void)
 	}
 	ui_set_app(-1);
 	/* Without Settings, the quick settings' last page: tilt-to-wake turned
-	 * off and the phone forgotten once its countdown runs out. */
+	 * off, and reboot held for 3 s counting down 5 s to a reset with no
+	 * reboot from the release. */
 	if (ui_has_panel(UI_PANEL_TOP) && !ui_has_app(UI_APP_SETTINGS)) {
 		unsigned n = 0;
 		int row = unit / 2;
-		bool tilt = false, forget = false;
+		bool tilt = false, reset = false, rebooted = false;
 		step_panel = UI_PANEL_TOP;
 		ui_set_screen(UI_PANEL_TOP);
 		backdrop.screen = UI_PANEL_TOP;
@@ -726,22 +727,27 @@ static void tour(void)
 			run(UI_PANEL_TOP, 400);
 		}
 		step("quick", n++);
-		for (int x = 0; x < 2; x++) {
-			int at = W / 2 + x * 32 * unit / 100;
-			touch(UI_PANEL_TOP, UI_TOUCH_DOWN, at, row);
-			run(UI_PANEL_TOP, 50);
-			touch(UI_PANEL_TOP, UI_TOUCH_UP, at, row);
-			run(UI_PANEL_TOP, 300);
-			step("quick", n++);
-		}
-		run(UI_PANEL_TOP, 3500);
+		int tilt_x = W / 2 + 16 * unit / 100, reboot_x = W / 2 - 16 * unit / 100;
+		touch(UI_PANEL_TOP, UI_TOUCH_DOWN, tilt_x, row);
+		run(UI_PANEL_TOP, 50);
+		touch(UI_PANEL_TOP, UI_TOUCH_UP, tilt_x, row);
+		run(UI_PANEL_TOP, 300);
+		step("quick", n++);
+		touch(UI_PANEL_TOP, UI_TOUCH_DOWN, reboot_x, row);
+		run(UI_PANEL_TOP, 3400);
+		step("quick", n++);
+		touch(UI_PANEL_TOP, UI_TOUCH_UP, reboot_x, row);
+		run(UI_PANEL_TOP, 1000);
+		step("quick", n++);
+		run(UI_PANEL_TOP, 4000);
 		step("quick", n++);
 		for (struct ui_event e; ui_next_event(&e);) {
 			tilt |= e.kind == UI_EVENT_SETTING_VALUE && e.arg == 0;
-			forget |= e.kind == UI_EVENT_SETTING && e.value == UI_FORGET_PHONE;
+			reset |= e.kind == UI_EVENT_SETTING && e.value == UI_RESET_WATCH;
+			rebooted |= e.kind == UI_EVENT_SETTING && e.value == UI_REBOOT;
 		}
-		if (!tilt || !forget)
-			fail("quick: tilt-to-wake or forget phone does nothing");
+		if (!tilt || !reset || rebooted)
+			fail("quick: tilt-to-wake or the reset hold goes wrong");
 		step_panel = UI_PANEL_APP;
 	}
 	/* The nightstand's battery ring as the battery fills, and moved against

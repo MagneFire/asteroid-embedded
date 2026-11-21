@@ -9,8 +9,8 @@
 // off and reboot count down 3 s first. While charging the bolt pulses and the bar's end swings.
 // The numbers passed to setting-toggled are the firmware's enum setting, 37 to lock, 38 for
 // Settings, 39 to reboot, 40 to power off and 41 for cinema mode. A build without Settings has
-// two more toggles for what only Settings has otherwise: tilt-to-wake, and forgetting the phone,
-// which counts down 3 s first.
+// one more toggle, tilt-to-wake, and its reboot toggle held for 3 s resets the watch instead, after
+// a countdown of 5 s.
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
@@ -80,7 +80,6 @@ export component QuickSettings {
         { icon: "ios-power-outline", button: true },
         { icon: "ios-sync", button: true },
         { icon: "ios-tilttowake-outline", on: Face.tilt > 0 },
-        { icon: "ios-trash-outline", button: true },
     ];
     property <int> pages: Math.ceil(self.toggles.length / 3);
     property <length> local: strip-touch.pressed-x - root.pad(root.page);
@@ -132,8 +131,6 @@ export component QuickSettings {
             remorse.start("Reboot", Codes.ui-reboot);
         } else if i == 7 {
             Face.setting-set(Codes.setting-tilt, Face.tilt > 0 ? 0 : 1);
-        } else if i == 8 {
-            remorse.start("Forget phone", Codes.ui-forget-phone);
         }
     }
 
@@ -202,6 +199,15 @@ export component QuickSettings {
                 root.scrubbing = true;
                 root.swiped = true;
                 root.scrub(strip-touch.pressed-x + parent.x);
+            }
+        }
+
+        Timer {
+            interval: 3000ms;
+            running: !Build.settings && root.held == 6 && !root.swiped;
+            triggered => {
+                root.swiped = true;
+                remorse.start("Reset watch", Codes.ui-reset-watch);
             }
         }
 
@@ -343,5 +349,7 @@ export component QuickSettings {
         vertical-alignment: center;
     }
 
-    remorse := Remorse { }
+    remorse := Remorse {
+        duration: !Build.settings && self.code == Codes.ui-reset-watch ? 5s : 3s;
+    }
 }
