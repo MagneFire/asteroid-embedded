@@ -76,7 +76,7 @@ TUSB_DEFS_omap3 := -DTUP_USBIP_MUSB -DTUP_USBIP_MUSB_TI -DTUP_DCD_ENDPOINT_MAX=8
 # buffer; the store is in its flash and the console goes over SWD.
 SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer.c wdt.c gpio.c iom.c sleep.c reboot.c \
                flash.c adc.c detect.c swdbox.c swdwake.c power_mcu.c absent.c ios.c) \
-        src/frame_mcu.c src/display/flatmesh_mcu.c src/board/beluga.c src/display/display_rm69090.c src/display/rm69090_id.c src/input/touch_tma525.c \
+        src/frame_mcu.c src/display/flatmesh_mcu.c src/board/beluga.c src/display/display_rm69090.c src/display/rm69090_id.c src/input/touch_tma525.c src/input/tma525_proto.c \
         src/input/haptics_aw8624.c src/sensors/hub_lsm6dso.c src/sensors/afe4900.c src/sensors/hr.c src/sensors/ak09918.c \
         src/sensors/light_tsl258x.c src/sensors/tsl258x.c src/storage/store_flash.c src/storage/none.c \
         src/bt/bleif.c src/bt/bleif_hci.c src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c \
@@ -456,7 +456,11 @@ $(BUILD)/test/rm69090_test: tests/rm69090_test.c src/display/rm69090_id.c src/di
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/display/rm69090_id.c -o $@
 
-BELUGA_DETECT_TEST := src/soc/apollo3/detect.c src/display/rm69090_id.c
+$(BUILD)/test/tma525_test: tests/tma525_test.c src/input/tma525_proto.c src/input/tma525_proto.h
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< src/input/tma525_proto.c -o $@
+
+BELUGA_DETECT_TEST := src/soc/apollo3/detect.c src/display/rm69090_id.c src/input/tma525_proto.c
 $(BUILD)/test/beluga_detect_test: tests/beluga_detect_test.c $(BELUGA_DETECT_TEST) $(wildcard tests/*.h src/*.h src/*/*.h src/soc/apollo3/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(subst -I src/soc/qcom,-I src/soc/apollo3,$(HOST_CFLAGS)) $< $(BELUGA_DETECT_TEST) -o $@
@@ -483,7 +487,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/tsl258x_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/companion_test $(BUILD)/test/apollo3_timer_test $(BUILD)/test/swdwake_test $(BUILD)/test/hr_test $(BUILD)/test/rm69090_test $(BUILD)/test/beluga_detect_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/tsl258x_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/companion_test $(BUILD)/test/apollo3_timer_test $(BUILD)/test/swdwake_test $(BUILD)/test/hr_test $(BUILD)/test/rm69090_test $(BUILD)/test/beluga_detect_test $(BUILD)/test/tma525_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -536,6 +540,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/rm69090_test
 	$(BUILD)/test/beluga_display_test
 	$(BUILD)/test/beluga_detect_test
+	$(BUILD)/test/tma525_test
 	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb $(BUILD)/dory.dtb $(BUILD)/catfish.dtb $(BUILD)/swift.dtb
 	$(PYTHON) tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test

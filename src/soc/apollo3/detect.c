@@ -65,3 +65,23 @@ enum rm69090_framing board_detect_panel(const uint8_t raw[3][2])
 		log_printf("board: %s by %s\n", board->name, board_detected_by);
 	return f;
 }
+
+const struct board *board_by_touch(const struct tma525_sysinfo *s)
+{
+	for (unsigned i = 0; i < ARRAY_SIZE(sizes); i++)
+		if (tma525_fits_panel(s, sizes[i]->panel.width, sizes[i]->panel.height))
+			return sizes[i];
+	return NULL;
+}
+
+void board_check_touch(const struct tma525_sysinfo *s)
+{
+	const struct board *b = board_by_touch(s);
+	if (b == board)
+		log_printf("board: touch %ux%u agrees with %s\n", s->res_x, s->res_y, board->name);
+	else if (b)
+		log_printf("board: warning: touch %ux%u is %s's, keeping %s by %s\n", s->res_x, s->res_y, b->name, board->name,
+			   board_detected_by);
+	else
+		log_printf("board: touch %ux%u fits neither size, keeping %s\n", s->res_x, s->res_y, board->name);
+}

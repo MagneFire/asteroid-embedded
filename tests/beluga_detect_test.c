@@ -1,6 +1,6 @@
 /* The OPPO Watch size from the panel's ID replies: both sizes read on
  * time and a clock late, and the 46 mm watch for an unknown panel and
- * for one not read. */
+ * for one not read; then the touch controller agreeing or not. */
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -69,6 +69,19 @@ int main(void)
 	CHECK(!board_by_panel_id(NULL, &f) && f == RM69090_UNKNOWN);
 	CHECK(board_detect_panel(NULL) == RM69090_UNKNOWN && board == &board_beluga);
 	CHECK(strstr(last, "beluga by nothing, panel not read"));
+
+	/* The touch controller's word on it: logged, the board kept. */
+	struct tma525_sysinfo s46 = { .res_x = 476, .res_y = 402 }, s41 = { .res_x = 320, .res_y = 360 },
+			      other = { .res_x = 368, .res_y = 448 };
+	CHECK(board_by_touch(&s46) == &board_beluga && board_by_touch(&s41) == &board_beluga_41 && !board_by_touch(&other));
+	reply(raw, 0x04, 0x00, 0xc0, 0x00, 0x00, 0x00);
+	board_detect_panel(raw);
+	board_check_touch(&s46);
+	CHECK(board == &board_beluga && strstr(last, "touch 476x402 agrees with beluga"));
+	board_check_touch(&s41);
+	CHECK(board == &board_beluga && strstr(last, "warning: touch 320x360 is beluga-41's, keeping beluga by panel ID"));
+	board_check_touch(&other);
+	CHECK(board == &board_beluga && strstr(last, "fits neither size"));
 
 	if (failures)
 		printf("beluga_detect_test: %d failures\n", failures);

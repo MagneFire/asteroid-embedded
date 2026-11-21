@@ -13,6 +13,8 @@
 #include "asteroid.h"
 #include "display/display.h"
 #include "input/touch.h"
+#include "input/tma525_proto.h"
+#include "detect.h"
 
 #define BUS		(board->touch_pins.i2c.bus)
 #define ADDR		(board->touch_pins.i2c.addr)
@@ -24,13 +26,15 @@
 #define TIP		0x80
 #define EVENT(b)	((b) >> 5 & 3)
 #define BOOT_WAIT_MS	500
+#define SYSINFO_TRIES	50
 
 static volatile bool attention;
 static bool was_down, asleep, lent, up;
 static int last_x, last_y;
 static uint32_t attentions, errors;
 static struct touch pending;
-static bool have_pending;
+static bool have_pending, sysinfo_done;
+static uint16_t grid_w, grid_h;
 
 static void line_low(unsigned pin)
 {
@@ -43,6 +47,49 @@ static void normal_mode(void)
 	const uint8_t cmd[] = { 0x04, 0x00, 0x06, 0x00, 0x2f, 0x00, 0x1b, 0x00 };
 	if (i2c_xfer(BUS, ADDR, cmd, sizeof cmd, NULL, 0))
 		errors++;
+}
+
+/* Other reports that come first are read and dropped. */
+static bool read_sysinfo(struct tma525_sysinfo *s)
+{
+	if (i2c_xfer(BUS, ADDR, tma525_get_sysinfo, sizeof tma525_get_sysinfo, NULL, 0))
+		return false;
+	uint8_t r[REPORT_MAX];
+	for (int i = 0; i < SYSINFO_TRIES; i++) {
+		delay_ms(2);
+		if (gpio_get(GPIO_IRQ))
+			continue;
+		if (i2c_xfer(BUS, ADDR, NULL, 0, r, 2))
+			return false;
+		unsigned n = r[0] | r[1] << 8;
+		if (n <= 2)
+			continue;
+		if (n > REPORT_MAX)
+			n = REPORT_MAX;
+		if (i2c_xfer(BUS, ADDR, NULL, 0, r, n))
+			return false;
+		if (tma525_sysinfo_parse(r, n, s))
+			return true;
+	}
+	return false;
+}
+
+static void check_size(void)
+{
+	static const char *const from[] = { [TMA525_GRID_BOARD] = "the board's", [TMA525_GRID_SYSINFO] = "the controller's",
+					    [TMA525_GRID_PANEL] = "the panel's" };
+	struct tma525_sysinfo s;
+	bool have = read_sysinfo(&s);
+	if (have) {
+		log_printf("touch: TMA525 %ux%u, %ux%u electrodes, panel id %02x, revision %08lx\n", s.res_x, s.res_y,
+			   s.electrodes_x, s.electrodes_y, s.panel_id, s.revctrl);
+		board_check_touch(&s);
+	} else
+		log_printf("touch: no system information from the TMA525\n");
+	enum tma525_grid_from f = tma525_grid(have ? &s : NULL, board->touch_pins.grid_w, board->touch_pins.grid_h,
+					      (uint16_t)fb.width, (uint16_t)fb.height, &grid_w, &grid_h);
+	log_printf("touch: grid %ux%u, %s\n", grid_w ? grid_w : (unsigned)fb.width, grid_h ? grid_h : (unsigned)fb.height,
+		   from[f]);
 }
 
 static bool tma_init(void)
@@ -73,6 +120,10 @@ static bool tma_init(void)
 		return false;
 	}
 	log_printf("touch: TMA525 up, first report %u bytes\n", len[0] | len[1] << 8);
+	if (!sysinfo_done) {
+		sysinfo_done = true;
+		check_size();
+	}
 	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_EDGE_FALLING, line_low);
 	gpio_irq_enable(GPIO_IRQ, true);
 	attention = !gpio_get(GPIO_IRQ);
@@ -95,10 +146,10 @@ static bool decode(const uint8_t *r, unsigned n, struct touch *t)
 	bool down = count && n >= 17 && (r[8] & TIP);
 	if (down) {
 		int x = r[11] | r[12] << 8, y = r[9] | r[10] << 8;
-		if (board->touch_pins.grid_w)
-			x = x * (int)fb.width / board->touch_pins.grid_w;
-		if (board->touch_pins.grid_h)
-			y = y * (int)fb.height / board->touch_pins.grid_h;
+		if (grid_w)
+			x = x * (int)fb.width / grid_w;
+		if (grid_h)
+			y = y * (int)fb.height / grid_h;
 		last_x = x < (int)fb.width ? x : (int)fb.width - 1;
 		last_y = y < (int)fb.height ? y : (int)fb.height - 1;
 	}
