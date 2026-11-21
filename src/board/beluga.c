@@ -41,9 +41,11 @@ static const struct board_mcu_pad hr_pads[] = {
 
 /* On IOM0 with the touch controller, left running by the vendor's
  * firmware: the SX932x is reset, the TSL258x light sensor's power bit
- * and the LPS22HH barometer's data rate and one-shot are cleared. */
+ * and the LPS22HH barometer's data rate and one-shot are cleared, and
+ * the AK09918 magnetometer is powered down. */
 static const struct board_chip_off chips_off[] = {
 	{ 0x28, 0x9f, 0xff, 0xde, 10, 0x00 },
+	{ 0x0c, 0x31, 0xff, 0x00, 0, 0xff },
 	{ 0x29, 0x80, 0x01, 0, 0, 0xff },
 	{ 0x5c, 0x10, 0x70, 0, 0, 0xff },
 	{ 0x5c, 0x11, 0x03, 0, 0, 0xff },

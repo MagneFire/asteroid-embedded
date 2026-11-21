@@ -10,6 +10,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "sensors/afe4900.h"
+#include "sensors/ak09918.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
 #include "companion/link.h"
@@ -17,9 +18,11 @@
 #include "companion/sensors.h"
 #include "companion/wire.h"
 
-/* The hub's 26 Hz; the gyroscope's fastest rate used, 52 Hz. */
+/* The hub's 26 Hz; the fastest rates used of the gyroscope, 52 Hz,
+ * and of the magnetometer, 50 Hz. */
 #define ACCEL_MIN_MS	39
 #define GYRO_MIN_MS	20
+#define MAG_MIN_MS	20
 #define DEFAULT_MS	200
 #define STEPS_MS	1000
 #define DETECTOR_MAX	4
@@ -44,9 +47,16 @@ struct sub {
 	uint32_t period_ms, latency_ms;
 };
 
-enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, SUBS };
+enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, MAG, SUBS };
 static const uint32_t handles[SUBS] = { PROTO_SNS_ACCEL, PROTO_SNS_STEP_COUNTER, PROTO_SNS_STEP_DETECTOR,
-					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE, PROTO_SNS_GYRO };
+					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE, PROTO_SNS_GYRO, PROTO_SNS_MAG };
+/* Android's axis for each of the AK09918's, from the remap the
+ * vendor's firmware applies before its compass library: Android x is
+ * the chip's -y and y its x. */
+static const struct {
+	uint8_t from;
+	int8_t sign;
+} mag_axes[3] = { { 1, -1 }, { 0, 1 }, { 2, 1 } };
 static struct kept {
 	uint32_t magic;
 	struct sub subs[SUBS];
@@ -124,7 +134,7 @@ static void push_value(uint32_t handle, float v)
 static uint32_t period(int i)
 {
 	uint32_t ms = kept.subs[i].period_ms ? kept.subs[i].period_ms : DEFAULT_MS;
-	uint32_t min = i == ACCEL ? ACCEL_MIN_MS : i == GYRO ? GYRO_MIN_MS : 0;
+	uint32_t min = i == ACCEL ? ACCEL_MIN_MS : i == GYRO ? GYRO_MIN_MS : i == MAG ? MAG_MIN_MS : 0;
 	return ms < min ? min : ms;
 }
 
@@ -133,6 +143,7 @@ static void share(void)
 	hub_accel_share(kept.subs[ACCEL].on);
 	afe4900_share(kept.subs[HEART].on);
 	lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
+	ak09918_on(kept.subs[MAG].on ? period(MAG) : 0);
 }
 
 static void heart_start(uint32_t now)
@@ -262,15 +273,21 @@ static void push_vector(uint32_t handle, const int16_t v[3], float scale, uint32
 	push(handle, mcu_ns(), w, false);
 }
 
-/* The chip's axes are taken as Android's for both. The gyroscope's
- * zero-rate offset is not removed, hence low accuracy. */
+/* The LSM6DSO's axes are taken as Android's. Neither the gyroscope's
+ * zero-rate offset nor the magnetometer's hard iron is removed, hence
+ * their accuracy. A magnetometer sample out of range is left out. */
 static void sample_vectors(uint32_t now)
 {
-	int16_t v[3];
+	int16_t v[3], c[3];
 	if (sample_due(ACCEL, now) && hub_accel(v))
 		push_vector(PROTO_SNS_ACCEL, v, MG_TO_MS2, PROTO_SNS_HIGH);
 	if (sample_due(GYRO, now) && lsm6dso_gyro(v))
 		push_vector(PROTO_SNS_GYRO, v, GYRO_TO_RADS, PROTO_SNS_LOW);
+	if (sample_due(MAG, now) && ak09918_read(c) == AK09918_OK) {
+		for (int i = 0; i < 3; i++)
+			v[i] = (int16_t)(mag_axes[i].sign * c[mag_axes[i].from]);
+		push_vector(PROTO_SNS_MAG, v, AK09918_UT_PER_COUNT, PROTO_SNS_UNRELIABLE);
+	}
 }
 
 static void sample_steps(uint32_t now)
@@ -413,7 +430,7 @@ uint32_t sns_next_ms(bool link_free)
 {
 	uint32_t now = time_ms(), ms = UINT32_MAX;
 	for (int i = 0; i < SUBS; i++)
-		if ((i == ACCEL || i == GYRO) && kept.subs[i].on && until(due[i], now) < ms)
+		if ((i == ACCEL || i == GYRO || i == MAG) && kept.subs[i].on && until(due[i], now) < ms)
 			ms = until(due[i], now);
 	uint32_t s = kept.subs[COUNTER].on || kept.subs[DETECTOR].on ? until(steps_ms, now) : UINT32_MAX;
 	uint32_t r = report_in(now);
@@ -434,7 +451,7 @@ uint32_t sns_next_ms(bool link_free)
 void sns_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[SUBS] = { "accelerometer", "step counter", "step detector", "wrist tilt",
-						 "heart rate", "gyroscope" };
+						 "heart rate", "gyroscope", "magnetometer" };
 	for (int i = 0; i < SUBS; i++)
 		if (kept.subs[i].on)
 			say("sensors: %s every %lu ms, latency %lu ms\n", names[i], period(i), kept.subs[i].latency_ms);
@@ -442,4 +459,5 @@ void sns_status(void (*say)(const char *fmt, ...))
 	    "%u waiting; AP clock %s\n",
 	    count.commands, count.bad, count.flushes, count.events, count.reports, per_report, count.dropped, queued,
 	    kept.synced ? "known" : "not known");
+	ak09918_status(say);
 }

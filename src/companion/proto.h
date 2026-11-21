@@ -61,6 +61,7 @@ bool proto_powered_up(uint32_t reset_status);
 enum proto_sns_handle {
 	PROTO_SNS_META = 0,
 	PROTO_SNS_ACCEL = 1,
+	PROTO_SNS_MAG = 2,
 	PROTO_SNS_GYRO = 4,
 	PROTO_SNS_STEP_DETECTOR = 18,
 	PROTO_SNS_STEP_COUNTER = 19,

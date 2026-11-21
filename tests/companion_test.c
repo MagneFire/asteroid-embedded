@@ -13,6 +13,7 @@
 #include "companion/companion.h"
 #include "companion/sensors.h"
 #include "board/board.h"
+#include "sensors/ak09918.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
 #include "sched.h"
@@ -152,7 +153,8 @@ static bool accel_shared, hr_shared;
 static uint32_t hr_bpm = HUB_NONE;
 static uint8_t hr_quality;
 static unsigned hr_readings;
-static uint32_t gyro_period;
+static uint32_t gyro_period, mag_period;
+static int mag_result = AK09918_OK;
 
 uint32_t time_ms(void) { return now_ms += ms_per_read; }
 uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
@@ -263,6 +265,17 @@ bool lsm6dso_gyro(int16_t v[3])
 	v[0] = 1000, v[1] = -500, v[2] = 0;
 	return gyro_period != 0;
 }
+bool ak09918_on(uint32_t period_ms)
+{
+	mag_period = period_ms;
+	return true;
+}
+int ak09918_read(int16_t v[3])
+{
+	v[0] = 100, v[1] = 200, v[2] = -300;
+	return mag_period ? mag_result : AK09918_NONE;
+}
+void ak09918_status(void (*say)(const char *fmt, ...)) {}
 uint32_t hub_steps(void) { return steps; }
 uint32_t hub_tilts(void) { return tilts; }
 /* The MCU's clock in µs, which starts over at a reset. */
@@ -1033,6 +1046,36 @@ static void sensor_scenario(void)
 	CHECK(gyro_period == 100);
 	ap_activate(PROTO_SNS_GYRO, false, 0);
 	CHECK(gyro_period == 0);
+
+	/* The magnetometer in µT on Android's axes (x the chip's -y, y
+	 * its x), unreliable as it is not calibrated; an overflow is left
+	 * out. */
+	CHECK(ak09918_mode(0) == 0 && ak09918_mode(1000) == 0x02 && ak09918_mode(125) == 0x02 &&
+	      ak09918_mode(100) == 0x04 && ak09918_mode(63) == 0x04 && ak09918_mode(50) == 0x06 &&
+	      ak09918_mode(25) == 0x06 && ak09918_mode(20) == 0x08);
+	ap_activate(PROTO_SNS_MAG, true, 0);
+	CHECK(mag_period == 200);
+	ap_batch(PROTO_SNS_MAG, 1000000, 0);
+	CHECK(mag_period == 20);
+	ap_batch(PROTO_SNS_MAG, 100000000, 0);
+	CHECK(mag_period == 100);
+	memset(&got, 0, sizeof got);
+	ap_sensors(1000);
+	unsigned fields = 0;
+	for (unsigned i = 0; i < got.events; i++)
+		if (got.ev[i].id == PROTO_SNS_MAG) {
+			CHECK(bits_float(got.ev[i].w[0]) == -200 * 0.15f && bits_float(got.ev[i].w[1]) == 100 * 0.15f &&
+			      bits_float(got.ev[i].w[2]) == -300 * 0.15f && got.ev[i].w[3] == PROTO_SNS_UNRELIABLE);
+			fields++;
+		}
+	CHECK(fields >= 9 && fields <= 11);
+	mag_result = AK09918_OVERFLOW;
+	memset(&got, 0, sizeof got);
+	ap_sensors(1000);
+	CHECK(got.events == 0);
+	mag_result = AK09918_OK;
+	ap_activate(PROTO_SNS_MAG, false, 0);
+	CHECK(mag_period == 0);
 
 	/* Power off drops them. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);
