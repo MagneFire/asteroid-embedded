@@ -61,8 +61,10 @@ uint32_t timer_ticks(void) { return ticks; }
 uint32_t time_ms(void) { return (uint32_t)(cnt_now() * 1000 / SLEEP_CLK_HZ); }
 uint32_t time_us(void) { return (uint32_t)(cnt_now() * 1000000 / SLEEP_CLK_HZ); }
 
+uint32_t cpu_hz = CORE_HZ;
+
 /* Cycles from the debug unit's counter, which runs whenever the core
- * does. */
+ * does, at its clock. */
 void delay_cycles(uint32_t n)
 {
 	uint32_t start = readl(DWT_CYCCNT);
@@ -73,10 +75,10 @@ void delay_cycles(uint32_t n)
 void delay_us(uint32_t us)
 {
 	while (us > 1000000) {
-		delay_cycles(CORE_HZ);
+		delay_cycles(cpu_hz);
 		us -= 1000000;
 	}
-	delay_cycles(us * (CORE_HZ / 1000000));
+	delay_cycles(us * (cpu_hz / 1000000));
 }
 
 void delay_ms(uint32_t ms)

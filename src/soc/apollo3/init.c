@@ -13,7 +13,8 @@
 #define CACHE_DATA_CLKGATE	BIT(20)
 #define FLASHCFG		(CACHECTRL_BASE + 0x04)
 #define FLASHCFG_RD_WAIT	0xfu
-/* The read wait states Ambiq recommends; 3 out of reset. */
+/* The read wait states Ambiq recommends, which its HAL keeps through
+ * bursts too; 3 out of reset. */
 #define FLASH_WAIT		1
 #define FPCCR_ASPEN_LSPEN	(3u << 30)
 #define MCUCTRL_SIMOBUCK2	(MCUCTRL_BASE + 0x354)
@@ -104,9 +105,10 @@ void cpu_clock_log(void)
 		   "boot loader %08lx\n",
 		   CORE_HZ, flash_wait_now(), boot_wait, readl(MCUCTRL_CHIPPN), readl(MCUCTRL_CHIPREV),
 		   readl(PWRCTRL_SUPPLYSTATUS), readl(PWRCTRL_DEVPWRSTATUS), readl(MCUCTRL_BOOTLOADER));
+	burst_log();
 }
 
-/* One speed: the burst mode's 96 MHz is not used. */
+/* One speed besides the burst around draws (burst.c). */
 static bool slow;
 void cpu_clock_slow(bool on) { slow = on; }
 void cpu_clock_idle(bool on) {}
@@ -120,6 +122,7 @@ void soc_init(void)
 	irq_ctrl_init();
 	timer_init();
 	low_power_init();
+	burst_init();
 	gpio_init();
 	swdbox_init();
 }

@@ -10,7 +10,7 @@
 #include "frame.h"
 
 static bool have_ui, woke, drawn;
-static uint32_t hold_t, frames, draws, draw_us;
+static uint32_t hold_t, frames, draws, draw_us, fast_draws;
 
 void frame_init(bool ui, bool gpu, uint32_t start)
 {
@@ -46,10 +46,14 @@ void frame_draw(uint32_t now)
 		struct backdrop b = { .screen = stack_screen(), .modal = modal, .popup = modal && ui_popup(),
 				      .edges = stack_edges(), .pending = stack_waiting() };
 		b.page = stack_page(&b.pages, &b.next);
+		bool fast = burst_draw_begin();
 		drawn = flatmesh_mcu_draw(modal ? UI_PANEL_OVERLAY : stack_panel(), &b, display_lost());
+		uint32_t us = time_us() - t0;
+		burst_draw_end(drawn, fast, us);
 		if (drawn) {
 			draws++;
-			draw_us += time_us() - t0;
+			fast_draws += fast;
+			draw_us += us;
 		}
 		frames++;
 		woke = woke && !drawn;
@@ -81,7 +85,8 @@ void frame_ambient(int dx, int dy)
 void frame_log(void)
 {
 	if (frames)
-		log_printf("ui: %lu of %lu passes drew, %lu us per draw\n", draws, frames, draws ? draw_us / draws : 0);
-	frames = draws = draw_us = 0;
+		log_printf("ui: %lu of %lu passes drew, %lu us per draw, %lu at 96 MHz\n", draws, frames,
+			   draws ? draw_us / draws : 0, fast_draws);
+	frames = draws = draw_us = fast_draws = 0;
 }
 uint32_t frame_waited_us(void) { return 0; }

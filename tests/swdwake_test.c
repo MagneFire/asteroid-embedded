@@ -8,7 +8,7 @@
 static int failures;
 #define CHECK(x) do { if (!(x)) { printf("%s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
 
-static uint32_t now_ms, dhcsr, logs;
+static uint32_t now_ms, dhcsr, logs, leaves;
 static bool irq_on, latched;
 static void (*irq_fn)(unsigned n);
 static unsigned irq_pad = ~0u;
@@ -20,6 +20,7 @@ void dsb(void) {}
 void dmb(void) {}
 void log_printf(const char *fmt, ...) { logs++; }
 void gpio_swdck_irq(void (*fn)(unsigned n)) { irq_fn = fn; irq_pad = PAD_SWDCK; }
+void burst_leave(void) { leaves++; }
 void gpio_irq_enable(unsigned n, bool on) { if (n == PAD_SWDCK) irq_on = on; }
 void gpio_irq_ack(unsigned n) { if (n == PAD_SWDCK) latched = false; }
 bool gpio_irq_latched(unsigned n) { return n == PAD_SWDCK && latched; }
@@ -48,9 +49,10 @@ int main(void)
 	CHECK(irq_pad == PAD_SWDCK && irq_on);
 	CHECK(!swd_wanted());
 
-	/* One edge holds light sleep for the hold, then deep sleep again. */
+	/* One edge ends a burst and holds light sleep for the hold, then
+	 * deep sleep again. */
 	clock_edge();
-	CHECK(!irq_on && swd_wanted());
+	CHECK(!irq_on && swd_wanted() && leaves == 1);
 	sched_run(now_ms);
 	CHECK(logs == 1);
 	run_to(499);

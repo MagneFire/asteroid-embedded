@@ -75,7 +75,7 @@ TUSB_DEFS_omap3 := -DTUP_USBIP_MUSB -DTUP_USBIP_MUSB_TI -DTUP_DCD_ENDPOINT_MAX=8
 # The OPPO Watch's Apollo3 Blue microcontroller: no USB, eMMC or frame
 # buffer; the store is in its flash and the console goes over SWD.
 SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer.c wdt.c gpio.c iom.c sleep.c reboot.c \
-               flash.c adc.c detect.c swdbox.c swdwake.c power_mcu.c absent.c ios.c) \
+               flash.c adc.c detect.c swdbox.c swdwake.c burst.c power_mcu.c absent.c ios.c) \
         src/frame_mcu.c src/display/flatmesh_mcu.c src/board/beluga.c src/display/display_rm69090.c src/display/rm69090_id.c src/input/touch_tma525.c src/input/tma525_proto.c \
         src/input/haptics_aw8624.c src/sensors/hub_lsm6dso.c src/sensors/afe4900.c src/sensors/hr.c src/sensors/ak09918.c \
         src/sensors/light_tsl258x.c src/sensors/tsl258x.c src/storage/store_flash.c src/storage/none.c \

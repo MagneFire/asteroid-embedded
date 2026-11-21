@@ -19,6 +19,7 @@ static struct sched_task task = { .name = "swd wake", .run = hold_run };
 
 static void edge(unsigned n)
 {
+	burst_leave();
 	gpio_irq_enable(PAD_SWDCK, false);
 	held = true;
 	sched_post(&task);

@@ -1772,6 +1772,10 @@ static void cmd_sgx(const char *args)
 }
 #endif
 
+#ifdef SOC_BURST
+static void cmd_burst(const char *args) { burst_command(args, say); }
+#endif
+
 #ifdef SOC_AP_LINK
 static void cmd_link(const char *args)
 {
@@ -1856,6 +1860,9 @@ static const struct command commands[] = {
 #endif
 #ifdef SOC_AP_LINK
 	{ "link", "", cmd_link },
+#endif
+#ifdef SOC_BURST
+	{ "burst", "[on|off]", cmd_burst },
 #endif
 	{ "echo", "<text>", cmd_echo },
 };
