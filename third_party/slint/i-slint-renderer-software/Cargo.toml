@@ -45,6 +45,7 @@ rustdoc-args = ["--generate-link-to-definition"]
 features = ["experimental"]
 
 [features]
+box-shadow = []
 default = ["std"]
 experimental = []
 image-pixel-format-gray8 = ["i-slint-core/image-pixel-format-gray8"]
@@ -64,6 +65,7 @@ path = [
     "i-slint-core/path",
 ]
 std = [
+    "box-shadow",
     "skrifa?/std",
     "zeno?/std",
     "num-traits/std",

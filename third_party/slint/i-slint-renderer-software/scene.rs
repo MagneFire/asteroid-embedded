@@ -374,6 +374,7 @@ pub enum SceneCommand {
     },
     /// box_shadow_index is an index in the [`SceneVectors::box_shadows`] array
     BoxShadow {
+        #[cfg_attr(not(feature = "box-shadow"), allow(dead_code))]
         box_shadow_index: u16,
     },
 }

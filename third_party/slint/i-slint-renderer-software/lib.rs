@@ -16,6 +16,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod api;
+#[cfg_attr(not(feature = "box-shadow"), allow(dead_code))]
 mod box_shadow;
 mod draw_functions;
 mod fixed;
@@ -26,7 +27,9 @@ mod path;
 mod scene;
 
 pub use self::api::*;
-use self::box_shadow::{BoxShadowCommand, process_drop_shadow};
+use self::box_shadow::BoxShadowCommand;
+#[cfg(feature = "box-shadow")]
+use self::box_shadow::process_drop_shadow;
 use self::fonts::GlyphRenderer;
 use self::scene::*;
 use alloc::rc::Rc;
@@ -40,6 +43,7 @@ use i_slint_core::api::PlatformError;
 use i_slint_core::graphics::OwnedStorage;
 #[cfg(feature = "std")]
 use i_slint_core::graphics::Rgba8Pixel;
+#[cfg(feature = "box-shadow")]
 use i_slint_core::graphics::boxshadow::{BoxShadowOptions, drop_shadow_bounding_rect};
 use i_slint_core::graphics::rendering_metrics_collector::RefreshMode;
 use i_slint_core::graphics::{BorderRadius, SharedImageBuffer, SharedPixelBuffer};
@@ -1516,9 +1520,12 @@ fn render_window_frame_by_line<L: LineBufferProvider>(
                             SceneCommand::ConicGradient { conic_gradient_index } => {
                                 draw!(&scene.vectors.conic_gradients[conic_gradient_index as usize])
                             }
+                            #[cfg(feature = "box-shadow")]
                             SceneCommand::BoxShadow { box_shadow_index } => {
                                 draw!(&scene.vectors.box_shadows[box_shadow_index as usize])
                             }
+                            #[cfg(not(feature = "box-shadow"))]
+                            SceneCommand::BoxShadow { .. } => {}
                         }
                     }
                 },
@@ -1675,6 +1682,7 @@ trait ProcessScene {
         rounded_clips: &[RoundedClip],
         clip: Option<ShapeClip>,
     );
+    #[cfg_attr(not(feature = "box-shadow"), allow(dead_code))]
     fn process_box_shadow(
         &mut self,
         geometry: PhysicalRect,
@@ -2225,7 +2233,10 @@ impl<B: target_pixel_buffer::TargetPixelBuffer> ProcessScene for RenderToBuffer<
         shadow: BoxShadowCommand,
         rounded_clips: &[RoundedClip],
     ) {
+        #[cfg(feature = "box-shadow")]
         self.draw_clipped(geometry, rounded_clips, None, &shadow);
+        #[cfg(not(feature = "box-shadow"))]
+        let _ = (geometry, shadow, rounded_clips);
     }
 
     #[cfg(feature = "path")]
@@ -3593,32 +3604,37 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         self_rc: &ItemRc,
         size: LogicalSize,
     ) {
-        if box_shadow.inset() {
-            return;
+        #[cfg(not(feature = "box-shadow"))]
+        let _ = (box_shadow, self_rc, size);
+        #[cfg(feature = "box-shadow")]
+        {
+            if box_shadow.inset() {
+                return;
+            }
+            let offset = LogicalVector::from_lengths(box_shadow.offset_x(), box_shadow.offset_y());
+            if !self.should_draw(&drop_shadow_bounding_rect(
+                size.into(),
+                offset,
+                box_shadow.blur(),
+                box_shadow.spread(),
+            )) {
+                return;
+            }
+            let Some(options) = BoxShadowOptions::new(self_rc, box_shadow, self.scale_factor) else {
+                return;
+            };
+            let Some(clip) = self.physical_clip() else { return };
+            let color = self.alpha_color(options.color);
+            process_drop_shadow(
+                &mut self.processor,
+                &options,
+                (self.current_state.offset + offset).cast() * self.scale_factor,
+                color,
+                &clip,
+                &self.rounded_clips,
+                self.rotation,
+            );
         }
-        let offset = LogicalVector::from_lengths(box_shadow.offset_x(), box_shadow.offset_y());
-        if !self.should_draw(&drop_shadow_bounding_rect(
-            size.into(),
-            offset,
-            box_shadow.blur(),
-            box_shadow.spread(),
-        )) {
-            return;
-        }
-        let Some(options) = BoxShadowOptions::new(self_rc, box_shadow, self.scale_factor) else {
-            return;
-        };
-        let Some(clip) = self.physical_clip() else { return };
-        let color = self.alpha_color(options.color);
-        process_drop_shadow(
-            &mut self.processor,
-            &options,
-            (self.current_state.offset + offset).cast() * self.scale_factor,
-            color,
-            &clip,
-            &self.rounded_clips,
-            self.rotation,
-        );
     }
 
     fn visit_clip(
