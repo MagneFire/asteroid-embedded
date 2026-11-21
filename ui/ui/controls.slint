@@ -766,8 +766,8 @@ export component Remorse {
 
     x: 0;
     y: 0;
-    width: 100 * Theme.unit;
-    height: 100 * Theme.unit;
+    width: 100%;
+    height: 100%;
 
     public function start(action: string, code: int) {
         self.action = action;
@@ -785,8 +785,8 @@ export component Remorse {
         }
 
         Text {
-            y: 32 * Theme.unit;
-            width: 100 * Theme.unit;
+            y: root.height / 2 - 18 * Theme.unit;
+            width: root.width;
             height: 6 * Theme.unit;
             text: root.action;
             color: white;
@@ -795,8 +795,8 @@ export component Remorse {
         }
 
         Text {
-            y: 39 * Theme.unit;
-            width: 100 * Theme.unit;
+            y: root.height / 2 - 11 * Theme.unit;
+            width: root.width;
             height: 22 * Theme.unit;
             text: root.left;
             color: white;
@@ -807,8 +807,8 @@ export component Remorse {
         }
 
         Text {
-            y: 62 * Theme.unit;
-            width: 100 * Theme.unit;
+            y: root.height / 2 + 12 * Theme.unit;
+            width: root.width;
             text: "Tap to cancel";
             color: white;
             font-size: 6 * Theme.unit;
