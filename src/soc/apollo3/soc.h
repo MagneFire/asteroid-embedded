@@ -109,7 +109,7 @@
 /* A link to the application processor (src/companion). */
 #define SOC_AP_LINK		1
 
-/* 96 MHz around draws (burst.c). */
+/* 96 MHz around draws and the flash cache's counters (burst.c). */
 #define SOC_BURST		1
 
 /* Reset watch in the quick settings and on the console. */
@@ -209,12 +209,14 @@ void swdbox_poll(void);
 void swdwake_init(void);
 bool swd_wanted(void);
 /* TurboSPOT (burst.c): the core at 96 MHz from burst_draw_begin, which
- * says whether it got it, to burst_draw_end or burst_leave. */
+ * says whether it got it, to burst_draw_end or burst_leave; the cache's
+ * counters around a draw when the console asks. */
 void burst_init(void);
 void burst_log(void);
 bool burst_draw_begin(void);
 void burst_draw_end(bool drawn, bool fast, uint32_t us);
 void burst_leave(void);
 void burst_command(const char *args, void (*say)(const char *fmt, ...));
+void cache_command(const char *args, void (*say)(const char *fmt, ...));
 #endif
 #endif
