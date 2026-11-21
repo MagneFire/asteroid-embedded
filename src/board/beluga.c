@@ -95,7 +95,8 @@ static const struct dcs_step panel_on_41[] = {
  * SDA pad 43), its INT1 on pad 13. The AFE4900 heart rate front end is
  * on IOM2 at 4 MHz, mode 0: supply pad 31, reset 19, ADC_RDY 18. The application processor's link is the IO slave
  * on pads 0-3 with request and acknowledge lines: up to the AP on 29 and
- * 33, down from it on 30 and 32. */
+ * 33, down from it on 30 and 32. Brightness starts at mce's default of
+ * 60 per cent: at 100 the automatic brightness is too bright indoors. */
 #define BELUGA_COMMON                                                                                                  \
 	.mcu_pads = pads, .heart_rate = true,                                                                         \
 	.chips_off = { { .bus = 0, .sda = 6, .scl = 5, .func = 0 }, chips_off },                                       \
@@ -106,6 +107,7 @@ static const struct dcs_step panel_on_41[] = {
 	.hr_pins = { .pads = hr_pads, .spi_bus = 2, .spi_cs = 3, .spi_hz = 4000000, .power = 31, .reset = 19, .irq = 18 }, \
 	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x5a }, .enable = 26 }, \
 	.light = &light_tsl258x,                                                                                       \
+	.brightness_init = 60,                                                                                         \
 	.ap_link = { .up_int = 29, .up_ack = 33, .dn_int = 30, .dn_ack = 32, .own_gpio = 36, .release_gpio = 14 }, \
 	.ble_gpio = 4
 

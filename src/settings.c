@@ -54,7 +54,7 @@ int setting_get(enum setting s)
 	if (!loaded) {
 		for (unsigned i = 0; i < SETTINGS; i++)
 			if (kv_get(table[i].key, &values[i], 1) != 1)
-				values[i] = table[i].init;
+				values[i] = i == SETTING_BRIGHTNESS && board->brightness_init ? board->brightness_init : table[i].init;
 		loaded = true;
 	}
 	return values[s];
