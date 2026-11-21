@@ -217,6 +217,17 @@ static void tap(uint32_t panel, int x, int y)
 	run(panel, 600);
 }
 
+static void pull(uint32_t panel, int x0, int y0, int x1, int y1)
+{
+	touch(panel, UI_TOUCH_DOWN, x0, y0);
+	for (int i = 1; i <= 10; i++) {
+		run(panel, 16);
+		touch(panel, UI_TOUCH_MOVE, x0 + (x1 - x0) * i / 10, y0 + (y1 - y0) * i / 10);
+	}
+	touch(panel, UI_TOUCH_UP, x1, y1);
+	run(panel, 600);
+}
+
 #ifndef EMU
 static const char *out_dir;
 #endif
@@ -864,6 +875,11 @@ int main(int argc, char **argv)
 			tap(UI_PANEL_APP, W / 2, H / 2);
 			shot(UI_PANEL_APP, "settings-page");
 		}
+		if (a == UI_APP_FLASHLIGHT) {
+			tap(UI_PANEL_APP, W / 2, H / 2);
+			shot(UI_PANEL_APP, "flashlight-on");
+			tap(UI_PANEL_APP, W / 2, H / 2);
+		}
 	}
 	ui_set_app(-1);
 	/* The most the phone can leave: NOTIFY_MAX notifications, each as long
@@ -876,14 +892,26 @@ int main(int argc, char **argv)
 	for (int i = 3; i < 20; i++)
 		ui_add_notification(i + 1, apps[1], strlen(apps[1]), summary, sizeof(summary), body, sizeof(body), icons[1],
 				    strlen(icons[1]), 1000000 - 600 * (i + 1));
-	if (ui_has_panel(UI_PANEL_LEFT))
+	if (ui_has_panel(UI_PANEL_LEFT)) {
 		shot(UI_PANEL_LEFT, "notes-full");
+		/* Its actions pulled down from the top, Snooze's times, and back. */
+		pull(UI_PANEL_LEFT, W / 2, H / 5, W / 2, H * 4 / 5);
+		shot(UI_PANEL_LEFT, "notes-actions");
+		tap(UI_PANEL_LEFT, W / 2, H / 2 - 28 * (W < H ? W : H) / 100);
+		shot(UI_PANEL_LEFT, "notes-snooze");
+		pull(UI_PANEL_LEFT, W / 5, H / 2, W * 4 / 5, H / 2);
+		pull(UI_PANEL_LEFT, W / 2, H * 9 / 10, W / 2, H / 5);
+		shot(UI_PANEL_LEFT, "notes-back");
+	}
 	ui_show_notification(20);
 	shot(UI_PANEL_FACE, "popup-long");
 	ui_hide_notification();
 	ui_set_ringing(true, false);
 	shot(UI_PANEL_FACE, "ringing");
 	ui_set_ringing(false, false);
+	ui_set_passkey(123456);
+	shot(UI_PANEL_FACE, "passkey");
+	ui_set_passkey(-1);
 	shot(UI_PANEL_FACE, "face-again");
 	tour();
 	walk();
