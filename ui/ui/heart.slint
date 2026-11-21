@@ -108,11 +108,14 @@ export component HeartRateScreen {
         }
     }
 
+    // "Measuring…" blinks for as long as it measures: on the Cortex-M build in a box its own
+    // size, as each frame redraws the whole box.
+    property <bool> measuring-box: Build.mcu && root.bpm == 0;
     Text {
-        x: 0;
-        y: 0;
-        width: 100 * Theme.unit;
-        height: 100 * Theme.unit;
+        x: root.measuring-box ? 20 * Theme.unit : 0;
+        y: root.measuring-box ? 45 * Theme.unit : 0;
+        width: root.measuring-box ? 60 * Theme.unit : 100 * Theme.unit;
+        height: root.measuring-box ? 10 * Theme.unit : 100 * Theme.unit;
         text: root.bpm > 0 ? root.bpm : "Measuring…";
         color: white;
         font-size: root.bpm > 0 ? (root.bpm >= 100 ? 29 * Theme.unit : 33 * Theme.unit) : 6 * Theme.unit;
