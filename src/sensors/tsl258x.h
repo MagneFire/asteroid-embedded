@@ -57,6 +57,9 @@ float tsl258x_screen_counts(const struct tsl258x_profile *p, const struct tsl258
  * taken off channel 0. */
 int32_t tsl258x_lux(const struct tsl258x_profile *p, const struct tsl258x_cal *cal, enum tsl258x_gain gain, uint16_t c0,
 		    uint16_t c1, float screen, uint8_t level);
+/* The straight line through n points by least squares, its value at 0
+ * and its slope: false without two different x. */
+bool tsl258x_fit(const float *x, const float *y, unsigned n, float *at0, float *per);
 /* The gain for the next reading after a count of c0. */
 enum tsl258x_gain tsl258x_next_gain(enum tsl258x_gain gain, uint16_t c0);
 
@@ -86,4 +89,9 @@ bool light_tsl258x_reading(struct tsl258x_reading *r);
 /* In the driver: a second user of the readings, the AP's, which keeps
  * the sensor powered like light_keep while either wants it. */
 void tsl258x_share(bool on);
+/* Whether the chip took the last power change; if not, the next
+ * tsl258x_share tries again. */
+bool tsl258x_settled(void);
+/* The chip was put to sleep behind the driver: it starts over. */
+void tsl258x_lost(void);
 #endif

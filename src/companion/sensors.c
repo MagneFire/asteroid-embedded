@@ -169,7 +169,9 @@ static void share(void)
 	retry_ms = time_ms();
 }
 
-static bool unsettled(void) { return !settled; }
+/* The light sensor is the watch's too, so its state is asked for each
+ * time. */
+static bool unsettled(void) { return !settled || !tsl258x_settled(); }
 
 static void settle(uint32_t now)
 {
@@ -191,6 +193,7 @@ void sns_lend(bool to_ap)
 
 void sns_chips_off(void)
 {
+	tsl258x_lost();
 	ak09918_lost();
 }
 

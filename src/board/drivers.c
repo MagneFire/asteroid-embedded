@@ -86,10 +86,10 @@ void light_keep(bool on)
 		board->light->keep(on);
 }
 int32_t light_finish(void) { return LIGHT(finish) ? board->light->finish() : -1; }
-void light_status(void (*say)(const char *fmt, ...))
+void light_command(const char *args, void (*say)(const char *fmt, ...))
 {
-	if (LIGHT(status))
-		board->light->status(say);
+	if (LIGHT(command))
+		board->light->command(args, say);
 	else
 		say("light: nothing to tell\n");
 }

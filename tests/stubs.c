@@ -34,7 +34,7 @@ void display_sleep(void) { stub_asleep = true; }
 void display_wake(void) { stub_asleep = false; }
 uint32_t batt_mv(void) { return 3900; }
 const char *batt_status(void) { return "discharging"; }
-void light_status(void (*say)(const char *fmt, ...)) { say("light: nothing to tell\n"); }
+void light_command(const char *args, void (*say)(const char *fmt, ...)) { say("light: nothing to tell\n"); }
 uint32_t rtc_read(void) { return stub_rtc; }
 uint8_t pmic_read(uint32_t addr) { return 0; }
 void pmic_write(uint32_t addr, uint8_t val) {}

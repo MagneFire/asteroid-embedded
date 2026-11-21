@@ -284,7 +284,7 @@ static void cmd_backlight(const char *args)
 	say("last %ld lux: %u/%u %s\n", (long)lux, b.dbv, b.pixel, b.red ? "red" : "white");
 }
 
-static void cmd_light(const char *args) { light_status(say); }
+static void cmd_light(const char *args) { light_command(args, say); }
 static void cmd_sleep(const char *args) { power_request(true); }
 static void cmd_wake(const char *args) { power_request(false); }
 
@@ -1792,7 +1792,7 @@ static const struct command commands[] = {
 	{ "dload", "on | off", cmd_dload },
 	{ "bright", "<0-255>", cmd_bright },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
-	{ "light", "", cmd_light },
+	{ "light", "[sweep [black|white|crop] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
 	{ "awake", "on|off", cmd_awake },

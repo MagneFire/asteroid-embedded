@@ -45,6 +45,8 @@ void display_lend(bool to_ap);
 /* Before display_init: the AP has the panel already, so nothing is
  * driven until display_lend(false). */
 void display_start_lent(void);
+/* Whether the panel is on and out of sleep with the watch's picture. */
+bool display_showing(void);
 
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n);
 /* Commands go out in low power mode while on, as a panel fresh from reset

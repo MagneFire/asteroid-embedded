@@ -1,6 +1,7 @@
 /* beluga's TSL258x: its lux, the screen's light, the gain and its
  * driver. The expected lux are worked out by hand from the vendor's
  * formula (Sol's report), not by this code. */
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -31,7 +32,47 @@ static uint8_t brightness;
 
 uint32_t time_ms(void) { return now; }
 void log_printf(const char *fmt, ...) {}
+static bool showing = true;
+bool display_showing(void) { return showing; }
 uint8_t display_brightness(void) { return brightness; }
+void display_set_brightness(uint8_t level) { brightness = level; }
+
+/* The display and the rest a sweep uses: lines go to the crop as on
+ * the watch, and each wait integrates at the brightness set, channel 0
+ * from 300 counts of room light and 3 per level step. */
+struct fb fb = { .width = 402, .height = 476 };
+static bool awake = true, redrawn, sweep_light;
+static unsigned lines;
+bool power_awake(void) { return awake; }
+void wdt_feed(void) {}
+void ui_draw_begin(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {}
+void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *rgb565)
+{
+	lines++;
+	tsl258x_crop_line(y, x, w, rgb565);
+}
+void ui_draw_end(void) {}
+void ui_mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) { redrawn = x == 0 && y == 0 && w == 402 && h == 476; }
+static void integrate(void);
+void delay_ms(uint32_t ms)
+{
+	now += ms;
+	if (sweep_light) {
+		counts[1] = (uint16_t)(300 + 3 * brightness);
+		integrate();
+	}
+}
+
+/* What the console is told, all of it. */
+static char said[2048];
+static void say(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	size_t n = strlen(said);
+	vsnprintf(said + n, sizeof said - n, fmt, ap);
+	va_end(ap);
+}
 int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz)
 {
 	CHECK(bus == 0 && sda == 6 && scl == 5);
@@ -97,31 +138,37 @@ static int32_t reading(void)
 
 static void driver_test(void)
 {
-	/* Nothing at 0x29: no reading, and keeping it on does nothing. */
-	absent = true;
-	CHECK(!d->init());
-	absent = false;
-	d->keep(true);
-	CHECK(!kept && d->finish() == -1);
+	/* The calibration from the record, and the bus left alone until
+	 * the sensor is wanted. */
+	CHECK(d->init() && !transfers);
+	CHECK(cal_factory && cal.rgbw[1] == 748 && cal.gain_pct == 109);
 
-	/* Something else at 0x29 is only asked for its ID. */
+	/* Nothing at 0x29: no reading, and asked again while wanted. */
+	absent = true;
+	d->keep(true);
+	CHECK(!kept && !tsl258x_settled() && d->finish() == -1 && transfers == 1);
+	tsl258x_share(false);
+	CHECK(transfers == 2);
+	d->keep(false);
+	CHECK(tsl258x_settled() && transfers == 2);
+	absent = false;
+
+	/* Something else at 0x29 is only asked for its ID, once. */
 	id = 0x24;
 	transfers = 0;
-	CHECK(!d->init());
-	CHECK(transfers == 1 && !cleared);
 	d->keep(true);
-	CHECK(!kept && transfers == 1);
+	CHECK(transfers == 1 && !cleared && !kept && tsl258x_settled());
+	d->keep(false);
+	d->keep(true);
+	CHECK(transfers == 1);
+	d->keep(false);
 
-	/* Found: powered off, its interrupt off and cleared, the
-	 * calibration from the record. */
+	/* Found: its interrupt off and cleared at the first keep. */
+	tsl258x_lost();
 	id = 0x94;
-	regs[REG_CONTROL] = CONTROL_POWER;
 	regs[REG_INTERRUPT] = 0x12;
 	struct tsl258x_reading r;
 	CHECK(!light_tsl258x_reading(&r));
-	CHECK(d->init());
-	CHECK(!regs[REG_CONTROL] && !regs[REG_INTERRUPT] && cleared);
-	CHECK(cal_factory && cal.rgbw[1] == 748 && cal.gain_pct == 109);
 
 	/* Not kept, starts and finishes leave the bus alone. */
 	transfers = 0;
@@ -136,6 +183,7 @@ static void driver_test(void)
 	counts[0] = 40;
 	now = 1000;
 	d->keep(true);
+	CHECK(!regs[REG_INTERRUPT] && cleared);
 	CHECK(regs[REG_CONTROL] == CONTROL_POWER && regs[REG_ITIME] == 0xdb && regs[REG_ANALOG] == 0x03);
 	d->start();
 	CHECK(!(regs[REG_CONTROL] & CONTROL_ADC_EN));
@@ -161,6 +209,13 @@ static void driver_test(void)
 	brightness = 255;
 	CHECK(reading() == 843);
 	CHECK(light_tsl258x_reading(&r) && r.rgb[0] == 255 && r.level == 255 && (int32_t)r.screen == 1047);
+	/* Dark, asleep or the AP's picture: nothing taken off. */
+	showing = false;
+	CHECK(reading() == 1509 && light_tsl258x_reading(&r) && r.screen == 0 && !r.level && !r.rgb[0]);
+	showing = true;
+	awake = false;
+	CHECK(reading() == 1509);
+	awake = true;
 	brightness = 0;
 	CHECK(reading() == 1509);
 
@@ -225,13 +280,38 @@ static void driver_test(void)
 	CHECK(reading() == -1);
 	CHECK(reading() == 7381);
 
-	/* A chip that stops answering is not kept. */
+	/* A chip that stops answering is not kept, and is asked again. */
 	d->keep(false);
 	fail_after = 0;
 	d->keep(true);
-	CHECK(!kept && !regs[REG_CONTROL]);
+	CHECK(!kept && !regs[REG_CONTROL] && !tsl258x_settled());
 	fail_after = -1;
 	CHECK(reading() == -1);
+	tsl258x_share(false);
+	CHECK(kept && tsl258x_settled() && regs[REG_CONTROL] == CONTROL_POWER);
+	CHECK(reading() == -1 && reading() == 7381);
+
+	/* Powering it down too. */
+	fail_after = 0;
+	d->keep(false);
+	CHECK(!kept && !tsl258x_settled() && regs[REG_CONTROL]);
+	fail_after = -1;
+	tsl258x_share(false);
+	CHECK(tsl258x_settled() && !regs[REG_CONTROL]);
+
+	/* Put to sleep behind the driver while the AP has it: asked for its
+	 * ID and powered again at the next call. */
+	tsl258x_share(true);
+	CHECK(kept && reading() == -1 && reading() == 7381);
+	regs[REG_CONTROL] = 0;
+	cleared = false;
+	tsl258x_lost();
+	CHECK(!tsl258x_settled());
+	tsl258x_share(true);
+	CHECK(kept && cleared && tsl258x_settled() && regs[REG_CONTROL] == CONTROL_POWER);
+	CHECK(reading() == -1 && reading() == 7381);
+	tsl258x_share(false);
+	CHECK(!regs[REG_CONTROL]);
 }
 
 static const struct tsl258x_profile *const p46 = &tsl258x_46mm, *const p41 = &tsl258x_41mm;
@@ -419,6 +499,57 @@ static void crop_test(void)
 	CHECK(rgb_is(255, 255, 255));
 }
 
+static void command_test(void)
+{
+	/* Let go of before: a sweep powers it for itself and lets go after,
+	 * with the brightness back as it was. */
+	d->keep(false);
+	brightness = 120;
+	sweep_light = true;
+	lines = 0;
+	said[0] = 0;
+	d->command("sweep crop", say);
+	CHECK(lines == 476 && redrawn && brightness == 120 && !kept);
+	CHECK(strstr(said, "light: level 0 c0 300 c1 30, rgb 255 255 255, model screen 0\n"));
+	CHECK(strstr(said, "light: level 255 c0 1065 c1 106, rgb 255 255 255, model screen 1047\n"));
+	CHECK(strstr(said, "light: c0 = 300 + 300 per 100 levels, 765 at 255, 100 lux at level 0\n"));
+
+	/* Kept by the watch, it stays kept; the screen as it is stays. */
+	d->keep(true);
+	redrawn = false;
+	lines = 0;
+	said[0] = 0;
+	d->command("sweep", say);
+	CHECK(kept && !lines && !redrawn && strstr(said, "per 100 levels"));
+	said[0] = 0;
+	d->command("sweep grey", say);
+	CHECK(!strcmp(said, "usage: light sweep [black|white|crop]\n"));
+	awake = false;
+	said[0] = 0;
+	d->command("sweep", say);
+	CHECK(!strcmp(said, "light: the screen has to be on\n"));
+	awake = true;
+	sweep_light = false;
+
+	/* Half the model's screen light taken off: a white crop at full
+	 * brightness takes 523 counts off 4500 instead of 1047. */
+	said[0] = 0;
+	d->command("screen 50", say);
+	CHECK(strstr(said, "light: screen light taken off at 50%\n"));
+	brightness = 255;
+	counts[1] = 4500;
+	now += 250;
+	CHECK(reading() == 1334 && (int32_t)last.screen == 523);
+	said[0] = 0;
+	d->command("screen x", say);
+	CHECK(!strcmp(said, "usage: light screen <0-1000 percent>\n"));
+	d->command("screen 100", say);
+	said[0] = 0;
+	d->command("", say);
+	CHECK(strstr(said, "light: calibration 244 748 163 74, gain 109%\n") && strstr(said, "at 100%"));
+	brightness = 0;
+}
+
 int main(void)
 {
 	/* A TSL258x is 0x9n. */
@@ -437,6 +568,7 @@ int main(void)
 	CHECK(tsl258x_next_gain(TSL258X_GAIN_1X, 199) == TSL258X_GAIN_111X);
 
 	driver_test();
+	command_test();
 	puts(failures ? "tsl258x_test: FAILED" : "tsl258x_test: ok");
 	return failures != 0;
 }

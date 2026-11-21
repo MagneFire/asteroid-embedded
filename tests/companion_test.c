@@ -155,9 +155,9 @@ static uint32_t hr_bpm = HUB_NONE;
 static uint8_t hr_quality;
 static unsigned hr_readings;
 static uint32_t gyro_period, mag_period, gyro_fails, mag_fails, gyro_tries, mag_tries;
-static uint32_t mag_losts;
+static uint32_t light_tries, mag_losts, light_losts;
 static int mag_result = AK09918_OK;
-static bool light_shared;
+static bool light_shared, light_fails;
 static int32_t lux = -1;
 
 uint32_t time_ms(void) { return now_ms += ms_per_read; }
@@ -300,7 +300,13 @@ int ak09918_read(int16_t v[3])
 	return mag_period ? mag_result : AK09918_NONE;
 }
 void ak09918_status(void (*say)(const char *fmt, ...)) {}
-void tsl258x_share(bool on) { light_shared = on; }
+void tsl258x_share(bool on)
+{
+	light_tries++;
+	light_shared = on;
+}
+bool tsl258x_settled(void) { return !light_fails; }
+void tsl258x_lost(void) { light_losts++; }
 int32_t light_finish(void) { return light_shared ? lux : -1; }
 uint32_t hub_steps(void) { return steps; }
 uint32_t hub_tilts(void) { return tilts; }
@@ -621,7 +627,7 @@ static void companion_scenario(void)
 	CHECK(outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	/* The chips on the AP's bus are put to sleep once it is the watch's,
 	 * and their drivers start over. */
-	CHECK(chips_offs == 1 && mag_losts == 1);
+	CHECK(chips_offs == 1 && mag_losts == 1 && light_losts == 1);
 	ap_write(1, PROTO_OOBE, NULL, 0);
 	companion_pass();
 	wait_ms(2999);
@@ -661,7 +667,7 @@ static void companion_scenario(void)
 	mode_message(374, m374, sizeof m374, &a);
 	CHECK(a.mode == PROTO_MODE_POWER_OFF && a.last_mode == PROTO_MODE_NORMAL && display_lent);
 	wait_ms(1000);
-	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2 && mag_losts == 2);
+	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2 && light_losts == 2);
 
 	/* The power key held for 5 s takes the panel back from an AP that
 	 * does not answer, and power off is stored at once. */
@@ -1171,6 +1177,15 @@ static void sensor_scenario(void)
 	run_ms(2 * LINK_TX_MS + 150);
 	ap_sensors(300);
 	CHECK(got.events >= 6 && bits_float(got.ev[got.events - 1].w[0]) == 400.0f);
+
+	/* The light sensor not powering up is asked again too. */
+	light_fails = true;
+	light_tries = 0;
+	ap_sensors(1100);
+	CHECK(light_tries == 1);
+	light_fails = false;
+	ap_sensors(5000);
+	CHECK(light_tries == 1);
 
 	/* Power off drops them. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);

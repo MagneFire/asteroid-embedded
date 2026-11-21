@@ -445,6 +445,8 @@ void display_set_brightness(uint8_t value)
 
 uint8_t display_brightness(void) { return level; }
 
+bool display_showing(void) { return panel_on && !panel_asleep && !lent; }
+
 void display_set_backlight_code(uint8_t code)
 {
 	if (panel_on && !panel_asleep) {

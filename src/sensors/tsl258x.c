@@ -149,6 +149,23 @@ int32_t tsl258x_lux(const struct tsl258x_profile *p, const struct tsl258x_cal *c
 	return (int32_t)lux;
 }
 
+bool tsl258x_fit(const float *x, const float *y, unsigned n, float *at0, float *per)
+{
+	float sx = 0, sy = 0, sxx = 0, sxy = 0;
+	for (unsigned i = 0; i < n; i++) {
+		sx += x[i];
+		sy += y[i];
+		sxx += x[i] * x[i];
+		sxy += x[i] * y[i];
+	}
+	float d = n * sxx - sx * sx;
+	if (n < 2 || d == 0)
+		return false;
+	*per = (n * sxy - sx * sy) / d;
+	*at0 = (sy - *per * sx) / n;
+	return true;
+}
+
 enum tsl258x_gain tsl258x_next_gain(enum tsl258x_gain gain, uint16_t c0)
 {
 	if (gain == TSL258X_GAIN_111X)
