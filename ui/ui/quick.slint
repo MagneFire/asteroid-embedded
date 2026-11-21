@@ -15,7 +15,7 @@ import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
 import { Icons } from "icons.slint";
-import { Theme } from "theme.slint";
+import { Theme, Square } from "theme.slint";
 import { Build } from "build.slint";
 
 component Toggle {
@@ -143,210 +143,212 @@ export component QuickSettings {
         }
     }
 
-    Toggle {
-        x: Build.settings ? root.width / 2 - 4 * Theme.unit - self.width : (root.width - self.width) / 2;
-        y: 8 * Theme.unit;
-        size: 24 * Theme.unit;
-        button: true;
-        opacity: root.shown;
-        icon: "ios-unlock";
-        clicked => {
-            Face.setting-toggled(Codes.ui-lock);
+    Square {
+        Toggle {
+            x: Build.settings ? root.width / 2 - 4 * Theme.unit - self.width : (root.width - self.width) / 2;
+            y: 8 * Theme.unit;
+            size: 24 * Theme.unit;
+            button: true;
+            opacity: root.shown;
+            icon: "ios-unlock";
+            clicked => {
+                Face.setting-toggled(Codes.ui-lock);
+            }
         }
-    }
 
-    if Build.settings: Toggle {
-        x: root.width / 2 + 4 * Theme.unit;
-        y: 8 * Theme.unit;
-        size: 24 * Theme.unit;
-        button: true;
-        opacity: root.shown;
-        icon: "ios-settings";
-        clicked => {
-            Face.setting-toggled(Codes.ui-open-settings);
+        if Build.settings: Toggle {
+            x: root.width / 2 + 4 * Theme.unit;
+            y: 8 * Theme.unit;
+            size: 24 * Theme.unit;
+            button: true;
+            opacity: root.shown;
+            icon: "ios-settings";
+            clicked => {
+                Face.setting-toggled(Codes.ui-open-settings);
+            }
         }
-    }
-
-    Rectangle {
-        x: (root.width - root.strip) / 2;
-        y: 36 * Theme.unit;
-        width: root.strip;
-        height: 28 * Theme.unit;
-        clip: true;
 
         Rectangle {
-            x: -root.page * (root.strip + 4 * Theme.unit) + root.drag;
-            width: root.pages * (root.strip + 4 * Theme.unit);
-            opacity: root.shown;
-            animate x {
-                duration: root.dragging ? 0ms : 150ms;
-                easing: ease-out;
-            }
+            x: (root.width - root.strip) / 2;
+            y: 36 * Theme.unit;
+            width: root.strip;
+            height: 28 * Theme.unit;
+            clip: true;
 
-            for t[i] in root.toggles: Toggle {
-                x: Math.floor(i / 3) * (root.strip + 4 * Theme.unit) + root.pad(Math.floor(i / 3)) + Math.mod(i, 3) * 32 * Theme.unit;
-                icon: t.icon;
-                on: t.on;
-                button: t.button;
-                held: root.held == i;
-            }
-        }
+            Rectangle {
+                x: -root.page * (root.strip + 4 * Theme.unit) + root.drag;
+                width: root.pages * (root.strip + 4 * Theme.unit);
+                opacity: root.shown;
+                animate x {
+                    duration: root.dragging ? 0ms : 150ms;
+                    easing: ease-out;
+                }
 
-        Timer {
-            interval: 300ms;
-            running: root.held == 0 && !root.scrubbing && !root.swiped;
-            triggered => {
-                root.scrubbing = true;
-                root.swiped = true;
-                root.scrub(strip-touch.pressed-x + parent.x);
-            }
-        }
-
-        Timer {
-            interval: 3000ms;
-            running: !Build.settings && root.held == 6 && !root.swiped;
-            triggered => {
-                root.swiped = true;
-                remorse.start("Reset watch", Codes.ui-reset-watch);
-            }
-        }
-
-        strip-touch := TouchArea {
-            clicked => {
-                if !root.swiped && root.hit >= 0 {
-                    root.press(root.hit);
+                for t[i] in root.toggles: Toggle {
+                    x: Math.floor(i / 3) * (root.strip + 4 * Theme.unit) + root.pad(Math.floor(i / 3)) + Math.mod(i, 3) * 32 * Theme.unit;
+                    icon: t.icon;
+                    on: t.on;
+                    button: t.button;
+                    held: root.held == i;
                 }
             }
-            moved => {
-                if root.scrubbing {
-                    root.scrub(self.mouse-x + parent.x);
-                    return;
-                }
-                if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 2.5 * Theme.unit {
-                    root.dragging = true;
+
+            Timer {
+                interval: 300ms;
+                running: root.held == 0 && !root.scrubbing && !root.swiped;
+                triggered => {
+                    root.scrubbing = true;
                     root.swiped = true;
-                }
-                if root.dragging {
-                    root.drag = self.mouse-x - self.pressed-x;
+                    root.scrub(strip-touch.pressed-x + parent.x);
                 }
             }
-            pointer-event(e) => {
-                if e.kind == PointerEventKind.down {
-                    root.swiped = false;
+
+            Timer {
+                interval: 3000ms;
+                running: !Build.settings && root.held == 6 && !root.swiped;
+                triggered => {
+                    root.swiped = true;
+                    remorse.start("Reset watch", Codes.ui-reset-watch);
                 }
-                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-                    root.scrubbing = false;
+            }
+
+            strip-touch := TouchArea {
+                clicked => {
+                    if !root.swiped && root.hit >= 0 {
+                        root.press(root.hit);
+                    }
+                }
+                moved => {
+                    if root.scrubbing {
+                        root.scrub(self.mouse-x + parent.x);
+                        return;
+                    }
+                    if !root.dragging && Math.abs(self.mouse-x - self.pressed-x) > 2.5 * Theme.unit {
+                        root.dragging = true;
+                        root.swiped = true;
+                    }
                     if root.dragging {
-                        root.page = Math.clamp(root.page + (root.drag < -10 * Theme.unit ? 1 : root.drag > 10 * Theme.unit ? -1 : 0), 0, root.pages - 1);
-                        root.drag = 0;
-                        root.dragging = false;
+                        root.drag = self.mouse-x - self.pressed-x;
+                    }
+                }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        root.swiped = false;
+                    }
+                    if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                        root.scrubbing = false;
+                        if root.dragging {
+                            root.page = Math.clamp(root.page + (root.drag < -10 * Theme.unit ? 1 : root.drag > 10 * Theme.unit ? -1 : 0), 0, root.pages - 1);
+                            root.drag = 0;
+                            root.dragging = false;
+                        }
                     }
                 }
             }
         }
-    }
 
-    for i in root.pages: Rectangle {
-        x: root.width / 2 + (i - (root.pages - 1) / 2) * 5 * Theme.unit - 2 * Theme.unit;
-        y: 68 * Theme.unit;
-        width: 4 * Theme.unit;
-        height: 4 * Theme.unit;
-        border-radius: 2 * Theme.unit;
-        background: white;
-        opacity: (i == root.page ? 0.5 : 0.25) * root.shown;
-    }
-
-    Rectangle {
-        x: (root.width - 50.5 * Theme.unit) / 2;
-        y: 76 * Theme.unit;
-        width: 50.5 * Theme.unit;
-        height: 8 * Theme.unit;
-        border-radius: 4 * Theme.unit;
-        background: #ffffff33;
-        clip: true;
-        opacity: root.shown;
-
-        Rectangle {
-            x: 0;
-            width: parent.width * (Face.battery-percent / 100 + 0.05 * root.wave);
-            height: parent.height;
-            background: #ffffff4d;
+        for i in root.pages: Rectangle {
+            x: root.width / 2 + (i - (root.pages - 1) / 2) * 5 * Theme.unit - 2 * Theme.unit;
+            y: 68 * Theme.unit;
+            width: 4 * Theme.unit;
+            height: 4 * Theme.unit;
+            border-radius: 2 * Theme.unit;
+            background: white;
+            opacity: (i == root.page ? 0.5 : 0.25) * root.shown;
         }
 
-        if Face.charging: Image {
-            x: (parent.width - 8 * Theme.unit) / 2;
-            width: 8 * Theme.unit;
+        Rectangle {
+            x: (root.width - 50.5 * Theme.unit) / 2;
+            y: 76 * Theme.unit;
+            width: 50.5 * Theme.unit;
             height: 8 * Theme.unit;
-            source: Icons.get("ios-flash", self.width, self.height);
-            colorize: white;
-            opacity: root.pulse;
-        }
-    }
+            border-radius: 4 * Theme.unit;
+            background: #ffffff33;
+            clip: true;
+            opacity: root.shown;
 
-    Text {
-        x: 0;
-        y: 85 * Theme.unit;
-        width: root.width;
-        height: 12.5 * Theme.unit;
-        text: Face.battery-percent + "%";
-        color: white;
-        opacity: root.shown;
-        font-family: "Noto Sans Condensed Medium";
-        font-size: 9 * Theme.unit;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
+            Rectangle {
+                x: 0;
+                width: parent.width * (Face.battery-percent / 100 + 0.05 * root.wave);
+                height: parent.height;
+                background: #ffffff4d;
+            }
 
-    // The brightness bar while scrubbing: the value where the fixed row was, the bar in the middle
-    // and its name where the battery bar was.
-    Rectangle {
-        x: root.width * 0.1;
-        y: (root.height - 20 * Theme.unit) / 2;
-        width: root.width * 0.8;
-        height: 20 * Theme.unit;
-        border-radius: 10 * Theme.unit;
-        background: #212121bf;
-        clip: true;
-        opacity: 1 - root.shown;
-
-        Rectangle {
-            x: 0;
-            width: parent.width * Face.brightness / 100;
-            height: parent.height;
-            background: #ffffff4d;
-            animate width {
-                duration: 80ms;
-                easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            if Face.charging: Image {
+                x: (parent.width - 8 * Theme.unit) / 2;
+                width: 8 * Theme.unit;
+                height: 8 * Theme.unit;
+                source: Icons.get("ios-flash", self.width, self.height);
+                colorize: white;
+                opacity: root.pulse;
             }
         }
-    }
 
-    Text {
-        x: 0;
-        y: 8 * Theme.unit;
-        width: root.width;
-        height: 28 * Theme.unit;
-        text: Face.brightness + "%";
-        color: white;
-        opacity: (1 - root.shown) * 0.9;
-        font-family: "Noto Sans SemiCondensed SemiBold";
-        font-size: 12 * Theme.unit;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
+        Text {
+            x: 0;
+            y: 85 * Theme.unit;
+            width: root.width;
+            height: 12.5 * Theme.unit;
+            text: Face.battery-percent + "%";
+            color: white;
+            opacity: root.shown;
+            font-family: "Noto Sans Condensed Medium";
+            font-size: 9 * Theme.unit;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
 
-    Text {
-        x: 0;
-        y: 80 * Theme.unit - 3 * Theme.unit - 8 * Theme.unit;
-        width: root.width;
-        height: 16 * Theme.unit;
-        text: "Brightness";
-        color: white;
-        opacity: (1 - root.shown) * 0.9;
-        font-family: "Noto Sans Condensed Medium";
-        font-size: 12 * Theme.unit;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+        // The brightness bar while scrubbing: the value where the fixed row was, the bar in the middle
+        // and its name where the battery bar was.
+        Rectangle {
+            x: root.width * 0.1;
+            y: 40 * Theme.unit;
+            width: root.width * 0.8;
+            height: 20 * Theme.unit;
+            border-radius: 10 * Theme.unit;
+            background: #212121bf;
+            clip: true;
+            opacity: 1 - root.shown;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * Face.brightness / 100;
+                height: parent.height;
+                background: #ffffff4d;
+                animate width {
+                    duration: 80ms;
+                    easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+                }
+            }
+        }
+
+        Text {
+            x: 0;
+            y: 8 * Theme.unit;
+            width: root.width;
+            height: 28 * Theme.unit;
+            text: Face.brightness + "%";
+            color: white;
+            opacity: (1 - root.shown) * 0.9;
+            font-family: "Noto Sans SemiCondensed SemiBold";
+            font-size: 12 * Theme.unit;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            x: 0;
+            y: 80 * Theme.unit - 3 * Theme.unit - 8 * Theme.unit;
+            width: root.width;
+            height: 16 * Theme.unit;
+            text: "Brightness";
+            color: white;
+            opacity: (1 - root.shown) * 0.9;
+            font-family: "Noto Sans Condensed Medium";
+            font-size: 12 * Theme.unit;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
     }
 
     remorse := Remorse {
