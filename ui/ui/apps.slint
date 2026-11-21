@@ -1,5 +1,5 @@
 // The app panel: whichever app the launcher or the app strip opened, full screen over the screen
-// stack.
+// stack, in the middle square of a screen that is not square.
 import { Face } from "face.slint";
 import { MusicScreen } from "music.slint";
 import { WeatherScreen } from "weather.slint";
@@ -14,22 +14,25 @@ import { AgendaApp } from "agenda.slint";
 import { ActivityScreen } from "activity.slint";
 import { StepsScreen } from "steps.slint";
 import { Build } from "build.slint";
+import { Square } from "theme.slint";
 
 export component AppScreen {
     width: 100%;
     height: 100%;
 
-    if Build.music && Face.app == 0: MusicScreen { }
-    if Build.settings && Face.app == 1: SettingsApp { }
-    if Build.alarm && Face.app == 2: AlarmApp { }
-    if Build.timer && Face.app == 3: TimerApp { }
-    if Build.stopwatch && Face.app == 4: StopwatchApp { }
-    if Build.weather && Face.app == 5: WeatherScreen { }
-    if Build.heart && Face.app == 6: HeartRateScreen { }
-    if Build.flashlight && Face.app == 7: FlashlightScreen { }
-    if Build.calculator && Face.app == 8: CalculatorScreen { }
-    if Build.diamonds && Face.app == 9: DiamondsScreen { }
-    if Build.agenda && Face.app == 10: AgendaApp { }
-    if Build.activity && Face.app == 11: ActivityScreen { }
-    if Build.steps && !Build.launcher && Face.app == 12: StepsScreen { }
+    Square {
+        if Build.music && Face.app == 0: MusicScreen { }
+        if Build.settings && Face.app == 1: SettingsApp { }
+        if Build.alarm && Face.app == 2: AlarmApp { }
+        if Build.timer && Face.app == 3: TimerApp { }
+        if Build.stopwatch && Face.app == 4: StopwatchApp { }
+        if Build.weather && Face.app == 5: WeatherScreen { }
+        if Build.heart && Face.app == 6: HeartRateScreen { }
+        if Build.flashlight && Face.app == 7: FlashlightScreen { }
+        if Build.calculator && Face.app == 8: CalculatorScreen { }
+        if Build.diamonds && Face.app == 9: DiamondsScreen { }
+        if Build.agenda && Face.app == 10: AgendaApp { }
+        if Build.activity && Face.app == 11: ActivityScreen { }
+        if Build.steps && !Build.launcher && Face.app == 12: StepsScreen { }
+    }
 }

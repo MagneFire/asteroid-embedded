@@ -180,12 +180,14 @@ fn triangle_box(t: &[(f32, f32); 3]) -> Box {
 
 /// Shows arc on a width x height screen from the next draw, telling dirty the boxes that change.
 pub fn set(arc: Arc, width: u32, height: u32, mut dirty: impl FnMut(u32, u32, u32, u32)) {
-    let unit = width.min(height) as f32 / 100.0;
+    let side = width.min(height);
+    let unit = side as f32 / 100.0;
     let old = *state();
+    // In the middle of the square the app is laid out in (apps.slint).
     let mut new = State {
         on: old.is_some_and(|s| s.on),
-        cx: 50.0 * unit,
-        cy: 50.0 * unit,
+        cx: (width - side) as f32 / 2.0 + 50.0 * unit,
+        cy: (height - side) as f32 / 2.0 + 50.0 * unit,
         r: 100.0 * unit / 2.9,
         half: 1.7 * unit,
         unit,

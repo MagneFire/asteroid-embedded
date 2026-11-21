@@ -4,4 +4,18 @@ export global Theme {
     in property <length> width: 400px;
     in property <length> height: 400px;
     out property <length> unit: Math.min(self.width, self.height) / 100;
+    // How far the screen reaches past the square of its shorter side: none on a square screen.
+    out property <length> extra-width: self.width - Math.min(self.width, self.height);
+    out property <length> extra-height: self.height - Math.min(self.width, self.height);
+}
+
+// The square of the screen's shorter side in the middle of the screen, for a layout made for a
+// square screen, in a parent that fills the screen.
+export component Square {
+    x: Theme.extra-width / 2;
+    y: Theme.extra-height / 2;
+    width: Math.min(Theme.width, Theme.height);
+    height: Math.min(Theme.width, Theme.height);
+
+    @children
 }
