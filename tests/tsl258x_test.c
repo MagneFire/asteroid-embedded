@@ -46,16 +46,18 @@ struct fb fb = { .width = 402, .height = 476 };
 static bool awake = true, redrawn, sweep_light, sweep_spot;
 static unsigned lines;
 /* For the grid: which pixels are white, and a sensor that sees an 80
- * pixel square around (100, 300), a count for every 8 white pixels. */
+ * pixel square around (spot_x, 300), spot_k counts for every 8 white
+ * pixels. */
 static bool white_px[476][402];
+static unsigned spot_x = 100, spot_k = 1;
 
 static uint16_t spot_counts(void)
 {
 	unsigned n = 0;
 	for (unsigned y = 260; y < 340; y++)
-		for (unsigned x = 60; x < 140; x++)
+		for (unsigned x = spot_x - 40; x < spot_x + 40; x++)
 			n += white_px[y][x];
-	return (uint16_t)(30 + n / 8);
+	return (uint16_t)((30 + n / 8) * spot_k);
 }
 bool power_awake(void) { return awake; }
 void wdt_feed(void) {}
@@ -79,7 +81,7 @@ void delay_ms(uint32_t ms)
 		integrate();
 	}
 	if (sweep_spot) {
-		counts[1] = spot_counts();
+		counts[regs[REG_ANALOG] == 0x03] = spot_counts();
 		integrate();
 	}
 }
@@ -580,13 +582,47 @@ static void command_test(void)
 	CHECK(strstr(said, "light: y 204-271      9    102      9      0      0      0\n"));
 	CHECK(strstr(said, "light: y 272-339     51    578     51      0      0      0\n"));
 	CHECK(strstr(said, "light: tiles add 800 of 800, centre at x 100 y 295\n"));
+	CHECK(strstr(said, "light: x from         0     66    134    200    268    334\n"));
 	CHECK(brightness == 90 && redrawn);
 	said[0] = 0;
 	d->command("sweep grid 17 2", say);
-	CHECK(!strcmp(said, "usage: light sweep grid [columns rows], up to 16 each\n"));
+	CHECK(!strcmp(said, "usage: light sweep grid [columns rows [x y width height]], up to 16 each and 64 tiles\n"));
+	said[0] = 0;
+	d->command("sweep grid 9 8", say);
+	CHECK(strstr(said, "usage: "));
+	said[0] = 0;
+	d->command("sweep grid 2 2 400 0 10 10", say);
+	CHECK(strstr(said, "usage: "));
+
+	/* A box of 10 pixel tiles on the spot: rows and columns from its
+	 * corner, odd corners made even. */
+	said[0] = 0;
+	d->command("sweep grid 4 4 61 261 80 80", say);
+	CHECK(strstr(said, "light: x from        60     80    100    120\n"));
+	CHECK(strstr(said, "light: y 320-339     50     50     50     50\n"));
+	CHECK(strstr(said, "light: tiles add 800 of 800, centre at x 100 y 300\n"));
 	said[0] = 0;
 	d->command("sweep grid 2 2", say);
 	CHECK(strstr(said, "light: tiles add 800 of 800"));
+
+	/* At 1x a tile adds up to 7 digits, and the centre of a bright spot
+	 * on the right still comes out right. */
+	gain = TSL258X_GAIN_1X;
+	regs[REG_ANALOG] = 0x00;
+	spot_k = 78;
+	said[0] = 0;
+	d->command("sweep grid 16 4", say);
+	CHECK(strstr(said, "light: grid 16x4 at level 255, black 259740, white 7186140\n"));
+	CHECK(strstr(said, "light: y 238-355      0      0 1212120 2251080 2077920 1385280      0      0      0      0      0"
+			   "      0      0      0      0      0\n"));
+	spot_x = 340;
+	said[0] = 0;
+	d->command("sweep grid 1 1 290 0 112 476", say);
+	CHECK(strstr(said, "light: tiles add 6926400 of 6926400, centre at x 345 y 238\n"));
+	gain = TSL258X_GAIN_111X;
+	regs[REG_ANALOG] = 0x03;
+	spot_x = 100;
+	spot_k = 1;
 	sweep_spot = false;
 
 	/* Half the model's screen light taken off: a white crop at full

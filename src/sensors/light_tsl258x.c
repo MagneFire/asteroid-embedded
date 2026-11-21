@@ -359,6 +359,8 @@ static void sweep(const char *what, void (*say)(const char *fmt, ...))
 }
 
 #define GRID_MAX	16
+/* About 16 s at a quarter of a second each. */
+#define GRID_TILES	64
 
 /* A number and the spaces after it, false without digits. */
 static bool number(const char **p, uint32_t *v)
@@ -376,9 +378,9 @@ static bool number(const char **p, uint32_t *v)
 }
 
 /* The panel takes windows of even start and size. */
-static uint32_t grid_edge(uint32_t size, unsigned i, unsigned n)
+static uint32_t grid_edge(uint32_t start, uint32_t size, unsigned i, unsigned n)
 {
-	return i == n ? size : size * i / n & ~1u;
+	return start + (i == n ? size : size * i / n & ~1u);
 }
 
 static void fill_box(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t colour)
@@ -391,21 +393,29 @@ static void fill_box(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t co
 	ui_draw_end();
 }
 
-/* At full brightness on a black screen, one white tile at a time: what
- * each adds to channel 0 over the black screen, row by row, against the
- * whole screen white, and the middle of what the sensor sees. */
+/* At full brightness on a black screen, one white tile at a time over
+ * the screen or a box of it: what each adds to channel 0 over the black
+ * screen, row by row, against the whole screen white, and the middle of
+ * what the sensor sees. */
 static void sweep_grid(const char *args, void (*say)(const char *fmt, ...))
 {
-	uint32_t cols = 6, rows = 7;
-	if (*args && (!number(&args, &cols) || !number(&args, &rows) || *args || !cols || !rows || cols > GRID_MAX ||
-		      rows > GRID_MAX)) {
-		say("usage: light sweep grid [columns rows], up to %u each\n", GRID_MAX);
+	uint32_t w = fb.width < ARRAY_SIZE(sweep_line) ? fb.width : ARRAY_SIZE(sweep_line);
+	uint32_t cols = 6, rows = 7, bx = 0, by = 0, bw = w, bh = fb.height;
+	bool ok = !*args || (number(&args, &cols) && number(&args, &rows) &&
+			     (!*args || (number(&args, &bx) && number(&args, &by) && number(&args, &bw) && number(&args, &bh))));
+	bx &= ~1u;
+	by &= ~1u;
+	bw &= ~1u;
+	bh &= ~1u;
+	if (!ok || *args || !cols || !rows || cols > GRID_MAX || rows > GRID_MAX || cols * rows > GRID_TILES ||
+	    bw < 2 * cols || bh < 2 * rows || bx + bw > w || by + bh > fb.height) {
+		say("usage: light sweep grid [columns rows [x y width height]], up to %u each and %u tiles\n", GRID_MAX,
+		    GRID_TILES);
 		return;
 	}
 	uint8_t was = display_brightness();
 	if (!sweep_begin(say))
 		return;
-	uint32_t w = fb.width < ARRAY_SIZE(sweep_line) ? fb.width : ARRAY_SIZE(sweep_line);
 	int32_t scale = gain == TSL258X_GAIN_1X ? 111 : 1;
 	uint16_t c0 = 0, c1;
 	display_set_brightness(255);
@@ -414,21 +424,27 @@ static void sweep_grid(const char *args, void (*say)(const char *fmt, ...))
 	fill_box(0, 0, w, fb.height, 0x0000);
 	int32_t dark = sweep_read(&c0, &c1) ? c0 * scale : -1;
 	say("light: grid %lux%lu at level 255, black %ld, white %ld\n", cols, rows, dark, full);
+	char head[GRID_MAX * 7 + 1];
+	unsigned hn = 0;
+	for (uint32_t c = 0; c < cols; c++)
+		hn += (unsigned)snprintf(head + hn, sizeof head - hn, " %6lu", grid_edge(bx, bw, c, cols));
+	say("light: x from   %s\n", head);
 	float sum = 0, sx = 0, sy = 0;
 	for (uint32_t r = 0; r < rows && dark >= 0; r++) {
-		uint32_t y0 = grid_edge(fb.height, r, rows), y1 = grid_edge(fb.height, r + 1, rows);
-		char line[GRID_MAX * 7 + 1];
+		uint32_t y0 = grid_edge(by, bh, r, rows), y1 = grid_edge(by, bh, r + 1, rows);
+		/* Room for any int32_t: at 1x the counts run to 7 digits. */
+		char line[GRID_MAX * 12 + 1];
 		unsigned n = 0;
 		for (uint32_t c = 0; c < cols; c++) {
-			uint32_t x0 = grid_edge(w, c, cols), x1 = grid_edge(w, c + 1, cols);
+			uint32_t x0 = grid_edge(bx, bw, c, cols), x1 = grid_edge(bx, bw, c + 1, cols);
 			fill_box(x0, y0, x1 - x0, y1 - y0, 0xffff);
 			int32_t d = sweep_read(&c0, &c1) ? c0 * scale - dark : -9999;
 			fill_box(x0, y0, x1 - x0, y1 - y0, 0x0000);
 			n += (unsigned)snprintf(line + n, sizeof line - n, " %6ld", (long)d);
 			if (d > 0) {
 				sum += d;
-				sx += d * (x0 + x1) / 2.0f;
-				sy += d * (y0 + y1) / 2.0f;
+				sx += (float)d * (x0 + x1) / 2;
+				sy += (float)d * (y0 + y1) / 2;
 			}
 		}
 		say("light: y %3lu-%3lu%s\n", y0, y1 - 1, line);
@@ -464,7 +480,7 @@ static void tsl258x_command(const char *args, void (*say)(const char *fmt, ...))
 		}
 		screen_pct = pct;
 	} else if (*args) {
-		say("usage: light [sweep [black|white|crop|grid [columns rows]] | screen <percent>]\n");
+		say("usage: light [sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]\n");
 		return;
 	}
 	say_cal(say);
