@@ -82,8 +82,9 @@ static const struct dcs_step panel_on_41[] = {
 };
 
 /* RM69090 AMOLED on IOM5 at 48 MHz, mode 3: data/command on pad 46,
- * reset on pad 10, tearing on pad 11. The touch controller and the
- * haptics driver share IOM0's I2C (SCL pad 5, SDA pad 6). The battery is
+ * reset on pad 10, tearing on pad 11. The touch controller, the
+ * haptics driver and the light sensor share IOM0's I2C (SCL pad 5, SDA
+ * pad 6). The battery is
  * on ADC channel 7 (pad 35) behind a divider that makes the 2.0 V
  * reference 7.2 V. Keys on pads 15 (upper, power) and 38; 38 is also
  * the PMIC's power key and 15 the AP's fastboot key, so neither is ever
@@ -101,6 +102,7 @@ static const struct dcs_step panel_on_41[] = {
 	.hub = &hub_lsm6dso, .hub_pins = { .i2c = { .bus = 3, .sda = 43, .scl = 42, .func = 4, .addr = 0x6a }, .irq = 13 }, \
 	.hr_pins = { .pads = hr_pads, .spi_bus = 2, .spi_cs = 3, .spi_hz = 4000000, .power = 31, .reset = 19, .irq = 18 }, \
 	.motor = &motor_aw8624, .motor_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x5a }, .enable = 26 }, \
+	.light = &light_tsl258x, .light_pins = { .i2c = { .bus = 0, .sda = 6, .scl = 5, .func = 0, .addr = 0x29 } }, \
 	.ap_link = { .up_int = 29, .up_ack = 33, .dn_int = 30, .dn_ack = 32, .own_gpio = 36, .release_gpio = 14 }, \
 	.ble_gpio = 4
 
