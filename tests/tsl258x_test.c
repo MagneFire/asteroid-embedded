@@ -209,6 +209,22 @@ static void driver_test(void)
 	d->keep(true);
 	CHECK(reading() == 7381);
 
+	/* The AP's use keeps it powered while the watch lets go, and the
+	 * other way round; off once neither wants it. */
+	tsl258x_share(true);
+	d->keep(false);
+	CHECK(regs[REG_CONTROL] && reading() == 7381);
+	d->keep(true);
+	tsl258x_share(false);
+	CHECK(regs[REG_CONTROL] && reading() == 7381);
+	tsl258x_share(true);
+	d->keep(false);
+	tsl258x_share(false);
+	CHECK(!regs[REG_CONTROL]);
+	d->keep(true);
+	CHECK(reading() == -1);
+	CHECK(reading() == 7381);
+
 	/* A chip that stops answering is not kept. */
 	d->keep(false);
 	fail_after = 0;

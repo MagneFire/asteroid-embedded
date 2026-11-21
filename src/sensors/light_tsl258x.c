@@ -1,7 +1,8 @@
 /* beluga's light sensor, a TSL258x on I2C with the touch controller and
  * powered all the time. The vendor's firmware runs it at 111x and 100 ms
  * while the screen is on and clears its power bit otherwise; here it is
- * powered only while kept (light_keep), so only while awake.
+ * powered only while kept (light_keep), so only while awake, or while
+ * the AP has it on (tsl258x_share).
  *
  * Kept on, the chip converts one integration after another by itself
  * and light_finish reads the last one, both channels: two short
@@ -56,7 +57,7 @@ static const uint8_t gain_codes[] = { 0x00, 0x03 };
 #define SLACK_MS	10
 #define LOG_MS		5000
 
-static bool ready, kept, adc, have_reading, cal_factory;
+static bool ready, kept, adc, own, shared, have_reading, cal_factory;
 static enum tsl258x_gain gain = TSL258X_GAIN_111X;
 static uint32_t powered, valid_at, logged_at;
 static struct tsl258x_cal cal;
@@ -192,8 +193,9 @@ static int32_t tsl258x_finish(void)
 	return -1;
 }
 
-static void tsl258x_keep(bool on)
+static void apply(void)
 {
+	bool on = own || shared;
 	if (!ready || on == kept)
 		return;
 	adc = false;
@@ -216,6 +218,18 @@ static void tsl258x_status(void (*say)(const char *fmt, ...))
 	}
 	say_reading(say, &last);
 	say("light: %lu ms ago\n", time_ms() - last.at_ms);
+}
+
+static void tsl258x_keep(bool on)
+{
+	own = on;
+	apply();
+}
+
+void tsl258x_share(bool on)
+{
+	shared = on;
+	apply();
 }
 
 const struct light_driver light_tsl258x = {

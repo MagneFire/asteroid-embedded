@@ -13,8 +13,8 @@ static inline uint8_t lsm6dso_gyro_odr(uint32_t period_ms)
 {
 	return !period_ms ? 0 : period_ms >= 80 ? 1 : period_ms >= 39 ? 2 : 3;
 }
-/* Off at 0. */
-void lsm6dso_gyro_on(uint32_t period_ms);
+/* Off at 0; false if the chip did not take it, to be asked again. */
+bool lsm6dso_gyro_on(uint32_t period_ms);
 /* The output registers in counts, chip axes; false while off or
  * settling. */
 bool lsm6dso_gyro(int16_t v[3]);

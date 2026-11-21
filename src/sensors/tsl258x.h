@@ -82,4 +82,8 @@ struct tsl258x_reading {
 
 /* The light sensor driver's last reading: false before the first. */
 bool light_tsl258x_reading(struct tsl258x_reading *r);
+
+/* In the driver: a second user of the readings, the AP's, which keeps
+ * the sensor powered like light_keep while either wants it. */
+void tsl258x_share(bool on);
 #endif

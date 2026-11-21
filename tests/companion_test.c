@@ -16,6 +16,7 @@
 #include "sensors/ak09918.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
+#include "sensors/tsl258x.h"
 #include "sched.h"
 
 static int failures;
@@ -153,8 +154,11 @@ static bool accel_shared, hr_shared;
 static uint32_t hr_bpm = HUB_NONE;
 static uint8_t hr_quality;
 static unsigned hr_readings;
-static uint32_t gyro_period, mag_period;
+static uint32_t gyro_period, mag_period, gyro_fails, mag_fails, gyro_tries, mag_tries;
+static uint32_t mag_losts;
 static int mag_result = AK09918_OK;
+static bool light_shared;
+static int32_t lux = -1;
 
 uint32_t time_ms(void) { return now_ms += ms_per_read; }
 uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
@@ -259,7 +263,17 @@ uint32_t afe4900_rate(uint8_t *status, unsigned *readings)
 	*readings = hr_shared ? hr_readings : 0;
 	return hr_bpm;
 }
-void lsm6dso_gyro_on(uint32_t period_ms) { gyro_period = period_ms; }
+/* The chips take what they are asked but for the next so many tries. */
+bool lsm6dso_gyro_on(uint32_t period_ms)
+{
+	if (period_ms == gyro_period)
+		return true;
+	gyro_tries++;
+	if (gyro_fails && gyro_fails--)
+		return false;
+	gyro_period = period_ms;
+	return true;
+}
 bool lsm6dso_gyro(int16_t v[3])
 {
 	v[0] = 1000, v[1] = -500, v[2] = 0;
@@ -267,8 +281,18 @@ bool lsm6dso_gyro(int16_t v[3])
 }
 bool ak09918_on(uint32_t period_ms)
 {
+	if (period_ms == mag_period)
+		return true;
+	mag_tries++;
+	if (mag_fails && mag_fails--)
+		return false;
 	mag_period = period_ms;
 	return true;
+}
+void ak09918_lost(void)
+{
+	mag_losts++;
+	mag_period = 0;
 }
 int ak09918_read(int16_t v[3])
 {
@@ -276,6 +300,8 @@ int ak09918_read(int16_t v[3])
 	return mag_period ? mag_result : AK09918_NONE;
 }
 void ak09918_status(void (*say)(const char *fmt, ...)) {}
+void tsl258x_share(bool on) { light_shared = on; }
+int32_t light_finish(void) { return light_shared ? lux : -1; }
 uint32_t hub_steps(void) { return steps; }
 uint32_t hub_tilts(void) { return tilts; }
 /* The MCU's clock in µs, which starts over at a reset. */
@@ -593,8 +619,9 @@ static void companion_scenario(void)
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
 	CHECK(outputs[MOTOR_EN] && levels[MOTOR_EN]);
-	/* The chips on the AP's bus are put to sleep once it is the watch's. */
-	CHECK(chips_offs == 1);
+	/* The chips on the AP's bus are put to sleep once it is the watch's,
+	 * and their drivers start over. */
+	CHECK(chips_offs == 1 && mag_losts == 1);
 	ap_write(1, PROTO_OOBE, NULL, 0);
 	companion_pass();
 	wait_ms(2999);
@@ -634,7 +661,7 @@ static void companion_scenario(void)
 	mode_message(374, m374, sizeof m374, &a);
 	CHECK(a.mode == PROTO_MODE_POWER_OFF && a.last_mode == PROTO_MODE_NORMAL && display_lent);
 	wait_ms(1000);
-	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2);
+	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2 && mag_losts == 2);
 
 	/* The power key held for 5 s takes the panel back from an AP that
 	 * does not answer, and power off is stored at once. */
@@ -1047,13 +1074,36 @@ static void sensor_scenario(void)
 	ap_activate(PROTO_SNS_GYRO, false, 0);
 	CHECK(gyro_period == 0);
 
+	/* A gyroscope that does not take its rate is asked again a second
+	 * later, then two seconds after that; going off likewise. */
+	gyro_fails = 2;
+	gyro_tries = 0;
+	ap_activate(PROTO_SNS_GYRO, true, 0);
+	CHECK(gyro_period == 0 && gyro_tries == 1 && companion_next_ms() <= 1000);
+	ap_sensors(1100);
+	CHECK(gyro_period == 0 && gyro_tries == 2);
+	ap_sensors(1700);
+	CHECK(gyro_period == 0 && gyro_tries == 2);
+	ap_sensors(400);
+	CHECK(gyro_period == 100 && gyro_tries == 3);
+	ap_sensors(5000);
+	CHECK(gyro_tries == 3);
+	gyro_fails = 1;
+	ap_activate(PROTO_SNS_GYRO, false, 0);
+	CHECK(gyro_period == 100);
+	ap_sensors(1100);
+	CHECK(gyro_period == 0 && gyro_tries == 5);
+
 	/* The magnetometer in µT on Android's axes (x the chip's -y, y
 	 * its x), unreliable as it is not calibrated; an overflow is left
 	 * out. */
 	CHECK(ak09918_mode(0) == 0 && ak09918_mode(1000) == 0x02 && ak09918_mode(125) == 0x02 &&
 	      ak09918_mode(100) == 0x04 && ak09918_mode(63) == 0x04 && ak09918_mode(50) == 0x06 &&
 	      ak09918_mode(25) == 0x06 && ak09918_mode(20) == 0x08);
+	mag_fails = 1;
 	ap_activate(PROTO_SNS_MAG, true, 0);
+	CHECK(mag_period == 0);
+	ap_sensors(1100);
 	CHECK(mag_period == 200);
 	ap_batch(PROTO_SNS_MAG, 1000000, 0);
 	CHECK(mag_period == 20);
@@ -1077,12 +1127,57 @@ static void sensor_scenario(void)
 	ap_activate(PROTO_SNS_MAG, false, 0);
 	CHECK(mag_period == 0);
 
+	/* The light sensor is powered while the AP wants it, and sends
+	 * lux when it changes, read at most once an integration. */
+	ap_batch(PROTO_SNS_LIGHT, 20000000, 0);
+	ap_activate(PROTO_SNS_LIGHT, true, 0);
+	CHECK(light_shared);
+	memset(&got, 0, sizeof got);
+	ap_sensors(500);
+	CHECK(got.events == 0);
+	lux = 0;
+	ap_sensors(150);
+	CHECK(got.events == 1 && got.ev[0].id == PROTO_SNS_LIGHT && bits_float(got.ev[0].w[0]) == 0);
+	ap_sensors(1000);
+	CHECK(got.events == 1);
+	lux = 328;
+	CHECK(companion_next_ms() <= 100);
+	ap_sensors(150);
+	CHECK(got.events == 2 && bits_float(got.ev[1].w[0]) == 328.0f);
+	ap_activate(PROTO_SNS_LIGHT, false, 0);
+	CHECK(!light_shared);
+	ap_activate(PROTO_SNS_LIGHT, true, 0);
+	ap_sensors(150);
+	CHECK(got.events == 3 && bits_float(got.ev[2].w[0]) == 328.0f);
+
+	/* A change under 2 lux and a twentieth is jitter. */
+	lux = 344;
+	ap_sensors(500);
+	CHECK(got.events == 3);
+	lux = 345;
+	ap_sensors(150);
+	CHECK(got.events == 4 && bits_float(got.ev[3].w[0]) == 345.0f);
+	lux = 0;
+	ap_sensors(150);
+	lux = 1;
+	ap_sensors(150);
+	CHECK(got.events == 5 && bits_float(got.ev[4].w[0]) == 0);
+
+	/* A lux the AP does not take is sent again. */
+	lux = 400;
+	for (int i = 0; i < 150 && !levels[UP_INT]; i++)
+		wait_ms(1);
+	CHECK(levels[UP_INT]);
+	run_ms(2 * LINK_TX_MS + 150);
+	ap_sensors(300);
+	CHECK(got.events >= 6 && bits_float(got.ev[got.events - 1].w[0]) == 400.0f);
+
 	/* Power off drops them. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);
 	ap_activate(PROTO_SNS_ACCEL, true, 0);
 	CHECK(accel_shared);
 	mode_message(374, NULL, 0, &a);
-	CHECK(a.mode == PROTO_MODE_POWER_OFF && !accel_shared && !hr_shared);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF && !accel_shared && !hr_shared && !light_shared);
 	memset(&got, 0, sizeof got);
 	ap_sensors(2000);
 	CHECK(got.reports == 0);
@@ -1099,6 +1194,18 @@ static void sensor_scenario(void)
 	ap_write(1, PROTO_BOOT, cut386, sizeof cut386);
 	companion_pass();
 	CHECK(accel_shared && rtc_writes == rtc);
+	ap_activate(PROTO_SNS_ACCEL, false, 0);
+
+	/* A no-contact event the AP does not take is sent again. */
+	ap_activate(PROTO_SNS_HEART_RATE, true, 0);
+	run_ms(15000);
+	CHECK(levels[UP_INT]);
+	run_ms(2 * LINK_TX_MS + 150);
+	memset(&got, 0, sizeof got);
+	ap_sensors(300);
+	CHECK(got.events == 1 && got.ev[0].heart && got.ev[0].status == PROTO_SNS_NO_CONTACT);
+	ap_sensors(20000);
+	CHECK(got.events == 1);
 }
 
 int main(void)

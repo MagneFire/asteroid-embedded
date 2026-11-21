@@ -23,7 +23,7 @@
 static bool checked, present;
 static uint8_t mode;
 static uint32_t period, last_t;
-static uint32_t reads, overflows, errors, restarts;
+static uint32_t reads, overflows, errors, restarts, misses;
 
 static int wr(uint8_t reg, uint8_t v)
 {
@@ -51,9 +51,16 @@ static bool probe(void)
 {
 	const struct board_i2c *b = &board->chips_off.i2c;
 	uint8_t reg = WIA1, id[2] = { 0 };
+	int r = i2c_init(b->bus, b->sda, b->scl, b->func, 400000);
+	if (!r)
+		r = i2c_xfer(BUS, ADDR, &reg, 1, id, 2);
+	if (r) {
+		if (!misses++)
+			log_printf("compass: no answer (%d)\n", r);
+		return false;
+	}
 	checked = true;
-	present = !i2c_init(b->bus, b->sda, b->scl, b->func, 400000) && !i2c_xfer(BUS, ADDR, &reg, 1, id, 2) &&
-		  id[0] == COMPANY && id[1] == DEVICE;
+	present = id[0] == COMPANY && id[1] == DEVICE;
 	log_printf("compass: %s (id %02x %02x)\n", present ? "AK09918" : "no AK09918", id[0], id[1]);
 	return present;
 }
@@ -62,13 +69,22 @@ bool ak09918_on(uint32_t period_ms)
 {
 	uint8_t m = ak09918_mode(period_ms);
 	if (!checked && (!m || !probe()))
-		return false;
+		return !m || checked;
 	if (!present)
-		return false;
+		return true;
 	period = period_ms;
-	if (m != mode && set_mode(m))
+	if (m != mode) {
+		if (!set_mode(m))
+			return false;
 		mode = m;
+	}
 	return true;
+}
+
+void ak09918_lost(void)
+{
+	checked = false;
+	mode = 0;
 }
 
 int ak09918_read(int16_t v[3])
@@ -99,7 +115,8 @@ int ak09918_read(int16_t v[3])
 
 void ak09918_status(void (*say)(const char *fmt, ...))
 {
-	if (checked)
-		say("compass: %s, mode %02x, %lu reads, %lu overflows, %lu errors, %lu restarts\n",
-		    present ? "AK09918" : "absent", mode, reads, overflows, errors, restarts);
+	if (checked || misses)
+		say("compass: %s, mode %02x, %lu reads, %lu overflows, %lu errors, %lu restarts, %lu unanswered\n",
+		    !checked ? "not answering" : present ? "AK09918" : "absent", mode, reads, overflows, errors, restarts,
+		    misses);
 }

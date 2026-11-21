@@ -13,6 +13,7 @@
 #include "sensors/ak09918.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
+#include "sensors/tsl258x.h"
 #include "companion/link.h"
 #include "companion/proto.h"
 #include "companion/sensors.h"
@@ -23,6 +24,8 @@
 #define ACCEL_MIN_MS	39
 #define GYRO_MIN_MS	20
 #define MAG_MIN_MS	20
+/* The light sensor's integration. */
+#define LIGHT_MIN_MS	100
 #define DEFAULT_MS	200
 #define STEPS_MS	1000
 #define DETECTOR_MAX	4
@@ -32,6 +35,19 @@
 #define NO_CONTACT_MS	15000
 /* Keeps the deadlines' differences in an int32_t. */
 #define LONGEST_MS	3600000
+/* A lux change smaller than this, and than 1/LUX_PART of the last lux
+ * sent, is the sensor's jitter. */
+#define LUX_STEP	2
+#define LUX_PART	20
+/* A chip that did not take what it was asked is asked again, at first
+ * a second later and then half as often each time. */
+#define RETRY_MS	1000
+#define RETRY_MAX_MS	60000
+/* The magnetometer and the light sensor share the touch controller's
+ * bus, which the AP may use while it has the panel. Stock reads the
+ * light sensor then, so they serve the AP's subscriptions while it
+ * has the panel; at 0 they wait for the panel to come back. */
+#define BUS_WHILE_LENT	1
 #define MG_TO_MS2	0.00980665f
 #define GYRO_TO_RADS	(LSM6DSO_MDPS_PER_COUNT * 0.001f * 3.14159265f / 180)
 #define KEPT_MAGIC	0x534e5331u	/* "SNS1" */
@@ -47,9 +63,12 @@ struct sub {
 	uint32_t period_ms, latency_ms;
 };
 
-enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, MAG, SUBS };
+enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, MAG, LIGHT, SUBS };
 static const uint32_t handles[SUBS] = { PROTO_SNS_ACCEL, PROTO_SNS_STEP_COUNTER, PROTO_SNS_STEP_DETECTOR,
-					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE, PROTO_SNS_GYRO, PROTO_SNS_MAG };
+					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE, PROTO_SNS_GYRO, PROTO_SNS_MAG,
+					PROTO_SNS_LIGHT };
+static const uint32_t min_ms[SUBS] = { [ACCEL] = ACCEL_MIN_MS, [GYRO] = GYRO_MIN_MS, [MAG] = MAG_MIN_MS,
+				       [LIGHT] = LIGHT_MIN_MS };
 /* Android's axis for each of the AK09918's, from the remap the
  * vendor's firmware applies before its compass library: Android x is
  * the chip's -y and y its x. */
@@ -71,7 +90,9 @@ static unsigned queued, per_report, taken;
 static uint32_t due[SUBS];
 static uint32_t first_ms, steps_ms, last_steps = HUB_NONE, seen_tilts, heart_ms;
 static unsigned seen_readings;
-static bool urgent, no_contact;
+static int32_t last_lux = -1;
+static bool urgent, no_contact, lent, settled = true;
+static uint32_t retry_ms, retry_wait = RETRY_MS;
 static uint32_t flushes[FLUSH_MAX];
 static unsigned flush_n;
 static struct {
@@ -125,25 +146,60 @@ static bool push(uint32_t handle, uint64_t ns, const uint32_t w[4], bool now)
 	return true;
 }
 
-static void push_value(uint32_t handle, float v)
+static bool push_value(uint32_t handle, float v)
 {
 	uint32_t w[4] = { proto_float_bits(v), 0, 0, 0 };
-	push(handle, mcu_ns(), w, true);
+	return push(handle, mcu_ns(), w, true);
 }
 
 static uint32_t period(int i)
 {
 	uint32_t ms = kept.subs[i].period_ms ? kept.subs[i].period_ms : DEFAULT_MS;
-	uint32_t min = i == ACCEL ? ACCEL_MIN_MS : i == GYRO ? GYRO_MIN_MS : i == MAG ? MAG_MIN_MS : 0;
-	return ms < min ? min : ms;
+	return ms < min_ms[i] ? min_ms[i] : ms;
 }
 
 static void share(void)
 {
+	bool bus = BUS_WHILE_LENT || !lent;
 	hub_accel_share(kept.subs[ACCEL].on);
 	afe4900_share(kept.subs[HEART].on);
-	lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
-	ak09918_on(kept.subs[MAG].on ? period(MAG) : 0);
+	settled = lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
+	settled &= ak09918_on(bus && kept.subs[MAG].on ? period(MAG) : 0);
+	tsl258x_share(bus && kept.subs[LIGHT].on);
+	retry_ms = time_ms();
+}
+
+static bool unsettled(void) { return !settled; }
+
+static void settle(uint32_t now)
+{
+	if (!unsettled()) {
+		retry_wait = RETRY_MS;
+		return;
+	}
+	if (now - retry_ms < retry_wait)
+		return;
+	share();
+	retry_wait = retry_wait < RETRY_MAX_MS / 2 ? 2 * retry_wait : RETRY_MAX_MS;
+}
+
+void sns_lend(bool to_ap)
+{
+	lent = to_ap;
+	share();
+}
+
+void sns_chips_off(void)
+{
+	ak09918_lost();
+}
+
+bool sns_active(void)
+{
+	for (int i = 0; i < SUBS; i++)
+		if (kept.subs[i].on)
+			return true;
+	return false;
 }
 
 static void heart_start(uint32_t now)
@@ -161,7 +217,9 @@ static void activate(int i, bool on)
 	uint32_t now = time_ms();
 	share();
 	due[i] = now;
-	if (i == HEART)
+	if (i == LIGHT)
+		last_lux = -1;
+	else if (i == HEART)
 		heart_start(now);
 	else if (i == COUNTER || i == DETECTOR) {
 		steps_ms = now;
@@ -232,10 +290,11 @@ static unsigned fit(void)
 	return n;
 }
 
-void sns_start(bool keep_subs)
+void sns_start(bool lent_boot)
 {
 	per_report = fit();
-	if (!keep_subs || kept.magic != KEPT_MAGIC || kept.sum != kept_sum()) {
+	lent = lent_boot;
+	if (!lent_boot || kept.magic != KEPT_MAGIC || kept.sum != kept_sum()) {
 		sns_reset();
 		return;
 	}
@@ -290,6 +349,20 @@ static void sample_vectors(uint32_t now)
 	}
 }
 
+/* Lux as the scalar, sent when it changes, as the light sensor is an
+ * on-change one. */
+static void sample_light(uint32_t now)
+{
+	if (!sample_due(LIGHT, now))
+		return;
+	int32_t lux = light_finish(), d = lux - last_lux;
+	if (d < 0)
+		d = -d;
+	if (lux >= 0 && (last_lux < 0 || (d >= LUX_STEP && d * LUX_PART >= last_lux)) &&
+	    push_value(PROTO_SNS_LIGHT, (float)lux))
+		last_lux = lux;
+}
+
 static void sample_steps(uint32_t now)
 {
 	if ((!kept.subs[COUNTER].on && !kept.subs[DETECTOR].on) || (int32_t)(now - steps_ms) < 0)
@@ -330,7 +403,8 @@ static void sample_heart(uint32_t now)
 		no_contact = false;
 	} else if (!no_contact && now - heart_ms >= NO_CONTACT_MS) {
 		w[1] = (uint32_t)PROTO_SNS_NO_CONTACT;
-		no_contact = true;
+		no_contact = push(PROTO_SNS_HEART_RATE, mcu_ns(), w, true);
+		return;
 	} else
 		return;
 	push(PROTO_SNS_HEART_RATE, mcu_ns(), w, true);
@@ -339,7 +413,9 @@ static void sample_heart(uint32_t now)
 void sns_pass(void)
 {
 	uint32_t now = time_ms();
+	settle(now);
 	sample_vectors(now);
+	sample_light(now);
 	sample_steps(now);
 	sample_heart(now);
 	uint32_t t = hub_tilts();
@@ -405,13 +481,18 @@ void sns_sent(void)
 	taken = 0;
 }
 
-/* A flush's answer stays for the next report; samples are dropped. */
+/* A flush's answer stays for the next report; samples are dropped, and
+ * the state the on-change ones leave is sent again. */
 void sns_unsent(void)
 {
 	unsigned metas = 0;
 	for (unsigned i = 0; i < taken; i++)
 		if (queue[i].handle == PROTO_SNS_META)
 			queue[metas++] = queue[i];
+		else if (queue[i].handle == PROTO_SNS_LIGHT)
+			last_lux = -1;
+		else if (queue[i].handle == PROTO_SNS_HEART_RATE && queue[i].word[1] == (uint32_t)PROTO_SNS_NO_CONTACT)
+			no_contact = false;
 	count.dropped += taken - metas;
 	memmove(queue + metas, queue + taken, (queued - taken) * sizeof queue[0]);
 	queued -= taken - metas;
@@ -430,7 +511,7 @@ uint32_t sns_next_ms(bool link_free)
 {
 	uint32_t now = time_ms(), ms = UINT32_MAX;
 	for (int i = 0; i < SUBS; i++)
-		if ((i == ACCEL || i == GYRO || i == MAG) && kept.subs[i].on && until(due[i], now) < ms)
+		if (min_ms[i] && kept.subs[i].on && until(due[i], now) < ms)
 			ms = until(due[i], now);
 	uint32_t s = kept.subs[COUNTER].on || kept.subs[DETECTOR].on ? until(steps_ms, now) : UINT32_MAX;
 	uint32_t r = report_in(now);
@@ -445,13 +526,15 @@ uint32_t sns_next_ms(bool link_free)
 	}
 	if ((r || link_free) && r < ms)
 		ms = r;
+	if (unsettled() && until(retry_ms + retry_wait, now) < ms)
+		ms = until(retry_ms + retry_wait, now);
 	return ms;
 }
 
 void sns_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[SUBS] = { "accelerometer", "step counter", "step detector", "wrist tilt",
-						 "heart rate", "gyroscope", "magnetometer" };
+						 "heart rate", "gyroscope", "magnetometer", "light" };
 	for (int i = 0; i < SUBS; i++)
 		if (kept.subs[i].on)
 			say("sensors: %s every %lu ms, latency %lu ms\n", names[i], period(i), kept.subs[i].latency_ms);

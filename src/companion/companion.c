@@ -283,6 +283,7 @@ static void switch_panel(void)
 	switching = false;
 	ap_has_panel = want_ap;
 	if (want_ap) {
+		sns_lend(true);
 		haptics_hold(true);
 		display_lend(true);
 		touch_lend(true);
@@ -294,11 +295,13 @@ static void switch_panel(void)
 			chips_on = false;
 			if (board_chips_off())
 				iom_stop(board->chips_off.i2c.bus);
+			sns_chips_off();
 		}
 		power_lend_display(false);
 		display_lend(false);
 		touch_lend(false);
 		haptics_hold(false);
+		sns_lend(false);
 		if (wake_on_take)
 			power_wake("companion");
 		else

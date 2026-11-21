@@ -186,15 +186,16 @@ static bool lsm_accel(int16_t v[3])
 	return true;
 }
 
-void lsm6dso_gyro_on(uint32_t period_ms)
+bool lsm6dso_gyro_on(uint32_t period_ms)
 {
 	uint8_t odr = lsm6dso_gyro_odr(period_ms);
-	if (!ready || odr == gyro_odr || main_page())
-		return;
-	if (wr(CTRL7_G, G_LOW_POWER) || wr(CTRL2_G, (uint8_t)(odr << 4 | (odr ? G_2000DPS : 0))))
-		return;
+	if (!ready || odr == gyro_odr)
+		return true;
+	if (main_page() || wr(CTRL7_G, G_LOW_POWER) || wr(CTRL2_G, (uint8_t)(odr << 4 | (odr ? G_2000DPS : 0))))
+		return false;
 	gyro_odr = odr;
 	gyro_t = time_ms();
+	return true;
 }
 
 bool lsm6dso_gyro(int16_t v[3])
