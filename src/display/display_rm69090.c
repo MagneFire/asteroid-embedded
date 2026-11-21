@@ -12,6 +12,7 @@
 #include "display/display.h"
 #include "display/rm69090_id.h"
 #include "sensors/tsl258x.h"
+#include "detect.h"
 
 #define DCS_POWER_MODE	0x0a
 #define DCS_SLEEP_IN	0x10
@@ -122,7 +123,7 @@ static void power(bool on)
 		}
 }
 
-static bool start(void)
+static void power_on(void)
 {
 	gpio_set(DC, 0);
 	gpio_config(DC, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 4);
@@ -133,13 +134,22 @@ static bool start(void)
 	delay_ms(12);
 	gpio_set(board->panel.reset_gpio, 1);
 	delay_ms(12);
+}
+
+static void init_table(void)
+{
 	run(board->panel.on, board->panel.on_n);
 	command(DCS_PIXELS, (const uint8_t[]){ PIXELS_RGB565 }, 1);
 	command(DCS_BRIGHTNESS, &level, 1);
 	panel_on = true;
 	idle = false;
 	lost = true;
-	return true;
+}
+
+static void start(void)
+{
+	power_on();
+	init_table();
 }
 
 static void stop(void)
@@ -203,36 +213,82 @@ void display_start_lent(void) { lent = true; }
 
 static void window(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 
+/* Pad 12 is the 46 mm panel's second enable and the 41 mm touch supply.
+ * The 46 mm table, used until the ID is read, drives it high, as stock
+ * does on both. */
+static bool start_detect(uint8_t raw[3][2])
+{
+	power_on();
+	read_id(raw);
+	const struct board *was = board;
+	bool asleep_read = board_by_panel_id(raw, &framing);
+	if (!asleep_read) {
+		/* A panel that answers only out of sleep: the 46 mm table,
+		 * dark, and the ID once more. */
+		uint8_t keep = level;
+		level = 0;
+		init_table();
+		level = keep;
+		read_id(raw);
+	}
+	framing = board_detect_panel(raw);
+	if (asleep_read)
+		init_table();
+	else if (board != was)
+		start();
+	else
+		command(DCS_BRIGHTNESS, &level, 1);
+	return asleep_read;
+}
+
+/* Lent at the start with no size kept, the size is read once the panel
+ * is the watch's. The UI has the size of the 46 mm watch by then, so a
+ * 41 mm panel needs a boot of its own, which now starts with the
+ * panel. */
+static bool unread;
+
+static void start_unread(void)
+{
+	uint8_t raw[3][2];
+	const struct board *was = board;
+	unread = false;
+	start_detect(raw);
+	if (board != was) {
+		log_printf("display: the panel is %s's, starting again for its size\n", board->name);
+		reboot();
+	}
+}
+
 bool display_init(void)
 {
 	if (!board->panel.spi_hz || (!lent && iom_spi_init(BUS, board->panel.spi_hz, board->panel.spi_mode))) {
 		log_printf("display: no SPI panel\n");
 		return false;
 	}
-	fb.width = board->panel.width;
-	fb.height = fb.panel_height = board->panel.height;
 	fb.stride = 0;
 	fb.buf[0] = fb.buf[1] = NULL;
 	if (lent) {
+		unread = !board_detect_kept();
+		fb.width = board->panel.width;
+		fb.height = fb.panel_height = board->panel.height;
 		let_go_all();
 		started = panel_asleep = true;
 		log_printf("display: %lux%lu on spi%u, left to the AP\n", fb.width, fb.height, BUS);
 		return true;
 	}
 	uint32_t t0 = time_ms();
-	start();
 	uint8_t raw[3][2];
-	read_id(raw);
-	framing = rm69090_match(raw, board->panel.id);
+	bool asleep_read = start_detect(raw);
+	fb.width = board->panel.width;
+	fb.height = fb.panel_height = board->panel.height;
 	reads_work = mode_has(MODE_SLEEP_OUT);
 	started = true;
 	panel_asleep = false;
-	log_printf("display: %lux%lu on spi%u at %lu Hz, id %02x %02x %02x %s (read %02x%02x %02x%02x %02x%02x at %lu Hz), "
-		   "reads %s, up in %lu ms\n",
-		   fb.width, fb.height, BUS, board->panel.spi_hz, rm69090_byte(raw[0], framing), rm69090_byte(raw[1], framing),
-		   rm69090_byte(raw[2], framing), rm69090_framing_name(framing), raw[0][0], raw[0][1], raw[1][0], raw[1][1],
-		   raw[2][0], raw[2][1], READ_HZ ? READ_HZ : board->panel.spi_hz, reads_work ? "work" : "fail",
-		   time_ms() - t0);
+	log_printf("display: %lux%lu on spi%u at %lu Hz, id read %02x%02x %02x%02x %02x%02x at %lu Hz %s, reads %s, "
+		   "up in %lu ms\n",
+		   fb.width, fb.height, BUS, board->panel.spi_hz, raw[0][0], raw[0][1], raw[1][0], raw[1][1], raw[2][0],
+		   raw[2][1], READ_HZ ? READ_HZ : board->panel.spi_hz, asleep_read ? "in sleep" : "after the 46 mm table",
+		   reads_work ? "work" : "fail", time_ms() - t0);
 	return true;
 }
 
@@ -414,7 +470,10 @@ void display_wake_hidden(void)
 	if (!panel_on && !lent) {
 		uint8_t keep = level;
 		level = 0;
-		start();
+		if (unread)
+			start_unread();
+		else
+			start();
 		level = keep;
 	}
 	panel_asleep = false;
