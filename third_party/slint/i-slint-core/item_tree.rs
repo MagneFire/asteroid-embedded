@@ -484,6 +484,10 @@ impl ItemRc {
         if self.is_visible() {
             return true;
         }
+        // Only the focus asks this, and without keyboard input nothing scrolls to it.
+        if cfg!(not(feature = "key-input")) {
+            return false;
+        }
 
         // Walk toward the root to the clipping ancestor that hides the item, and ask whether
         // it's a Flickable, which scrolling can undo. An ancestor hides the item with its own
