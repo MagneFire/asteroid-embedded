@@ -30,12 +30,12 @@ component NotificationView {
     property <int> age: Face.now - self.note.time;
 
     width: 100 * Theme.unit;
-    height: 100 * Theme.unit;
+    height: 100 * Theme.unit + Theme.extra-height;
 
     Rectangle {
         x: 15 * Theme.unit;
         width: 70 * Theme.unit;
-        height: 100 * Theme.unit;
+        height: parent.height;
 
         column := VerticalLayout {
             y: root.offset;
@@ -146,7 +146,7 @@ component Actions {
     }
 
     HorizontalLayout {
-        y: 100 * Theme.unit - 3 * Theme.unit - 8.5 * Theme.unit;
+        y: 100 * Theme.unit + Theme.extra-height / 2 - 3 * Theme.unit - 8.5 * Theme.unit;
         height: 8.5 * Theme.unit;
         alignment: center;
 
@@ -177,7 +177,7 @@ component SnoozeTimes {
 
     for t[i] in [{ label: "10m", minutes: 10 }, { label: "30m", minutes: 30 }, { label: "1h", minutes: 60 }, { label: "3h", minutes: 180 }]: Rectangle {
         x: 20 * Theme.unit + Math.mod(i, 2) * 34 * Theme.unit;
-        y: 20 * Theme.unit + Math.floor(i / 2) * 34 * Theme.unit;
+        y: Theme.extra-height / 2 + 20 * Theme.unit + Math.floor(i / 2) * 34 * Theme.unit;
         width: 26 * Theme.unit;
         height: 26 * Theme.unit;
         border-radius: 13 * Theme.unit;
@@ -230,7 +230,8 @@ export component NoteList {
         duration: root.axis == 1 ? 0ms : 100ms;
         easing: linear;
     }
-    property <length> lift: Math.clamp((self.actions ? 100 * Theme.unit : 0) + (self.axis == 3 ? self.vdrag : 0), 0, 100 * Theme.unit);
+    property <length> screen-height: 100 * Theme.unit + Theme.extra-height;
+    property <length> lift: Math.clamp((self.actions ? self.screen-height : 0) + (self.axis == 3 ? self.vdrag : 0), 0, self.screen-height);
     animate lift {
         duration: root.axis == 3 ? 0ms : 100ms;
         easing: linear;
@@ -318,7 +319,7 @@ export component NoteList {
                     let n = root.drag < -50 * Theme.unit || (root.vx < -10 && root.drag < 0) ? 1 : root.drag > 50 * Theme.unit || (root.vx > 10 && root.drag > 0) ? -1 : 0;
                     root.page = Math.clamp(root.page + n, 0, Math.max(0, root.count - 1));
                 } else if root.axis == 2 && live {
-                    root.offset = Math.clamp(root.offset + root.vdrag, Math.min(0, 100 * Theme.unit - root.page-height), 0);
+                    root.offset = Math.clamp(root.offset + root.vdrag, Math.min(0, root.screen-height - root.page-height), 0);
                 } else if root.axis == 3 && live {
                     root.actions = root.actions ? !(root.vdrag < -50 * Theme.unit || (root.vy < -10 && root.vdrag < 0)) : root.vdrag > 50 * Theme.unit || (root.vy > 10 && root.vdrag > 0);
                 }
@@ -338,7 +339,7 @@ export component NoteList {
             y: root.lift;
             visible: self.x > -100 * Theme.unit && self.x < 100 * Theme.unit;
             note: note;
-            offset: self.shown ? Math.clamp(root.offset + (root.axis == 2 ? root.vdrag : 0), Math.min(0, 100 * Theme.unit - self.content-height), 0) : 0;
+            offset: self.shown ? Math.clamp(root.offset + (root.axis == 2 ? root.vdrag : 0), Math.min(0, root.screen-height - self.content-height), 0) : 0;
             init => {
                 if self.shown {
                     root.page-height = self.content-height;
@@ -355,7 +356,7 @@ export component NoteList {
     // Snooze slides in over the actions as a LayerStack page, pushing them out to the left.
     if root.count > 0 && root.lift > 0: Actions {
         x: root.snoozing ? -100 * Theme.unit : 0;
-        y: root.lift - 100 * Theme.unit;
+        y: root.lift - root.screen-height + Theme.extra-height / 2;
         animate x {
             duration: 200ms;
             easing: ease-out-quint;
