@@ -4,6 +4,7 @@
  * rest of the firmware stubbed out. */
 #include <stdarg.h>
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "companion/wire.h"
@@ -13,6 +14,7 @@
 #include "companion/sensors.h"
 #include "board/board.h"
 #include "sensors/hub.h"
+#include "sensors/lsm6dso.h"
 #include "sched.h"
 
 static int failures;
@@ -150,6 +152,7 @@ static bool accel_shared, hr_shared;
 static uint32_t hr_bpm = HUB_NONE;
 static uint8_t hr_quality;
 static unsigned hr_readings;
+static uint32_t gyro_period;
 
 uint32_t time_ms(void) { return now_ms += ms_per_read; }
 uint32_t time_us(void) { return now_ms * 1000 + extra_us; }
@@ -253,6 +256,12 @@ uint32_t afe4900_rate(uint8_t *status, unsigned *readings)
 		*status = hr_quality;
 	*readings = hr_shared ? hr_readings : 0;
 	return hr_bpm;
+}
+void lsm6dso_gyro_on(uint32_t period_ms) { gyro_period = period_ms; }
+bool lsm6dso_gyro(int16_t v[3])
+{
+	v[0] = 1000, v[1] = -500, v[2] = 0;
+	return gyro_period != 0;
 }
 uint32_t hub_steps(void) { return steps; }
 uint32_t hub_tilts(void) { return tilts; }
@@ -995,6 +1004,35 @@ static void sensor_scenario(void)
 	CHECK(got.events == 4);
 	ap_activate(PROTO_SNS_HEART_RATE, true, 0);
 	CHECK(hr_shared);
+
+	/* The gyroscope runs at the rate asked for, at most 52 Hz, in
+	 * rad/s with low accuracy, and is off once the AP is done. */
+	CHECK(lsm6dso_gyro_odr(0) == 0 && lsm6dso_gyro_odr(200) == 1 && lsm6dso_gyro_odr(80) == 1 &&
+	      lsm6dso_gyro_odr(79) == 2 && lsm6dso_gyro_odr(39) == 2 && lsm6dso_gyro_odr(38) == 3 &&
+	      lsm6dso_gyro_odr(20) == 3);
+	ap_batch(PROTO_SNS_GYRO, 10000000, 0);
+	CHECK(gyro_period == 0);
+	ap_activate(PROTO_SNS_GYRO, true, 0);
+	CHECK(gyro_period == 20);
+	memset(&got, 0, sizeof got);
+	ap_sensors(1000);
+	unsigned turns = 0;
+	uint64_t prev = 0;
+	for (unsigned i = 0; i < got.events; i++)
+		if (got.ev[i].id == PROTO_SNS_GYRO) {
+			const float k = 70 * 0.001f * 3.14159265f / 180;
+			CHECK(bits_float(got.ev[i].w[0]) == 1000 * k && bits_float(got.ev[i].w[1]) == -500 * k &&
+			      bits_float(got.ev[i].w[2]) == 0 && got.ev[i].w[3] == PROTO_SNS_LOW);
+			CHECK(!turns || got.ev[i].time - prev == 20000000);
+			prev = got.ev[i].time;
+			turns++;
+		}
+	CHECK(turns >= 1000 / 20 - 2 && turns <= 1000 / 20 + 1);
+	CHECK(fabsf(bits_float(got.ev[0].w[0]) - 1.2217f) < 0.001f);
+	ap_batch(PROTO_SNS_GYRO, 100000000, 0);
+	CHECK(gyro_period == 100);
+	ap_activate(PROTO_SNS_GYRO, false, 0);
+	CHECK(gyro_period == 0);
 
 	/* Power off drops them. */
 	ap_batch(PROTO_SNS_ACCEL, 20000000, 1000000000);

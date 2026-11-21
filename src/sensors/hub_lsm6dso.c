@@ -7,6 +7,7 @@
 #include "asteroid.h"
 #include "sensors/hub.h"
 #include "sensors/afe4900.h"
+#include "sensors/lsm6dso.h"
 
 #define BUS		(board->hub_pins.i2c.bus)
 #define ADDR		(board->hub_pins.i2c.addr)
@@ -15,7 +16,10 @@
 #define FUNC_CFG_ACCESS	0x01
 #define WHO_AM_I	0x0f
 #define CTRL1_XL	0x10
+#define CTRL2_G		0x11
 #define CTRL3_C		0x12
+#define CTRL7_G		0x16
+#define OUTX_L_G	0x22
 #define EMB_STATUS	0x35
 #define OUTX_L_A	0x28
 #define MD1_CFG		0x5e
@@ -37,6 +41,10 @@
 #define INT1_EMB_FUNC	0x02
 #define EMB_LIR		0x80
 #define IS_TILT		0x10
+#define G_2000DPS	0x0c
+#define G_LOW_POWER	0x80
+/* The datasheet's turn-on time is 70 ms. */
+#define G_SETTLE_MS	80
 
 static bool ready, tilt_wanted, accel_wanted;
 static volatile bool irq_seen;
@@ -45,6 +53,8 @@ static bool tilt;
 static bool emb_open = true;
 static uint16_t last_count;
 static uint32_t steps, errors;
+static uint8_t gyro_odr;
+static uint32_t gyro_t;
 
 static int wr(uint8_t reg, uint8_t v)
 {
@@ -176,13 +186,34 @@ static bool lsm_accel(int16_t v[3])
 	return true;
 }
 
+void lsm6dso_gyro_on(uint32_t period_ms)
+{
+	uint8_t odr = lsm6dso_gyro_odr(period_ms);
+	if (!ready || odr == gyro_odr || main_page())
+		return;
+	if (wr(CTRL7_G, G_LOW_POWER) || wr(CTRL2_G, (uint8_t)(odr << 4 | (odr ? G_2000DPS : 0))))
+		return;
+	gyro_odr = odr;
+	gyro_t = time_ms();
+}
+
+bool lsm6dso_gyro(int16_t v[3])
+{
+	uint8_t raw[6];
+	if (!gyro_odr || time_ms() - gyro_t < G_SETTLE_MS || main_page() || rd(OUTX_L_G, raw, 6))
+		return false;
+	for (int i = 0; i < 3; i++)
+		v[i] = (int16_t)(raw[2 * i] | raw[2 * i + 1] << 8);
+	return true;
+}
+
 static bool lsm_can_sleep(void) { return !irq_seen && afe4900_can_sleep(); }
 static void lsm_sleep(bool asleep) {}
 
 static void lsm_status(void (*say)(const char *fmt, ...))
 {
-	say("hub: LSM6DSO %s, %lu steps, tilt %s, %lu errors\n", ready ? "up" : "absent", steps,
-	    tilt_wanted ? "on" : "off", errors);
+	say("hub: LSM6DSO %s, %lu steps, tilt %s, gyroscope ODR %u, %lu errors\n", ready ? "up" : "absent", steps,
+	    tilt_wanted ? "on" : "off", gyro_odr, errors);
 	afe4900_status(say);
 }
 

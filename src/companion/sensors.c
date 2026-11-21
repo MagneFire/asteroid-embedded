@@ -11,13 +11,15 @@
 #include "asteroid.h"
 #include "sensors/afe4900.h"
 #include "sensors/hub.h"
+#include "sensors/lsm6dso.h"
 #include "companion/link.h"
 #include "companion/proto.h"
 #include "companion/sensors.h"
 #include "companion/wire.h"
 
-/* The hub's 26 Hz. */
+/* The hub's 26 Hz; the gyroscope's fastest rate used, 52 Hz. */
 #define ACCEL_MIN_MS	39
+#define GYRO_MIN_MS	20
 #define DEFAULT_MS	200
 #define STEPS_MS	1000
 #define DETECTOR_MAX	4
@@ -27,8 +29,8 @@
 #define NO_CONTACT_MS	15000
 /* Keeps the deadlines' differences in an int32_t. */
 #define LONGEST_MS	3600000
-#define ACCURACY_HIGH	3
 #define MG_TO_MS2	0.00980665f
+#define GYRO_TO_RADS	(LSM6DSO_MDPS_PER_COUNT * 0.001f * 3.14159265f / 180)
 #define KEPT_MAGIC	0x534e5331u	/* "SNS1" */
 
 #ifdef HOST_TEST
@@ -42,9 +44,9 @@ struct sub {
 	uint32_t period_ms, latency_ms;
 };
 
-enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, SUBS };
+enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, SUBS };
 static const uint32_t handles[SUBS] = { PROTO_SNS_ACCEL, PROTO_SNS_STEP_COUNTER, PROTO_SNS_STEP_DETECTOR,
-					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE };
+					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE, PROTO_SNS_GYRO };
 static struct kept {
 	uint32_t magic;
 	struct sub subs[SUBS];
@@ -56,7 +58,8 @@ static struct kept {
 } kept KEPT;
 static struct proto_sns_event queue[PROTO_SNS_EVENTS];
 static unsigned queued, per_report, taken;
-static uint32_t first_ms, accel_ms, steps_ms, last_steps = HUB_NONE, seen_tilts, heart_ms;
+static uint32_t due[SUBS];
+static uint32_t first_ms, steps_ms, last_steps = HUB_NONE, seen_tilts, heart_ms;
 static unsigned seen_readings;
 static bool urgent, no_contact;
 static uint32_t flushes[FLUSH_MAX];
@@ -118,10 +121,18 @@ static void push_value(uint32_t handle, float v)
 	push(handle, mcu_ns(), w, true);
 }
 
+static uint32_t period(int i)
+{
+	uint32_t ms = kept.subs[i].period_ms ? kept.subs[i].period_ms : DEFAULT_MS;
+	uint32_t min = i == ACCEL ? ACCEL_MIN_MS : i == GYRO ? GYRO_MIN_MS : 0;
+	return ms < min ? min : ms;
+}
+
 static void share(void)
 {
 	hub_accel_share(kept.subs[ACCEL].on);
 	afe4900_share(kept.subs[HEART].on);
+	lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
 }
 
 static void heart_start(uint32_t now)
@@ -138,9 +149,8 @@ static void activate(int i, bool on)
 	kept.subs[i].on = on;
 	uint32_t now = time_ms();
 	share();
-	if (i == ACCEL)
-		accel_ms = now;
-	else if (i == HEART)
+	due[i] = now;
+	if (i == HEART)
 		heart_start(now);
 	else if (i == COUNTER || i == DETECTOR) {
 		steps_ms = now;
@@ -175,6 +185,7 @@ bool sns_command(const uint8_t *p, unsigned n)
 		kept.subs[i].period_ms = ms_of(c.period_ns);
 		kept.subs[i].latency_ms = ms_of(c.latency_ns);
 		keep();
+		share();
 	} else if (c.op == PROTO_SNS_FLUSH) {
 		count.flushes++;
 		if (flush_n < FLUSH_MAX)
@@ -221,33 +232,45 @@ void sns_start(bool keep_subs)
 		kept.offset_ns = (int64_t)(kept.last_ns - mcu_ns());
 	keep();
 	uint32_t now = time_ms();
-	accel_ms = steps_ms = now;
+	for (int i = 0; i < SUBS; i++)
+		due[i] = now;
+	steps_ms = now;
 	seen_tilts = hub_tilts();
 	share();
 	heart_start(now);
 	log_printf("sensors: the AP's subscriptions kept from before the reset\n");
 }
 
-static uint32_t period(int i)
+/* Whether a sample of a periodic sensor is due, moving its deadline
+ * on. A sample is read from the output registers on this schedule, not
+ * in step with the sensor's own rate. */
+static bool sample_due(int i, uint32_t now)
 {
-	uint32_t ms = kept.subs[i].period_ms ? kept.subs[i].period_ms : DEFAULT_MS;
-	return i == ACCEL && ms < ACCEL_MIN_MS ? ACCEL_MIN_MS : ms;
+	if (!kept.subs[i].on || (int32_t)(now - due[i]) < 0)
+		return false;
+	uint32_t p = period(i);
+	due[i] += p;
+	if ((int32_t)(now - due[i]) >= 0)
+		due[i] = now + p;
+	return true;
 }
 
-static void sample_accel(uint32_t now)
+static void push_vector(uint32_t handle, const int16_t v[3], float scale, uint32_t accuracy)
 {
-	if (!kept.subs[ACCEL].on || (int32_t)(now - accel_ms) < 0)
-		return;
-	uint32_t p = period(ACCEL);
-	accel_ms += p;
-	if ((int32_t)(now - accel_ms) >= 0)
-		accel_ms = now + p;
-	int16_t g[3];
-	if (!hub_accel(g))
-		return;
-	uint32_t w[4] = { proto_float_bits(g[0] * MG_TO_MS2), proto_float_bits(g[1] * MG_TO_MS2),
-			  proto_float_bits(g[2] * MG_TO_MS2), ACCURACY_HIGH };
-	push(PROTO_SNS_ACCEL, mcu_ns(), w, false);
+	uint32_t w[4] = { proto_float_bits(v[0] * scale), proto_float_bits(v[1] * scale),
+			  proto_float_bits(v[2] * scale), accuracy };
+	push(handle, mcu_ns(), w, false);
+}
+
+/* The chip's axes are taken as Android's for both. The gyroscope's
+ * zero-rate offset is not removed, hence low accuracy. */
+static void sample_vectors(uint32_t now)
+{
+	int16_t v[3];
+	if (sample_due(ACCEL, now) && hub_accel(v))
+		push_vector(PROTO_SNS_ACCEL, v, MG_TO_MS2, PROTO_SNS_HIGH);
+	if (sample_due(GYRO, now) && lsm6dso_gyro(v))
+		push_vector(PROTO_SNS_GYRO, v, GYRO_TO_RADS, PROTO_SNS_LOW);
 }
 
 static void sample_steps(uint32_t now)
@@ -299,7 +322,7 @@ static void sample_heart(uint32_t now)
 void sns_pass(void)
 {
 	uint32_t now = time_ms();
-	sample_accel(now);
+	sample_vectors(now);
 	sample_steps(now);
 	sample_heart(now);
 	uint32_t t = hub_tilts();
@@ -388,7 +411,10 @@ static uint32_t until(uint32_t t, uint32_t now)
 
 uint32_t sns_next_ms(bool link_free)
 {
-	uint32_t now = time_ms(), ms = kept.subs[ACCEL].on ? until(accel_ms, now) : UINT32_MAX;
+	uint32_t now = time_ms(), ms = UINT32_MAX;
+	for (int i = 0; i < SUBS; i++)
+		if ((i == ACCEL || i == GYRO) && kept.subs[i].on && until(due[i], now) < ms)
+			ms = until(due[i], now);
 	uint32_t s = kept.subs[COUNTER].on || kept.subs[DETECTOR].on ? until(steps_ms, now) : UINT32_MAX;
 	uint32_t r = report_in(now);
 	if (s < ms)
@@ -408,7 +434,7 @@ uint32_t sns_next_ms(bool link_free)
 void sns_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[SUBS] = { "accelerometer", "step counter", "step detector", "wrist tilt",
-						 "heart rate" };
+						 "heart rate", "gyroscope" };
 	for (int i = 0; i < SUBS; i++)
 		if (kept.subs[i].on)
 			say("sensors: %s every %lu ms, latency %lu ms\n", names[i], period(i), kept.subs[i].latency_ms);
