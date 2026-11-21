@@ -32,8 +32,10 @@ static uint8_t brightness;
 
 uint32_t time_ms(void) { return now; }
 void log_printf(const char *fmt, ...) {}
-static bool showing = true;
+static bool showing = true, phone, ap_sensors;
 bool display_showing(void) { return showing; }
+bool bt_host_connected(void) { return phone; }
+bool sns_active(void) { return ap_sensors; }
 uint8_t display_brightness(void) { return brightness; }
 void display_set_brightness(uint8_t level) { brightness = level; }
 
@@ -41,8 +43,20 @@ void display_set_brightness(uint8_t level) { brightness = level; }
  * the watch, and each wait integrates at the brightness set, channel 0
  * from 300 counts of room light and 3 per level step. */
 struct fb fb = { .width = 402, .height = 476 };
-static bool awake = true, redrawn, sweep_light;
+static bool awake = true, redrawn, sweep_light, sweep_spot;
 static unsigned lines;
+/* For the grid: which pixels are white, and a sensor that sees an 80
+ * pixel square around (100, 300), a count for every 8 white pixels. */
+static bool white_px[476][402];
+
+static uint16_t spot_counts(void)
+{
+	unsigned n = 0;
+	for (unsigned y = 260; y < 340; y++)
+		for (unsigned x = 60; x < 140; x++)
+			n += white_px[y][x];
+	return (uint16_t)(30 + n / 8);
+}
 bool power_awake(void) { return awake; }
 void wdt_feed(void) {}
 void ui_draw_begin(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {}
@@ -50,6 +64,9 @@ void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *rgb565)
 {
 	lines++;
 	tsl258x_crop_line(y, x, w, rgb565);
+	CHECK(!(x & 1) && !(w & 1) && x + w <= 402 && y < 476);
+	for (uint32_t i = 0; i < w; i++)
+		white_px[y][x + i] = rgb565[i] == 0xffff;
 }
 void ui_draw_end(void) {}
 void ui_mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h) { redrawn = x == 0 && y == 0 && w == 402 && h == 476; }
@@ -59,6 +76,10 @@ void delay_ms(uint32_t ms)
 	now += ms;
 	if (sweep_light) {
 		counts[1] = (uint16_t)(300 + 3 * brightness);
+		integrate();
+	}
+	if (sweep_spot) {
+		counts[1] = spot_counts();
 		integrate();
 	}
 }
@@ -523,19 +544,51 @@ static void command_test(void)
 	CHECK(kept && !lines && !redrawn && strstr(said, "per 100 levels"));
 	said[0] = 0;
 	d->command("sweep grey", say);
-	CHECK(!strcmp(said, "usage: light sweep [black|white|crop]\n"));
+	CHECK(!strcmp(said, "usage: light sweep [black|white|crop|grid [columns rows]]\n"));
 	awake = false;
 	said[0] = 0;
 	d->command("sweep", say);
 	CHECK(!strcmp(said, "light: the screen has to be on\n"));
 	awake = true;
+	/* Nothing else runs during a sweep: not with a phone connected or
+	 * the AP's sensors on. */
+	phone = true;
+	said[0] = 0;
+	d->command("sweep", say);
+	CHECK(!strcmp(said, "light: not while a phone is connected or the AP has sensors on\n"));
+	phone = false;
+	ap_sensors = true;
+	said[0] = 0;
+	d->command("sweep grid", say);
+	CHECK(strstr(said, "not while"));
+	ap_sensors = false;
 	sweep_light = false;
+
+	/* The grid finds the spot: each tile's share, adding up to the
+	 * white screen, around (100, 300). */
+	sweep_spot = true;
+	brightness = 90;
+	said[0] = 0;
+	d->command("sweep grid", say);
+	CHECK(strstr(said, "light: grid 6x7 at level 255, black 30, white 830\n"));
+	CHECK(strstr(said, "light: y 204-271      9    102      9      0      0      0\n"));
+	CHECK(strstr(said, "light: y 272-339     51    578     51      0      0      0\n"));
+	CHECK(strstr(said, "light: tiles add 800 of 800, centre at x 100 y 295\n"));
+	CHECK(brightness == 90 && redrawn);
+	said[0] = 0;
+	d->command("sweep grid 17 2", say);
+	CHECK(!strcmp(said, "usage: light sweep grid [columns rows], up to 16 each\n"));
+	said[0] = 0;
+	d->command("sweep grid 2 2", say);
+	CHECK(strstr(said, "light: tiles add 800 of 800"));
+	sweep_spot = false;
 
 	/* Half the model's screen light taken off: a white crop at full
 	 * brightness takes 523 counts off 4500 instead of 1047. */
 	said[0] = 0;
 	d->command("screen 50", say);
 	CHECK(strstr(said, "light: screen light taken off at 50%\n"));
+	fill(0, 0, 402, 476, 0xffff);
 	brightness = 255;
 	counts[1] = 4500;
 	now += 250;

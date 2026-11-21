@@ -24,6 +24,8 @@
  * dark or showing the always-on face, nothing is taken off. */
 #include <string.h>
 #include "asteroid.h"
+#include "bt/bt.h"
+#include "companion/sensors.h"
 #include "display/display.h"
 #include "sensors/tsl258x.h"
 #include "power.h"
@@ -284,6 +286,39 @@ static bool sweep_read(uint16_t *c0, uint16_t *c1)
 	return true;
 }
 
+/* Holds the sensor for a sweep and has it converting, with the screen
+ * on: false if it can not. */
+static bool sweep_begin(void (*say)(const char *fmt, ...))
+{
+	if (!power_awake()) {
+		say("light: the screen has to be on\n");
+		return false;
+	}
+	/* A sweep holds up the main loop for seconds. */
+	if (bt_host_connected() || sns_active()) {
+		say("light: not while a phone is connected or the AP has sensors on\n");
+		return false;
+	}
+	sweeping = true;
+	apply();
+	delay_ms(POWER_MS);
+	if (kept && adc_on(time_ms()))
+		return true;
+	say("light: sensor not answering\n");
+	sweeping = false;
+	apply();
+	return false;
+}
+
+static void sweep_end(uint8_t was, bool painted)
+{
+	if (painted)
+		ui_mark_dirty(0, 0, fb.width, fb.height);
+	display_set_brightness(was);
+	sweeping = false;
+	apply();
+}
+
 /* Channel 0 at each level with the screen as it is, black, white, or
  * black with a white crop, and the straight line through them: what the
  * screen adds per level step, and what is left at level 0. */
@@ -291,21 +326,12 @@ static void sweep(const char *what, void (*say)(const char *fmt, ...))
 {
 	bool black = !strcmp(what, "black"), white = !strcmp(what, "white"), crop = !strcmp(what, "crop");
 	if (*what && !black && !white && !crop) {
-		say("usage: light sweep [black|white|crop]\n");
-		return;
-	}
-	if (!power_awake()) {
-		say("light: the screen has to be on\n");
+		say("usage: light sweep [black|white|crop|grid [columns rows]]\n");
 		return;
 	}
 	uint8_t was = display_brightness();
-	sweeping = true;
-	apply();
-	delay_ms(POWER_MS);
-	if (!kept || !adc_on(time_ms())) {
-		say("light: sensor not answering\n");
-		goto out;
-	}
+	if (!sweep_begin(say))
+		return;
 	if (black || white || crop)
 		paint(white ? 0xffff : 0x0000, black ? 0x0000 : 0xffff);
 	unsigned n = 0;
@@ -329,12 +355,88 @@ static void sweep(const char *what, void (*say)(const char *fmt, ...))
 	if (tsl258x_fit(level, counts, n, &at0, &per))
 		say("light: c0 = %ld + %ld per 100 levels, %ld at 255, %ld lux at level 0\n", (long)at0, (long)(per * 100),
 		    (long)(per * 255), (long)tsl258x_lux(PROFILE, &cal, TSL258X_GAIN_111X, at0 <= 0 ? 0 : at0 >= 65535 ? 65535 : (uint16_t)at0, 0, 0, 0));
-	if (black || white || crop)
-		ui_mark_dirty(0, 0, fb.width, fb.height);
-out:
-	display_set_brightness(was);
-	sweeping = false;
-	apply();
+	sweep_end(was, black || white || crop);
+}
+
+#define GRID_MAX	16
+
+/* A number and the spaces after it, false without digits. */
+static bool number(const char **p, uint32_t *v)
+{
+	const char *q = *p;
+	*v = 0;
+	while (*q >= '0' && *q <= '9' && *v < 100000)
+		*v = *v * 10 + (uint32_t)(*q++ - '0');
+	if (q == *p)
+		return false;
+	while (*q == ' ')
+		q++;
+	*p = q;
+	return true;
+}
+
+/* The panel takes windows of even start and size. */
+static uint32_t grid_edge(uint32_t size, unsigned i, unsigned n)
+{
+	return i == n ? size : size * i / n & ~1u;
+}
+
+static void fill_box(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t colour)
+{
+	for (uint32_t i = 0; i < w && i < ARRAY_SIZE(sweep_line); i++)
+		sweep_line[i] = colour;
+	ui_draw_begin(x, y, w, h);
+	for (uint32_t j = 0; j < h; j++)
+		ui_draw_line(y + j, x, w, sweep_line);
+	ui_draw_end();
+}
+
+/* At full brightness on a black screen, one white tile at a time: what
+ * each adds to channel 0 over the black screen, row by row, against the
+ * whole screen white, and the middle of what the sensor sees. */
+static void sweep_grid(const char *args, void (*say)(const char *fmt, ...))
+{
+	uint32_t cols = 6, rows = 7;
+	if (*args && (!number(&args, &cols) || !number(&args, &rows) || *args || !cols || !rows || cols > GRID_MAX ||
+		      rows > GRID_MAX)) {
+		say("usage: light sweep grid [columns rows], up to %u each\n", GRID_MAX);
+		return;
+	}
+	uint8_t was = display_brightness();
+	if (!sweep_begin(say))
+		return;
+	uint32_t w = fb.width < ARRAY_SIZE(sweep_line) ? fb.width : ARRAY_SIZE(sweep_line);
+	int32_t scale = gain == TSL258X_GAIN_1X ? 111 : 1;
+	uint16_t c0 = 0, c1;
+	display_set_brightness(255);
+	fill_box(0, 0, w, fb.height, 0xffff);
+	int32_t full = sweep_read(&c0, &c1) ? c0 * scale : -1;
+	fill_box(0, 0, w, fb.height, 0x0000);
+	int32_t dark = sweep_read(&c0, &c1) ? c0 * scale : -1;
+	say("light: grid %lux%lu at level 255, black %ld, white %ld\n", cols, rows, dark, full);
+	float sum = 0, sx = 0, sy = 0;
+	for (uint32_t r = 0; r < rows && dark >= 0; r++) {
+		uint32_t y0 = grid_edge(fb.height, r, rows), y1 = grid_edge(fb.height, r + 1, rows);
+		char line[GRID_MAX * 7 + 1];
+		unsigned n = 0;
+		for (uint32_t c = 0; c < cols; c++) {
+			uint32_t x0 = grid_edge(w, c, cols), x1 = grid_edge(w, c + 1, cols);
+			fill_box(x0, y0, x1 - x0, y1 - y0, 0xffff);
+			int32_t d = sweep_read(&c0, &c1) ? c0 * scale - dark : -9999;
+			fill_box(x0, y0, x1 - x0, y1 - y0, 0x0000);
+			n += (unsigned)snprintf(line + n, sizeof line - n, " %6ld", (long)d);
+			if (d > 0) {
+				sum += d;
+				sx += d * (x0 + x1) / 2.0f;
+				sy += d * (y0 + y1) / 2.0f;
+			}
+		}
+		say("light: y %3lu-%3lu%s\n", y0, y1 - 1, line);
+	}
+	if (sum > 0)
+		say("light: tiles add %ld of %ld, centre at x %ld y %ld\n", (long)sum, (long)(full - dark), (long)(sx / sum),
+		    (long)(sy / sum));
+	sweep_end(was, true);
 }
 
 static void tsl258x_command(const char *args, void (*say)(const char *fmt, ...))
@@ -343,21 +445,26 @@ static void tsl258x_command(const char *args, void (*say)(const char *fmt, ...))
 		const char *what = args + 5;
 		while (*what == ' ')
 			what++;
-		sweep(what, say);
+		if (!strncmp(what, "grid", 4) && (!what[4] || what[4] == ' ')) {
+			what += 4;
+			while (*what == ' ')
+				what++;
+			sweep_grid(what, say);
+		} else {
+			sweep(what, say);
+		}
 		return;
 	}
 	if (!strncmp(args, "screen ", 7)) {
-		uint32_t pct = 0;
+		uint32_t pct;
 		const char *p = args + 7;
-		while (*p >= '0' && *p <= '9')
-			pct = pct * 10 + (uint32_t)(*p++ - '0');
-		if (p == args + 7 || *p || pct > 1000) {
+		if (!number(&p, &pct) || *p || pct > 1000) {
 			say("usage: light screen <0-1000 percent>\n");
 			return;
 		}
 		screen_pct = pct;
 	} else if (*args) {
-		say("usage: light [sweep [black|white|crop] | screen <percent>]\n");
+		say("usage: light [sweep [black|white|crop|grid [columns rows]] | screen <percent>]\n");
 		return;
 	}
 	say_cal(say);
