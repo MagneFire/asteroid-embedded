@@ -11,6 +11,10 @@
 #define CACHE_DCACHE		BIT(9)
 #define CACHE_CLKGATE		BIT(10)
 #define CACHE_DATA_CLKGATE	BIT(20)
+#define FLASHCFG		(CACHECTRL_BASE + 0x04)
+#define FLASHCFG_RD_WAIT	0xfu
+/* The read wait states Ambiq recommends; 3 out of reset. */
+#define FLASH_WAIT		1
 #define FPCCR_ASPEN_LSPEN	(3u << 30)
 #define MCUCTRL_SIMOBUCK2	(MCUCTRL_BASE + 0x354)
 #define MCUCTRL_SIMOBUCK3	(MCUCTRL_BASE + 0x358)
@@ -26,6 +30,26 @@ void dcache_invalidate_range(const void *addr, uint32_t size) {}
 void dcache_clean_invalidate_range(const void *addr, uint32_t size) {}
 void dcache_clean_invalidate_all(void) {}
 
+static uint32_t boot_wait;
+
+/* From SRAM, where the HAL has the boot ROM write it: not with the core
+ * fetching from flash as its wait states change. */
+static __attribute__((section(".ramfunc"), noinline)) void flash_wait_set(uint32_t n)
+{
+	volatile uint32_t *cfg = (volatile uint32_t *)FLASHCFG;
+	*cfg = (*cfg & ~FLASHCFG_RD_WAIT) | n;
+	(void)*cfg;
+}
+
+void flash_wait(uint32_t n)
+{
+	uint32_t flags = irq_save();
+	flash_wait_set(n);
+	irq_restore(flags);
+}
+
+uint32_t flash_wait_now(void) { return readl(FLASHCFG) & FLASHCFG_RD_WAIT; }
+
 void cpu_clock_init(void)
 {
 	writel(CLKKEY, CLKGEN_CLKKEY);
@@ -34,6 +58,8 @@ void cpu_clock_init(void)
 	writel(readl(CACHECFG) & ~(CACHE_ICACHE | CACHE_DCACHE), CACHECFG);
 	writel(CACHE_CLKGATE | CACHE_DATA_CLKGATE | CACHE_1WAY_1024 | CACHE_ICACHE | CACHE_DCACHE, CACHECFG);
 	writel(readl(CACHECFG) | CACHE_ENABLE, CACHECFG);
+	boot_wait = flash_wait_now();
+	flash_wait(FLASH_WAIT);
 	writel(readl(FPU_FPCCR) | FPCCR_ASPEN_LSPEN, FPU_FPCCR);
 }
 
@@ -74,9 +100,10 @@ static void low_power_init(void)
 
 void cpu_clock_log(void)
 {
-	log_printf("clock: core %u Hz, chip %08lx rev %08lx, supply %08lx, power %08lx, boot loader %08lx\n",
-		   CORE_HZ, readl(MCUCTRL_CHIPPN), readl(MCUCTRL_CHIPREV), readl(PWRCTRL_SUPPLYSTATUS),
-		   readl(PWRCTRL_DEVPWRSTATUS), readl(MCUCTRL_BOOTLOADER));
+	log_printf("clock: core %u Hz, flash wait %lu (%lu at boot), chip %08lx rev %08lx, supply %08lx, power %08lx, "
+		   "boot loader %08lx\n",
+		   CORE_HZ, flash_wait_now(), boot_wait, readl(MCUCTRL_CHIPPN), readl(MCUCTRL_CHIPREV),
+		   readl(PWRCTRL_SUPPLYSTATUS), readl(PWRCTRL_DEVPWRSTATUS), readl(MCUCTRL_BOOTLOADER));
 }
 
 /* One speed: the burst mode's 96 MHz is not used. */

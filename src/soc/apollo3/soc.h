@@ -139,6 +139,9 @@ void pad_config(unsigned pad, unsigned func, unsigned flags);
 struct board_mcu_pad;
 void pad_set(const struct board_mcu_pad *p);
 void periph_power(uint32_t bits, bool on);
+/* The flash's read wait states (init.c). */
+void flash_wait(uint32_t n);
+uint32_t flash_wait_now(void);
 /* Spins for at least that many core cycles. */
 void delay_cycles(uint32_t n);
 /* Brings the next tick forward to within ms, never later. */
