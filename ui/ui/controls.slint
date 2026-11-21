@@ -751,17 +751,18 @@ export component Page {
     @children
 }
 
-// RemorseTimer: black at 80 % over the screen with the action's name over a 3 s countdown and
-// "Tap to cancel" below it, fading in over 300 ms; unless tapped, it then calls
+// RemorseTimer: black at 80 % over the screen with the action's name over a countdown of duration
+// (3 s unless set) and "Tap to cancel" below it, fading in over 300 ms; unless tapped, it then calls
 // Face.setting-toggled with code. Started by start, and code is back at -1 when done. Going to
 // sleep cancels it: the countdown would otherwise run out on the first frame after waking.
 export component Remorse {
     in-out property <int> code: -1;
     in-out property <string> action;
+    in property <duration> duration: 3s;
     property <duration> started;
     property <int> sleeps;
     property <bool> armed: self.code >= 0 && self.sleeps == Face.sleeps;
-    property <int> left: self.armed ? Math.max(1, 3 - Math.floor((animation-tick() - self.started) / 1s)) : 3;
+    property <int> left: self.armed ? Math.max(1, self.duration / 1s - Math.floor((animation-tick() - self.started) / 1s)) : self.duration / 1s;
 
     x: 0;
     y: 0;
@@ -822,7 +823,7 @@ export component Remorse {
         }
 
         Timer {
-            interval: 3000ms;
+            interval: root.duration;
             running: root.armed;
             triggered => {
                 if root.armed {
