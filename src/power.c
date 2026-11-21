@@ -34,7 +34,6 @@
  * screen without it; catfish's hub sends its first reading after about
  * 330 ms. */
 #define LUX_WAIT_MS 600
-#define LUX_DARK_MS 400
 #define FIN_PX 6
 /* Awake, the light sensor is read this often, a reading is ready after
  * the integration time, and a change of brightness takes the fade time,
@@ -54,8 +53,8 @@ static uint32_t ambient_minute, asleep_t, asleep_ms, wakeups, hub_ambient_t;
 static uint32_t *const layers = (uint32_t *)(uintptr_t)UI_LAYER_BASE;
 static const char *wake_cause;
 static bool lit_pending;
-static enum { LUX_IDLE, LUX_READING, LUX_DONE } lux_state;
-static uint32_t lux_t, lux_dark_t;
+static enum { LUX_IDLE, LUX_READING, LUX_WATCHING, LUX_DONE } lux_state;
+static uint32_t lux_t;
 static int32_t lux_seen = -1;
 static struct backlight lit, lit_fixed;
 static bool lit_is_fixed, lit_shown;
@@ -340,6 +339,14 @@ static void light_fill(void)
 	display_flip();
 }
 
+static void backlight_pick(int32_t lux, uint32_t now)
+{
+	lux_seen = lux;
+	lit = lit_is_fixed ? lit_fixed : power_policy_backlight(lux, setting_get(SETTING_BACKLIGHT_COLOR));
+	log_printf("backlight: %ld lux after %lu ms, %u/%u %s\n", (long)lux, (unsigned long)(now - lux_t), lit.dbv, lit.pixel,
+		   lit.red ? "red" : "white");
+}
+
 /* The room's light is read once per peek, before the screen lights, as
  * the sensor would see the screen. */
 static bool backlight_ready(uint32_t now)
@@ -349,29 +356,37 @@ static bool backlight_ready(uint32_t now)
 	if (lux_state == LUX_IDLE) {
 		lux_state = LUX_READING;
 		lux_t = now;
-		lux_dark_t = 0;
 		light_keep(true);
 		light_start();
 		return false;
 	}
 	int32_t lux = light_finish();
+	if (lux_state == LUX_WATCHING) {
+		if (lux <= BACKLIGHT_DARK_LUX)
+			return true;
+		backlight_pick(lux, now);
+		light_keep(false);
+		lux_state = LUX_DONE;
+		/* Too bright for the backlight, the caller turns it off. */
+		if (screen == SCREEN_LIT && lit.dbv) {
+			cpu_clock_slow(false);
+			light_fill();
+			display_set_brightness(lit.dbv);
+			cpu_clock_slow(true);
+		}
+		return true;
+	}
 	if (lux < 0 && now - lux_t < LUX_WAIT_MS)
 		return false;
+	backlight_pick(lux, now);
 	/* The hub reads no lower than the dark level, which is also what a
-	 * sleeve over the sensor gives: a later reading decides. */
+	 * sleeve over the sensor gives: the sensor stays on through the peek
+	 * for one that comes off. */
 	if (lux >= 0 && lux <= BACKLIGHT_DARK_LUX && !lit_is_fixed) {
-		if (!lux_dark_t) {
-			lux_dark_t = now;
-			return false;
-		}
-		if (now - lux_dark_t < LUX_DARK_MS)
-			return false;
+		lux_state = LUX_WATCHING;
+		return true;
 	}
 	light_keep(false);
-	lux_seen = lux;
-	lit = lit_is_fixed ? lit_fixed : power_policy_backlight(lux, setting_get(SETTING_BACKLIGHT_COLOR));
-	log_printf("backlight: %ld lux after %lu ms, %u/%u %s\n", (long)lux, (unsigned long)(now - lux_t), lit.dbv, lit.pixel,
-		   lit.red ? "red" : "white");
 	lux_state = LUX_DONE;
 	return true;
 }
@@ -392,10 +407,6 @@ static uint32_t lux_next_ms(uint32_t now)
 {
 	if (lux_state != LUX_READING)
 		return UINT32_MAX;
-	if (lux_dark_t) {
-		uint32_t dark = now - lux_dark_t;
-		return dark >= LUX_DARK_MS ? 1 : LUX_DARK_MS - dark;
-	}
 	uint32_t gone = now - lux_t;
 	return gone >= LUX_WAIT_MS ? 1 : LUX_WAIT_MS - gone;
 }
@@ -410,7 +421,7 @@ static uint32_t hub_screen_next_ms(uint32_t now)
 
 static void backlight_done(void)
 {
-	if (lux_state == LUX_READING)
+	if (lux_state == LUX_READING || lux_state == LUX_WATCHING)
 		light_keep(false);
 	lux_state = LUX_IDLE;
 }
