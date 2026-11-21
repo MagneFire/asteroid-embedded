@@ -9,6 +9,7 @@
 #include "power.h"
 #include "stats.h"
 #include "config.h"
+#include "bt/bt.h"
 
 #define ASLEEP_STATS_MS 60000
 
@@ -45,6 +46,7 @@ static void asleep_line(uint32_t now)
 	log_printf("power: asleep %lu s, %lu wakeups, %lu/%lu/%lu collapses, %s\n", (now - last) / 1000, power_wakeups(), pc,
 		   pcc, pcb, current(false));
 	log_printf("power: woke for %s\n", power_woke_by());
+	bt_transport_log();
 	last = now;
 }
 

@@ -69,6 +69,7 @@ int bt_host_start(void);
 void bt_host_stop(void);
 bool bt_host_running(void);
 void bt_host_status(struct bt_status *s);
+void bt_transport_log(void);
 
 /* The connection parameters asked of the phone, in 1.25 ms and 10 ms
  * units; itvl_max 0 asks for nothing. */

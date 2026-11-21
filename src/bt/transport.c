@@ -14,6 +14,50 @@ static bool attached;
 static uint8_t acl_buf[4 + 1024];
 static struct bt_transport_stats stats;
 
+/* What came in since the last asleep line: e for an event code and LE
+ * subevent, a for an ATT opcode and handle, l for another L2CAP channel,
+ * f for a continuation fragment. */
+#define KINDS 6
+static struct {
+	uint8_t kind, code;
+	uint16_t handle;
+	uint32_t n;
+} kinds[KINDS];
+static uint32_t kinds_other, kinds_total, rx_bytes0;
+
+static void count(uint8_t kind, uint8_t code, uint16_t handle)
+{
+	kinds_total++;
+	for (unsigned i = 0; i < KINDS; i++) {
+		if (kinds[i].n && (kinds[i].kind != kind || kinds[i].code != code || kinds[i].handle != handle))
+			continue;
+		kinds[i].kind = kind;
+		kinds[i].code = code;
+		kinds[i].handle = handle;
+		kinds[i].n++;
+		return;
+	}
+	kinds_other++;
+}
+
+/* Only after a stretch with many packets, so a quiet sleep logs nothing. */
+void bt_transport_log(void)
+{
+	uint32_t rx, tx, err;
+	uart_stats(BT_UART, &rx, &tx, &err);
+	if (kinds_total >= 100) {
+		char s[160];
+		unsigned o = 0;
+		for (unsigned i = 0; i < KINDS && kinds[i].n && o < sizeof s; i++)
+			o += (unsigned)snprintf(s + o, sizeof s - o, ", %c %02x/%04x %lu", kinds[i].kind, kinds[i].code, kinds[i].handle,
+						kinds[i].n);
+		log_printf("bt: %lu packets in, %lu uart bytes%s, %lu other\n", kinds_total, rx - rx_bytes0, o ? s : "", kinds_other);
+	}
+	memset(kinds, 0, sizeof kinds);
+	kinds_other = kinds_total = 0;
+	rx_bytes0 = rx;
+}
+
 static void rx(uint8_t type, const uint8_t *p, unsigned n)
 {
 	if (!attached)
@@ -35,6 +79,7 @@ static void rx(uint8_t type, const uint8_t *p, unsigned n)
 				log_printf("bt: resolved private address of a bonded peer\n");
 		}
 		stats.events++;
+		count('e', p[0], p[0] == BLE_HCI_EVCODE_LE_META && n > 2 ? p[2] : 0);
 		ble_transport_to_hs_evt(buf);
 	} else if (type == HCI_ACL) {
 		struct os_mbuf *om = ble_transport_alloc_acl_from_ll();
@@ -45,6 +90,11 @@ static void rx(uint8_t type, const uint8_t *p, unsigned n)
 			return;
 		}
 		stats.acl_in++;
+		bool start = n >= 9 && ((p[1] >> 4) & 3) != 1;
+		if (start && (p[6] | p[7] << 8) == 4)
+			count('a', p[8], n >= 11 ? (uint16_t)(p[9] | p[10] << 8) : 0);
+		else
+			count(start ? 'l' : 'f', start ? p[6] : 0, 0);
 		ble_transport_to_hs_acl(om);
 	} else {
 		stats.dropped++;
