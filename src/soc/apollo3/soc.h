@@ -109,6 +109,9 @@
 /* A link to the application processor (src/companion). */
 #define SOC_AP_LINK		1
 
+/* Reset watch in the quick settings and on the console. */
+#define SOC_RESET_WATCH		1
+
 /* Smaller records than the eMMC store's: a slot is one flash page. */
 #define KV_SLOT_SIZE		0x2000u
 

@@ -6,6 +6,7 @@
 #include "power.h"
 #include "present.h"
 #include "app.h"
+#include "storage/storage.h"
 #include "actions.h"
 
 void action_bluetooth_start(void)
@@ -25,6 +26,27 @@ void action_bluetooth_start(void)
 	if (r)
 		log_printf("bt: host failed (%d)\n", r);
 }
+
+#ifdef SOC_RESET_WATCH
+/* The watch's own values and its boot history. */
+static const char *const reset_keeps[] = { "bt.addr", "haptics.cal", "rtc_offset", "events" };
+
+/* Everything else in the store goes, and the reboot starts every service
+ * from what a first boot finds. Returns only if the store could not be
+ * wiped. */
+int action_reset_watch(void)
+{
+	/* reboot() writes changed settings back; none may be left over. */
+	settings_flush();
+	int r = kv_wipe(reset_keeps, ARRAY_SIZE(reset_keeps));
+	if (r < 0) {
+		log_printf("reset: store not wiped (%d)\n", r);
+		return r;
+	}
+	log_printf("reset: store wiped%s, rebooting\n", r ? ", its second copy not" : "");
+	reboot();
+}
+#endif
 
 /* A setting changed from the UI: store it and put it into effect. */
 void action_setting_toggled(int s)
@@ -70,6 +92,10 @@ void action_setting_toggled(int s)
 		log_printf("bt: %s\n", bt_store_clear() ? "could not forget the phone" : "phone forgotten");
 		bt_host_disconnect();
 		ui_set_connected(bt_host_connected(), bt_store_bonded());
+#ifdef SOC_RESET_WATCH
+	} else if (s == UI_RESET_WATCH) {
+		action_reset_watch();
+#endif
 	} else if (s == SETTING_BLUETOOTH) {
 		bool on = !setting_get(SETTING_BLUETOOTH);
 		setting_set(SETTING_BLUETOOTH, on);

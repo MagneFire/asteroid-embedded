@@ -1,5 +1,6 @@
 /* What UI actions do to the settings and the clock, on the host, with a
  * plain array as the settings and a counter for each side effect. */
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "power.h"
 #include "present.h"
 #include "app.h"
+#include "storage/storage.h"
 #include "actions.h"
 
 static int values[SETTINGS];
@@ -39,7 +41,23 @@ void bt_stop(void) { bt_stopped++; }
 int bt_host_start(void) { return 0; }
 void bt_host_stop(void) {}
 void power_off_arm(void) {}
-void reboot(void) { abort(); }
+/* Reset watch: what the wipe returns, and a reboot that comes back
+ * here. */
+static int wipe_result, wipes, flushes;
+static bool reboot_ok;
+static jmp_buf rebooted;
+int kv_wipe(const char *const *keep, unsigned n)
+{
+	wipes++;
+	return wipe_result;
+}
+void settings_flush(void) { flushes++; }
+void reboot(void)
+{
+	if (!reboot_ok)
+		abort();
+	longjmp(rebooted, 1);
+}
 uint32_t rtc_read(void) { return rtc; }
 void rtc_write(uint32_t t) { rtc = t; }
 void hub_set_time(void) {}
@@ -183,8 +201,28 @@ static void civil_days(void)
 	}
 }
 
+/* The reboot comes once the wiped records are the ones in use, even if
+ * their second copy failed. */
+static void reset_watch(void)
+{
+	static const int results[] = { 0, 1, -4 };
+	reboot_ok = true;
+	for (unsigned i = 0; i < 3; i++) {
+		wipe_result = results[i];
+		wipes = flushes = 0;
+		volatile bool back = false;
+		if (!setjmp(rebooted))
+			CHECK(action_reset_watch() == -4 && i == 2);
+		else
+			back = true;
+		CHECK(back == (i < 2) && wipes == 1 && flushes == 1);
+	}
+	reboot_ok = false;
+}
+
 int main(void)
 {
+	reset_watch();
 	brightness();
 	cinema();
 	others();

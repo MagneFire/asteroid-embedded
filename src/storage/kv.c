@@ -209,3 +209,34 @@ int kv_del(const char *key)
 	int r = commit();
 	return r ? reload_after_failure(r) : 0;
 }
+
+/* Every record but the keys in keep goes, written to both slots. The
+ * flash store erases a slot before writing it, so no old copy is left
+ * there; on the eMMC whatever lay past the new records stays. A cut in
+ * the first write keeps the old records, after it the wiped ones: 1 if
+ * only the second write failed, as the wiped records are the ones in
+ * use then. */
+int kv_wipe(const char *const *keep, unsigned n)
+{
+	if ((!loaded || loaded_gen != emmc_card()->generation) && kv_load())
+		return -1;
+	if (!store_info()->writable)
+		return -4;
+	for (uint32_t o = 0; o < len;) {
+		uint8_t *p = img + KV_HDR + o;
+		uint32_t rec = 4u + p[0] + (p[2] | p[3] << 8);
+		bool kept = false;
+		for (unsigned i = 0; i < n && !kept; i++)
+			kept = strlen(keep[i]) == p[0] && !memcmp(p + 4, keep[i], p[0]);
+		if (kept) {
+			o += rec;
+		} else {
+			memmove(p, p + rec, len - o - rec);
+			len -= rec;
+		}
+	}
+	int r = commit();
+	if (r)
+		return reload_after_failure(r);
+	return commit() ? reload_after_failure(1) : 0;
+}

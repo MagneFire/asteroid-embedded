@@ -44,10 +44,22 @@ int store_read(uint32_t off, void *buf, uint32_t len)
 	memcpy(buf, store + off, len);
 	return 0;
 }
+/* With flash set, a write erases its slot first, as the flash store does,
+ * and with cut_at set the write that many writes on is cut short after
+ * cut bytes. */
+static bool flash;
+static int cut_at = -1;
+static uint32_t cut;
 int store_write(uint32_t off, const void *buf, uint32_t len)
 {
 	if (off > sizeof store || len > sizeof store - off)
 		return -1;
+	if (flash)
+		memset(store + off, 0xff, KV_SLOT_SIZE);
+	if (cut_at >= 0 && !cut_at--) {
+		memcpy(store + off, buf, cut < len ? cut : len);
+		return -1;
+	}
 	memcpy(store + off, buf, len);
 	return 0;
 }
@@ -204,6 +216,62 @@ static void test_kv(void)
 	}
 }
 
+static bool in_store(const char *s)
+{
+	size_t n = strlen(s);
+	for (size_t i = 0; i + n <= sizeof store; i++)
+		if (!memcmp(store + i, s, n))
+			return true;
+	return false;
+}
+
+static void kv_fill(void)
+{
+	memset(store, 0, sizeof store);
+	card.generation++;
+	CHECK(kv_set("bt.bonds", "secret-keys", 11) == 0);
+	CHECK(kv_set("bt.addr", "123456", 6) == 0);
+	CHECK(kv_set("steps", "many-steps", 10) == 0);
+	CHECK(kv_set("events", "boot", 4) == 0);
+	CHECK(kv_set("brightness", "x", 1) == 0);
+}
+
+static void test_kv_wipe(void)
+{
+	static const char *const keep[] = { "bt.addr", "events", "absent" };
+	char v[16];
+	flash = true;
+	kv_fill();
+	CHECK(kv_wipe(keep, 3) == 0);
+	CHECK(kv_get("bt.addr", v, sizeof v) == 6 && !memcmp(v, "123456", 6));
+	CHECK(kv_get("events", v, sizeof v) == 4);
+	CHECK(kv_get("bt.bonds", v, sizeof v) < 0 && kv_get("steps", v, sizeof v) < 0 && kv_get("brightness", v, sizeof v) < 0);
+	CHECK(!in_store("secret-keys") && !in_store("many-steps") && in_store("123456"));
+	card.generation++;
+	CHECK(kv_get("bt.addr", v, sizeof v) == 6 && kv_get("steps", v, sizeof v) < 0);
+	CHECK(kv_set("steps", "1", 1) == 0 && kv_get("steps", v, sizeof v) == 1);
+	CHECK(kv_wipe(NULL, 0) == 0 && kv_get("bt.addr", v, sizeof v) < 0 && kv_get("steps", v, sizeof v) < 0);
+
+	/* A power cut anywhere in either write leaves a store that loads,
+	 * with the kept keys; the old records can only come back from a cut
+	 * in the first write before the kept records are all in. Only a
+	 * failed first write is a failure, as after it the wiped records
+	 * are the ones in use. */
+	for (int at = 0; at < 2; at++)
+		for (cut = 0; cut <= 1024; cut += 32) {
+			kv_fill();
+			cut_at = at;
+			CHECK(at ? kv_wipe(keep, 3) == 1 && kv_get("bt.bonds", v, sizeof v) < 0 : kv_wipe(keep, 3) < 0);
+			cut_at = -1;
+			card.generation++;
+			CHECK(kv_get("bt.addr", v, sizeof v) == 6 && kv_get("events", v, sizeof v) == 4);
+			int bonds = kv_get("bt.bonds", v, sizeof v);
+			CHECK(at || cut >= 64 ? bonds < 0 : bonds == 11);
+			CHECK(kv_set("x", "y", 1) == 0);
+		}
+	flash = false;
+}
+
 static void list_fn(const char *name, unsigned len, uint32_t ino, unsigned type, void *ctx)
 {
 	(*(unsigned *)ctx)++;
@@ -320,6 +388,7 @@ int main(int argc, char **argv)
 	test_notify();
 	test_weather_media();
 	test_kv();
+	test_kv_wipe();
 	test_ext4(argc > 1 ? argv[1] : "build/test/small.ext4");
 	test_ext2(argc > 2 ? argv[2] : "build/test/small.ext2");
 	if (failures)

@@ -270,7 +270,7 @@ $(BUILD)/test/parser_test: tests/parser_test.c $(PARSER_SRCS) $(wildcard tests/*
 
 $(BUILD)/test/actions_test: tests/actions_test.c src/actions.c src/civil.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/actions.c src/civil.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) -DSOC_RESET_WATCH $< src/actions.c src/civil.c -o $@
 
 $(BUILD)/test/power_test: tests/power_test.c src/power_policy.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)

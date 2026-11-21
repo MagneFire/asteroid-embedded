@@ -720,6 +720,14 @@ static void cmd_bt(const char *args)
 		say("bt: host starting, advertises once synced (bt status)\n");
 }
 
+#ifdef SOC_RESET_WATCH
+static void cmd_reset(const char *args)
+{
+	say("reset: wiping the store and rebooting\n");
+	say("reset: failed (%d)\n", action_reset_watch());
+}
+#endif
+
 #ifndef SOC_NO_EMMC
 static void hexdump(uint32_t base, const uint8_t *p, uint32_t n)
 {
@@ -1806,6 +1814,9 @@ static const struct command commands[] = {
 	{ "bt", "[off | status | forget | params ... | <bd_addr>]", cmd_bt },
 #ifdef SOC_WCNSS
 	{ "wcnss", "probe [keep] | hci | bt | stop | status", cmd_wcnss },
+#endif
+#ifdef SOC_RESET_WATCH
+	{ "reset", "", cmd_reset },
 #endif
 #ifndef SOC_NO_EMMC
 	{ "emmc", "[safe]", cmd_emmc },

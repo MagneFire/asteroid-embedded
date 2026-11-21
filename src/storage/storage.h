@@ -43,6 +43,7 @@ int kv_load(void);
 int kv_get(const char *key, void *buf, unsigned size);
 int kv_set(const char *key, const void *val, unsigned len);
 int kv_del(const char *key);
+int kv_wipe(const char *const *keep, unsigned n);
 typedef void (*kv_each_fn)(const char *key, const uint8_t *val, unsigned len, void *ctx);
 int kv_each(kv_each_fn fn, void *ctx);
 uint32_t kv_seq(void);
