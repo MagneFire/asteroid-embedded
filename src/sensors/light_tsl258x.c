@@ -74,6 +74,12 @@ static int rd(uint8_t reg, uint8_t *v, unsigned n)
 	return i2c_xfer(BUS, ADDR, &cmd, 1, v, n);
 }
 
+static void say_cal(void (*say)(const char *fmt, ...))
+{
+	say("light: calibration %u %u %u %u, gain %u%%%s\n", cal.rgbw[0], cal.rgbw[1], cal.rgbw[2], cal.rgbw[3],
+	    cal.gain_pct, cal_factory ? "" : ", the vendor's defaults");
+}
+
 /* The interrupt line is not used: off, and nothing left pending. */
 static bool tsl258x_init(void)
 {
@@ -100,8 +106,7 @@ static bool tsl258x_init(void)
 	memcpy(rec, CAL_RECORD, sizeof rec);
 	cal_factory = tsl258x_cal_read(&cal, rec);
 	tsl258x_crop_set(PROFILE);
-	log_printf("light: calibration %u %u %u %u, gain %u%%%s\n", cal.rgbw[0], cal.rgbw[1], cal.rgbw[2], cal.rgbw[3],
-		   cal.gain_pct, cal_factory ? "" : ", the vendor's defaults");
+	say_cal(log_printf);
 	return ready;
 }
 
@@ -202,9 +207,21 @@ static void tsl258x_keep(bool on)
 	wr(REG_CONTROL, 0);
 }
 
+static void tsl258x_status(void (*say)(const char *fmt, ...))
+{
+	say_cal(say);
+	if (!have_reading) {
+		say("light: no reading yet\n");
+		return;
+	}
+	say_reading(say, &last);
+	say("light: %lu ms ago\n", time_ms() - last.at_ms);
+}
+
 const struct light_driver light_tsl258x = {
 	.init = tsl258x_init,
 	.start = tsl258x_start,
 	.finish = tsl258x_finish,
 	.keep = tsl258x_keep,
+	.status = tsl258x_status,
 };

@@ -263,6 +263,8 @@ void light_start(void);
 /* Holds the sensor powered between readings, for reading it often. */
 void light_keep(bool on);
 int32_t light_finish(void);
+/* What went into the last reading, for the console. */
+void light_status(void (*say)(const char *fmt, ...));
 /* A supply by the number the PMIC gives it. */
 int regulator_on(uint32_t id, uint32_t uv);
 int regulator_off(uint32_t id);
