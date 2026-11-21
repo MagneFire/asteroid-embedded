@@ -4,7 +4,7 @@ import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { IconButton, StatusPage } from "controls.slint";
 import { Icons } from "icons.slint";
-import { Theme } from "theme.slint";
+import { Theme, Square } from "theme.slint";
 
 export component Overlay {
     width: 100%;
@@ -84,73 +84,75 @@ export component Overlay {
     // BluetoothAgent: a light disc with a drop shadow, a grey Bluetooth icon, the pass key, and
     // grey cancel and confirm buttons below it (setting-toggled 42 and 43).
     if Face.passkey >= 0: Rectangle {
-        Rectangle {
-            x: 14.5 * Theme.unit;
-            y: 14.5 * Theme.unit;
-            width: 71 * Theme.unit;
-            height: 71 * Theme.unit;
-            border-radius: 35.5 * Theme.unit;
-            background: #00000040;
-        }
-
-        Rectangle {
-            x: 15 * Theme.unit;
-            y: 15 * Theme.unit;
-            width: 70 * Theme.unit;
-            height: 70 * Theme.unit;
-            border-radius: 35 * Theme.unit;
-            background: #f4f4f4;
-        }
-
-        Image {
-            x: 40 * Theme.unit;
-            y: 20 * Theme.unit;
-            width: 20 * Theme.unit;
-            height: 20 * Theme.unit;
-            source: Icons.get("ios-bluetooth", self.width, self.height);
-            colorize: #666666;
-        }
-
-        Text {
-            x: 15 * Theme.unit;
-            y: 43 * Theme.unit;
-            width: 70 * Theme.unit;
-            text: "Pass Key:";
-            color: #666666;
-            font-size: 5 * Theme.unit;
-            horizontal-alignment: center;
-        }
-
-        Text {
-            x: 15 * Theme.unit;
-            y: 50 * Theme.unit;
-            width: 70 * Theme.unit;
-            height: 10 * Theme.unit;
-            text: Face.two-digits(Math.floor(Face.passkey / 10000)) + Face.two-digits(Math.mod(Math.floor(Face.passkey / 100), 100)) + Face.two-digits(Math.mod(Face.passkey, 100));
-            color: #666666;
-            font-size: 7 * Theme.unit;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-
-        IconButton {
-            x: 28 * Theme.unit;
-            y: 59 * Theme.unit;
-            color: #666666;
-            icon: "ios-close-circle-outline";
-            clicked => {
-                Face.setting-toggled(Codes.ui-pair-reject);
+        Square {
+            Rectangle {
+                x: 14.5 * Theme.unit;
+                y: 14.5 * Theme.unit;
+                width: 71 * Theme.unit;
+                height: 71 * Theme.unit;
+                border-radius: 35.5 * Theme.unit;
+                background: #00000040;
             }
-        }
 
-        IconButton {
-            x: 52 * Theme.unit;
-            y: 59 * Theme.unit;
-            color: #666666;
-            icon: "ios-checkmark-circle-outline";
-            clicked => {
-                Face.setting-toggled(Codes.ui-pair-accept);
+            Rectangle {
+                x: 15 * Theme.unit;
+                y: 15 * Theme.unit;
+                width: 70 * Theme.unit;
+                height: 70 * Theme.unit;
+                border-radius: 35 * Theme.unit;
+                background: #f4f4f4;
+            }
+
+            Image {
+                x: 40 * Theme.unit;
+                y: 20 * Theme.unit;
+                width: 20 * Theme.unit;
+                height: 20 * Theme.unit;
+                source: Icons.get("ios-bluetooth", self.width, self.height);
+                colorize: #666666;
+            }
+
+            Text {
+                x: 15 * Theme.unit;
+                y: 43 * Theme.unit;
+                width: 70 * Theme.unit;
+                text: "Pass Key:";
+                color: #666666;
+                font-size: 5 * Theme.unit;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                x: 15 * Theme.unit;
+                y: 50 * Theme.unit;
+                width: 70 * Theme.unit;
+                height: 10 * Theme.unit;
+                text: Face.two-digits(Math.floor(Face.passkey / 10000)) + Face.two-digits(Math.mod(Math.floor(Face.passkey / 100), 100)) + Face.two-digits(Math.mod(Face.passkey, 100));
+                color: #666666;
+                font-size: 7 * Theme.unit;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            IconButton {
+                x: 28 * Theme.unit;
+                y: 59 * Theme.unit;
+                color: #666666;
+                icon: "ios-close-circle-outline";
+                clicked => {
+                    Face.setting-toggled(Codes.ui-pair-reject);
+                }
+            }
+
+            IconButton {
+                x: 52 * Theme.unit;
+                y: 59 * Theme.unit;
+                color: #666666;
+                icon: "ios-checkmark-circle-outline";
+                clicked => {
+                    Face.setting-toggled(Codes.ui-pair-accept);
+                }
             }
         }
     }
@@ -161,40 +163,42 @@ export component Overlay {
     if Face.alarm-ringing: Rectangle {
         background: @radial-gradient(circle, #333333 0%, #000000 100%);
 
-        StatusPage {
-            icon: Face.ringing-timer ? "ios-timer-outline" : "ios-alarm-outline";
-        }
-
-        Text {
-            x: 19 * Theme.unit;
-            y: 56 * Theme.unit;
-            width: 62 * Theme.unit;
-            height: 44 * Theme.unit;
-            text: Face.ringing-timer ? Face.two-digits(Math.floor(Face.timer-set-ms / 3600000)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 60000), 60)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 1000), 60)) : (Face.clock12 ? Face.two-digits(Math.mod(Face.hour, 12)) : Face.two-digits(Face.hour)) + ":" + Face.two-digits(Face.minute) + (Face.clock12 ? (Face.hour >= 12 ? "PM" : "AM") : "");
-            color: white;
-            font-size: Face.ringing-timer ? 8 * Theme.unit : 15 * Theme.unit;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            wrap: word-wrap;
-        }
-
-        IconButton {
-            x: 3 * Theme.unit;
-            y: 40 * Theme.unit;
-            icon: "ios-checkmark-circle-outline";
-            clicked => {
-                Face.alarm-action(Codes.ui-alarm-dismiss);
+        Square {
+            StatusPage {
+                icon: Face.ringing-timer ? "ios-timer-outline" : "ios-alarm-outline";
             }
-        }
 
-        IconButton {
-            x: 77 * Theme.unit;
-            y: 40 * Theme.unit;
-            icon: Face.ringing-timer ? "ios-refresh-circle-outline" : "ios-sleep-circle-outline";
-            clicked => {
-                Face.alarm-action(Codes.ui-alarm-snooze);
-                if Face.ringing-timer {
-                    Face.clock-action(Codes.ui-timer-start);
+            Text {
+                x: 19 * Theme.unit;
+                y: 56 * Theme.unit;
+                width: 62 * Theme.unit;
+                height: 44 * Theme.unit;
+                text: Face.ringing-timer ? Face.two-digits(Math.floor(Face.timer-set-ms / 3600000)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 60000), 60)) + ":" + Face.two-digits(Math.mod(Math.floor(Face.timer-set-ms / 1000), 60)) : (Face.clock12 ? Face.two-digits(Math.mod(Face.hour, 12)) : Face.two-digits(Face.hour)) + ":" + Face.two-digits(Face.minute) + (Face.clock12 ? (Face.hour >= 12 ? "PM" : "AM") : "");
+                color: white;
+                font-size: Face.ringing-timer ? 8 * Theme.unit : 15 * Theme.unit;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
+
+            IconButton {
+                x: 3 * Theme.unit;
+                y: 40 * Theme.unit;
+                icon: "ios-checkmark-circle-outline";
+                clicked => {
+                    Face.alarm-action(Codes.ui-alarm-dismiss);
+                }
+            }
+
+            IconButton {
+                x: 77 * Theme.unit;
+                y: 40 * Theme.unit;
+                icon: Face.ringing-timer ? "ios-refresh-circle-outline" : "ios-sleep-circle-outline";
+                clicked => {
+                    Face.alarm-action(Codes.ui-alarm-snooze);
+                    if Face.ringing-timer {
+                        Face.clock-action(Codes.ui-timer-start);
+                    }
                 }
             }
         }
