@@ -5,9 +5,9 @@
 
 //! From text to shaped paragraphs.
 //!
-//! Everything that ends up in a cache entry is produced here, from the [`ShapingInputs`] that
-//! [`shaping_inputs`] reads: measuring and drawing must register identical cache dependencies,
-//! so neither may shape through anything narrower.
+//! Everything that ends up in a cache entry is produced here, and [`shape_paragraphs`] is the
+//! one function it happens through: measuring and drawing must register identical cache
+//! dependencies, so neither may shape through anything narrower.
 
 use super::*;
 
@@ -17,7 +17,7 @@ use super::*;
 /// that visually marks them as code.
 const INLINE_CODE_FONT_SCALE: f32 = 0.85;
 
-crate::thread_local! {
+std::thread_local! {
     static LAYOUT_CONTEXT: RefCell<parley::LayoutContext<Brush>> = Default::default();
 }
 
@@ -29,9 +29,10 @@ pub(super) struct Brush {
     pub(super) link_color: Option<Color>,
 }
 
-#[derive(Clone, PartialEq)]
 pub(super) struct LayoutWithoutLineBreaksBuilder {
     font_request: Option<FontRequest>,
+    /// See [`crate::item_rendering::RenderString::line_height_factor`].
+    pub(super) line_height_factor: Option<f32>,
     pub(super) text_wrap: TextWrap,
     stroke: Option<TextStrokeStyle>,
     pub(super) scale_factor: ScaleFactor,
@@ -44,6 +45,7 @@ pub(super) struct LayoutWithoutLineBreaksBuilder {
 impl LayoutWithoutLineBreaksBuilder {
     pub(super) fn new(
         font_request: Option<FontRequest>,
+        line_height_factor: Option<f32>,
         text_wrap: TextWrap,
         stroke: Option<TextStrokeStyle>,
         scale_factor: ScaleFactor,
@@ -55,6 +57,7 @@ impl LayoutWithoutLineBreaksBuilder {
 
         Self {
             font_request,
+            line_height_factor,
             text_wrap,
             stroke,
             scale_factor,
@@ -66,16 +69,19 @@ impl LayoutWithoutLineBreaksBuilder {
     fn ranged_builder<'a>(
         &self,
         layout_ctx: &'a mut parley::LayoutContext<Brush>,
-        font_ctx: &'a mut parley::FontContext,
+        font_ctx: &'a mut FontContext,
         text: &'a str,
     ) -> parley::RangedBuilder<'a, Brush> {
         // Use the requested font's natural line-height ratio for every run so fallback fonts,
         // such as the symbol font used for password characters, don't enlarge the line box.
         // `FontSizeRelative` scales the result with each styled span's font size.
-        let line_height_ratio =
-            self.font_request.as_ref().and_then(|fr| line_height_ratio(font_ctx, fr));
+        let line_height_ratio = self
+            .font_request
+            .as_ref()
+            .and_then(|fr| line_height_ratio(font_ctx, fr, self.line_height_factor));
 
-        let mut builder = layout_ctx.ranged_builder(font_ctx, text, self.scale_factor.get(), false);
+        let mut builder =
+            layout_ctx.ranged_builder(&mut font_ctx.inner, text, self.scale_factor.get(), false);
 
         if let Some(ratio) = line_height_ratio {
             builder.push_default(parley::StyleProperty::LineHeight(
@@ -105,7 +111,7 @@ impl LayoutWithoutLineBreaksBuilder {
                 )
             };
 
-            builder.push_default(parley::style::FontFamily::List(alloc::borrow::Cow::Borrowed(
+            builder.push_default(parley::style::FontFamily::List(std::borrow::Cow::Borrowed(
                 font_families,
             )));
 
@@ -162,15 +168,14 @@ impl LayoutWithoutLineBreaksBuilder {
     /// [`SelectionSpan`].
     pub(super) fn build(
         &self,
-        font_context: &mut parley::FontContext,
+        font_context: &mut FontContext,
         text: &str,
         formatting: impl IntoIterator<Item = i_slint_common::styled_text::FormattedSpan>,
         link_color: Option<Color>,
     ) -> parley::Layout<Brush> {
         use i_slint_common::styled_text::Style;
 
-        LAYOUT_CONTEXT.with(|layout_ctx| {
-            let layout_ctx = &mut *layout_ctx.borrow_mut();
+        LAYOUT_CONTEXT.with_borrow_mut(|layout_ctx| {
             let mut builder = self.ranged_builder(layout_ctx, font_context, text);
 
             // filter empty ranges otherwise parley will panic on assert
@@ -244,19 +249,12 @@ impl LayoutWithoutLineBreaksBuilder {
 
 /// The line-height ratio, relative to the font size, that every shaped line gets.
 pub(super) fn line_height_ratio(
-    font_ctx: &mut parley::FontContext,
+    font_ctx: &mut FontContext,
     font_request: &FontRequest,
+    line_height_factor: Option<f32>,
 ) -> Option<f32> {
-    let font = font_request.query_fontique(&mut font_ctx.collection, &mut font_ctx.source_cache)?;
-    let face = skrifa::FontRef::from_index(font.blob.data(), font.index).ok()?;
-    let location = face.axes().location(font.synthesis.variation_settings());
-    let metrics = face.metrics(skrifa::instance::Size::unscaled(), &location);
-    let units_per_em = metrics.units_per_em as f32;
-    (units_per_em > 0.0)
-        .then(|| (metrics.ascent - metrics.descent + metrics.leading) / units_per_em)
-        .map(|natural_ratio| {
-            font_request.line_height_for_natural_height(natural_ratio).unwrap_or(natural_ratio)
-        })
+    let natural_ratio = font_ctx.query_font(font_request)?.natural_line_height_ratio?;
+    Some(natural_ratio * line_height_factor.unwrap_or(1.0))
 }
 
 /// Splits plain text into paragraph byte ranges at `'\n'`. The `'\n'` and any preceding `'\r'`
@@ -274,25 +272,37 @@ pub(super) fn paragraph_ranges(text: &str) -> impl Iterator<Item = Range<usize>>
 
 pub(super) fn create_text_paragraphs(
     layout_builder: &LayoutWithoutLineBreaksBuilder,
-    font_context: &mut parley::FontContext,
+    font_context: &mut FontContext,
     text: PlainOrStyledText,
     link_color: Color,
 ) -> Vec<TextParagraph> {
     let paragraph_from_text =
-        |font_context: &mut parley::FontContext,
+        |font_context: &mut FontContext,
          text: &str,
-         range: core::ops::Range<usize>,
+         range: std::ops::Range<usize>,
          formatting: Vec<i_slint_common::styled_text::FormattedSpan>,
-         links: Vec<(core::ops::Range<usize>, alloc::string::String)>| {
+         links: Vec<(std::ops::Range<usize>, std::string::String)>| {
             let code_ranges: alloc::vec::Vec<Range<usize>> = formatting
                 .iter()
                 .filter(|s| matches!(s.style, i_slint_common::styled_text::Style::Code))
                 .map(|s| s.range.clone())
                 .collect();
 
+            let control_characters = text
+                .char_indices()
+                .filter_map(|(index, c)| c.is_control().then_some(index))
+                .collect();
+
             let layout = layout_builder.build(font_context, text, formatting, Some(link_color));
 
-            TextParagraph { range, y: PhysicalLength::default(), layout, links, code_ranges }
+            TextParagraph {
+                range,
+                y: PhysicalLength::default(),
+                layout,
+                links,
+                code_ranges,
+                control_characters,
+            }
         };
 
     let mut paragraphs = Vec::with_capacity(1);
@@ -310,11 +320,14 @@ pub(super) fn create_text_paragraphs(
             }
         }
         PlainOrStyledText::Styled(rich_text) => {
-            for paragraph in rich_text.paragraphs {
+            // Offsets into the text as `styled_text::get_raw_text` joins it, which a selection's
+            // offsets index.
+            let ranges: Vec<_> = crate::styled_text::raw_text_ranges(&rich_text).collect();
+            for (paragraph, range) in rich_text.paragraphs.into_iter().zip(ranges) {
                 paragraphs.push(paragraph_from_text(
                     font_context,
                     &paragraph.text,
-                    0..0,
+                    range,
                     paragraph.formatting,
                     paragraph.links,
                 ));
@@ -337,6 +350,7 @@ pub(super) fn shaping_builder(
     let (stroke_brush, _, stroke_style) = text.stroke();
     LayoutWithoutLineBreaksBuilder::new(
         item_rc.map(|irc| text.font_request(irc)),
+        text.line_height_factor(),
         text_wrap,
         (!stroke_brush.is_transparent()).then_some(stroke_style),
         scale_factor,
@@ -356,6 +370,7 @@ pub(super) fn content_widths_builder(
 ) -> LayoutWithoutLineBreaksBuilder {
     let mut builder = LayoutWithoutLineBreaksBuilder::new(
         Some(font_request),
+        None,
         TextWrap::WordWrap,
         None,
         scale_factor,
@@ -369,57 +384,46 @@ pub(super) fn content_widths_builder(
 /// with what the item's cache entry was shaped with.
 #[cfg(test)]
 pub(super) fn plain_builder_for_tests() -> LayoutWithoutLineBreaksBuilder {
-    LayoutWithoutLineBreaksBuilder::new(None, TextWrap::NoWrap, None, ScaleFactor::new(1.0))
+    LayoutWithoutLineBreaksBuilder::new(None, None, TextWrap::NoWrap, None, ScaleFactor::new(1.0))
 }
 
 #[cfg(test)]
 pub(super) fn wrap_builder_for_tests() -> LayoutWithoutLineBreaksBuilder {
-    LayoutWithoutLineBreaksBuilder::new(None, TextWrap::WordWrap, None, ScaleFactor::new(1.0))
+    LayoutWithoutLineBreaksBuilder::new(None, None, TextWrap::WordWrap, None, ScaleFactor::new(1.0))
 }
 
-/// Everything the paragraphs are shaped from, so equal inputs shape identical paragraphs.
-#[derive(Clone, PartialEq)]
-pub(super) struct ShapingInputs {
-    builder: LayoutWithoutLineBreaksBuilder,
-    text: PlainOrStyledText,
-    link_color: Color,
-}
-
-impl ShapingInputs {
-    pub(super) fn shape(&self, font_context: &mut parley::FontContext) -> Vec<TextParagraph> {
-        create_text_paragraphs(&self.builder, font_context, self.text.clone(), self.link_color)
-    }
-
-    /// Whether the text is a short plain label, small to keep and quick to compare.
-    pub(super) fn is_label(&self) -> bool {
-        matches!(&self.text, PlainOrStyledText::Plain(text) if text.len() <= 64)
-    }
-}
-
-/// Reads what `text` is shaped from, the way both the drawing and the measuring paths need it,
-/// so that they can share one cache entry. `text_wrap` is passed separately because `text_size`
-/// measures the unwrapped width of items that are otherwise wrapped.
-pub(super) fn shaping_inputs(
+/// Shapes `text` the way both the drawing and the measuring paths need it, so that they can share
+/// one cache entry.
+///
+/// Reads the item's properties before borrowing `font_context`,
+/// because their bindings may measure other text, which borrows it too.
+pub(super) fn shape_paragraphs(
     text: Pin<&dyn crate::item_rendering::RenderString>,
     item_rc: Option<&crate::item_tree::ItemRc>,
     text_wrap: TextWrap,
     scale_factor: ScaleFactor,
-) -> ShapingInputs {
-    ShapingInputs {
-        builder: shaping_builder(text, item_rc, text_wrap, scale_factor),
-        text: text.text(),
-        link_color: text.link_color(),
-    }
+    font_context: &RefCell<FontContext>,
+) -> Vec<TextParagraph> {
+    let builder = shaping_builder(text, item_rc, text_wrap, scale_factor);
+    let plain_or_styled_text = text.text();
+    let link_color = text.link_color();
+    create_text_paragraphs(
+        &builder,
+        &mut font_context.borrow_mut(),
+        plain_or_styled_text,
+        link_color,
+    )
 }
 
-#[derive(Clone)]
 pub(super) struct TextParagraph {
     pub(super) range: Range<usize>,
     pub(super) y: PhysicalLength,
     pub(super) layout: parley::Layout<Brush>,
-    pub(super) links: alloc::vec::Vec<(Range<usize>, alloc::string::String)>,
+    pub(super) links: std::vec::Vec<(Range<usize>, std::string::String)>,
     /// Byte ranges within the paragraph's text that carry `Style::Code`. Drawn with a
     /// translucent rounded background by `draw` for visual parity with common markdown
     /// renderers.
-    pub(super) code_ranges: alloc::vec::Vec<Range<usize>>,
+    pub(super) code_ranges: std::vec::Vec<Range<usize>>,
+    /// Ascending byte offsets of the control characters in the paragraph's text.
+    pub(super) control_characters: std::vec::Vec<usize>,
 }

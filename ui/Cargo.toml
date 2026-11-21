@@ -10,9 +10,9 @@ crate-type = ["staticlib"]
 path = "src/lib.rs"
 
 [dependencies]
-slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
-i-slint-renderer-software = { version = "=1.18.1", default-features = false, features = ["experimental"] }
-i-slint-core = { version = "=1.18.1", default-features = false }
+slint = { version = "1.19.0", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
+i-slint-renderer-software = { version = "=1.19.0", default-features = false, features = ["experimental"] }
+i-slint-core = { version = "=1.19.0", default-features = false }
 embedded-alloc = { version = "0.7.0", default-features = false, features = ["tlsf"] }
 zeno = { version = "0.3.3", default-features = false, features = ["eval", "libm"], optional = true }
 critical-section = { version = "1.2.0", features = ["restore-state-u32"] }
@@ -30,7 +30,7 @@ outlines = ["i-slint-renderer-software/systemfonts", "dep:zeno"]
 mcu = []
 
 [build-dependencies]
-slint-build = { version = "1.18.1", default-features = false, features = ["compat-1-18", "renderer-software"] }
+slint-build = { version = "1.19.0", default-features = false, features = ["compat-1-18", "renderer-software"] }
 skrifa = "0.44.0"
 usvg = { version = "0.48.1", default-features = false }
 

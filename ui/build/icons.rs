@@ -101,7 +101,7 @@ pub fn write(out: &std::path::Path, code: &std::path::Path, leave_out: &[String]
             "static ICON_{n}: StaticTextures = StaticTextures {{ size: IntSize::new({tw}, {th}), original_size: IntSize::new({tw}, {th}), \
              data: Slice::from_slice({} as &[u8]), textures: Slice::from_slice(&[StaticTexture {{ \
              rect: i_slint_core::graphics::euclid::rect({x0}, {y0}, {}, {}), format: TexturePixelFormat::SignedDistanceField, \
-             color: slint::Color::from_argb_u8(255, 255, 255, 255), index: 0 }}]) }};",
+             color: 0xffff_ffff, index: 0 }}]) }};",
             sdf::bytes(&data),
             x1 - x0,
             y1 - y0

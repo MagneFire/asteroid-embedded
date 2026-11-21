@@ -59,7 +59,7 @@ impl OutlinePen for Flatten {
 /// fonts.rs: FONTS, every face and its other families.
 pub fn write(out: &std::path::Path, faces: &[Face]) {
     let mut rust = String::from(
-        "use i_slint_core::graphics::{BitmapFont, BitmapGlyph, BitmapGlyphs, CharacterMapEntry};\n\
+        "use i_slint_core::graphics::{BitmapFont, BitmapGlyph, BitmapGlyphs};\n\
          use i_slint_core::slice::Slice;\n",
     );
     let mut fonts = Vec::new();
@@ -101,11 +101,8 @@ pub fn write(out: &std::path::Path, faces: &[Face]) {
         }
         rust.push_str("];\n");
         writeln!(rust, "static SIZES_{n}: [BitmapGlyphs; 1] = [BitmapGlyphs {{ pixel_size: {}, glyph_data: Slice::from_slice(&GLYPHS_{n}) }}];", face.px as i16).unwrap();
-        writeln!(rust, "static MAP_{n}: [CharacterMapEntry; {}] = [", chars.len()).unwrap();
-        for (i, c) in chars.iter().enumerate() {
-            writeln!(rust, "    CharacterMapEntry {{ code_point: {c:?}, glyph_index: {i} }},").unwrap();
-        }
-        rust.push_str("];\n");
+        // Sorted, as the list is: a code point's position is its glyph's.
+        writeln!(rust, "static MAP_{n}: [char; {}] = {chars:?};", chars.len()).unwrap();
         let m = font.metrics(Size::unscaled(), LocationRef::default());
         for family in std::iter::once(&face.family).chain(face.also) {
             fonts.push(format!(

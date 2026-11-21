@@ -10,31 +10,31 @@
 //! [`cached_paragraphs`] is only meant to be called through `with_text_layout`, which pairs it
 //! with the one shaping function every path must share.
 
-use super::layout::{EllipsisGlyph, RetainedLineBreaking};
-use super::shaping::{ShapingInputs, TextParagraph};
+use super::layout::RetainedLineBreaking;
+use super::shaping::TextParagraph;
 use super::*;
 
-/// Shaped paragraphs together with the wrap mode they were shaped with.
+/// Shaped paragraphs together with the wrap mode and line-height factor they were shaped with.
 ///
-/// The glyph geometry only depends on (text, font, wrap, scale factor): the width is applied
-/// later by `break_all_lines`, and the fill/stroke/selection brushes only change colors, not
-/// positions. So one entry serves measuring, hit-testing and drawing alike -- but only for the
-/// wrap mode it was shaped with, because parley bakes the break opportunities into the shaped
-/// layout via `WordBreak`/`OverflowWrap`/`TextWrapMode` (see `ranged_builder`). The scale factor
-/// is the other input baked into the shaping, but it applies to every entry at once and so is
-/// handled by the cache as a whole.
+/// The glyph geometry only depends on (text, font, wrap, line-height factor, scale factor): the
+/// width is applied later by `break_all_lines`, and the fill/stroke/selection brushes only change
+/// colors, not positions. So one entry serves measuring, hit-testing and drawing alike -- but
+/// only for the wrap mode and line-height factor it was shaped with, because parley bakes the
+/// break opportunities into the shaped layout via `WordBreak`/`OverflowWrap`/`TextWrapMode` (see
+/// `ranged_builder`), and the line height into the line metrics. The scale factor is the other
+/// input baked into the shaping, but it applies to every entry at once and so is handled by the
+/// cache as a whole.
 struct CachedParagraphs {
     wrap: TextWrap,
-    /// What the paragraphs were shaped from, to keep them when a dependency goes dirty but
-    /// reads back the same.
-    inputs: ShapingInputs,
+    line_height_factor: Option<f32>,
     /// What [`super::layout::layout`] derived when it last broke these paragraphs, so an
     /// unchanged-input call can skip the breaking. `None` after a reshape (fresh entries
     /// start without one) and while checked out through the guard.
     line_breaking: Option<RetainedLineBreaking>,
     /// `None` while a [`CachedParagraphsGuard`] has the paragraphs checked out; the guard puts
-    /// them back when it drops. Finding `None` here therefore means the previous caller returned
-    /// without handing them back, and the entry has to be reshaped rather than served empty.
+    /// them back when it drops. Finding `None` here therefore means that [`TextLayoutCache::sweep`]
+    /// evicted them, or that the previous caller returned without handing them back, and the
+    /// entry has to be reshaped rather than served empty.
     paragraphs: Option<Vec<TextParagraph>>,
     /// The [`TextLayoutCache::generation`] at which this entry was last served.
     last_used: u32,
@@ -45,13 +45,6 @@ type InnerTextLayoutCache = crate::item_rendering::ItemCache<CachedParagraphs>;
 /// Entry count above which [`TextLayoutCache::sweep`] runs (~4.7KB per entry).
 const ENTRY_LIMIT: usize = 1024;
 
-/// How many ellipsis glyphs [`TextLayoutCache::ellipsis`] keeps: one per font, size and stroke
-/// that elides.
-const ELLIPSIS_LIMIT: usize = 64;
-
-/// How many labels [`TextLayoutCache::shaped`] keeps (a few KB each).
-const LABEL_LIMIT: usize = 64;
-
 /// Cache for shaped text paragraphs (before line breaking), keyed by ItemRc.
 pub struct TextLayoutCache {
     inner: InnerTextLayoutCache,
@@ -59,26 +52,18 @@ pub struct TextLayoutCache {
     /// paragraphs that no other path can reuse, because they are shaped without
     /// `OverflowWrap::Anywhere`, so the result is kept instead of the paragraphs.
     content_widths: crate::item_rendering::ItemCache<crate::renderer::ContentWidths>,
-    /// The ellipsis glyphs eliding text was laid out with, by what they were shaped with, least
-    /// recently used first. Lines are broken again whenever the width or the text changes, and
-    /// shaping the ellipsis then costs as much as shaping a short text.
-    ellipses: RefCell<Vec<(LayoutWithoutLineBreaksBuilder, Option<EllipsisGlyph>)>>,
-    /// Short labels shaped lately, unbroken, by what they were shaped from, least recently used
-    /// first. Shared by all items: a label drawn twice for a shadow shapes the same twice, and
-    /// labels animated through sizes come back to the same ones.
-    labels: RefCell<Vec<(ShapingInputs, Vec<TextParagraph>)>>,
     /// Bumped once per rendered frame; entries are stamped with it when served.
-    generation: core::cell::Cell<u32>,
+    generation: std::cell::Cell<u32>,
     /// Approximate entry count; a stale-high value just triggers one extra sweep.
-    entry_count_estimate: core::cell::Cell<usize>,
+    entry_count_estimate: std::cell::Cell<usize>,
     /// Estimate above which the next sweep runs; raised when the active set exceeds the limit.
-    sweep_threshold: core::cell::Cell<usize>,
+    sweep_threshold: std::cell::Cell<usize>,
     #[cfg(feature = "testing")]
-    cache_miss_count: core::cell::Cell<u64>,
+    cache_miss_count: std::cell::Cell<u64>,
     #[cfg(feature = "testing")]
-    layout_miss_count: core::cell::Cell<u64>,
+    layout_miss_count: std::cell::Cell<u64>,
     #[cfg(feature = "testing")]
-    content_widths_miss_count: core::cell::Cell<u64>,
+    content_widths_miss_count: std::cell::Cell<u64>,
 }
 
 #[allow(clippy::derivable_impls)] // clippy doesn't see the feature = "testing" code
@@ -87,17 +72,15 @@ impl Default for TextLayoutCache {
         Self {
             inner: Default::default(),
             content_widths: Default::default(),
-            ellipses: Default::default(),
-            labels: Default::default(),
             generation: Default::default(),
             entry_count_estimate: Default::default(),
-            sweep_threshold: core::cell::Cell::new(ENTRY_LIMIT),
+            sweep_threshold: std::cell::Cell::new(ENTRY_LIMIT),
             #[cfg(feature = "testing")]
-            cache_miss_count: core::cell::Cell::new(0),
+            cache_miss_count: std::cell::Cell::new(0),
             #[cfg(feature = "testing")]
-            layout_miss_count: core::cell::Cell::new(0),
+            layout_miss_count: std::cell::Cell::new(0),
             #[cfg(feature = "testing")]
-            content_widths_miss_count: core::cell::Cell::new(0),
+            content_widths_miss_count: std::cell::Cell::new(0),
         }
     }
 }
@@ -111,54 +94,6 @@ impl TextLayoutCache {
         self.inner.clear_cache_if_scale_factor_changed(window);
         self.content_widths.clear_cache_if_scale_factor_changed(window);
     }
-
-    /// Returns the paragraphs `inputs` shape to, copied from another item that shaped the same
-    /// label lately or else shaped.
-    fn shaped(
-        &self,
-        inputs: &ShapingInputs,
-        font_context: &mut parley::FontContext,
-    ) -> Vec<TextParagraph> {
-        if !inputs.is_label() {
-            return inputs.shape(font_context);
-        }
-        let mut labels = self.labels.borrow_mut();
-        if let Some(index) = labels.iter().position(|(shaped_from, _)| shaped_from == inputs) {
-            let entry = labels.remove(index);
-            let paragraphs = entry.1.clone();
-            labels.push(entry);
-            return paragraphs;
-        }
-        let paragraphs = inputs.shape(font_context);
-        if labels.len() >= LABEL_LIMIT {
-            labels.remove(0);
-        }
-        labels.push((inputs.clone(), paragraphs.clone()));
-        paragraphs
-    }
-
-    /// Returns the ellipsis glyph for text shaped by `builder`, shaping it on a miss. The scale
-    /// factor is part of `builder`, so it needs no clearing of its own when that changes.
-    pub(super) fn ellipsis(
-        &self,
-        builder: &LayoutWithoutLineBreaksBuilder,
-        shape: impl FnOnce() -> Option<EllipsisGlyph>,
-    ) -> Option<EllipsisGlyph> {
-        let mut ellipses = self.ellipses.borrow_mut();
-        if let Some(index) = ellipses.iter().position(|(shaped_by, _)| shaped_by == builder) {
-            let entry = ellipses.remove(index);
-            let glyph = entry.1.clone();
-            ellipses.push(entry);
-            return glyph;
-        }
-        let glyph = shape();
-        if ellipses.len() >= ELLIPSIS_LIMIT {
-            ellipses.remove(0);
-        }
-        ellipses.push((builder.clone(), glyph.clone()));
-        glyph
-    }
-
     pub fn component_destroyed(&self, component: crate::item_tree::ItemTreeRef) {
         self.inner.component_destroyed(component);
         self.content_widths.component_destroyed(component);
@@ -166,8 +101,6 @@ impl TextLayoutCache {
     pub fn clear_all(&self) {
         self.inner.clear_all();
         self.content_widths.clear_all();
-        self.ellipses.borrow_mut().clear();
-        self.labels.borrow_mut().clear();
     }
 
     /// Returns the cached content widths of `item_rc`, computing them on a miss.
@@ -192,14 +125,20 @@ impl TextLayoutCache {
         self.generation.set(self.generation.get().wrapping_add(1));
     }
 
-    /// Drops the entries that were not served in the current or the previous frame.
+    /// Drops the shaped data of the entries that were not served in the current or the previous
+    /// frame. The entries themselves stay, see [`ItemCache::for_each_mut`].
+    ///
+    /// [`ItemCache::for_each_mut`]: crate::item_rendering::ItemCache::for_each_mut
     fn sweep(&self) {
         let generation = self.generation.get();
         let mut kept = 0;
-        self.inner.retain(|entry| {
+        self.inner.for_each_mut(|entry| {
             let keep = generation.wrapping_sub(entry.last_used) <= 1;
             kept += keep as usize;
-            keep
+            if !keep {
+                entry.paragraphs = None;
+                entry.line_breaking = None;
+            }
         });
         self.entry_count_estimate.set(kept);
         self.sweep_threshold.set(ENTRY_LIMIT.max(kept + ENTRY_LIMIT / 2));
@@ -239,7 +178,7 @@ impl TextLayoutCache {
 pub(super) struct CachedParagraphsGuard<'a> {
     paragraphs: Option<Vec<TextParagraph>>,
     line_breaking: Option<RetainedLineBreaking>,
-    container: Option<core::cell::RefMut<'a, CachedParagraphs>>,
+    container: Option<std::cell::RefMut<'a, CachedParagraphs>>,
 }
 
 impl CachedParagraphsGuard<'_> {
@@ -278,26 +217,26 @@ impl Drop for CachedParagraphsGuard<'_> {
     }
 }
 
-/// Shapes the text of `item_rc` for `wrap`, reusing the `TextLayoutCache` entry when it holds
-/// paragraphs shaped for the same wrap mode from the same inputs. Without a cache or item it
-/// just shapes, so the caller doesn't need to special-case that.
+/// Shapes the text of `item_rc` for `wrap` and `line_height_factor`, reusing the
+/// `TextLayoutCache` entry when it holds paragraphs shaped for the same wrap mode and none of the
+/// properties `shape` read have changed since. With `width_only`, an entry shaped with any
+/// line-height factor serves, since the line height can't change the width.
+/// Without a cache or item it just shapes, so the caller doesn't need to special-case that.
 ///
-/// `inputs` runs inside the entry's dependency tracker, so everything it reads (the text and the
-/// font request, at least) marks the entry dirty when it changes. A dirty entry reads its inputs
-/// again and only reshapes if they differ: a binding that depends on an animated property goes
-/// dirty every frame, mostly to come back with the same text and font. Properties evaluated by
-/// the caller before this point are clean by then and thus can't re-enter here.
+/// `shape` runs inside the entry's dependency tracker, so everything it reads (the text and the
+/// font request, at least) invalidates the entry when it changes.
 pub(super) fn cached_paragraphs<'a>(
     cache: Option<&'a TextLayoutCache>,
     item_rc: Option<&crate::item_tree::ItemRc>,
     wrap: TextWrap,
+    line_height_factor: Option<f32>,
+    width_only: bool,
     window: &crate::api::Window,
-    font_context: &mut parley::FontContext,
-    inputs: &dyn Fn() -> ShapingInputs,
+    shape: &dyn Fn() -> Vec<TextParagraph>,
 ) -> CachedParagraphsGuard<'a> {
     let Some((cache, item_rc)) = cache.zip(item_rc) else {
         return CachedParagraphsGuard {
-            paragraphs: Some(inputs().shape(font_context)),
+            paragraphs: Some(shape()),
             line_breaking: None,
             container: None,
         };
@@ -305,50 +244,33 @@ pub(super) fn cached_paragraphs<'a>(
 
     cache.clear_if_scale_factor_changed(window);
 
-    // Shaped geometry must never be mixed across wrap modes, and the entry only holds one mode
-    // at a time. Drop a mismatching one up front so the shaping below happens in the regular
-    // (vacant) path, inside a fresh dependency tracker and without the cache borrowed.
-    //
-    // Paragraphs that were never handed back can't be served either.
-    let stale = cache
-        .inner
-        .with_entry(item_rc, |entry| {
-            (entry.wrap != wrap || entry.paragraphs.is_none()).then_some(())
-        })
-        .is_some();
-    if stale {
-        cache.inner.release(item_rc);
-    }
-
-    // Sweep before this item's entry is checked out and blocks `retain`'s access.
+    // Sweep before this item's entry is checked out and blocks `for_each_mut`'s access.
     if cache.entry_count_estimate.get() > cache.sweep_threshold.get() {
         cache.sweep();
     }
 
-    let mut entry = cache.inner.get_or_update_cache_entry_ref(item_rc, || {
-        let inputs = inputs();
-        // The map is not borrowed while an entry updates, and the old value is still in it.
-        let unchanged = cache.inner.with_entry_mut(item_rc, |old| {
-            (old.inputs == inputs)
-                .then(|| {
-                    old.paragraphs.take().map(|paragraphs| (paragraphs, old.line_breaking.take()))
-                })
-                .flatten()
-        });
-        let (paragraphs, line_breaking) = unchanged.unwrap_or_else(|| {
+    // Shaped geometry must never be mixed across wrap modes or line-height factors, and the
+    // entry only holds one of each at a time, so a mismatching one is reshaped.
+    let mut entry = cache.inner.get_or_update_cache_entry_ref_unless(
+        item_rc,
+        || {
             #[cfg(feature = "testing")]
             cache.cache_miss_count.set(cache.cache_miss_count.get() + 1);
             cache.entry_count_estimate.set(cache.entry_count_estimate.get() + 1);
-            (cache.shaped(&inputs, font_context), None)
-        });
-        CachedParagraphs {
-            wrap,
-            inputs,
-            paragraphs: Some(paragraphs),
-            line_breaking,
-            last_used: 0, // stamped right below, for both a hit and this miss
-        }
-    });
+            CachedParagraphs {
+                wrap,
+                line_height_factor,
+                paragraphs: Some(shape()),
+                line_breaking: None,
+                last_used: 0, // stamped right below, for both a hit and this miss
+            }
+        },
+        |entry| {
+            entry.wrap != wrap
+                || (!width_only && entry.line_height_factor != line_height_factor)
+                || entry.paragraphs.is_none()
+        },
+    );
     entry.last_used = cache.generation.get();
     let paragraphs = entry.paragraphs.take().unwrap_or_default();
     CachedParagraphsGuard {
