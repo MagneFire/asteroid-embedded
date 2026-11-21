@@ -34,6 +34,11 @@ void batt_cable_irq_init(void)
 	if (BATT_SETUP(cable_irq_init))
 		board->battery_driver->cable_irq_init();
 }
+void batt_asleep(bool asleep)
+{
+	if (BATT_SETUP(asleep))
+		board->battery_driver->asleep(asleep);
+}
 bool batt_cable_irq(void) { return BATT(cable_irq) && board->battery_driver->cable_irq(); }
 uint32_t batt_mv(void) { return BATT(mv) ? board->battery_driver->mv() : 0; }
 int32_t batt_ua(void) { return BATT(ua) ? board->battery_driver->ua() : 0; }

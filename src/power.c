@@ -501,6 +501,7 @@ enum power_change power_update(uint32_t *now_p)
 			ambient_enter();
 		if (have_hub)
 			hub_asleep(true);
+		batt_asleep(true);
 		timer_set_period(1000);
 		cpu_clock_slow(true);
 		policy.awake = false;
@@ -511,6 +512,7 @@ enum power_change power_update(uint32_t *now_p)
 		cpu_clock_slow(false);
 		if (have_hub)
 			hub_asleep(false);
+		batt_asleep(false);
 		/* The tick armed while asleep can be up to a second away, and
 		 * the touch drivers retry from the passes it brings. */
 		timer_set_period(1);

@@ -230,6 +230,7 @@ bool batt_cable(void);
 bool batt_usb(void);
 void batt_cable_irq_init(void);
 bool batt_cable_irq(void);
+void batt_asleep(bool asleep);
 uint32_t batt_mv(void);
 int32_t batt_ua(void);
 int32_t batt_avg_ua(void);

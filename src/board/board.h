@@ -153,6 +153,7 @@ struct battery_driver {
 	bool (*usb)(void);
 	void (*cable_irq_init)(void);
 	bool (*cable_irq)(void);
+	void (*asleep)(bool asleep);
 	uint32_t (*mv)(void);
 	int32_t (*ua)(void);
 	int32_t (*avg_ua)(void);

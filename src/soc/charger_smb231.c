@@ -39,6 +39,10 @@
 #define IRQ_C_DONE	BIT(0)
 #define STATUS_A_OV	BIT(6)
 #define STATUS_A_UV	BIT(4)
+/* Everything but battery overvoltage; asleep only a missing battery and
+ * the input, as the vendor driver sets it on suspend. */
+#define IRQS_AWAKE	0xbf
+#define IRQS_ASLEEP	0x21
 #define POLL_MS		60000
 #define CABLE_POLL_MS	1000
 #define GAUGE_ASK_MS	60000
@@ -47,7 +51,7 @@
 #define CELL_MAH	415
 #define CHARGER_TASK_MS	500
 
-static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale, keeps_settings;
+static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale, keeps_settings, asleep;
 static uint32_t poll_t, gauge_ask_t, errors, empty_polls, quiet_polls;
 static bool gauge_asked;
 static bool empty_from_pmic;
@@ -101,7 +105,7 @@ static bool configure(void)
 	if (!r)
 		r = wr(CFG8, 3 << 6 | 1 << 4 | 2 << 2 | 1);
 	if (!r)
-		r = wr(IRQ_CFG, 0xbf);
+		r = wr(IRQ_CFG, asleep ? IRQS_ASLEEP : IRQS_AWAKE);
 	if (!r)
 		r = update(CMD1, 3, 2);
 	if (!r)
@@ -313,6 +317,13 @@ static bool smb231_cable_irq(void)
 	return changed;
 }
 
+static void smb231_asleep(bool a)
+{
+	asleep = a;
+	if (ready && configured && wr(IRQ_CFG, a ? IRQS_ASLEEP : IRQS_AWAKE))
+		errors++;
+}
+
 static uint32_t smb231_mv(void)
 {
 	struct hub_gauge g;
@@ -353,6 +364,7 @@ const struct battery_driver battery_smb231 = {
 	.usb = smb231_cable,
 	.cable_irq_init = smb231_cable_irq_init,
 	.cable_irq = smb231_cable_irq,
+	.asleep = smb231_asleep,
 	.mv = smb231_mv,
 	.ua = smb231_ua,
 	.ua_age_ms = smb231_ua_age_ms,
