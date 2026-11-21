@@ -302,6 +302,15 @@ int iom_spi_init(unsigned n, uint32_t hz, unsigned mode)
 	return 0;
 }
 
+void iom_spi_set_hz(unsigned n, uint32_t hz, unsigned mode)
+{
+	if (n >= BUSES || !buses[n].spi || !hz)
+		return;
+	iom_spi_wait(n);
+	wait_idle(n, buses[n].timeout_us);
+	writel(spi_clock(hz, mode & 2), IOM(n, CLKCFG));
+}
+
 int iom_spi_write(unsigned n, unsigned cs, const void *p, unsigned len, bool cont)
 {
 	if (n >= BUSES || !buses[n].spi || iom_spi_wait(n))

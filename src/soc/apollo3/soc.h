@@ -152,6 +152,8 @@ void timer_wake_within(uint32_t ms);
 int iom_spi_init(unsigned bus, uint32_t hz, unsigned mode);
 int iom_spi_write(unsigned bus, unsigned cs, const void *p, unsigned n, bool cont);
 int iom_spi_read(unsigned bus, unsigned cs, void *p, unsigned n, bool cont);
+/* A new rate for the transfers after, once those before are done. */
+void iom_spi_set_hz(unsigned bus, uint32_t hz, unsigned mode);
 int iom_spi_write_start(unsigned bus, unsigned cs, const void *p, unsigned n, bool cont);
 bool iom_spi_busy(unsigned bus);
 int iom_spi_wait(unsigned bus);

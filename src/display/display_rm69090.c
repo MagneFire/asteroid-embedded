@@ -10,6 +10,7 @@
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
+#include "display/rm69090_id.h"
 #include "sensors/tsl258x.h"
 
 #define DCS_POWER_MODE	0x0a
@@ -30,6 +31,10 @@
 #define MODE_DISPLAY_ON	BIT(2)
 #define CHUNK		4092u
 #define TE_WAIT_MS	25
+/* Reads take a clock of at least 300 ns with its data up to 120 ns after
+ * the falling edge; at 48 MHz the rising edge samples the bit before.
+ * 0 reads at the write rate. */
+#define READ_HZ		1500000u
 
 #define BUS		(board->panel.spi_bus)
 #define CS		(board->panel.spi_cs)
@@ -43,6 +48,7 @@ static bool started, panel_on, panel_asleep, idle, lost, lent;
 static uint8_t level = 0xff;
 static uint32_t frames, waits, timeouts, errors;
 static uint16_t win_x, win_y, win_w, win_h, next_y;
+static enum rm69090_framing framing;
 static void (*idle_hook)(void);
 
 void display_set_idle_hook(void (*fn)(void)) { idle_hook = fn; }
@@ -65,13 +71,27 @@ static int command(uint8_t cmd, const uint8_t *p, unsigned n)
 	return r;
 }
 
-/* A command's reply, a byte at a time after it on the same select. */
-static int query(uint8_t cmd, uint8_t *p, unsigned n)
+/* A command's one-byte reply, after it on the same select. */
+static int query(uint8_t cmd, uint8_t raw[2])
 {
+	if (READ_HZ)
+		iom_spi_set_hz(BUS, READ_HZ, board->panel.spi_mode);
 	gpio_set(DC, 0);
 	int r = iom_spi_write(BUS, CS, &cmd, 1, true);
 	gpio_set(DC, 1);
-	return r ? r : iom_spi_read(BUS, CS, p, n, false);
+	if (!r)
+		r = iom_spi_read(BUS, CS, raw, 2, false);
+	if (READ_HZ)
+		iom_spi_set_hz(BUS, board->panel.spi_hz, board->panel.spi_mode);
+	return r;
+}
+
+static int query_byte(uint8_t cmd, uint8_t *v)
+{
+	uint8_t raw[2];
+	int r = query(cmd, raw);
+	*v = rm69090_byte(raw, framing);
+	return r;
 }
 
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n)
@@ -142,15 +162,16 @@ static bool mode_has(uint8_t bits)
 {
 	uint8_t mode;
 	iom_spi_wait(BUS);
-	return !query(DCS_POWER_MODE, &mode, 1) && mode != 0xff && (mode & bits) == bits;
+	return !query_byte(DCS_POWER_MODE, &mode) && mode != 0xff && (mode & bits) == bits;
 }
 
-/* The ID bytes, for telling the panels apart; 0 for any not read. */
-void display_read_id(uint8_t id[3])
+/* The replies to DA, DB and DC, for telling the panels apart; 0 for any
+ * not read. */
+static void read_id(uint8_t raw[3][2])
 {
 	for (unsigned i = 0; i < 3; i++)
-		if (lent || query((uint8_t)(0xda + i), &id[i], 1))
-			id[i] = 0;
+		if (query((uint8_t)(0xda + i), raw[i]))
+			raw[i][0] = raw[i][1] = 0;
 }
 
 static void let_go(unsigned pad)
@@ -200,13 +221,18 @@ bool display_init(void)
 	}
 	uint32_t t0 = time_ms();
 	start();
-	uint8_t id[3];
-	display_read_id(id);
+	uint8_t raw[3][2];
+	read_id(raw);
+	framing = rm69090_match(raw, board->panel.id);
 	reads_work = mode_has(MODE_SLEEP_OUT);
 	started = true;
 	panel_asleep = false;
-	log_printf("display: %lux%lu on spi%u at %lu Hz, id %02x %02x %02x, reads %s, up in %lu ms\n", fb.width, fb.height,
-		   BUS, board->panel.spi_hz, id[0], id[1], id[2], reads_work ? "work" : "fail", time_ms() - t0);
+	log_printf("display: %lux%lu on spi%u at %lu Hz, id %02x %02x %02x %s (read %02x%02x %02x%02x %02x%02x at %lu Hz), "
+		   "reads %s, up in %lu ms\n",
+		   fb.width, fb.height, BUS, board->panel.spi_hz, rm69090_byte(raw[0], framing), rm69090_byte(raw[1], framing),
+		   rm69090_byte(raw[2], framing), rm69090_framing_name(framing), raw[0][0], raw[0][1], raw[1][0], raw[1][1],
+		   raw[2][0], raw[2][1], READ_HZ ? READ_HZ : board->panel.spi_hz, reads_work ? "work" : "fail",
+		   time_ms() - t0);
 	return true;
 }
 
