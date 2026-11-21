@@ -369,9 +369,49 @@ static void begin_run(uint16_t x, uint16_t y, uint16_t w)
 	first_chunk = open_window = true;
 }
 
-static inline uint32_t swap16(uint32_t v)
+static inline __attribute__((always_inline)) uint32_t swap16(uint32_t v)
 {
 	return (v & 0x00ff00ffu) << 8 | (v >> 8 & 0x00ff00ffu);
+}
+
+typedef uint32_t __attribute__((may_alias)) word;
+
+/* The panel takes each pixel high byte first: two at a time are swapped
+ * in one word, eight a pass by load and store multiple where the line
+ * is word aligned (GCC does not use them here). buf is at least two-byte
+ * aligned. */
+static __attribute__((noinline)) void pack(uint8_t *buf, const uint16_t *px, uint32_t n)
+{
+	if ((uintptr_t)buf & 2) {
+		*(uint16_t *)buf = (uint16_t)swap16(*px++);
+		buf += 2;
+		n--;
+	}
+	word *d = (word *)buf;
+#ifdef __thumb2__
+	if (!((uintptr_t)px & 2) && n >= 8) {
+		uint32_t k = n / 8;
+		n %= 8;
+		__asm__ volatile("1:	ldmia	%[s]!, {r4, r5, r6, r7}\n\t"
+				 "rev16	r4, r4\n\t"
+				 "rev16	r5, r5\n\t"
+				 "rev16	r6, r6\n\t"
+				 "rev16	r7, r7\n\t"
+				 "stmia	%[d]!, {r4, r5, r6, r7}\n\t"
+				 "subs	%[k], %[k], #1\n\t"
+				 "bne	1b"
+				 : [s] "+r"(px), [d] "+r"(d), [k] "+r"(k)
+				 :
+				 : "r4", "r5", "r6", "r7", "cc", "memory");
+	}
+#endif
+	for (; n >= 2; n -= 2, px += 2) {
+		uint32_t v;
+		__builtin_memcpy(&v, px, 4);
+		*d++ = swap16(v);
+	}
+	if (n)
+		*(uint16_t *)d = (uint16_t)swap16(*px);
 }
 
 void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *px)
@@ -381,37 +421,15 @@ void ui_draw_line(uint32_t y, uint32_t x, uint32_t w, const uint16_t *px)
 	if (!open_window || x != win_x || w != win_w || y != next_y)
 		begin_run((uint16_t)x, (uint16_t)y, (uint16_t)w);
 	tsl258x_crop_line(y, x, w, px);
-	/* The panel takes each pixel high byte first: two at a time are
-	 * swapped in one word. */
 	for (uint32_t i = 0; i < w;) {
 		if (filled + 2 > CHUNK)
 			send(true);
-		uint8_t *buf = chunk[fill];
-		uint32_t f = filled, n = (CHUNK - f) / 2;
+		uint32_t n = (CHUNK - filled) / 2;
 		if (n > w - i)
 			n = w - i;
-		uint32_t end = i + n;
-		if (!(f & 3)) {
-			/* px is only two-byte aligned; the M4 loads it a word
-			 * at a time all the same. */
-			for (; i + 3 < end; i += 4, f += 8) {
-				uint32_t a, b;
-				__builtin_memcpy(&a, px + i, 4);
-				__builtin_memcpy(&b, px + i + 2, 4);
-				*(uint32_t *)(buf + f) = swap16(a);
-				*(uint32_t *)(buf + f + 4) = swap16(b);
-			}
-			for (; i + 1 < end; i += 2, f += 4) {
-				uint32_t v;
-				__builtin_memcpy(&v, px + i, 4);
-				*(uint32_t *)(buf + f) = swap16(v);
-			}
-		}
-		for (; i < end; i++, f += 2) {
-			buf[f] = (uint8_t)(px[i] >> 8);
-			buf[f + 1] = (uint8_t)px[i];
-		}
-		filled = f;
+		pack(chunk[fill] + filled, px + i, n);
+		filled += n * 2;
+		i += n;
 	}
 	next_y = (uint16_t)(y + 1);
 }
