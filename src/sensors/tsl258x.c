@@ -26,12 +26,14 @@
 
 static const int32_t gains[] = { 1, 111 };
 
-/* The crops are the vendor's SurfaceFlinger rectangles. Its frame is
- * the panel window the AP sets, columns 40 to 441 on the 46 mm watch
- * and 20 to 339 on the 41 mm one, the same as the one here, so they are
- * taken as they are. */
+/* The vendor's SurfaceFlinger crops sit one panel column offset left of
+ * the sensor: on the 46 mm watch a grid of white tiles found its light
+ * in a spot of about 16 pixels around (87, 268), where the vendor has
+ * (20, 255)-(70, 305). The 46 mm crop is the square that matches that
+ * spot on the watch faces; the 41 mm one is the vendor's moved by its
+ * offset of 20, not measured. */
 const struct tsl258x_profile tsl258x_46mm = {
-	.crop = { 20, 255, 70, 305 },
+	.crop = { 72, 252, 104, 284 },
 	.poly = { { 0.1012f, 0.0018f, 0.000002f }, { -0.0528f, 0.0062f, 0.000010f }, { -0.0198f, 0.0018f, 0.000002f },
 		  { -0.1586f, 0.0006f, 0.000003f } },
 	.ref = { 180, 573, 150, 48 },
@@ -40,7 +42,7 @@ const struct tsl258x_profile tsl258x_46mm = {
 };
 
 const struct tsl258x_profile tsl258x_41mm = {
-	.crop = { 150, 5, 185, 35 },
+	.crop = { 170, 5, 205, 35 },
 	.poly = { { 1.0972f, -0.0010f, 0.000010f }, { 2.0635f, 0.0066f, 0.000010f }, { 0.2163f, 0.0001f, 0.000004f },
 		  { -0.5701f, 0.0036f, -0.000003f } },
 	.ref = { 377, 1139, 133, 39 },

@@ -225,7 +225,7 @@ static void driver_test(void)
 	uint16_t white[402];
 	for (unsigned i = 0; i < 402; i++)
 		white[i] = 0xffff;
-	for (unsigned y = 255; y < 305; y++)
+	for (unsigned y = 250; y < 290; y++)
 		tsl258x_crop_line(y, 0, 402, white);
 	brightness = 255;
 	CHECK(reading() == 843);
@@ -470,8 +470,14 @@ static bool rgb_is(uint8_t r, uint8_t g, uint8_t b)
 
 static void crop_test(void)
 {
+	/* The sampling on crops of the vendor's two sizes, 17 by 17 and 12
+	 * by 10 samples, wherever the profiles put them. */
+	struct tsl258x_profile c46 = *p46, c41 = *p41;
+	memcpy(c46.crop, (const uint16_t[]){ 20, 255, 70, 305 }, sizeof c46.crop);
+	memcpy(c41.crop, (const uint16_t[]){ 150, 5, 185, 35 }, sizeof c41.crop);
+
 	/* Nothing drawn yet is black. */
-	tsl258x_crop_set(p46);
+	tsl258x_crop_set(&c46);
 	CHECK(rgb_is(0, 0, 0));
 
 	/* A whole white frame. */
@@ -510,7 +516,7 @@ static void crop_test(void)
 	CHECK(rgb_is(132, 130, 132));
 
 	/* The 41 mm crop: 12 by 10 samples, half its rows white. */
-	tsl258x_crop_set(p41);
+	tsl258x_crop_set(&c41);
 	CHECK(rgb_is(0, 0, 0));
 	fill(0, 5, 320, 15, 0xffff);
 	CHECK(rgb_is(187, 187, 187));
