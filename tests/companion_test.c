@@ -1001,6 +1001,16 @@ static void sensor_scenario(void)
 	CHECK(counted == 1 && got.events >= 1000 / 39 && got.reports >= got.events - 1);
 	CHECK(companion_next_ms() > 1 && companion_next_ms() <= 39);
 
+	/* A count the AP does not take is sent again. */
+	steps = 120;
+	run_ms(1000 + 2 * LINK_TX_MS + 150);
+	memset(&got, 0, sizeof got);
+	ap_sensors(1500);
+	counted = 0;
+	for (unsigned i = 0; i < got.events; i++)
+		counted += got.ev[i].id == PROTO_SNS_STEP_COUNTER && bits_float(got.ev[i].w[0]) == 120.0f;
+	CHECK(counted == 1);
+
 	/* A warm reset with the AP keeping the panel keeps the
 	 * subscriptions, and the times go on from the last one sent. */
 	uint64_t last = got.last_time;

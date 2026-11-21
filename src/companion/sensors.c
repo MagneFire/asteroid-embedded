@@ -374,16 +374,18 @@ static void sample_steps(uint32_t now)
 	uint32_t s = hub_steps();
 	if (s == HUB_NONE)
 		return;
+	bool lost = false;
 	if (last_steps == HUB_NONE || s < last_steps) {
 		if (kept.subs[COUNTER].on)
-			push_value(PROTO_SNS_STEP_COUNTER, (float)s);
+			lost = !push_value(PROTO_SNS_STEP_COUNTER, (float)s);
 	} else if (s > last_steps) {
 		if (kept.subs[COUNTER].on)
-			push_value(PROTO_SNS_STEP_COUNTER, (float)s);
+			lost = !push_value(PROTO_SNS_STEP_COUNTER, (float)s);
 		for (uint32_t k = 0; kept.subs[DETECTOR].on && k < s - last_steps && k < DETECTOR_MAX; k++)
 			push_value(PROTO_SNS_STEP_DETECTOR, 1.0f);
 	}
-	last_steps = s;
+	/* A count that did not go out goes again at the next sample. */
+	last_steps = lost ? HUB_NONE : s;
 }
 
 /* Each new reading goes out as it comes, with the quality of its
@@ -494,6 +496,8 @@ void sns_unsent(void)
 			queue[metas++] = queue[i];
 		else if (queue[i].handle == PROTO_SNS_LIGHT)
 			last_lux = -1;
+		else if (queue[i].handle == PROTO_SNS_STEP_COUNTER)
+			last_steps = HUB_NONE;
 		else if (queue[i].handle == PROTO_SNS_HEART_RATE && queue[i].word[1] == (uint32_t)PROTO_SNS_NO_CONTACT)
 			no_contact = false;
 	count.dropped += taken - metas;
