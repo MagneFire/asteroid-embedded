@@ -261,8 +261,8 @@ export component NoteList {
 
     if root.count == 0: Rectangle {
         Image {
-            x: 36.5 * Theme.unit;
-            y: 27.5 * Theme.unit;
+            x: (root.width - self.width) / 2;
+            y: root.height / 2 - 22.5 * Theme.unit;
             width: 27 * Theme.unit;
             height: 27 * Theme.unit;
             source: Icons.get("ios-mail-outline", self.width, self.height);
@@ -272,8 +272,8 @@ export component NoteList {
 
         Text {
             x: 0;
-            y: 58.5 * Theme.unit;
-            width: 100 * Theme.unit;
+            y: root.height / 2 + 8.5 * Theme.unit;
+            width: root.width;
             text: "No notifications";
             color: white;
             opacity: 0.8;
