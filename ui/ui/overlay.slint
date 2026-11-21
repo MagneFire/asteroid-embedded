@@ -5,6 +5,7 @@ import { Codes } from "codes.slint";
 import { IconButton, StatusPage } from "controls.slint";
 import { Icons } from "icons.slint";
 import { Theme, Square } from "theme.slint";
+import { Build } from "build.slint";
 
 export component Overlay {
     width: 100%;
@@ -159,9 +160,10 @@ export component Overlay {
 
     // The alarm presenter: a dark mesh, the alarm or timer icon in a disc, the alarm's time (or
     // the timer's duration) at the bottom, dismiss on the left and snooze (or, for the timer,
-    // start again) on the right.
+    // start again) on the right. The Cortex-M build shades it flat: the gradient costs it
+    // seconds a frame.
     if Face.alarm-ringing: Rectangle {
-        background: @radial-gradient(circle, #333333 0%, #000000 100%);
+        background: Build.mcu ? #1a1a1a : @radial-gradient(circle, #333333 0%, #000000 100%);
 
         Square {
             StatusPage {
