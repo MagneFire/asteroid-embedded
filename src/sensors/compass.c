@@ -420,6 +420,16 @@ static void learn(struct compass *c, const float a[3])
 	qualify(c);
 }
 
+int compass_overflow(struct compass *c)
+{
+	c->have_ref = false;
+	c->jumps++;
+	c->status = UNRELIABLE;
+	c->quiet = QUIET;
+	start_over(c);
+	return UNRELIABLE;
+}
+
 int compass_feed(struct compass *c, const float raw[3], const float gyro[3], float dt, float out[3])
 {
 	float m[3];

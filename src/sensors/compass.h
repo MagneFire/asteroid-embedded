@@ -52,5 +52,8 @@ void compass_correct(const float raw[3], float out[3]);
 /* A raw sample, with the gyroscope's rate in rad/s (or NULL) and the
  * time since the last one: out is the field, the result its accuracy. */
 int compass_feed(struct compass *c, const float raw[3], const float gyro[3], float dt, float out[3]);
+/* A sample out of the magnetometer's range: a magnet, as for a jump.
+ * The result is the accuracy. */
+int compass_overflow(struct compass *c);
 unsigned compass_bins(const struct compass *c);
 #endif

@@ -445,6 +445,17 @@ int main(int argc, char **argv)
 	r = go("taken off again", sweep, iron, 10);
 	CHECK(r.status == 3 && r.first[1] < 2000 && offset_near(iron, 1));
 
+	/* Out of the magnetometer's range for a while: unreliable at the
+	 * first such sample, and high again soon after, the offset kept. */
+	reset();
+	go("every way", sweep, iron, 15);
+	CHECK(compass_overflow(&c) == 0);
+	for (int i = 1; i < 500; i++)
+		CHECK(compass_overflow(&c) == 0);
+	now += 10;
+	r = go("after the overflow", sweep, iron, 10);
+	CHECK(r.status == 3 && r.first[1] < 2000 && offset_near(iron, 1));
+
 	/* A field that changes at once comes out over eight samples. */
 	reset();
 	float a[3] = { 0, 40, -30 }, b[3] = { -40, 0, -30 }, ra[3], rb[3];

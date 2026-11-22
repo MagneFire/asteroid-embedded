@@ -453,8 +453,10 @@ static void sample_compass(uint32_t now)
 		field_accuracy = compass_feed(&compass, raw, turned ? rate : NULL, (float)(now - field_t) / 1000, field);
 		field_t = now;
 		field_new = true;
-	} else if (got == AK09918_OVERFLOW)
+	} else if (got == AK09918_OVERFLOW) {
+		field_accuracy = compass_overflow(&compass);
 		field_new = false;
+	}
 	if (orient_on() && hub_accel(v)) {
 		float a[3] = { v[0], v[1], v[2] };
 		bool fresh = got == AK09918_OK;

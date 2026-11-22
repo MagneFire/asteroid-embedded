@@ -1534,6 +1534,13 @@ static void sensor_scenario(void)
 	mag_result = AK09918_OK;
 	ap_sensors(100);
 	CHECK(sns_heading(&heading) >= 0);
+	/* Nor at any accuracy while the field is out of range. */
+	mag_result = AK09918_OVERFLOW;
+	ap_sensors(40);
+	CHECK(sns_heading(&heading) == 0);
+	ap_sensors(10000);
+	CHECK(sns_heading(&heading) <= 0);
+	mag_result = AK09918_OK;
 	sns_compass(false);
 	CHECK(!accel_shared && mag_period == 0 && gyro_period == 0 && sns_heading(&heading) == -1);
 
