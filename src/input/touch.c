@@ -6,7 +6,9 @@
  * 2D sensor, F11 (finger state byte then 5 bytes per finger: x and y high
  * bytes, low nibbles, width, pressure) or F12 (8 bytes per object: type,
  * x, y, z, wx, wy). The attention line, gpio 17, is low while a report is
- * pending and raises a pin interrupt. */
+ * pending and raises a pin interrupt. An F12 sensor reports a palm as its
+ * own object type, or as an object wider than the board's threshold; the
+ * first two objects are looked at. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -15,6 +17,8 @@
 #define BUS		(board->touch_pins.i2c.bus)
 #define F11_CTRL58	0x64
 #define PALM_SIZE	40
+#define F12_PALM	0x03
+#define F12_OBJECTS	2
 #define ADDR		(board->touch_pins.i2c.addr)
 #define PDT_START	0xe9
 #define PAGE_SELECT	0xff
@@ -129,6 +133,27 @@ static void report_done(int err, void *ctx)
 		x = (f[0] << 4 | (f[2] & 0xf)) * (int)fb.width / (int)(max_x + 1);
 		y = (f[1] << 4 | f[2] >> 4) * (int)fb.height / (int)(max_y + 1);
 	} else {
+		bool palm = false, any = false;
+		unsigned wide = board->touch_pins.palm_width;
+		for (unsigned i = 0; i < F12_OBJECTS; i++) {
+			const uint8_t *o = report + 8 * i;
+			any |= o[0] != 0;
+			palm |= o[0] == F12_PALM || (o[0] && wide && (o[6] > wide || o[7] > wide));
+		}
+		if (palm || palm_down) {
+			if (palm && !palm_down) {
+				if (was_down) {
+					struct touch u = { TOUCH_UP, last_x, last_y, false, 0 };
+					push(&u);
+				}
+				struct touch p = { TOUCH_PALM, last_x, last_y, false, 0 };
+				push(&p);
+				was_down = false;
+			}
+			palm_down = palm || any;
+			rearm();
+			return;
+		}
 		down = report[0] != 0;
 		x = report[1] | report[2] << 8;
 		y = report[3] | report[4] << 8;
@@ -328,7 +353,7 @@ static bool rmi4_init(void)
 	log_printf("touch: product %s, status %02x irq %02x, attn %u\n", (char *)id, st[0], st[1], gpio_get(GPIO_ATTN));
 	status_reg = f01.data;
 	data_reg = f11.number ? f11.data : f12.data;
-	data_len = f11.number ? (uint8_t)(status_bytes + 5) : 8;
+	data_len = f11.number ? (uint8_t)(status_bytes + 5) : 8 * F12_OBJECTS;
 	gpio_irq_config(GPIO_ATTN, GPIO_IRQ_LEVEL_LOW, attention);
 	gpio_irq_enable(GPIO_ATTN, true);
 	present = true;

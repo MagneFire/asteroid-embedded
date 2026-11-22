@@ -328,6 +328,9 @@ struct board {
 		/* The controller holds this watch's settings for awake
 		 * after its reset, instead of the driver's. */
 		bool own_settings;
+		/* An F12 object wider than this is a palm, 0 for only its
+		 * own palm type. */
+		uint8_t palm_width;
 	} touch_pins;
 
 	const struct hub_driver *hub;

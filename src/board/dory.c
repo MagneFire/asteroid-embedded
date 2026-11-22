@@ -78,7 +78,7 @@ const struct board board_dory = {
 	/* Synaptics RMI4 on BLSP1 QUP5 as on sturgeon, fed by L28. */
 	.touch = &touch_rmi4,
 	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x20 }, .irq = 17, .reset = 16, .mpm = 8,
-			.ldo = 28, .ldo_uv = 3000000 },
+			.ldo = 28, .ldo_uv = 3000000, .palm_width = 13 },
 	/* LM3530 on BLSP1 QUP3, enable on gpio 108. */
 	.backlight = &backlight_lm3530,
 	.backlight_pins = { .i2c = { .bus = 3, .sda = 10, .scl = 11, .func = 3, .addr = 0x38 }, .enable = 108 },
