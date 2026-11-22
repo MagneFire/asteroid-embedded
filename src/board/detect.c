@@ -19,7 +19,7 @@
 #include "lib/fdt.h"
 #include "soc/max17050.h"
 
-static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt };
+static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt, &board_dory };
 
 const struct board *board;
 const char *board_detected_by;

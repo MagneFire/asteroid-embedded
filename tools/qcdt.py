@@ -8,7 +8,11 @@ device trees: a header, one entry per (msm-id, board-id) pair read from the
 tree's qcom,msm-id and qcom,board-id properties, then the trees themselves.
 A tree without a board-id has three cells per msm-id, <platform variant rev>,
 and one entry for each with subtype 0. Entries and trees keep the order the
-trees are given in, so adding a tree at the end moves nothing before it."""
+trees are given in, so adding a tree at the end moves nothing before it.
+--lge trees go after the others with entries in LG's version 2 layout, which
+dory's bootloader reads: the board revision last, where the others have the
+subtype third. Each bootloader's matcher passes over the other layout's
+entries, as their platform and subtype fields never agree."""
 import argparse, struct
 
 PAGE = 2048
@@ -54,14 +58,15 @@ def tree_entries(props, idx):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("-o", "--output", required=True)
+    p.add_argument("--lge", action="append", default=[])
     p.add_argument("dtb", nargs="+")
     a = p.parse_args()
     entries = []
     blobs = []
-    for path in a.dtb:
+    for path in a.dtb + a.lge:
         blob = open(path, "rb").read()
         props = fdt_props(blob, {"qcom,msm-id", "qcom,board-id"})
-        entries += tree_entries(props, len(blobs))
+        entries += [(e, path in a.lge) for e in tree_entries(props, len(blobs))]
         blobs.append(blob)
     header = struct.pack("<4sII", b"QCDT", 2, len(entries))
     table_size = len(header) + len(entries) * 24 + 4
@@ -71,8 +76,11 @@ def main():
         offsets.append(offset)
         offset += (len(blob) + PAGE - 1) & ~(PAGE - 1)
     out = header
-    for plat, variant, subtype, rev, idx in entries:
-        out += struct.pack("<IIIIII", plat, variant, subtype, rev, offsets[idx], len(blobs[idx]))
+    for (plat, variant, subtype, rev, idx), lge in entries:
+        if lge:
+            out += struct.pack("<IIIIII", plat, variant, rev, offsets[idx], len(blobs[idx]), subtype)
+        else:
+            out += struct.pack("<IIIIII", plat, variant, subtype, rev, offsets[idx], len(blobs[idx]))
     out += struct.pack("<I", 0)
     out += b"\0" * (-len(out) % PAGE)
     for blob in blobs:

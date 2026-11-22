@@ -400,7 +400,7 @@ struct board {
 			       (ibat_safe) / 50 <= 0x3f && (ibat_max) <= (ibat_safe),                             \
 		       "charger current off the 50 mA steps")
 
-extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow;
+extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory;
 /* The watch this is, set by board_detect before anything uses it. */
 extern const struct board *board;
 extern const char *board_detected_by;
