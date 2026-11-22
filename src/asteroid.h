@@ -300,6 +300,7 @@ bool log_ring_lost(void);
 /* Boot and charger history in the kv store (events.c). */
 void events_poll(uint32_t now);
 void events_append(char *buf, unsigned cap, const char *line);
+void events_note(const char *what);
 void log_set_sink(void (*fn)(const char *s, size_t n));
 void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
 uint32_t log_end(void);

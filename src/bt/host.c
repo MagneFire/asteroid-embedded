@@ -182,6 +182,7 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		}
 		conn = ev->connect.conn_handle;
 		mtu = BLE_ATT_MTU_DFLT;
+		events_note("bt connected");
 		state = BT_HOST_CONNECTED;
 		if (!ble_gap_conn_find(conn, &d)) {
 			struct ble_store_key_sec k = { .peer_addr = d.peer_id_addr };
@@ -200,6 +201,11 @@ static int gap_event(struct ble_gap_event *ev, void *arg)
 		passkey = -1;
 		comparing = false;
 		log_printf("bt: disconnected, reason %04x\n", ev->disconnect.reason);
+		{
+			char what[32];
+			snprintf(what, sizeof what, "bt disconnected %04x", ev->disconnect.reason);
+			events_note(what);
+		}
 		conn = BLE_HS_CONN_HANDLE_NONE;
 		params_at = 0;
 		advertise();
@@ -298,6 +304,8 @@ static void advertise(void)
 		log_printf("bt: advertising failed: %d\n", rc);
 		return;
 	}
+	if (state != BT_HOST_ADVERTISING)
+		events_note("bt advertising");
 	state = BT_HOST_ADVERTISING;
 	log_printf("bt: advertising as \"%s\"\n", name);
 }

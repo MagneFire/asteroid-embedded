@@ -39,6 +39,7 @@ bool batt_usb(void) { return fake_usb; }
 uint32_t rtc_read(void) { return fake_rtc; }
 const char *boot_reason(void) { return "pon 02 smpl"; }
 bool log_ring_lost(void) { return fake_lost; }
+bool store_quiet(void) { return true; }
 void log_puts(const char *s) { strncat(logged, s, sizeof logged - strlen(logged) - 1); }
 void log_printf(const char *fmt, ...) {}
 

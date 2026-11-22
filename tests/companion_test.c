@@ -229,6 +229,7 @@ void log_printf(const char *fmt, ...)
 const char *log_previous_record(void) { return NULL; }
 uint32_t reset_status(void) { return reset_bits; }
 uint32_t rtc_read(void) { return rtc_last; }
+void events_note(const char *what) {}
 bool rtc_valid(void) { return rtc_writes != 0; }
 static bool rtc_ap;
 bool rtc_from_ap(void) { return rtc_ap; }

@@ -227,6 +227,9 @@ static void work_mode(const struct wire_msg *m, unsigned to, uint32_t now)
 		return;
 	}
 	log_printf("companion: %s mode from the AP (field %u), was %s\n", mode_names[to], field, mode_names[mode]);
+	char what[48];
+	snprintf(what, sizeof what, "%s mode from the AP, was %s", mode_names[to], mode_names[mode]);
+	events_note(what);
 	set_time(&t);
 	if (to == PROTO_MODE_NORMAL) {
 		burst = true;
