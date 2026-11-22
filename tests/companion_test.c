@@ -289,9 +289,11 @@ bool lsm6dso_gyro_on(uint32_t period_ms)
 	gyro_period = period_ms;
 	return true;
 }
+#define GYRO_RADS	(LSM6DSO_MDPS_PER_COUNT * 0.001f * 3.14159265f / 180)
+static int16_t gyro_counts[3] = { 1000, -500, 0 };
 bool lsm6dso_gyro(int16_t v[3])
 {
-	v[0] = 1000, v[1] = -500, v[2] = 0;
+	memcpy(v, gyro_counts, sizeof gyro_counts);
 	return gyro_period != 0;
 }
 bool ak09918_on(uint32_t period_ms)
@@ -310,6 +312,32 @@ void ak09918_lost(void)
 	mag_period = 0;
 }
 static int16_t mag_counts[3] = { 100, 200, -300 };
+
+/* The chip's counts for a field on Android's axes, distorted as the
+ * compass's correction undoes, plus a hard-iron offset. */
+static void set_field(const float f[3], const float iron[3])
+{
+	float m[3][3], inv[3][3];
+	for (int i = 0; i < 3; i++) {
+		float e[3] = { i == 0, i == 1, i == 2 }, col[3];
+		compass_correct(e, col);
+		for (int j = 0; j < 3; j++)
+			m[j][i] = col[j];
+	}
+	float det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+		    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+			inv[i][j] = (m[(j + 1) % 3][(i + 1) % 3] * m[(j + 2) % 3][(i + 2) % 3] -
+				     m[(j + 1) % 3][(i + 2) % 3] * m[(j + 2) % 3][(i + 1) % 3]) /
+				    det;
+	float raw[3];
+	for (int i = 0; i < 3; i++)
+		raw[i] = inv[i][0] * f[0] + inv[i][1] * f[1] + inv[i][2] * f[2] + iron[i];
+	mag_counts[0] = (int16_t)lroundf(raw[1] / 0.15f);
+	mag_counts[1] = (int16_t)lroundf(-raw[0] / 0.15f);
+	mag_counts[2] = (int16_t)lroundf(raw[2] / 0.15f);
+}
 int ak09918_read(int16_t v[3])
 {
 	memcpy(v, mag_counts, sizeof mag_counts);
@@ -1146,27 +1174,31 @@ static void sensor_scenario(void)
 	CHECK(gyro_period == 0 && gyro_tries == 5);
 
 	/* The magnetometer in µT on Android's axes (x the chip's -y, y
-	 * its x), unreliable as it is not calibrated; an overflow is left
-	 * out. */
-	CHECK(ak09918_mode(0) == 0 && ak09918_mode(1000) == 0x02 && ak09918_mode(125) == 0x02 &&
-	      ak09918_mode(100) == 0x04 && ak09918_mode(63) == 0x04 && ak09918_mode(50) == 0x06 &&
-	      ak09918_mode(25) == 0x06 && ak09918_mode(20) == 0x08);
+	 * its x) through the vendor's correction, unreliable as it is not
+	 * calibrated. While it is on, the chip runs at 100 Hz and the
+	 * gyroscope at 52 Hz, whatever rate the AP asks for. An overflow is
+	 * left out. */
+	CHECK(ak09918_mode(0) == 0 && ak09918_mode(1000) == 0x02 && ak09918_mode(100) == 0x02 &&
+	      ak09918_mode(99) == 0x04 && ak09918_mode(50) == 0x04 && ak09918_mode(49) == 0x06 &&
+	      ak09918_mode(21) == 0x06 && ak09918_mode(20) == 0x08 && ak09918_mode(10) == 0x08);
 	mag_fails = 1;
 	ap_activate(PROTO_SNS_MAG, true, 0);
 	CHECK(mag_period == 0);
 	ap_sensors(1100);
-	CHECK(mag_period == 200);
-	ap_batch(PROTO_SNS_MAG, 1000000, 0);
-	CHECK(mag_period == 20);
+	CHECK(mag_period == 20 && gyro_period == 20);
 	ap_batch(PROTO_SNS_MAG, 100000000, 0);
-	CHECK(mag_period == 100);
+	CHECK(mag_period == 20);
 	memset(&got, 0, sizeof got);
 	ap_sensors(1000);
+	float chip[3] = { -200 * 0.15f, 100 * 0.15f, -300 * 0.15f }, corrected[3];
+	compass_correct(chip, corrected);
 	unsigned fields = 0;
 	for (unsigned i = 0; i < got.events; i++)
 		if (got.ev[i].id == PROTO_SNS_MAG) {
-			CHECK(bits_float(got.ev[i].w[0]) == -200 * 0.15f && bits_float(got.ev[i].w[1]) == 100 * 0.15f &&
-			      bits_float(got.ev[i].w[2]) == -300 * 0.15f && got.ev[i].w[3] == PROTO_SNS_UNRELIABLE);
+			CHECK(fabsf(bits_float(got.ev[i].w[0]) - corrected[0]) < 0.01f &&
+			      fabsf(bits_float(got.ev[i].w[1]) - corrected[1]) < 0.01f &&
+			      fabsf(bits_float(got.ev[i].w[2]) - corrected[2]) < 0.01f &&
+			      got.ev[i].w[3] == PROTO_SNS_UNRELIABLE);
 			fields++;
 		}
 	CHECK(fields >= 9 && fields <= 11);
@@ -1176,37 +1208,46 @@ static void sensor_scenario(void)
 	CHECK(got.events == 0);
 	mag_result = AK09918_OK;
 
-	/* Turned every way with a hard-iron offset, the field comes out
-	 * without it and the accuracy goes up to high. The calibration is
-	 * stored once the magnetometer is off and the link is quiet. */
+	/* Turned about each axis in turn with a hard-iron offset, the
+	 * gyroscope turning with it, the field comes out without the
+	 * offset and the accuracy goes up to high. The calibration is
+	 * kept for the boot only, not stored. */
 	static const float iron[3] = { 20, -35, 50 };
+	float m[3] = { 0, 30, -36 };
 	ap_batch(PROTO_SNS_MAG, 20000000, 0);
 	memset(&got, 0, sizeof got);
 	for (int k = 0; k < 600; k++) {
-		float a = (float)k * 0.37f, b = (float)k * 0.113f, f[3];
-		float x = __builtin_cosf(a) * __builtin_cosf(b), y = __builtin_sinf(a) * __builtin_cosf(b),
-		      z = __builtin_sinf(b);
-		f[0] = 45 * x + iron[0], f[1] = 45 * y + iron[1], f[2] = 45 * z + iron[2];
-		mag_counts[0] = (int16_t)(f[1] / 0.15f);
-		mag_counts[1] = (int16_t)(-f[0] / 0.15f);
-		mag_counts[2] = (int16_t)(f[2] / 0.15f);
-		got.events = 0;
-		ap_sensors(20);
-		if (k == 599) {
-			CHECK(got.events == 1 && got.ev[0].w[3] == PROTO_SNS_HIGH);
-			CHECK(fabsf(bits_float(got.ev[0].w[0]) - 45 * x) < 1 && fabsf(bits_float(got.ev[0].w[1]) - 45 * y) < 1 &&
-			      fabsf(bits_float(got.ev[0].w[2]) - 45 * z) < 1);
+		float w[3] = { 0, 0, 0 }, wm[3];
+		w[k / 50 % 3] = 2;
+		wm[0] = w[1] * m[2] - w[2] * m[1], wm[1] = w[2] * m[0] - w[0] * m[2], wm[2] = w[0] * m[1] - w[1] * m[0];
+		float n = 0;
+		for (int i = 0; i < 3; i++) {
+			m[i] -= wm[i] * 0.02f;
+			n += m[i] * m[i];
 		}
+		for (int i = 0; i < 3; i++) {
+			m[i] *= 46.86f / sqrtf(n);
+			gyro_counts[i] = (int16_t)lroundf(w[i] / GYRO_RADS);
+		}
+		set_field(m, iron);
+		ap_sensors(20);
 	}
-	CHECK(!kv_mag_len);
+	gyro_counts[0] = gyro_counts[1] = gyro_counts[2] = 0;
+	got.events = 0;
+	ap_sensors(200);
+	struct ap_event *calm = &got.ev[got.events - 1];
+	CHECK(got.events >= 9 && calm->w[3] == PROTO_SNS_HIGH);
+	CHECK(fabsf(bits_float(calm->w[0]) - m[0]) < 1 && fabsf(bits_float(calm->w[1]) - m[1]) < 1 &&
+	      fabsf(bits_float(calm->w[2]) - m[2]) < 1);
 	ap_activate(PROTO_SNS_MAG, false, 0);
-	CHECK(mag_period == 0);
+	CHECK(mag_period == 0 && gyro_period == 0);
 	run_ms(4000);
-	struct compass_cal cal;
-	CHECK(kv_mag_len == sizeof cal);
-	memcpy(&cal, kv_mag, sizeof cal);
-	CHECK(cal.status == PROTO_SNS_HIGH && fabsf(cal.offset[0] - iron[0]) < 1 && fabsf(cal.offset[1] - iron[1]) < 1 &&
-	      fabsf(cal.offset[2] - iron[2]) < 1);
+	CHECK(!kv_mag_len);
+	ap_activate(PROTO_SNS_MAG, true, 0);
+	memset(&got, 0, sizeof got);
+	ap_sensors(100);
+	CHECK(got.events >= 1 && got.ev[0].w[3] == PROTO_SNS_HIGH);
+	ap_activate(PROTO_SNS_MAG, false, 0);
 
 	/* The orientation runs the accelerometer and the magnetometer while
 	 * it is subscribed: face up with 12 o'clock to the north, then to
@@ -1216,12 +1257,10 @@ static void sensor_scenario(void)
 	memcpy(accel_mg, flat, sizeof flat);
 	ap_batch(PROTO_SNS_ORIENTATION, 100000000, 0);
 	ap_activate(PROTO_SNS_ORIENTATION, true, 0);
-	CHECK(accel_shared && mag_period == 100);
+	CHECK(accel_shared && mag_period == 20 && gyro_period == 20);
 	for (int k = 0; k < 2; k++) {
 		const float *f = k ? east : north;
-		mag_counts[0] = (int16_t)((f[1] + iron[1]) / 0.15f);
-		mag_counts[1] = (int16_t)(-(f[0] + iron[0]) / 0.15f);
-		mag_counts[2] = (int16_t)((f[2] + iron[2]) / 0.15f);
+		set_field(f, iron);
 		memset(&got, 0, sizeof got);
 		ap_sensors(1000);
 		CHECK(got.events >= 9 && got.events <= 11);
@@ -1231,13 +1270,8 @@ static void sensor_scenario(void)
 		CHECK(k ? fabsf(az - 90) < 2 : fabsf(az) < 2 || fabsf(az - 360) < 2);
 		CHECK(fabsf(bits_float(e->w[1])) < 0.5f && fabsf(bits_float(e->w[2])) < 0.5f);
 	}
-	ap_batch(PROTO_SNS_MAG, 20000000, 0);
-	ap_activate(PROTO_SNS_MAG, true, 0);
-	CHECK(mag_period == 20);
-	ap_activate(PROTO_SNS_MAG, false, 0);
-	CHECK(mag_period == 100);
 	ap_activate(PROTO_SNS_ORIENTATION, false, 0);
-	CHECK(!accel_shared && mag_period == 0);
+	CHECK(!accel_shared && mag_period == 0 && gyro_period == 0);
 	static const int16_t tilted[3] = { 0, -1000, 500 }, counts[3] = { 100, 200, -300 };
 	memcpy(accel_mg, tilted, sizeof tilted);
 	memcpy(mag_counts, counts, sizeof counts);

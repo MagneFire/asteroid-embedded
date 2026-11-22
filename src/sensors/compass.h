@@ -1,33 +1,56 @@
-/* A magnetometer's hard-iron calibration, learned from its own samples
- * as the watch moves, and the orientation from gravity and the
- * calibrated field: no hardware involved. Fields are in µT, Android's
- * axes; accuracies are Android's SENSOR_STATUS_* (0-3). */
+/* A magnetometer's calibration as the vendor's compass library does it,
+ * no hardware involved: a fixed correction for the watch, an average
+ * of the last COMPASS_AVG samples and a hard-iron offset learned from
+ * the samples as the watch turns. The offset is a sphere fitted
+ * through samples in COMPASS_BINS directions around it, trusted as far
+ * as the directions cover, the samples lie on it and the gyroscope's
+ * turns explain how they changed. A field that jumps by as much as a
+ * magnet's sets the accuracy to 0 and starts the samples over, the
+ * trusted offset kept. Fields are in µT, Android's axes; accuracies are
+ * Android's SENSOR_STATUS_* (0-3). */
 #ifndef COMPASS_H
 #define COMPASS_H
 #include <stdbool.h>
 #include <stdint.h>
 
 #define COMPASS_BINS	26
+#define COMPASS_AVG	8
 
 struct compass_cal {
 	float offset[3], radius;
-	int32_t status;
+	int32_t level;
+};
+
+/* Sums over the recent samples, older ones fading, from which how well
+ * an offset explains the field's changes by the turns is told. */
+struct compass_turns {
+	float uu, wu[3], ww[6], wm[3], mm, angle;
 };
 
 struct compass {
 	struct compass_cal cal;
-	/* The latest sample in each of the directions around the centre. */
+	int status;
+	float avg[COMPASS_AVG][3], gyro[COMPASS_AVG][3];
+	unsigned avg_n, avg_at;
+	float out[3], ref[3], last[3];
+	bool have_ref, have_last, gyro_seen;
 	float bin[COMPASS_BINS][3];
 	uint32_t filled;
 	float lo[3], hi[3];
-	unsigned updates, off_field;
-	bool seen, suspect, changed;
+	bool have_range;
+	unsigned quiet, updates, off_field;
+	struct compass_turns turns;
+	uint32_t jumps;
 };
 
-/* saved is a calibration from before, or NULL. */
-void compass_init(struct compass *c, const struct compass_cal *saved);
-/* A raw sample: out is it calibrated, the result its accuracy. */
-int compass_feed(struct compass *c, const float raw[3], float out[3]);
+void compass_init(struct compass *c);
+/* After a gap in the samples: the calibration is kept. */
+void compass_restart(struct compass *c);
+/* The fixed correction alone. */
+void compass_correct(const float raw[3], float out[3]);
+/* A raw sample, with the gyroscope's rate in rad/s (or NULL) and the
+ * time since the last one: out is the field, the result its accuracy. */
+int compass_feed(struct compass *c, const float raw[3], const float gyro[3], float dt, float out[3]);
 unsigned compass_bins(const struct compass *c);
 /* Azimuth (0-360), pitch (±180) and roll (±90) in degrees, from the
  * accelerometer (any unit) and the calibrated field; false if the

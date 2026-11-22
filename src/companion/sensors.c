@@ -15,7 +15,6 @@
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
 #include "sensors/tsl258x.h"
-#include "storage/storage.h"
 #include "companion/companion.h"
 #include "companion/link.h"
 #include "companion/proto.h"
@@ -27,6 +26,10 @@
 #define ACCEL_MIN_MS	39
 #define GYRO_MIN_MS	20
 #define MAG_MIN_MS	20
+/* The compass takes a sample of the magnetometer and the gyroscope
+ * this often while either compass sensor is on, as the vendor's
+ * library does, whatever the AP asked for. */
+#define COMPASS_MS	20
 #define ORIENT_MIN_MS	ACCEL_MIN_MS
 /* The light sensor's integration. */
 #define LIGHT_MIN_MS	100
@@ -55,7 +58,6 @@
 #define MG_TO_MS2	0.00980665f
 #define GYRO_TO_RADS	(LSM6DSO_MDPS_PER_COUNT * 0.001f * 3.14159265f / 180)
 #define KEPT_MAGIC	0x534e5332u	/* "SNS2" */
-#define KV_MAG_CAL	"mag.cal"
 
 #ifdef HOST_TEST
 #define KEPT
@@ -103,10 +105,12 @@ static unsigned flush_n;
 static struct {
 	uint32_t commands, bad, flushes, events, reports, dropped;
 } count;
+/* The calibration lasts for the boot, as the vendor's. */
 static struct compass compass;
-static bool compass_loaded, smoothed;
+static bool compass_ready, smoothed, field_new;
 static float field[3], gravity[3];
 static int field_accuracy = -1;
+static uint32_t compass_t, compass_due;
 
 static uint32_t kept_sum(void)
 {
@@ -167,11 +171,13 @@ static uint32_t period(int i)
 	return ms < min_ms[i] ? min_ms[i] : ms;
 }
 
-static uint32_t mag_period(void)
+static bool compass_on(void) { return kept.subs[MAG].on || kept.subs[ORIENT].on; }
+
+static uint32_t gyro_period(void)
 {
-	uint32_t ms = kept.subs[MAG].on ? period(MAG) : 0;
-	if (kept.subs[ORIENT].on && (!ms || period(ORIENT) < ms))
-		ms = period(ORIENT);
+	uint32_t ms = kept.subs[GYRO].on ? period(GYRO) : 0;
+	if (compass_on() && (!ms || COMPASS_MS < ms))
+		ms = COMPASS_MS;
 	return ms;
 }
 
@@ -181,8 +187,8 @@ static void share(void)
 	hub_accel_share(kept.subs[ACCEL].on || kept.subs[ORIENT].on);
 	hub_tilt_share(kept.subs[TILT].on);
 	afe4900_share(kept.subs[HEART].on);
-	settled = lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
-	settled &= ak09918_on(bus ? mag_period() : 0);
+	settled = lsm6dso_gyro_on(gyro_period());
+	settled &= ak09918_on(bus && compass_on() ? COMPASS_MS : 0);
 	tsl258x_share(bus && kept.subs[LIGHT].on);
 	retry_ms = time_ms();
 }
@@ -249,9 +255,13 @@ static void activate(int i, bool on)
 	} else if (i == TILT) {
 		seen_tilts = hub_tilts();
 		tilt_owed = false;
-	} else if (i == ORIENT) {
+	} else if (i == ORIENT)
 		smoothed = false;
+	if ((i == MAG || i == ORIENT) && on && kept.subs[MAG].on + kept.subs[ORIENT].on == 1) {
+		compass_due = now;
+		compass_t = now;
 		field_accuracy = -1;
+		compass_restart(&compass);
 	}
 	keep();
 }
@@ -364,39 +374,35 @@ static void push_floats(uint32_t handle, const float v[3], int accuracy)
 	push(handle, mcu_ns(), w, false);
 }
 
-static void compass_load(void)
+/* The magnetometer and the gyroscope into the calibration, every
+ * COMPASS_MS; a magnetometer sample out of range is left out. */
+static void sample_compass(uint32_t now)
 {
-	struct compass_cal saved;
-	if (compass_loaded)
+	if (!compass_on() || (int32_t)(now - compass_due) < 0)
 		return;
-	compass_loaded = true;
-	bool ok = kv_get(KV_MAG_CAL, &saved, sizeof saved) == (int)sizeof saved;
-	compass_init(&compass, ok ? &saved : NULL);
-}
-
-/* The calibration is written once the magnetometer is off, as the
- * flash write masks interrupts. */
-static void compass_save(void)
-{
-	if (compass.changed && !kept.subs[MAG].on && !kept.subs[ORIENT].on && companion_store_ok()) {
-		compass.changed = false;
-		kv_set(KV_MAG_CAL, &compass.cal, sizeof compass.cal);
-	}
-}
-
-/* The latest field and its accuracy, for the orientation as well; a
- * magnetometer sample out of range is left out. */
-static bool read_field(void)
-{
-	int16_t c[3];
-	if (ak09918_read(c) != AK09918_OK)
-		return false;
-	float raw[3];
+	compass_due += COMPASS_MS;
+	if ((int32_t)(now - compass_due) >= 0)
+		compass_due = now + COMPASS_MS;
+	int16_t c[3], g[3];
+	int got = ak09918_read(c);
+	if (got == AK09918_OVERFLOW)
+		field_new = false;
+	if (got != AK09918_OK)
+		return;
+	float raw[3], rate[3];
 	for (int i = 0; i < 3; i++)
 		raw[i] = (float)(mag_axes[i].sign * c[mag_axes[i].from]) * AK09918_UT_PER_COUNT;
-	compass_load();
-	field_accuracy = compass_feed(&compass, raw, field);
-	return true;
+	bool turned = lsm6dso_gyro(g);
+	for (int i = 0; i < 3; i++)
+		rate[i] = g[i] * GYRO_TO_RADS;
+	if (!compass_ready) {
+		compass_init(&compass);
+		compass_ready = true;
+	}
+	float dt = (float)(now - compass_t) / 1000;
+	compass_t = now;
+	field_accuracy = compass_feed(&compass, raw, turned ? rate : NULL, dt, field);
+	field_new = true;
 }
 
 /* The LSM6DSO's axes are taken as Android's. The gyroscope's zero-rate
@@ -408,19 +414,19 @@ static void sample_vectors(uint32_t now)
 		push_vector(PROTO_SNS_ACCEL, v, MG_TO_MS2, PROTO_SNS_HIGH);
 	if (sample_due(GYRO, now) && lsm6dso_gyro(v))
 		push_vector(PROTO_SNS_GYRO, v, GYRO_TO_RADS, PROTO_SNS_LOW);
-	if (sample_due(MAG, now) && read_field())
+	if (sample_due(MAG, now) && field_new) {
 		push_floats(PROTO_SNS_MAG, field, field_accuracy);
+		field_new = false;
+	}
 }
 
 /* Azimuth, pitch and roll with the field's accuracy. Gravity is
- * smoothed, as the accelerometer also has the arm's movement in it;
- * the field only gets a new sample when the magnetometer has one. */
+ * smoothed, as the accelerometer also has the arm's movement in it. */
 static void sample_orientation(uint32_t now)
 {
 	int16_t v[3];
 	if (!sample_due(ORIENT, now))
 		return;
-	read_field();
 	if (!hub_accel(v) || field_accuracy < 0)
 		return;
 	for (int i = 0; i < 3; i++)
@@ -498,12 +504,12 @@ void sns_pass(void)
 {
 	uint32_t now = time_ms();
 	settle(now);
+	sample_compass(now);
 	sample_vectors(now);
 	sample_orientation(now);
 	sample_light(now);
 	sample_steps(now);
 	sample_heart(now);
-	compass_save();
 	/* Raises close together go as one. */
 	uint32_t t = hub_tilts();
 	if (t != seen_tilts) {
@@ -616,6 +622,8 @@ uint32_t sns_next_ms(bool link_free)
 	for (int i = 0; i < SUBS; i++)
 		if (min_ms[i] && kept.subs[i].on && until(due[i], now) < ms)
 			ms = until(due[i], now);
+	if (compass_on() && until(compass_due, now) < ms)
+		ms = until(compass_due, now);
 	uint32_t s = kept.subs[COUNTER].on || kept.subs[DETECTOR].on ? until(steps_ms, now) : UINT32_MAX;
 	uint32_t r = report_in(now);
 	if (s < ms)
@@ -648,8 +656,10 @@ void sns_status(void (*say)(const char *fmt, ...))
 	    count.commands, count.bad, count.flushes, count.events, count.reports, per_report, count.dropped, queued,
 	    kept.synced ? "known" : "not known");
 	ak09918_status(say);
-	if (compass_loaded)
-		say("compass: accuracy %ld, %u of %u directions, offset %ld %ld %ld uT, radius %ld uT\n",
-		    (long)compass.cal.status, compass_bins(&compass), COMPASS_BINS, (long)compass.cal.offset[0],
-		    (long)compass.cal.offset[1], (long)compass.cal.offset[2], (long)compass.cal.radius);
+	if (compass_ready)
+		say("compass: accuracy %d, %u of %u directions, offset %ld %ld %ld uT at level %ld, radius %ld uT, "
+		    "%lu jumps\n",
+		    compass.status, compass_bins(&compass), COMPASS_BINS, (long)compass.cal.offset[0],
+		    (long)compass.cal.offset[1], (long)compass.cal.offset[2], (long)compass.cal.level,
+		    (long)compass.cal.radius, compass.jumps);
 }
