@@ -1,7 +1,7 @@
 /* What the Cortex-M build draws around its one Slint window, line by
  * line (ui_line_under and ui_line_over): under it one still frame of the
  * FlatMesh, moved and dimmed as the AP builds have it at rest on each
- * screen, or black on the always-on face; over it the stack's edge
+ * screen, in the open app's colours, or black on the always-on face; over it the stack's edge
  * indicators at rest, the left one out while notifications wait, and
  * a dot for each page of the strip.
  * flatmesh_mcu_draw draws panel with that backdrop, as ui_draw: all of
@@ -10,6 +10,8 @@
 #define FLATMESH_MCU_H
 #include <stdbool.h>
 #include <stdint.h>
+
+struct ui_colors;
 
 struct backdrop {
 	/* The stack's screen, under the overlay while that is up. */
@@ -28,6 +30,8 @@ struct backdrop {
 	/* Where the always-on face moved the waiting-notification
 	 * indicator to. */
 	int dx, dy;
+	/* The open app's mesh colours, NULL for the grey one. */
+	const struct ui_colors *colors;
 };
 
 void flatmesh_mcu_init(uint32_t width, uint32_t height);

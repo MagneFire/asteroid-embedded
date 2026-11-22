@@ -45,6 +45,13 @@ static uint32_t now_ms;
 static uint32_t box[4];
 /* What frame_mcu.c would draw around the UI. */
 static struct backdrop backdrop = { .pending = true };
+static struct ui_colors app_colors;
+
+/* The open app's mesh colours, as frame_mcu.c takes them. */
+static const struct ui_colors *colors_of(uint32_t panel)
+{
+	return panel == UI_PANEL_APP && ui_app_colors(ui_app_open(), &app_colors) ? &app_colors : NULL;
+}
 
 #ifdef EMU
 volatile uint32_t heap_size;
@@ -200,6 +207,7 @@ static void run(uint32_t panel, uint32_t ms)
 		ui_tick();
 		backdrop.modal = ui_modal();
 		backdrop.popup = ui_popup();
+		backdrop.colors = colors_of(panel);
 		flatmesh_mcu_draw(backdrop.modal ? UI_PANEL_OVERLAY : panel, &backdrop, false);
 	}
 }
@@ -281,7 +289,7 @@ static bool framed;
 static struct backdrop stack_backdrop(void)
 {
 	struct backdrop b = { .screen = stack_screen(), .modal = ui_modal(), .popup = ui_popup(), .edges = stack_edges(),
-			      .pending = true };
+			      .pending = true, .colors = colors_of(stack_panel()) };
 	b.page = stack_page(&b.pages, &b.next);
 	return b;
 }

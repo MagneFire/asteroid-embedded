@@ -9,7 +9,8 @@
 #include "power.h"
 #include "frame.h"
 
-static bool have_ui, woke, drawn;
+static bool have_ui, woke, drawn, have_colors;
+static struct ui_colors app_colors;
 static uint32_t hold_t, frames, draws, draw_us, fast_draws;
 
 void frame_init(bool ui, bool gpu, uint32_t start)
@@ -19,7 +20,12 @@ void frame_init(bool ui, bool gpu, uint32_t start)
 }
 void frame_busy(uint32_t now) {}
 void frame_touch_dot(int x, int y) {}
-void frame_app_colors(const struct ui_colors *c) {}
+void frame_app_colors(const struct ui_colors *c)
+{
+	have_colors = c != NULL;
+	if (c)
+		app_colors = *c;
+}
 void frame_sleep(void) {}
 void frame_wake(void) { woke = true; }
 
@@ -44,7 +50,8 @@ void frame_draw(uint32_t now)
 		uint32_t t0 = time_us();
 		bool modal = ui_modal();
 		struct backdrop b = { .screen = stack_screen(), .modal = modal, .popup = modal && ui_popup(),
-				      .edges = stack_edges(), .pending = stack_waiting() };
+				      .edges = stack_edges(), .pending = stack_waiting(),
+				      .colors = have_colors && stack_panel() == UI_PANEL_APP ? &app_colors : NULL };
 		b.page = stack_page(&b.pages, &b.next);
 		bool fast = burst_draw_begin();
 		drawn = flatmesh_mcu_draw(modal ? UI_PANEL_OVERLAY : stack_panel(), &b, display_lost());

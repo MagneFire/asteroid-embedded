@@ -47,7 +47,7 @@ static struct tri {
 	int32_t ac, ab, bc;
 } tris[FLATMESH_MCU_TRIANGLES];
 static uint16_t colors[FLATMESH_MCU_TRIANGLES], outer;
-static unsigned mixed;
+static struct view mixed;
 static uint8_t crossing[FLATMESH_MCU_CROSSING + 4];
 static unsigned n_crossing, next;
 static int last_y;
@@ -56,6 +56,7 @@ static struct view {
 	bool mesh;
 	int dx, dy;
 	unsigned shade;
+	uint32_t center, outer;
 } view;
 
 struct ind {
@@ -85,6 +86,8 @@ void flatmesh_mcu_init(uint32_t width, uint32_t height)
 	}
 }
 
+static uint32_t rgb(struct ui_rgb c) { return (uint32_t)c.r << 16 | (uint32_t)c.g << 8 | c.b; }
+
 /* RGB565 of 0xRRGGBB times shade/256; a grey keeps green at red's and
  * blue's depth, or neighbouring shades of it would differ in hue. */
 static uint16_t rgb565(uint32_t c, unsigned shade)
@@ -94,15 +97,15 @@ static uint16_t rgb565(uint32_t c, unsigned shade)
 	return (uint16_t)((r >> 3) << 11 | g6 << 5 | b >> 3);
 }
 
-static void mix(unsigned shade)
+static void mix(const struct view *v)
 {
 	for (int t = 0; t < FLATMESH_MCU_TRIANGLES; t++) {
 		unsigned s = flatmesh_mcu_triangles[t][3], c = 0;
 		for (int k = 0; k < 24; k += 8)
-			c |= ((CENTER >> k & 0xff) * s + (OUTER >> k & 0xff) * (255 - s) + 127) / 255 << k;
-		colors[t] = rgb565(c, shade);
+			c |= ((v->center >> k & 0xff) * s + (v->outer >> k & 0xff) * (255 - s) + 127) / 255 << k;
+		colors[t] = rgb565(c, v->shade);
 	}
-	outer = rgb565(OUTER, shade);
+	outer = rgb565(v->outer, v->shade);
 }
 
 static void fill(uint16_t *p, int n, uint16_t c)
@@ -278,16 +281,19 @@ bool flatmesh_mcu_draw(unsigned panel, const struct backdrop *b, bool whole)
 {
 	int mx = screen_w * MOVE_PCT / 100, my = screen_h * MOVE_PCT / 100;
 	unsigned s = b->screen;
+	const struct ui_colors *c = b->colors;
 	struct view v = { !b->ambient, s == UI_PANEL_LEFT ? mx : s == UI_PANEL_RIGHT ? -mx : 0,
 			  s == UI_PANEL_TOP ? my : s == UI_PANEL_BOTTOM ? -my : 0,
-			  s == UI_PANEL_LEFT || s == UI_PANEL_RIGHT || s == UI_PANEL_TOP ? DIMMED : 256 };
+			  s == UI_PANEL_LEFT || s == UI_PANEL_RIGHT || s == UI_PANEL_TOP ? DIMMED : 256,
+			  c ? rgb(c->center) : CENTER, c ? rgb(c->outer) : OUTER };
 	if (b->popup)
 		v.shade = v.shade * POPUP_SHADE / 255;
-	if (v.mesh && v.shade != mixed) {
-		mix(v.shade);
-		mixed = v.shade;
+	bool recolored = v.center != view.center || v.outer != view.outer;
+	if (v.mesh && (v.shade != mixed.shade || v.center != mixed.center || v.outer != mixed.outer || !mixed.mesh)) {
+		mix(&v);
+		mixed = v;
 	}
-	if (v.mesh != view.mesh || v.dx != view.dx || v.dy != view.dy || v.shade != view.shade) {
+	if (v.mesh != view.mesh || v.dx != view.dx || v.dy != view.dy || v.shade != view.shade || recolored) {
 		view = v;
 		n_crossing = next = 0;
 		whole = true;
