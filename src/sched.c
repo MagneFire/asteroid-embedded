@@ -41,6 +41,12 @@ void sched_after(struct sched_task *t, uint32_t now, uint32_t ms)
 	sched_at(t, now + (ms > MAX_AHEAD_MS ? MAX_AHEAD_MS : ms));
 }
 
+uint32_t sched_left_ms(const struct sched_task *t, uint32_t now)
+{
+	int32_t left = (int32_t)(t->at - now);
+	return t->armed && left > 0 ? (uint32_t)left : 0;
+}
+
 void sched_cancel(struct sched_task *t)
 {
 	t->armed = false;

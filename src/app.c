@@ -633,6 +633,15 @@ void app_power_changed(enum power_change change)
 	}
 }
 
+/* The battery driver is polled from the charger task, which only runs
+ * on a wake once its 500 ms are up. A driver deadline before that would
+ * wake the watch again and again with nothing polling it. */
+static uint32_t batt_wake_ms(uint32_t now)
+{
+	uint32_t next = batt_next_ms(), task = sched_left_ms(&charger_task, now);
+	return next < task ? task : next;
+}
+
 /* The time asleep until something here has work to do. The battery
  * driver's deadline is for safety: the charge limits on the dock, an
  * empty battery off it. */
@@ -646,7 +655,7 @@ uint32_t app_next_ms(const char **why)
 		have_touch ? touch_next_ms() : UINT32_MAX,
 		usb_next_ms(),
 		emmc_next_ms(),
-		batt_next_ms(),
+		batt_wake_ms(time_ms()),
 		power_next_ms(),
 		sched_next_ms(time_ms()),
 		have_heart_rate && !hub_has_passive() ? hrlog_next_ms(rtc_read(), setting_get(SETTING_HR_INTERVAL)) : UINT32_MAX,
