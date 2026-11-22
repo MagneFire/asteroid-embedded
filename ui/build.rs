@@ -189,15 +189,18 @@ fn main() {
 /// The parts of the UI a build can leave out: screens, apps and launcher layouts.
 const PARTS: &[&str] = &[
     "classic", "notes", "today", "launcher", "quick", "music", "settings", "alarm", "timer", "stopwatch", "weather",
-    "heart", "flashlight", "calculator", "diamonds", "agenda", "activity", "steps", "three-icons", "two-columns",
-    "turbo-list", "three-by-three", "speed-dial", "halo",
+    "heart", "flashlight", "calculator", "diamonds", "agenda", "activity", "steps", "compass", "three-icons",
+    "two-columns", "turbo-list", "three-by-three", "speed-dial", "halo",
 ];
+
+/// The parts the Cortex-A build leaves out: those for sensors none of its watches has.
+const AP_LEAVE_OUT: &[&str] = &["compass"];
 
 /// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
 /// empty for none): what does not fit its flash after the watchface, the notifications, the
-/// quick settings and the pages of Timer, Music, Flashlight, Heart Rate and Steps in place of the
-/// launcher, and the digital face's halo, which is not visible on black and takes four times as
-/// long to draw as the labels themselves.
+/// quick settings and the pages of Timer, Music, Flashlight, Heart Rate, Steps and Compass in place
+/// of the launcher, and the digital face's halo, which is not visible on black and takes four
+/// times as long to draw as the labels themselves.
 const MCU_LEAVE_OUT: &[&str] = &[
     "classic", "launcher", "settings", "alarm", "stopwatch", "weather", "calculator", "diamonds", "agenda", "activity",
     "three-icons", "two-columns", "turbo-list", "three-by-three", "speed-dial", "halo",
@@ -212,6 +215,7 @@ const PAGES: &[(&str, i32, bool)] = &[
     ("flashlight", 7, false),
     ("heart", 6, false),
     ("steps", 12, false),
+    ("compass", 13, false),
     ("alarm", 2, true),
     ("stopwatch", 4, true),
     ("calculator", 8, false),
@@ -225,11 +229,11 @@ const PAGES: &[(&str, i32, bool)] = &[
 /// build.slint: a `Build` global with whether the build has each of PARTS, which the UI checks
 /// where it shows the part; a part left out folds away with its code. `mcu` is the Cortex-M
 /// build. parts.rs: the same as Rust constants (BUILD_MUSIC), for the firmware to ask, and the
-/// PAGES the build has. Only the Cortex-M build leaves any out.
+/// PAGES the build has. Only the Cortex-M build takes UI_LEAVE_OUT.
 fn build_parts(out: &std::path::Path, mcu: bool) -> Vec<String> {
     println!("cargo:rerun-if-env-changed=UI_LEAVE_OUT");
     let leave_out: Vec<String> = match std::env::var("UI_LEAVE_OUT") {
-        _ if !mcu => Vec::new(),
+        _ if !mcu => AP_LEAVE_OUT.iter().map(|p| p.to_string()).collect(),
         Ok(list) => list.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect(),
         Err(_) => MCU_LEAVE_OUT.iter().map(|p| p.to_string()).collect(),
     };
@@ -263,6 +267,7 @@ const APPS: &[(&str, u32, &str, &str, &str, &str)] = &[
     ("agenda", 10, "Agenda", "ios-calendar-outline", "#CC7700", "#0C0300"),
     ("alarm", 2, "Alarm Clock", "ios-alarm-outline", "#CC9800", "#0C0500"),
     ("calculator", 8, "Calculator", "ios-calculator-outline", "#7CA600", "#0C0B00"),
+    ("compass", 13, "Compass", "ios-compass-outline", "#29A600", "#070C00"),
     ("diamonds", 9, "Diamonds", "2048", "#009933", "#000C00"),
     ("flashlight", 7, "Flashlight", "ios-bulb-outline", "#00A698", "#000C07"),
     ("heart", 6, "Heart Rate", "ios-heart-outline", "#0097A6", "#00060C"),
@@ -399,6 +404,7 @@ fn codes(out: &std::path::Path) {
         (&ui_h, "ui_event_kind", "u32"),
         (&ui_h, "ui_calc_key", "i32"),
         (&ui_h, "ui_game_move", "i32"),
+        (&ui_h, "ui_compass_state", "i32"),
     ] {
         for (ident, value) in c_enum(header, name) {
             writeln!(slint, "    out property <int> {}: {value};", ident.to_lowercase().replace('_', "-")).unwrap();

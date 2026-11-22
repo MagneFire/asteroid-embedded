@@ -36,10 +36,11 @@ const LAUNCHER: usize = 3;
 const OVERLAY: usize = 4;
 const QUICK: usize = 5;
 const APP: usize = 6;
-/// The Heart Rate app and the Steps page, as apps.slint numbers them.
+/// The Heart Rate app, the Steps page and the Compass app, as apps.slint numbers them.
 const HEART_APP: i32 = 6;
 #[cfg(feature = "mcu")]
 const STEPS_APP: i32 = 12;
+const COMPASS_APP: i32 = 13;
 
 struct Static<T>(UnsafeCell<T>);
 unsafe impl<T> Sync for Static<T> {}
@@ -510,6 +511,12 @@ pub extern "C" fn ui_set_tilt_light(on: bool) {
     each(|face| face.set_has_tilt_light(on));
 }
 
+#[cfg(feature = "mcu")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_magnetometer(on: bool) {
+    each(|face| face.set_has_compass(on));
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_chin(px: u32) {
     with_ui(|ui| {
@@ -530,6 +537,15 @@ pub extern "C" fn ui_set_connected(connected: bool, bonded: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_heart_rate(bpm: u32) {
     each(|face| face.set_heart_rate(bpm as i32));
+}
+
+#[cfg(feature = "mcu")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_set_heading(degrees: u32, state: u32) {
+    each(|face| {
+        face.set_heading(degrees.min(359) as i32);
+        face.set_compass_state(state as i32);
+    });
 }
 
 #[unsafe(no_mangle)]
@@ -786,9 +802,9 @@ pub extern "C" fn ui_has_panel(panel: u32) -> bool {
 /// Whether the build has app.
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_has_app(app: i32) -> bool {
-    const APPS: [bool; 13] = [
+    const APPS: [bool; 14] = [
         BUILD_MUSIC, BUILD_SETTINGS, BUILD_ALARM, BUILD_TIMER, BUILD_STOPWATCH, BUILD_WEATHER, BUILD_HEART, BUILD_FLASHLIGHT,
-        BUILD_CALCULATOR, BUILD_DIAMONDS, BUILD_AGENDA, BUILD_ACTIVITY, BUILD_STEPS && !BUILD_LAUNCHER,
+        BUILD_CALCULATOR, BUILD_DIAMONDS, BUILD_AGENDA, BUILD_ACTIVITY, BUILD_STEPS && !BUILD_LAUNCHER, BUILD_COMPASS,
     ];
     usize::try_from(app).ok().and_then(|a| APPS.get(a)).copied().unwrap_or(false)
 }
@@ -1004,11 +1020,18 @@ pub extern "C" fn ui_set_app(app: i32) {
 
 /// The app on page i of the strip, -1 past its end, and whether that app takes sideways drags
 /// of its own. Only a build without a launcher has the strip, and only a watch with the sensor
-/// has the Heart Rate page.
+/// has the Heart Rate or the Compass page.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ui_page(i: u32, sideways: *mut bool) -> i32 {
-    let heart = with_ui(|ui| ui.screen(APP).global::<Face>().get_has_heart_rate()).unwrap_or(false);
-    let page = PAGES.iter().filter(|p| !BUILD_LAUNCHER && (heart || p.0 != HEART_APP)).nth(i as usize);
+    let (heart, compass) = with_ui(|ui| {
+        let face = ui.screen(APP).global::<Face>();
+        (face.get_has_heart_rate(), cfg!(feature = "mcu") && face.get_has_compass())
+    })
+    .unwrap_or((false, false));
+    let page = PAGES
+        .iter()
+        .filter(|p| !BUILD_LAUNCHER && (heart || p.0 != HEART_APP) && (compass || p.0 != COMPASS_APP))
+        .nth(i as usize);
     if let (Some(p), false) = (page, sideways.is_null()) {
         unsafe { *sideways = p.1 };
     }

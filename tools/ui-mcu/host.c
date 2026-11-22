@@ -6,8 +6,8 @@
  * each screen it reaches; a blank screen, a screen or an app the build
  * left out, or a panic fails it. Where the build has the strip of app
  * pages instead of a launcher, it turns through the pages both ways. First it goes through the pages of
- * Settings, the Heart Rate app and the Steps page step by step, where the
- * build has them, and the nightstand's battery ring.
+ * Settings, the Heart Rate app, the Steps page and the Compass app step by
+ * step, where the build has them, and the nightstand's battery ring.
  *
  * On the host, with a host build of the library (run-host.sh), the frames
  * are written out as PNG files.
@@ -707,6 +707,21 @@ static void tour(void)
 			step("steps", n++);
 		}
 	}
+	/* The Compass app without a heading, calibrating and calibrated,
+	 * turning through north both ways. */
+	if (ui_has_app(UI_APP_COMPASS)) {
+		static const struct {
+			uint32_t degrees, state;
+		} headings[] = { { 0, UI_COMPASS_NO_DATA },  { 37, UI_COMPASS_CALIBRATE }, { 90, UI_COMPASS_CALIBRATE },
+				 { 225, UI_COMPASS_READY },  { 359, UI_COMPASS_READY },     { 0, UI_COMPASS_READY },
+				 { 1, UI_COMPASS_READY },    { 180, UI_COMPASS_NO_DATA },   { 180, UI_COMPASS_READY } };
+		ui_set_app(UI_APP_COMPASS);
+		for (unsigned i = 0; i < sizeof(headings) / sizeof(headings[0]); i++) {
+			ui_set_heading(headings[i].degrees, headings[i].state);
+			run(UI_PANEL_APP, 100);
+			step("compass", i);
+		}
+	}
 	ui_set_app(-1);
 	/* Without Settings, the quick settings' last page: tilt-to-wake turned
 	 * off, and reboot held for 3 s counting down 5 s to a reset with no
@@ -812,6 +827,7 @@ int main(int argc, char **argv)
 #endif
 	static const char board[] = "beluga";
 	ui_set_board(board, sizeof(board) - 1, true, false, false, true, true, false);
+	ui_set_magnetometer(true);
 	ui_set_clock(10, 8, 30, 3, 12, 11, 2026, 1000000);
 	ui_set_battery(76, false);
 	ui_set_connected(true, true);
@@ -875,7 +891,7 @@ int main(int argc, char **argv)
 	ui_set_launcher(0);
 	static const char *const app_names[] = { "music",	  "settings", "alarm",	  "timer",    "stopwatch",
 						 "weather",	  "heart",    "flashlight", "calculator", "diamonds",
-						 "agenda",	  "activity", "steps" };
+						 "agenda",	  "activity", "steps",	    "compass" };
 	for (int a = 0; a < (int)(sizeof(app_names) / sizeof(app_names[0])); a++) {
 		if (!ui_has_app(a))
 			continue;

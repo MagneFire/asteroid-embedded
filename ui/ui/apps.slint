@@ -13,6 +13,7 @@ import { DiamondsScreen } from "game.slint";
 import { AgendaApp } from "agenda.slint";
 import { ActivityScreen } from "activity.slint";
 import { StepsScreen } from "steps.slint";
+import { CompassScreen } from "compass.slint";
 import { Build } from "build.slint";
 import { Square } from "theme.slint";
 
@@ -34,5 +35,6 @@ export component AppScreen {
         if Build.agenda && Face.app == 10: AgendaApp { }
         if Build.activity && Face.app == 11: ActivityScreen { }
         if Build.steps && !Build.launcher && Face.app == 12: StepsScreen { }
+        if Build.compass && Face.app == 13: CompassScreen { }
     }
 }

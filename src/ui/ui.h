@@ -95,7 +95,12 @@ enum ui_app {
 	UI_APP_AGENDA,
 	UI_APP_ACTIVITY,
 	UI_APP_STEPS,
+	UI_APP_COMPASS,
 };
+/* The Compass app: asteroid-compass's "No data" page while the field's
+ * accuracy is unreliable or unknown, the dial with a line asking to
+ * calibrate while it is low or medium, the dial alone at high. */
+enum ui_compass_state { UI_COMPASS_NO_DATA, UI_COMPASS_CALIBRATE, UI_COMPASS_READY };
 enum ui_clock_action {
 	UI_TIMER_START = 20,
 	UI_TIMER_RESET,
@@ -237,6 +242,8 @@ void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t week
  * watch off. */
 void ui_set_timepiece(bool on);
 void ui_set_tilt_light(bool on);
+/* The watch has a magnetometer: the Compass app is there. */
+void ui_set_magnetometer(bool on);
 void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in,
 		  bool profile, bool passive);
 /* The lines at the bottom of the picture the panel does not show. */
@@ -247,6 +254,8 @@ void ui_glyph_bins(uint32_t bins, uint32_t min_px);
 #endif
 void ui_set_connected(bool connected, bool bonded);
 void ui_set_heart_rate(uint32_t bpm);
+/* The Compass app's heading in whole degrees and its enum ui_compass_state. */
+void ui_set_heading(uint32_t degrees, uint32_t state);
 /* Steps today, the goal, what today's steps come to, and the steps of the last n days, oldest
  * first and today last. */
 /* The running workout, or with running false the last one, all 0 for none: its start (RTC) and

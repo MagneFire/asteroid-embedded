@@ -27,6 +27,7 @@ const PART_FILES: &[(&str, &[&str])] = &[
     ("diamonds", &["game.slint", "game_shapes.slint"]),
     ("agenda", &["agenda.slint"]),
     ("activity", &["activity.slint", "activity_arc.slint"]),
+    ("compass", &["compass.slint"]),
 ];
 
 fn literals(text: &str) -> impl Iterator<Item = String> + '_ {

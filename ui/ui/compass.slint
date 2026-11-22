@@ -1,0 +1,74 @@
+// The compass, laid out as asteroid-compass: the heading in large digits in the middle under a
+// fixed orange arrow, and the eight directions on a ring round it, north in orange, turning
+// against the heading and staying upright. With no heading or an unreliable one it shows the
+// No data page asking for a figure 8 (the fonts have no "∞"); at low and medium accuracy the dial
+// shows with a line asking for it under the heading, which the original leaves out.
+import { Face } from "face.slint";
+import { Codes } from "codes.slint";
+import { StatusPage } from "controls.slint";
+import { Icons } from "icons.slint";
+import { Theme } from "theme.slint";
+
+export component CompassScreen {
+    width: 100%;
+    height: 100%;
+
+    if Face.compass-state == Codes.ui-compass-no-data: StatusPage {
+        icon: "ios-infinite-outline";
+        title: "No data";
+        text: "Calibrate the sensor by moving it in a figure 8.";
+    }
+
+    Rectangle {
+        visible: Face.compass-state != Codes.ui-compass-no-data;
+
+        // A quarter of the app's height, as the QML has it, which is taller than the square on a
+        // rectangular screen.
+        Text {
+            width: 100 * Theme.unit;
+            height: Theme.height * 0.36;
+            y: 50 * Theme.unit - self.height / 2;
+            text: Face.heading + "°";
+            color: white;
+            font-size: Theme.height / 4;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Image {
+            x: 45 * Theme.unit;
+            y: 14.83 * Theme.unit;
+            width: 10 * Theme.unit;
+            height: 5.17 * Theme.unit;
+            source: Icons.get("compass-needle", self.width, self.height);
+            colorize: #ffb147;
+        }
+
+        for name[i] in ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]: Text {
+            property <angle> a: (i * 45 - Face.heading) * 1deg;
+            x: 50 * Theme.unit + Math.sin(self.a) * 40 * Theme.unit - self.width / 2;
+            y: 50 * Theme.unit - Math.cos(self.a) * 40 * Theme.unit - self.height / 2;
+            width: 14 * Theme.unit;
+            height: 12 * Theme.unit;
+            text: name;
+            color: i == 0 ? #c2620c : white;
+            font-size: Math.mod(i, 2) == 1 ? 8 * Theme.unit : 10 * Theme.unit;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            visible: Face.compass-state == Codes.ui-compass-calibrate;
+            x: 26 * Theme.unit;
+            y: 65 * Theme.unit;
+            width: 48 * Theme.unit;
+            height: 7 * Theme.unit;
+            text: "Move in a figure 8";
+            color: #ffffffcc;
+            font-size: 5 * Theme.unit;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

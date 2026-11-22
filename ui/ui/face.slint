@@ -101,6 +101,9 @@ export global Face {
     in-out property <bool> bluetooth-bonded;
     // The heart rate in bpm while the Heart Rate app measures, 0 until there is one.
     in-out property <int> heart-rate;
+    // The Compass app's heading in whole degrees, and what it shows besides (Codes.ui-compass-*).
+    in property <int> heading;
+    in property <int> compass-state;
     // The Activity app: steps today, the daily goal, and the last seven days, today last.
     in-out property <int> activity-today;
     in-out property <int> activity-goal: 8000;
@@ -172,12 +175,13 @@ export global Face {
     in-out property <bool> notification-shown;
     in-out property <int> notification-id;
     in-out property <string> notification-icon;
-    // The watch's codename, whether it has a heart rate sensor, whether its screen is round,
-    // whether it has a light sensor, whether its panel can burn in, whether its hub works out the
-    // distance and calories from the wearer's age and sex as well, and whether it logs the heart
-    // rate by itself every five minutes, from the firmware.
+    // The watch's codename, whether it has a heart rate sensor and a magnetometer, whether its
+    // screen is round, whether it has a light sensor, whether its panel can burn in, whether its
+    // hub works out the distance and calories from the wearer's age and sex as well, and whether
+    // it logs the heart rate by itself every five minutes, from the firmware.
     in property <string> board;
     in property <bool> has-heart-rate: true;
+    in property <bool> has-compass;
     in property <bool> round-screen: true;
     in property <bool> has-light-sensor;
     in property <bool> has-burn-in: true;
