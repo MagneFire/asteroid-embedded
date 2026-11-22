@@ -24,7 +24,7 @@ struct compass_cal {
 /* Sums over the recent samples, older ones fading, from which how well
  * an offset explains the field's changes by the turns is told. */
 struct compass_turns {
-	float uu, wu[3], ww[6], wm[3], mm, angle;
+	float uu, wu[3], ww[6], wm[3], mm, angle, n;
 };
 
 struct compass {

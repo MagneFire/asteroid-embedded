@@ -39,16 +39,21 @@ static const float correction[3][3] = {
  * does not tell how far the watch turned in between. */
 #define GAP_S		0.1f
 #define TURN_SLACK_UT	1.0f
+/* The AK09918's noise on beluga, measured still and turning; a change
+ * of the average carries two samples' of it over COMPASS_AVG on each
+ * axis. */
+#define NOISE_UT	0.85f
+#define CHANGE_NOISE	(6 * NOISE_UT * NOISE_UT / (COMPASS_AVG * COMPASS_AVG))
 
 enum { UNRELIABLE, LOW, MEDIUM, HIGH };
 /* For each accuracy: the directions covered, with an offset found
  * before, with a new one and with a new one the turns cannot vouch for;
  * the root mean square distance from the sphere as a part of its
  * radius; how much of the field's change the turns explain (µT²), and
- * the part of it left unexplained. */
+ * the part of it left unexplained besides the chip's noise. */
 static const unsigned known_bins[4] = { 0, 1, 1, 2 }, new_bins[4] = { 0, 2, 2, 2 }, alone_bins[4] = { 0, 6, 10, 16 };
 static const float fit_part[4] = { 0, 0.12f, 0.07f, 0.04f };
-static const float turned[4] = { 0, 5, 15, 30 }, unexplained[4] = { 0, 0.35f, 0.25f, 0.15f };
+static const float turned[4] = { 0, 5, 15, 30 }, unexplained[4] = { 0, 0.35f, 0.25f, 0.2f };
 /* And the angle turned since the samples started over, in rad, for an
  * offset found before and a new one. */
 static const float known_angle[4] = { 0, 1.0f, 1.5f, 2.5f }, new_angle[4] = { 0, 2.5f, 3.5f, 5.0f };
@@ -252,6 +257,7 @@ static void turns_add(struct compass_turns *t, const float m[3], const float dm[
 	for (int i = 0; i < 6; i++)
 		t->ww[i] = t->ww[i] * TURNS_KEEP + a[i];
 	t->angle += fm_sqrt(w2);
+	t->n = t->n * TURNS_KEEP + 1;
 }
 
 /* The offset that explains the turns best; false (b untouched) while
@@ -289,7 +295,8 @@ static int turns_level(const struct compass *c, const float b[3], const float *a
 		    b[2] * (a[4] * b[0] + a[5] * b[1] + a[2] * b[2]);
 	float left = t->uu - 2 * dot(b, t->wu) + bab, change = t->mm - 2 * dot(b, t->wm) + bab;
 	for (int l = HIGH; l > UNRELIABLE; l--)
-		if (t->angle >= angle[l] && change >= turned[l] && left <= unexplained[l] * unexplained[l] * change)
+		if (t->angle >= angle[l] && change >= turned[l] &&
+		    left <= unexplained[l] * unexplained[l] * change + CHANGE_NOISE * t->n)
 			return l;
 	return UNRELIABLE;
 }

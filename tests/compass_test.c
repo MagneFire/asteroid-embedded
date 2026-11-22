@@ -1,12 +1,12 @@
 /* The magnetometer's calibration on a simulated watch at 50 Hz: the
  * Earth's field at 50° inclination turned with the watch, distorted as
- * the vendor's correction undoes, plus a hard-iron offset, noise and
- * the chip's steps, with the gyroscope's rates for the same turns. Then
- * the charger's magnets: on it, taken off cleanly or slowly, and put
- * back. Then samples taken as the main loop gets to them.
- * COMPASS_VERBOSE=1 prints the times to each accuracy, and
- * COMPASS_DUMP=file writes the samples out, with gravity, for replaying
- * them through the vendor's library. */
+ * the vendor's correction undoes, plus a hard-iron offset, the noise
+ * beluga's AK09918 has and the chip's steps, with the gyroscope's rates
+ * for the same turns. Then the charger's magnets: on it, taken off
+ * cleanly or slowly, and put back. Then samples taken as the main loop
+ * gets to them. COMPASS_VERBOSE=1 prints the times to each accuracy,
+ * and COMPASS_DUMP=file writes the samples out, with gravity, for
+ * replaying them through the vendor's library. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +26,8 @@ static double rnd(void)
 	return (double)(seed >> 8) / (1 << 24);
 }
 
-static double noise(void) { return rnd() + rnd() + rnd() - 1.5; }
+/* Of 0.85 µT, as the watch's. */
+static double noise(void) { return 1.7 * (rnd() + rnd() + rnd() - 1.5); }
 
 /* World x east, y north, z up; the field points north and down. */
 static const double earth[3] = { 0, 30, -36 };
@@ -166,7 +167,7 @@ static void sample_at(path_fn path, const double offset[3], double t_mag, double
 	for (int i = 0; i < 3; i++)
 		d[i] = distort[i][0] * f[0] + distort[i][1] * f[1] + distort[i][2] * f[2];
 	for (int i = 0; i < 3; i++)
-		raw[i] = (float)(round((d[i] + offset[i] + 0.3 * noise()) / 0.15) * 0.15);
+		raw[i] = (float)(round((d[i] + offset[i] + noise()) / 0.15) * 0.15);
 	/* The body's rate: rᵀ·dr/dt is its skew matrix. */
 	path(t_gyro - DT, a0);
 	path(t_gyro, a1);
