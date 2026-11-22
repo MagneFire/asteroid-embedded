@@ -235,6 +235,8 @@ struct board {
 		/* The chip's I/O supply when the firmware has to switch it, 0 if not. */
 		uint8_t ldo;
 		uint32_t ldo_uv;
+		/* A reset line, low holds the chip in reset, 0 for none. */
+		uint8_t reset;
 		/* Where the chip's ROM gets its UART rates wrong (it assumes another
 		 * crystal), the host rates its 115200 and 3000000 really are; 0 if
 		 * they are right. */

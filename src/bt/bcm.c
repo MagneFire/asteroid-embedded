@@ -54,6 +54,10 @@ static void power(bool on)
 		if (r)
 			log_printf("bt: l%u %s not acknowledged\n", board->bt.ldo, on ? "on" : "off");
 	}
+	if (board->bt.reset) {
+		gpio_set(board->bt.reset, 0);
+		gpio_config(board->bt.reset, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
 	if (!on)
 		return;
 	gpio_set(GPIO_BT_DEV_WAKE, DEV_WAKE_ACTIVE);
@@ -61,6 +65,11 @@ static void power(bool on)
 	gpio_config(GPIO_BT_HOST_WAKE, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
 	sleep_ms(30);
 	gpio_set(GPIO_BT_REG_ON, 1);
+	if (board->bt.reset) {
+		sleep_ms(10);
+		gpio_set(board->bt.reset, 1);
+		sleep_ms(10);
+	}
 }
 
 static void log_packet(uint8_t type, const uint8_t *p, unsigned n)
