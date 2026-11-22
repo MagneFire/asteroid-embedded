@@ -1234,7 +1234,9 @@ static void sensor_scenario(void)
 	CHECK(got.events == 1);
 	ap_activate(PROTO_SNS_HEART_RATE, false, 0);
 
-	/* Wrist tilt turns the hub's detection on while it is subscribed. */
+	/* Wrist tilt turns the hub's detection on while it is subscribed.
+	 * A raise goes out at once; one the AP does not take, or that
+	 * finds the queue full, goes again. */
 	CHECK(!tilt_shared);
 	ap_activate(PROTO_SNS_WRIST_TILT, true, 0);
 	CHECK(tilt_shared);
@@ -1242,8 +1244,31 @@ static void sensor_scenario(void)
 	tilts++;
 	ap_sensors(5);
 	CHECK(got.events == 1 && got.ev[0].id == PROTO_SNS_WRIST_TILT && bits_float(got.ev[0].w[0]) == 1.0f);
+	tilts++;
+	for (int i = 0; i < 5 && !levels[UP_INT]; i++)
+		wait_ms(1);
+	CHECK(levels[UP_INT]);
+	run_ms(2 * LINK_TX_MS + 150);
+	ap_sensors(300);
+	CHECK(got.events == 2 && got.ev[1].id == PROTO_SNS_WRIST_TILT);
+	ap_batch(PROTO_SNS_ACCEL, 20000000, 0);
+	ap_activate(PROTO_SNS_ACCEL, true, 0);
+	run_ms(PROTO_SNS_EVENTS * 39 + 50);
+	tilts++;
+	run_ms(2 * LINK_TX_MS + 150);
+	memset(&got, 0, sizeof got);
+	ap_sensors(500);
+	unsigned raised = 0;
+	for (unsigned i = 0; i < got.events; i++)
+		raised += got.ev[i].id == PROTO_SNS_WRIST_TILT;
+	CHECK(raised == 1);
+	ap_activate(PROTO_SNS_ACCEL, false, 0);
 	ap_activate(PROTO_SNS_WRIST_TILT, false, 0);
 	CHECK(!tilt_shared);
+	memset(&got, 0, sizeof got);
+	tilts++;
+	ap_sensors(100);
+	CHECK(got.events == 0);
 }
 
 int main(void)

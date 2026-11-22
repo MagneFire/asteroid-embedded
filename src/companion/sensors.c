@@ -91,7 +91,7 @@ static uint32_t due[SUBS];
 static uint32_t first_ms, steps_ms, last_steps = HUB_NONE, seen_tilts, heart_ms;
 static unsigned seen_readings;
 static int32_t last_lux = -1;
-static bool urgent, no_contact, lent, settled = true;
+static bool urgent, no_contact, lent, settled = true, tilt_owed;
 static uint32_t retry_ms, retry_wait = RETRY_MS;
 static uint32_t flushes[FLUSH_MAX];
 static unsigned flush_n;
@@ -229,8 +229,10 @@ static void activate(int i, bool on)
 		steps_ms = now;
 		if (on)
 			last_steps = HUB_NONE;
-	} else if (i == TILT)
+	} else if (i == TILT) {
 		seen_tilts = hub_tilts();
+		tilt_owed = false;
+	}
 	keep();
 }
 
@@ -424,10 +426,14 @@ void sns_pass(void)
 	sample_light(now);
 	sample_steps(now);
 	sample_heart(now);
+	/* Raises close together go as one. */
 	uint32_t t = hub_tilts();
-	if (kept.subs[TILT].on && t != seen_tilts)
-		push_value(PROTO_SNS_WRIST_TILT, 1.0f);
-	seen_tilts = t;
+	if (t != seen_tilts) {
+		seen_tilts = t;
+		tilt_owed = kept.subs[TILT].on;
+	}
+	if (tilt_owed && push_value(PROTO_SNS_WRIST_TILT, 1.0f))
+		tilt_owed = false;
 	while (flush_n && queued < PROTO_SNS_EVENTS) {
 		uint32_t w[4] = { flushes[0], 0, 0, 0 };
 		push(PROTO_SNS_META, mcu_ns(), w, true);
@@ -458,6 +464,20 @@ static uint32_t report_in(uint32_t now)
 
 bool sns_due(void) { return report_in(time_ms()) == 0; }
 
+/* The state an on-change event that did not go out leaves is sent
+ * again. */
+static void lost(const struct proto_sns_event *e)
+{
+	if (e->handle == PROTO_SNS_LIGHT)
+		last_lux = -1;
+	else if (e->handle == PROTO_SNS_STEP_COUNTER)
+		last_steps = HUB_NONE;
+	else if (e->handle == PROTO_SNS_HEART_RATE && e->word[1] == (uint32_t)PROTO_SNS_NO_CONTACT)
+		no_contact = false;
+	else if (e->handle == PROTO_SNS_WRIST_TILT)
+		tilt_owed = kept.subs[TILT].on;
+}
+
 static void drop_front(unsigned n)
 {
 	queued -= n;
@@ -474,6 +494,8 @@ unsigned sns_report(uint8_t *out, unsigned cap)
 	n = n ? wire_wrap_raw(out, cap, WIRE_CHAN_SENSORS, body, n) : 0;
 	if (!n) {
 		count.dropped += taken;
+		for (unsigned i = 0; i < taken; i++)
+			lost(&queue[i]);
 		drop_front(taken);
 		taken = 0;
 	}
@@ -487,20 +509,15 @@ void sns_sent(void)
 	taken = 0;
 }
 
-/* A flush's answer stays for the next report; samples are dropped, and
- * the state the on-change ones leave is sent again. */
+/* A flush's answer stays for the next report; samples are dropped. */
 void sns_unsent(void)
 {
 	unsigned metas = 0;
 	for (unsigned i = 0; i < taken; i++)
 		if (queue[i].handle == PROTO_SNS_META)
 			queue[metas++] = queue[i];
-		else if (queue[i].handle == PROTO_SNS_LIGHT)
-			last_lux = -1;
-		else if (queue[i].handle == PROTO_SNS_STEP_COUNTER)
-			last_steps = HUB_NONE;
-		else if (queue[i].handle == PROTO_SNS_HEART_RATE && queue[i].word[1] == (uint32_t)PROTO_SNS_NO_CONTACT)
-			no_contact = false;
+		else
+			lost(&queue[i]);
 	count.dropped += taken - metas;
 	memmove(queue + metas, queue + taken, (queued - taken) * sizeof queue[0]);
 	queued -= taken - metas;
@@ -532,6 +549,8 @@ uint32_t sns_next_ms(bool link_free)
 		if (h < ms)
 			ms = h;
 	}
+	if (tilt_owed && queued < PROTO_SNS_EVENTS)
+		ms = 1;
 	if ((r || link_free) && r < ms)
 		ms = r;
 	if (unsettled() && until(retry_ms + retry_wait, now) < ms)
