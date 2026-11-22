@@ -1,7 +1,7 @@
 /* The sensors the AP's sensor HAL asks for on channel 4: the
  * accelerometer in m/s², the gyroscope in rad/s, the magnetometer in
- * µT, the light in lux, the step counter and detector, the wrist tilt
- * and the heart rate. The AP's
+ * µT, the orientation in degrees, the light in lux, the step counter
+ * and detector, the wrist tilt and the heart rate. The AP's
  * subscriptions only add reports; the watch's own use of the hub goes
  * on as before. Other handles are taken and never reported. */
 #ifndef COMPANION_SENSORS_H

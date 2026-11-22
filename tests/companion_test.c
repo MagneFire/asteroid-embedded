@@ -251,9 +251,10 @@ void iom_stop(unsigned bus) {}
 void power_wake(const char *cause) { wakes++; }
 bool power_key(void) { return key_down; }
 void hub_accel_share(bool on) { accel_shared = on; }
+static int16_t accel_mg[3] = { 0, -1000, 500 };
 bool hub_accel(int16_t v[3])
 {
-	v[0] = 0, v[1] = -1000, v[2] = 500;
+	memcpy(v, accel_mg, sizeof accel_mg);
 	return accel_shared;
 }
 void afe4900_share(bool on)
@@ -1180,6 +1181,40 @@ static void sensor_scenario(void)
 	memcpy(&cal, kv_mag, sizeof cal);
 	CHECK(cal.status == PROTO_SNS_HIGH && fabsf(cal.offset[0] - iron[0]) < 1 && fabsf(cal.offset[1] - iron[1]) < 1 &&
 	      fabsf(cal.offset[2] - iron[2]) < 1);
+
+	/* The orientation runs the accelerometer and the magnetometer while
+	 * it is subscribed: face up with 12 o'clock to the north, then to
+	 * the east, with the field's accuracy. */
+	static const int16_t flat[3] = { 0, 0, 1000 };
+	static const float north[3] = { 0, 30, -36 }, east[3] = { -30, 0, -36 };
+	memcpy(accel_mg, flat, sizeof flat);
+	ap_batch(PROTO_SNS_ORIENTATION, 100000000, 0);
+	ap_activate(PROTO_SNS_ORIENTATION, true, 0);
+	CHECK(accel_shared && mag_period == 100);
+	for (int k = 0; k < 2; k++) {
+		const float *f = k ? east : north;
+		mag_counts[0] = (int16_t)((f[1] + iron[1]) / 0.15f);
+		mag_counts[1] = (int16_t)(-(f[0] + iron[0]) / 0.15f);
+		mag_counts[2] = (int16_t)((f[2] + iron[2]) / 0.15f);
+		memset(&got, 0, sizeof got);
+		ap_sensors(1000);
+		CHECK(got.events >= 9 && got.events <= 11);
+		struct ap_event *e = &got.ev[got.events - 1];
+		float az = bits_float(e->w[0]);
+		CHECK(e->id == PROTO_SNS_ORIENTATION && e->w[3] == PROTO_SNS_HIGH);
+		CHECK(k ? fabsf(az - 90) < 2 : fabsf(az) < 2 || fabsf(az - 360) < 2);
+		CHECK(fabsf(bits_float(e->w[1])) < 0.5f && fabsf(bits_float(e->w[2])) < 0.5f);
+	}
+	ap_batch(PROTO_SNS_MAG, 20000000, 0);
+	ap_activate(PROTO_SNS_MAG, true, 0);
+	CHECK(mag_period == 20);
+	ap_activate(PROTO_SNS_MAG, false, 0);
+	CHECK(mag_period == 100);
+	ap_activate(PROTO_SNS_ORIENTATION, false, 0);
+	CHECK(!accel_shared && mag_period == 0);
+	static const int16_t tilted[3] = { 0, -1000, 500 }, counts[3] = { 100, 200, -300 };
+	memcpy(accel_mg, tilted, sizeof tilted);
+	memcpy(mag_counts, counts, sizeof counts);
 
 	/* The light sensor is powered while the AP wants it, and sends
 	 * lux when it changes, read at most once an integration. */

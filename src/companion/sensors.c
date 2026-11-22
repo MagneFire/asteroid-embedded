@@ -27,6 +27,7 @@
 #define ACCEL_MIN_MS	39
 #define GYRO_MIN_MS	20
 #define MAG_MIN_MS	20
+#define ORIENT_MIN_MS	ACCEL_MIN_MS
 /* The light sensor's integration. */
 #define LIGHT_MIN_MS	100
 #define DEFAULT_MS	200
@@ -53,7 +54,7 @@
 #define BUS_WHILE_LENT	1
 #define MG_TO_MS2	0.00980665f
 #define GYRO_TO_RADS	(LSM6DSO_MDPS_PER_COUNT * 0.001f * 3.14159265f / 180)
-#define KEPT_MAGIC	0x534e5331u	/* "SNS1" */
+#define KEPT_MAGIC	0x534e5332u	/* "SNS2" */
 #define KV_MAG_CAL	"mag.cal"
 
 #ifdef HOST_TEST
@@ -67,12 +68,12 @@ struct sub {
 	uint32_t period_ms, latency_ms;
 };
 
-enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, MAG, LIGHT, SUBS };
+enum { ACCEL, COUNTER, DETECTOR, TILT, HEART, GYRO, MAG, LIGHT, ORIENT, SUBS };
 static const uint32_t handles[SUBS] = { PROTO_SNS_ACCEL, PROTO_SNS_STEP_COUNTER, PROTO_SNS_STEP_DETECTOR,
 					PROTO_SNS_WRIST_TILT, PROTO_SNS_HEART_RATE, PROTO_SNS_GYRO, PROTO_SNS_MAG,
-					PROTO_SNS_LIGHT };
+					PROTO_SNS_LIGHT, PROTO_SNS_ORIENTATION };
 static const uint32_t min_ms[SUBS] = { [ACCEL] = ACCEL_MIN_MS, [GYRO] = GYRO_MIN_MS, [MAG] = MAG_MIN_MS,
-				       [LIGHT] = LIGHT_MIN_MS };
+				       [LIGHT] = LIGHT_MIN_MS, [ORIENT] = ORIENT_MIN_MS };
 /* Android's axis for each of the AK09918's, from the remap the
  * vendor's firmware applies before its compass library: Android x is
  * the chip's -y and y its x. */
@@ -103,7 +104,9 @@ static struct {
 	uint32_t commands, bad, flushes, events, reports, dropped;
 } count;
 static struct compass compass;
-static bool compass_loaded;
+static bool compass_loaded, smoothed;
+static float field[3], gravity[3];
+static int field_accuracy = -1;
 
 static uint32_t kept_sum(void)
 {
@@ -164,14 +167,22 @@ static uint32_t period(int i)
 	return ms < min_ms[i] ? min_ms[i] : ms;
 }
 
+static uint32_t mag_period(void)
+{
+	uint32_t ms = kept.subs[MAG].on ? period(MAG) : 0;
+	if (kept.subs[ORIENT].on && (!ms || period(ORIENT) < ms))
+		ms = period(ORIENT);
+	return ms;
+}
+
 static void share(void)
 {
 	bool bus = BUS_WHILE_LENT || !lent;
-	hub_accel_share(kept.subs[ACCEL].on);
+	hub_accel_share(kept.subs[ACCEL].on || kept.subs[ORIENT].on);
 	hub_tilt_share(kept.subs[TILT].on);
 	afe4900_share(kept.subs[HEART].on);
 	settled = lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
-	settled &= ak09918_on(bus && kept.subs[MAG].on ? period(MAG) : 0);
+	settled &= ak09918_on(bus ? mag_period() : 0);
 	tsl258x_share(bus && kept.subs[LIGHT].on);
 	retry_ms = time_ms();
 }
@@ -238,6 +249,9 @@ static void activate(int i, bool on)
 	} else if (i == TILT) {
 		seen_tilts = hub_tilts();
 		tilt_owed = false;
+	} else if (i == ORIENT) {
+		smoothed = false;
+		field_accuracy = -1;
 	}
 	keep();
 }
@@ -364,14 +378,15 @@ static void compass_load(void)
  * flash write masks interrupts. */
 static void compass_save(void)
 {
-	if (compass.changed && !kept.subs[MAG].on && companion_store_ok()) {
+	if (compass.changed && !kept.subs[MAG].on && !kept.subs[ORIENT].on && companion_store_ok()) {
 		compass.changed = false;
 		kv_set(KV_MAG_CAL, &compass.cal, sizeof compass.cal);
 	}
 }
 
-/* A magnetometer sample out of range is left out. */
-static bool read_field(float field[3], int *accuracy)
+/* The latest field and its accuracy, for the orientation as well; a
+ * magnetometer sample out of range is left out. */
+static bool read_field(void)
 {
 	int16_t c[3];
 	if (ak09918_read(c) != AK09918_OK)
@@ -380,7 +395,7 @@ static bool read_field(float field[3], int *accuracy)
 	for (int i = 0; i < 3; i++)
 		raw[i] = (float)(mag_axes[i].sign * c[mag_axes[i].from]) * AK09918_UT_PER_COUNT;
 	compass_load();
-	*accuracy = compass_feed(&compass, raw, field);
+	field_accuracy = compass_feed(&compass, raw, field);
 	return true;
 }
 
@@ -389,14 +404,31 @@ static bool read_field(float field[3], int *accuracy)
 static void sample_vectors(uint32_t now)
 {
 	int16_t v[3];
-	float field[3];
-	int accuracy;
 	if (sample_due(ACCEL, now) && hub_accel(v))
 		push_vector(PROTO_SNS_ACCEL, v, MG_TO_MS2, PROTO_SNS_HIGH);
 	if (sample_due(GYRO, now) && lsm6dso_gyro(v))
 		push_vector(PROTO_SNS_GYRO, v, GYRO_TO_RADS, PROTO_SNS_LOW);
-	if (sample_due(MAG, now) && read_field(field, &accuracy))
-		push_floats(PROTO_SNS_MAG, field, accuracy);
+	if (sample_due(MAG, now) && read_field())
+		push_floats(PROTO_SNS_MAG, field, field_accuracy);
+}
+
+/* Azimuth, pitch and roll with the field's accuracy. Gravity is
+ * smoothed, as the accelerometer also has the arm's movement in it;
+ * the field only gets a new sample when the magnetometer has one. */
+static void sample_orientation(uint32_t now)
+{
+	int16_t v[3];
+	if (!sample_due(ORIENT, now))
+		return;
+	read_field();
+	if (!hub_accel(v) || field_accuracy < 0)
+		return;
+	for (int i = 0; i < 3; i++)
+		gravity[i] = smoothed ? (gravity[i] + v[i]) / 2 : v[i];
+	smoothed = true;
+	float out[3];
+	if (compass_orientation(gravity, field, out))
+		push_floats(PROTO_SNS_ORIENTATION, out, field_accuracy);
 }
 
 /* Lux as the scalar, sent when it changes, as the light sensor is an
@@ -467,6 +499,7 @@ void sns_pass(void)
 	uint32_t now = time_ms();
 	settle(now);
 	sample_vectors(now);
+	sample_orientation(now);
 	sample_light(now);
 	sample_steps(now);
 	sample_heart(now);
@@ -606,7 +639,7 @@ uint32_t sns_next_ms(bool link_free)
 void sns_status(void (*say)(const char *fmt, ...))
 {
 	static const char *const names[SUBS] = { "accelerometer", "step counter", "step detector", "wrist tilt",
-						 "heart rate", "gyroscope", "magnetometer", "light" };
+						 "heart rate", "gyroscope", "magnetometer", "light", "orientation" };
 	for (int i = 0; i < SUBS; i++)
 		if (kept.subs[i].on)
 			say("sensors: %s every %lu ms, latency %lu ms\n", names[i], period(i), kept.subs[i].latency_ms);
