@@ -1,12 +1,14 @@
 /* dory's motion sensors without a hub: an ST LIS3DSH accelerometer and an
- * InvenSense MPU9250 on the same I2C bus. The LIS3DSH runs the vendor's
- * wrist tilt program in its two state machines, at 25 Hz: SM1 latches
- * INT1 once the screen's top edge has been more than 0.49 g up for 300 ms,
- * SM2 hands back to SM1 once it has dropped again. A tilt with the screen
- * facing down is dropped. INT1 is level high until OUTS1 is read, and the
- * line is an MPM wake pin, so it wakes the watch from power collapse.
- * Screen on, the pins are off and the output registers give the
- * accelerometer for the nightstand turn. */
+ * InvenSense MPU9250 on the same I2C bus. The MPU9250 comes out of reset
+ * with its gyro and accelerometer running, so it is put to sleep and left
+ * there; its supply stays on, as its I/O supply is shared and must not be
+ * above it. The LIS3DSH runs the vendor's wrist tilt program in its two
+ * state machines, at 25 Hz: SM1 latches INT1 once the screen's top edge
+ * has been more than 0.49 g up for 300 ms, SM2 hands back to SM1 once it
+ * has dropped again. A tilt with the screen facing down is dropped. INT1
+ * is level high until OUTS1 is read, and the line is an MPM wake pin, so
+ * it wakes the watch from power collapse. Screen on, the pins are off and
+ * the output registers give the accelerometer for the nightstand turn. */
 #include "asteroid.h"
 
 #define BUS		(board->hub_pins.i2c.bus)
@@ -33,6 +35,13 @@
 #define INT_ON		0x58	/* the same with INT1 and INT2 on */
 #define ADD_INC		0x10
 
+#define MPU_ADDR	0x68
+#define MPU_LDO		19
+#define MPU_UV		3000000
+#define MPU_WHO_AM_I	0x75
+#define MPU_PWR_MGMT_1	0x6b
+#define MPU_SLEEP	0x40
+
 #define ACCEL_MS	100
 
 /* The vendor's setup, register and value, in its order, at 25 Hz in place
@@ -52,6 +61,7 @@ static const uint8_t program[][2] = {
 
 static bool ready, tilt_enabled, tilted, accel_wanted;
 static volatile bool pending;
+static uint8_t mpu_was = 0xff;
 static uint32_t tilts, dropped, irqs, errors, accel_t;
 static unsigned clear_fails;
 
@@ -92,6 +102,18 @@ static void pin_irq(unsigned pin)
 	pending = true;
 }
 
+static void mpu_sleep(void)
+{
+	uint8_t id = 0;
+	regulator_on(MPU_LDO, MPU_UV);
+	if (rd(MPU_ADDR, MPU_WHO_AM_I, &id, 1) || rd(MPU_ADDR, MPU_PWR_MGMT_1, &mpu_was, 1)) {
+		log_printf("motion: mpu9250 not found\n");
+		return;
+	}
+	int r = wr(MPU_ADDR, MPU_PWR_MGMT_1, MPU_SLEEP);
+	log_printf("motion: mpu9250 id %02x, pwr_mgmt_1 %02x, %s\n", id, mpu_was, r ? "not put to sleep" : "put to sleep");
+}
+
 /* Both machines latch their pin until their output is read; SM2's pin
  * is not wired to anything here, but is let go too. */
 static bool clear_latches(void)
@@ -112,6 +134,7 @@ static bool lis3dsh_init(void)
 		return false;
 	}
 	delay_ms(10);
+	mpu_sleep();
 	uint8_t id = 0;
 	if (rd(ADDR, WHO_AM_I, &id, 1) || id != WHO_AM_I_ID) {
 		log_printf("motion: lis3dsh not found (id %02x)\n", id);
@@ -233,8 +256,8 @@ static void lis3dsh_status(void (*say)(const char *fmt, ...))
 {
 	int16_t v[3] = { 0, 0, 0 };
 	bool got = ready && sample(v);
-	say("motion: lis3dsh %s, tilt %s, %lu tilts, %lu facing down, %lu irqs, %lu errors\n",
-	    ready ? "ready" : "absent", tilt_enabled ? "on" : "off", tilts, dropped, irqs, errors);
+	say("motion: lis3dsh %s, tilt %s, %lu tilts, %lu facing down, %lu irqs, %lu errors, mpu9250 pwr_mgmt_1 was %02x\n",
+	    ready ? "ready" : "absent", tilt_enabled ? "on" : "off", tilts, dropped, irqs, errors, mpu_was);
 	if (got)
 		say("motion: accel %d %d %d (16384 per g), int1 %u\n", v[0], v[1], v[2], gpio_get(GPIO_IRQ));
 }

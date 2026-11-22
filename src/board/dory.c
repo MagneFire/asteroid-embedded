@@ -80,7 +80,8 @@ const struct board board_dory = {
 	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x20 }, .irq = 17, .reset = 16, .mpm = 8,
 			.ldo = 28, .ldo_uv = 3000000, .palm_width = 13 },
 	/* No hub: an LIS3DSH on BLSP1 QUP2 for wrist tilt, interrupt 1 on gpio
-	 * 33 (MPM pin 13), fed by L15. */
+	 * 33 (MPM pin 13), fed by L15, and an MPU9250 beside it that is put to
+	 * sleep. */
 	.hub = &hub_lis3dsh,
 	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x1e }, .irq = 33, .mpm = 13,
 		      .ldo = 15, .ldo_uv = 2800000 },
