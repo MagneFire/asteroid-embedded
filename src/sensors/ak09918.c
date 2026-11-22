@@ -20,7 +20,7 @@
 #define ST2_HOFL	0x08
 #define LOST_PERIODS	4
 
-static bool checked, present;
+static bool checked, present, unsure;
 static uint8_t mode;
 static uint32_t period, last_t;
 static uint32_t reads, overflows, errors, restarts, misses;
@@ -33,9 +33,12 @@ static int wr(uint8_t reg, uint8_t v)
 	return r;
 }
 
-/* A mode is only taken from power-down, 100 µs after it. */
+/* A mode is only taken from power-down, 100 µs after it. A write that
+ * timed out may still have reached the chip, so its mode is not known
+ * until one is acknowledged. */
 static bool set_mode(uint8_t m)
 {
+	unsure = true;
 	if (wr(CNTL2, 0))
 		return false;
 	if (m) {
@@ -43,6 +46,7 @@ static bool set_mode(uint8_t m)
 		if (wr(CNTL2, m))
 			return false;
 	}
+	unsure = false;
 	last_t = time_ms();
 	return true;
 }
@@ -73,7 +77,7 @@ bool ak09918_on(uint32_t period_ms)
 	if (!present)
 		return true;
 	period = period_ms;
-	if (m != mode) {
+	if (m != mode || unsure) {
 		if (!set_mode(m))
 			return false;
 		mode = m;
@@ -83,7 +87,7 @@ bool ak09918_on(uint32_t period_ms)
 
 void ak09918_lost(void)
 {
-	checked = false;
+	checked = unsure = false;
 	mode = 0;
 }
 

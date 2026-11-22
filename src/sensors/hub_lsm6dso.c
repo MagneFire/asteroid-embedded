@@ -72,6 +72,7 @@ static bool emb_open = true;
 static uint16_t last_count;
 static uint32_t steps, errors, samples, raises, lowers, overruns;
 static uint8_t gyro_odr;
+static bool gyro_unsure;
 static uint32_t gyro_t;
 
 static int wr(uint8_t reg, uint8_t v)
@@ -283,13 +284,16 @@ static bool lsm_accel(int16_t v[3])
 	return true;
 }
 
+/* As for the embedded page, a failed write may still have landed. */
 bool lsm6dso_gyro_on(uint32_t period_ms)
 {
 	uint8_t odr = lsm6dso_gyro_odr(period_ms);
-	if (!ready || odr == gyro_odr)
+	if (!ready || (odr == gyro_odr && !gyro_unsure))
 		return true;
+	gyro_unsure = true;
 	if (main_page() || wr(CTRL7_G, G_LOW_POWER) || wr(CTRL2_G, (uint8_t)(odr << 4 | (odr ? G_2000DPS : 0))))
 		return false;
+	gyro_unsure = false;
 	gyro_odr = odr;
 	gyro_t = time_ms();
 	return true;
