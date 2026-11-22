@@ -112,7 +112,7 @@ static struct fusion fusion;
 static bool compass_ready, field_new;
 static float field[3];
 static int field_accuracy = -1;
-static uint32_t compass_t, compass_due;
+static uint32_t compass_t, compass_due, field_t;
 
 static uint32_t kept_sum(void)
 {
@@ -261,7 +261,7 @@ static void activate(int i, bool on)
 		fusion_init(&fusion);
 	if ((i == MAG || i == ORIENT) && on && kept.subs[MAG].on + kept.subs[ORIENT].on == 1) {
 		compass_due = now;
-		compass_t = now;
+		compass_t = field_t = now;
 		field_accuracy = -1;
 		compass_restart(&compass);
 	}
@@ -400,7 +400,10 @@ static void sample_compass(uint32_t now)
 		compass_ready = true;
 	}
 	if (got == AK09918_OK) {
-		field_accuracy = compass_feed(&compass, raw, turned ? rate : NULL, dt, field);
+		/* The field turned for as long as since the last sample, not
+		 * since the last pass that found none. */
+		field_accuracy = compass_feed(&compass, raw, turned ? rate : NULL, (float)(now - field_t) / 1000, field);
+		field_t = now;
 		field_new = true;
 	} else if (got == AK09918_OVERFLOW)
 		field_new = false;
@@ -655,8 +658,9 @@ void sns_status(void (*say)(const char *fmt, ...))
 	ak09918_status(say);
 	if (compass_ready)
 		say("compass: accuracy %d, %u of %u directions, offset %ld %ld %ld uT at level %ld, radius %ld uT, "
-		    "%lu jumps\n",
+		    "%lu jumps, %lu samples, turns %ld mrad since %lu resets\n",
 		    compass.status, compass_bins(&compass), COMPASS_BINS, (long)compass.cal.offset[0],
 		    (long)compass.cal.offset[1], (long)compass.cal.offset[2], (long)compass.cal.level,
-		    (long)compass.cal.radius, compass.jumps);
+		    (long)compass.cal.radius, compass.jumps, compass.fed, (long)(compass.turns.angle * 1000),
+		    compass.turn_resets);
 }

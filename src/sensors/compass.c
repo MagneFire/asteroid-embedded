@@ -35,6 +35,9 @@ static const float correction[3][3] = {
 #define OFF_FIELD_MAX	16
 /* Of the turns' sums at each sample, 2 s at 50 Hz. */
 #define TURNS_KEEP	0.99f
+/* A sample this long after the last starts the average over: one rate
+ * does not tell how far the watch turned in between. */
+#define GAP_S		0.1f
 #define TURN_SLACK_UT	1.0f
 
 enum { UNRELIABLE, LOW, MEDIUM, HIGH };
@@ -225,32 +228,30 @@ static bool fit(struct compass *c, struct compass_cal *out)
 	return sphere(c, out);
 }
 
-/* With W the turn of a sample as a matrix (w × v·dt) and u the field's
- * change plus W·m, an offset b leaves u - W·b unexplained of the change
- * W·(m - b) the turn makes: both are kept as sums of squares in b. */
-static void turns_add(struct compass_turns *t, const float m[3], const float dm[3], const float w[3], float dt)
+/* With W the turn since the last sample as a matrix (w × v) and u the
+ * field's change plus W·m, an offset b leaves u - W·b unexplained of the
+ * change W·(m - b) the turn makes: both are kept as sums of squares in
+ * b. */
+static void turns_add(struct compass_turns *t, const float m[3], const float dm[3], const float w[3])
 {
 	float wm[3], u[3], uw[3];
 	cross(w, m, wm);
-	for (int i = 0; i < 3; i++) {
-		wm[i] *= dt;
+	for (int i = 0; i < 3; i++)
 		u[i] = dm[i] + wm[i];
-	}
 	cross(u, w, uw);
-	float w2 = dot(w, w), dt2 = dt * dt;
-	float a[6] = { (w2 - w[0] * w[0]) * dt2, (w2 - w[1] * w[1]) * dt2, (w2 - w[2] * w[2]) * dt2,
-		       -w[0] * w[1] * dt2,	 -w[0] * w[2] * dt2,	   -w[1] * w[2] * dt2 };
+	float w2 = dot(w, w);
+	float a[6] = { w2 - w[0] * w[0], w2 - w[1] * w[1], w2 - w[2] * w[2], -w[0] * w[1], -w[0] * w[2], -w[1] * w[2] };
 	float am[3] = { a[0] * m[0] + a[3] * m[1] + a[4] * m[2], a[3] * m[0] + a[1] * m[1] + a[5] * m[2],
 			a[4] * m[0] + a[5] * m[1] + a[2] * m[2] };
 	t->uu = t->uu * TURNS_KEEP + dot(u, u);
 	t->mm = t->mm * TURNS_KEEP + dot(wm, wm);
 	for (int i = 0; i < 3; i++) {
-		t->wu[i] = t->wu[i] * TURNS_KEEP + uw[i] * dt;
+		t->wu[i] = t->wu[i] * TURNS_KEEP + uw[i];
 		t->wm[i] = t->wm[i] * TURNS_KEEP + am[i];
 	}
 	for (int i = 0; i < 6; i++)
 		t->ww[i] = t->ww[i] * TURNS_KEEP + a[i];
-	t->angle += fm_sqrt(w2) * dt;
+	t->angle += fm_sqrt(w2);
 }
 
 /* The offset that explains the turns best; false (b untouched) while
@@ -431,20 +432,26 @@ int compass_feed(struct compass *c, const float raw[3], const float gyro[3], flo
 		memcpy(out, c->out, sizeof c->out);
 		return UNRELIABLE;
 	}
+	if (dt > GAP_S)
+		compass_restart(c);
 	unsigned prev = (c->avg_at + COMPASS_AVG - 1) % COMPASS_AVG;
 	memcpy(c->avg[c->avg_at], m, sizeof m);
 	if (gyro)
 		memcpy(c->gyro[c->avg_at], gyro, sizeof c->gyro[0]);
 	else
 		memcpy(c->gyro[c->avg_at], c->gyro[prev], sizeof c->gyro[0]);
+	c->dt[c->avg_at] = dt;
 	c->avg_at = (c->avg_at + 1) % COMPASS_AVG;
+	c->fed++;
 	if (c->avg_n < COMPASS_AVG)
 		c->avg_n++;
-	float a[3] = { 0, 0, 0 }, w[3] = { 0, 0, 0 };
+	/* The average moved by the turns of all its samples, each over its
+	 * own time. */
+	float a[3] = { 0, 0, 0 }, turn[3] = { 0, 0, 0 };
 	for (unsigned k = 0; k < c->avg_n; k++)
 		for (int i = 0; i < 3; i++) {
 			a[i] += c->avg[k][i] / (float)c->avg_n;
-			w[i] += c->gyro[k][i] / (float)c->avg_n;
+			turn[i] += c->gyro[k][i] * c->dt[k] / (float)c->avg_n;
 		}
 	for (int i = 0; i < 3; i++)
 		out[i] = c->out[i] = a[i] - c->cal.offset[i];
@@ -452,20 +459,23 @@ int compass_feed(struct compass *c, const float raw[3], const float gyro[3], flo
 		c->quiet--;
 		return c->status;
 	}
+	bool full = c->avg_n == COMPASS_AVG;
 	if (gyro) {
 		c->gyro_seen = true;
-		if (c->have_last) {
+		if (c->have_last && full) {
 			/* More change than any turn makes is the field's own. */
 			float dm[3] = { a[0] - c->last[0], a[1] - c->last[1], a[2] - c->last[2] };
-			if (len3(dm) > len3(w) * dt * RADIUS_MAX + TURN_SLACK_UT)
+			if (len3(dm) > len3(turn) * RADIUS_MAX + TURN_SLACK_UT) {
 				c->turns = (struct compass_turns){ 0 };
-			else
-				turns_add(&c->turns, a, dm, w, dt);
+				c->turn_resets++;
+			} else
+				turns_add(&c->turns, a, dm, turn);
 		}
 	}
 	learn(c, a);
 	memcpy(c->last, a, sizeof a);
-	c->have_last = gyro != NULL;
+	/* A filling average moves by less than its samples turned. */
+	c->have_last = gyro != NULL && full;
 	if (!c->cal.level || c->status == UNRELIABLE) {
 		c->off_field = 0;
 		return c->status;

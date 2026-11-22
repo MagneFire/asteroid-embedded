@@ -30,8 +30,9 @@ struct compass_turns {
 struct compass {
 	struct compass_cal cal;
 	int status;
-	float avg[COMPASS_AVG][3], gyro[COMPASS_AVG][3];
+	float avg[COMPASS_AVG][3], gyro[COMPASS_AVG][3], dt[COMPASS_AVG];
 	unsigned avg_n, avg_at;
+	uint32_t fed;
 	float out[3], ref[3], last[3];
 	bool have_ref, have_last, gyro_seen;
 	float bin[COMPASS_BINS][3];
@@ -40,7 +41,7 @@ struct compass {
 	bool have_range;
 	unsigned quiet, updates, off_field;
 	struct compass_turns turns;
-	uint32_t jumps;
+	uint32_t jumps, turn_resets;
 };
 
 void compass_init(struct compass *c);

@@ -3,7 +3,8 @@
  * the vendor's correction undoes, plus a hard-iron offset, noise and
  * the chip's steps, with the gyroscope's rates for the same turns. Then
  * the charger's magnets: on it, taken off cleanly or slowly, and put
- * back. COMPASS_VERBOSE=1 prints the times to each accuracy, and
+ * back. Then samples taken as the main loop gets to them.
+ * COMPASS_VERBOSE=1 prints the times to each accuracy, and
  * COMPASS_DUMP=file writes the samples out, with gravity, for replaying
  * them through the vendor's library. */
 #include <math.h>
@@ -125,7 +126,7 @@ static void still(double t, double a[3]) { a[0] = 0.3, a[1] = 0.1, a[2] = 0; }
  * one to another over `ramp` s, as a magnet's falls with the cube of
  * the distance, then held. */
 static double extra_from[3], extra_to[3], extra_t0, extra_ramp;
-static bool extra_on, extra_near, gyro_off;
+static bool extra_on, extra_near, gyro_off, gyro_turned, gyro_double;
 
 static void extra_field(double t, double out[3])
 {
@@ -145,23 +146,20 @@ struct run {
 static struct compass c;
 static double now;
 
-/* The field seen by the watch: the Earth's turned with it and the
- * offset in the chip's axes, or a magnet's in place of it. */
-static void sample(path_fn path, const double offset[3], float raw[3], float gyro[3])
+/* The field seen by the watch at t_mag, the Earth's turned with it and
+ * the offset in the chip's axes or a magnet's in place of it, and the
+ * gyroscope's rate at t_gyro. */
+static void sample_at(path_fn path, const double offset[3], double t_mag, double t_gyro, float raw[3], float gyro[3])
 {
 	double a0[3], a1[3], a2[3], r0[3][3], r1[3][3], r2[3][3];
-	path(now - DT, a0);
-	path(now, a1);
-	path(now + DT, a2);
-	rotation(a0[0], a0[1], a0[2], r0);
+	path(t_mag, a1);
 	rotation(a1[0], a1[1], a1[2], r1);
-	rotation(a2[0], a2[1], a2[2], r2);
 	double f[3], d[3], w[3][3];
 	for (int i = 0; i < 3; i++)
 		f[i] = r1[0][i] * earth[0] + r1[1][i] * earth[1] + r1[2][i] * earth[2];
 	if (extra_on) {
 		double m[3];
-		extra_field(now, m);
+		extra_field(t_mag, m);
 		for (int i = 0; i < 3; i++)
 			f[i] += m[i];
 	}
@@ -170,6 +168,12 @@ static void sample(path_fn path, const double offset[3], float raw[3], float gyr
 	for (int i = 0; i < 3; i++)
 		raw[i] = (float)(round((d[i] + offset[i] + 0.3 * noise()) / 0.15) * 0.15);
 	/* The body's rate: rᵀ·dr/dt is its skew matrix. */
+	path(t_gyro - DT, a0);
+	path(t_gyro, a1);
+	path(t_gyro + DT, a2);
+	rotation(a0[0], a0[1], a0[2], r0);
+	rotation(a1[0], a1[1], a1[2], r1);
+	rotation(a2[0], a2[1], a2[2], r2);
 	for (int i = 0; i < 3; i++)
 		for (int j = 0; j < 3; j++) {
 			w[i][j] = 0;
@@ -181,8 +185,33 @@ static void sample(path_fn path, const double offset[3], float raw[3], float gyr
 	gyro[2] = (float)((w[1][0] - w[0][1]) / 2);
 	if (gyro_off)
 		gyro[0] = gyro[1] = gyro[2] = 0;
+	for (int i = 0; i < 3 && gyro_double; i++)
+		gyro[i] *= 2;
+	if (gyro_turned) {
+		float x = gyro[0];
+		gyro[0] = gyro[1], gyro[1] = gyro[2], gyro[2] = x;
+	}
 	double g[3] = { r1[2][0] * 9.8, r1[2][1] * 9.8, r1[2][2] * 9.8 };
-	record(0, now, g, gyro, raw, NULL);
+	record(0, t_mag, g, gyro, raw, NULL);
+}
+
+static void sample(path_fn path, const double offset[3], float raw[3], float gyro[3])
+{
+	sample_at(path, offset, now, now, raw, gyro);
+}
+
+static void reached(struct run *r, double t0)
+{
+	for (int l = 0; l <= r->status; l++)
+		if (r->first[l] < 0)
+			r->first[l] = (int)lround((now - t0) * 1000);
+}
+
+static void report(const char *name, const struct run *r)
+{
+	if (verbose)
+		printf("%-28s accuracy %d, first at 1: %d ms, 2: %d ms, 3: %d ms, %u directions\n", name, r->status,
+		       r->first[1], r->first[2], r->first[3], compass_bins(&c));
 }
 
 static struct run go(const char *name, path_fn path, const double offset[3], double seconds)
@@ -194,13 +223,43 @@ static struct run go(const char *name, path_fn path, const double offset[3], dou
 		float raw[3], gyro[3];
 		sample(path, offset, raw, gyro);
 		r.status = compass_feed(&c, raw, gyro, (float)DT, r.out);
-		for (int l = 0; l <= r.status; l++)
-			if (r.first[l] < 0)
-				r.first[l] = (int)lround((now - t0) * 1000);
+		reached(&r, t0);
 	}
+	report(name, &r);
+	return r;
+}
+
+/* As the main loop takes them: a pass 0-8 ms late, one in ten 10-40 ms,
+ * the next due 20 ms after the last unless already past; the newest of
+ * the magnetometer's 100 Hz samples, none if no new one, and of the
+ * gyroscope's at 52 Hz; the time since the last sample. */
+static struct run go_late(const char *name, path_fn path, const double offset[3], double seconds)
+{
+	struct run r = { .first = { -1, -1, -1, -1 } };
+	double end = now + seconds, t0 = now, due = now, fed = now, last_mag = -1;
+	record(2, now, NULL, NULL, NULL, name);
+	unsigned passes = 0, feeds = 0;
+	while (due < end) {
+		now = due + (rnd() < 0.1 ? 0.01 + 0.03 * rnd() : 0.008 * rnd());
+		now = round(now * 1000) / 1000;
+		due += DT;
+		if (due <= now)
+			due = now + DT;
+		passes++;
+		double t_mag = floor(now / 0.01) * 0.01, t_gyro = floor(now * 52) / 52;
+		if (t_mag == last_mag)
+			continue;
+		last_mag = t_mag;
+		float raw[3], gyro[3];
+		sample_at(path, offset, t_mag, t_gyro, raw, gyro);
+		r.status = compass_feed(&c, raw, gyro, (float)(now - fed), r.out);
+		fed = now;
+		feeds++;
+		reached(&r, t0);
+	}
+	report(name, &r);
 	if (verbose)
-		printf("%-28s accuracy %d, first at 1: %d ms, 2: %d ms, 3: %d ms, %u directions\n", name, r.status,
-		       r.first[1], r.first[2], r.first[3], compass_bins(&c));
+		printf("%-28s %.1f samples a second of %.1f passes\n", "", feeds / seconds, passes / seconds);
 	return r;
 }
 
@@ -209,7 +268,7 @@ static void reset(void)
 	compass_init(&c);
 	now = 0;
 	record(1, now, NULL, NULL, NULL, NULL);
-	extra_on = gyro_off = false;
+	extra_on = gyro_off = gyro_turned = gyro_double = false;
 }
 
 static bool offset_near(const double raw_offset[3], float within)
@@ -374,6 +433,30 @@ int main(void)
 	compass_restart(&c);
 	compass_feed(&c, rb, NULL, (float)DT, out);
 	CHECK(fabsf(out[0] + 40) < 0.1f && fabsf(out[1]) < 0.1f);
+
+	/* Taken as the main loop gets to them, about 45 a second at times
+	 * apart from 1 to 48 ms, the same; with the gyroscope's axes wrong
+	 * the turns explain nothing, and at twice its rate never enough
+	 * for high or to stay. */
+	reset();
+	r = go_late("every way, late passes", sweep, iron, 15);
+	CHECK(r.status == 3 && r.first[1] >= 800 && r.first[3] <= 2600 && offset_near(iron, 1));
+	reset();
+	k_yaw = 95 * PI / 180, k_pitch = 65 * PI / 180, k_roll = 95 * PI / 180, k_hz = 1 / 3.2;
+	r = go_late("broad eight, late passes", eight, iron, 18);
+	CHECK(r.status == 3 && r.first[3] < 3000);
+	reset();
+	gyro_off = true;
+	r = go_late("missed turns, late passes", sweep, iron, 15);
+	CHECK(r.status == 0);
+	reset();
+	gyro_turned = true;
+	r = go_late("gyroscope's axes wrong", sweep, iron, 15);
+	CHECK(r.status == 0);
+	reset();
+	gyro_double = true;
+	r = go_late("gyroscope at twice the rate", sweep, iron, 15);
+	CHECK(r.status <= 1 && r.first[3] < 0);
 
 	if (dump)
 		fclose(dump);
