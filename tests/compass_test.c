@@ -4,9 +4,11 @@
  * beluga's AK09918 has and the chip's steps, with the gyroscope's rates
  * for the same turns. Then the charger's magnets: on it, taken off
  * cleanly or slowly, and put back. Then samples taken as the main loop
- * gets to them. COMPASS_VERBOSE=1 prints the times to each accuracy,
- * and COMPASS_DUMP=file writes the samples out, with gravity, for
- * replaying them through the vendor's library. */
+ * gets to them, and the samples of a real watch turned off its charger
+ * (in tests/data, or the file given). COMPASS_VERBOSE=1 prints the
+ * times to each accuracy, and COMPASS_DUMP=file writes the simulated
+ * samples out, with gravity, for replaying them through the vendor's
+ * library. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -264,6 +266,36 @@ static struct run go_late(const char *name, path_fn path, const double offset[3]
 	return r;
 }
 
+/* The watch's records: the field in counts of 0.15 µT and the rate in
+ * counts of 70 mdps, both Android's axes, and 1 where the recording
+ * lost samples. It was read from RAM at about 16 Hz without times, so a
+ * sample counts as 20 ms on, the time the turns tell, and one after
+ * lost ones as longer than a gap. */
+static int replay(const char *path, int *first, float offset[3])
+{
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return -1;
+	int16_t v[7];
+	int n = 0, status = 0;
+	for (int l = 0; l < 4; l++)
+		first[l] = -1;
+	for (; fread(v, sizeof v, 1, f) == 1; n++) {
+		float raw[3], gyro[3], out[3];
+		for (int i = 0; i < 3; i++) {
+			raw[i] = v[i] * 0.15f;
+			gyro[i] = v[3 + i] * (70e-3f * (float)PI / 180);
+		}
+		status = compass_feed(&c, raw, gyro, v[6] ? 1.0f : (float)DT, out);
+		for (int l = 0; l <= status; l++)
+			if (first[l] < 0)
+				first[l] = n;
+	}
+	fclose(f);
+	memcpy(offset, c.cal.offset, sizeof c.cal.offset);
+	return n;
+}
+
 static void reset(void)
 {
 	compass_init(&c);
@@ -295,7 +327,7 @@ static void magnet(const double from[3], const double to[3], double ramp, bool n
 	extra_on = true;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	verbose = getenv("COMPASS_VERBOSE") != NULL;
 	if (getenv("COMPASS_DUMP"))
@@ -458,6 +490,30 @@ int main(void)
 	gyro_double = true;
 	r = go_late("gyroscope at twice the rate", sweep, iron, 15);
 	CHECK(r.status <= 1 && r.first[3] < 0);
+
+	/* beluga taken off its charger on 22 November (at sample 25), held
+	 * and turned about one axis, then every way from sample 320 for
+	 * 22 s; from fresh and with the offset the watch had before, 11 µT
+	 * off this one: high within 3 s of turning every way, the offset
+	 * within 3 µT of both the one the watch found itself later (200.4
+	 * 17.8 -190.5 µT) and a sphere through all the samples. */
+	const char *data = argc > 1 ? argv[1] : "tests/data/beluga-compass-2026-11-22.bin";
+	static const float want[3] = { 201.5f, 17.7f, -190.2f };
+	for (int seeded = 0; seeded < 2; seeded++) {
+		reset();
+		if (seeded)
+			c.cal = (struct compass_cal){ { 206.6f, 28.1f, -188.6f }, 45.2f, 3 };
+		int first[4];
+		float off[3];
+		int n = replay(data, first, off);
+		CHECK(n > 1000);
+		CHECK(c.status == 3 && first[1] > 25 && first[3] < 320 + 150);
+		CHECK(fabsf(off[0] - want[0]) < 3 && fabsf(off[1] - want[1]) < 3 && fabsf(off[2] - want[2]) < 3);
+		if (verbose)
+			printf("%-28s accuracy %d, first at 1: %d ms, 2: %d ms, 3: %d ms, offset %.1f %.1f %.1f\n",
+			       seeded ? "the watch, offset from before" : "the watch, fresh", c.status, (first[1] - 320) * 20,
+			       (first[2] - 320) * 20, (first[3] - 320) * 20, off[0], off[1], off[2]);
+	}
 
 	if (dump)
 		fclose(dump);
