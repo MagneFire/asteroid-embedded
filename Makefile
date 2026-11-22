@@ -80,7 +80,10 @@ SRCS_apollo3 := $(addprefix src/soc/apollo3/,start.S nvic.c fault.c init.c timer
         src/input/haptics_aw8624.c src/sensors/hub_lsm6dso.c src/sensors/afe4900.c src/sensors/hr.c src/sensors/raise.c src/sensors/compass.c src/sensors/fusion.c src/sensors/ak09918.c \
         src/sensors/light_tsl258x.c src/sensors/tsl258x.c src/storage/store_flash.c src/storage/none.c \
         src/bt/bleif.c src/bt/bleif_hci.c src/bt/bleif_proto.c src/bt/apollo3_ble_patch.c \
-        src/companion/wire.c src/companion/link.c src/companion/proto.c src/companion/companion.c src/companion/sensors.c
+        src/companion/wire.c src/companion/link.c src/companion/proto.c src/companion/companion.c src/companion/sensors.c \
+        src/compass_app.c
+# Only beluga has a magnetometer.
+DEFS_apollo3 := -DHAVE_COMPASS
 CPU_apollo3 := cortex-m4
 FPU_apollo3 := fpv4-sp-d16
 ISA_apollo3 := -mthumb
@@ -114,7 +117,7 @@ CFLAGS := -mcpu=$(CPU_$(SOC)) $(ISA) -mfloat-abi=hard -mfpu=$(FPU_$(SOC)) -ffree
           -Isrc -Isrc/soc/$(SOC) -I$(BUILD) -Isrc/usb -I$(TUSB) -I$(TUSB)/portable/$(TUSB_PORT_$(SOC)) -Isrc/bt/port \
           $(addprefix -isystem $(NIMBLE)/,nimble/include nimble/host/include nimble/host/services/gap/include \
             nimble/host/services/gatt/include nimble/transport/include porting/nimble/include) \
-          -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"' $(TUSB_DEFS_$(SOC))
+          -isystem $(MBEDTLS)/include -DMBEDTLS_CONFIG_FILE='"bt_mbedtls_config.h"' $(TUSB_DEFS_$(SOC)) $(DEFS_$(SOC))
 LDFLAGS := -nostdlib -Wl,--gc-sections -Wl,-T,$(BUILD)/asteroid.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-z,noexecstack
 LIBS    := -lgcc
 
@@ -451,6 +454,11 @@ $(BUILD)/test/fusion_test: tests/fusion_test.c src/sensors/fusion.c src/sensors/
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/fusion.c -lm -o $@
 
+COMPASS_APP_TEST := src/compass_app.c src/sensors/compass.c src/sensors/fusion.c
+$(BUILD)/test/compass_app_test: tests/compass_app_test.c $(COMPASS_APP_TEST) $(wildcard src/*.h src/ui/*.h src/sensors/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< $(COMPASS_APP_TEST) -lm -o $@
+
 COMPANION_TEST := $(COMPANION) src/input/haptics.c src/input/haptics_aw8624.c
 $(BUILD)/test/companion_test: tests/companion_test.c $(COMPANION_TEST) $(wildcard src/companion/*.h)
 	@mkdir -p $(dir $@)
@@ -499,7 +507,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/tsl258x_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/companion_test $(BUILD)/test/apollo3_timer_test $(BUILD)/test/swdwake_test $(BUILD)/test/hr_test $(BUILD)/test/raise_test $(BUILD)/test/compass_test $(BUILD)/test/fusion_test $(BUILD)/test/rm69090_test $(BUILD)/test/beluga_detect_test $(BUILD)/test/tma525_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
+test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/tsl258x_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/companion_test $(BUILD)/test/apollo3_timer_test $(BUILD)/test/swdwake_test $(BUILD)/test/hr_test $(BUILD)/test/raise_test $(BUILD)/test/compass_test $(BUILD)/test/fusion_test $(BUILD)/test/compass_app_test $(BUILD)/test/rm69090_test $(BUILD)/test/beluga_detect_test $(BUILD)/test/tma525_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
 	$(BUILD)/test/console_test
 	$(BUILD)/test/clockapps_test
 	$(BUILD)/test/calc_test
@@ -552,6 +560,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/raise_test
 	$(BUILD)/test/compass_test
 	$(BUILD)/test/fusion_test
+	$(BUILD)/test/compass_app_test
 	$(BUILD)/test/rm69090_test
 	$(BUILD)/test/beluga_display_test
 	$(BUILD)/test/beluga_detect_test

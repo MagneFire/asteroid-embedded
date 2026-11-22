@@ -145,6 +145,9 @@ void main(uint32_t machtype, const void *fdt)
 			     hub_measures_activity(), board->heart_rate && hub_has_passive());
 		ui_set_timepiece(hub_has_timepiece());
 		ui_set_tilt_light(hub_has_screen());
+#ifdef HAVE_COMPASS
+		ui_set_magnetometer(hub_has_compass());
+#endif
 		stack_init(fb.width, fb.height, layers, UI_LAYER_STRIDE / 4);
 		stack_set_pages(app_open);
 		if (board->panel.edge_px)

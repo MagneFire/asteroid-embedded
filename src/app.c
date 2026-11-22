@@ -19,6 +19,7 @@
 #include "alarm.h"
 #include "clockapps.h"
 #include "calc.h"
+#include "compass_app.h"
 #include "game.h"
 #include "agenda.h"
 #include "workout.h"
@@ -99,6 +100,9 @@ void app_open(int app)
 		present_workout();
 		present_heart_log();
 	}
+#ifdef HAVE_COMPASS
+	compass_app_page(app == UI_APP_COMPASS);
+#endif
 	ui_set_app(app);
 	stack_open_app();
 }
@@ -352,6 +356,9 @@ void app_sensors(uint32_t now)
 		was_measuring = measure;
 		if (measure && readings < 2 && now - measure_t < HR_HOLD_MS)
 			power_activity(now);
+#ifdef HAVE_COMPASS
+		compass_app_pass(have_ui && power_awake() && !power_display_lent() && ui_app_open() == UI_APP_COMPASS, now);
+#endif
 		/* In nightstand mode the screen turns with the watch, as
 		 * the launcher's OrientationSensor turns it, the sensor on
 		 * while the screen is; the always-on face keeps the turn. */
@@ -638,6 +645,10 @@ void app_power_changed(enum power_change change)
 		 * long cluster sleep, with no pass to turn it on until then. */
 		if (have_hub)
 			app_tilt();
+#ifdef HAVE_COMPASS
+		if (have_ui)
+			compass_app_sleep();
+#endif
 		game_save();
 		if (have_touch)
 			touch_sleep(true, setting_get(SETTING_TAP));
