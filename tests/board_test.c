@@ -7,7 +7,7 @@
 #include "soc/max17050.h"
 
 const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
-const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
+const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh;
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
 const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231;
