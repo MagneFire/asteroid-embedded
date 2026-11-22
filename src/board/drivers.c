@@ -138,12 +138,12 @@ void touch_stats(uint32_t *attentions, uint32_t *errors)
 }
 
 bool hub_init(void) { return HUB(init) && board->hub->init(); }
-static bool tilt_own, tilt_taken = true;
+static bool tilt_own, tilt_shared, tilt_taken = true;
 static uint32_t tilt_t;
 static bool tilt_apply(void)
 {
 	tilt_t = time_ms();
-	tilt_taken = !HUB(tilt_on) || board->hub->tilt_on(tilt_own);
+	tilt_taken = !HUB(tilt_on) || board->hub->tilt_on(tilt_own || tilt_shared);
 	return tilt_taken;
 }
 void hub_poll(void)
@@ -206,6 +206,13 @@ bool hub_tilt_on(bool on)
 {
 	tilt_own = on;
 	return tilt_apply();
+}
+void hub_tilt_share(bool on)
+{
+	if (on != tilt_shared) {
+		tilt_shared = on;
+		tilt_apply();
+	}
 }
 
 static bool accel_own, accel_shared;

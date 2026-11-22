@@ -162,6 +162,7 @@ static void share(void)
 {
 	bool bus = BUS_WHILE_LENT || !lent;
 	hub_accel_share(kept.subs[ACCEL].on);
+	hub_tilt_share(kept.subs[TILT].on);
 	afe4900_share(kept.subs[HEART].on);
 	settled = lsm6dso_gyro_on(kept.subs[GYRO].on ? period(GYRO) : 0);
 	settled &= ak09918_on(bus && kept.subs[MAG].on ? period(MAG) : 0);

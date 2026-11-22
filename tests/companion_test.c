@@ -150,7 +150,7 @@ static unsigned staged_n;
 static int kv_mode = -1;
 static int32_t kv_zone;
 static uint32_t steps = HUB_NONE, tilts, clock_from_ms, ms_per_read;
-static bool accel_shared, hr_shared;
+static bool accel_shared, hr_shared, tilt_shared;
 static uint32_t hr_bpm = HUB_NONE;
 static uint8_t hr_quality;
 static unsigned hr_readings;
@@ -310,6 +310,7 @@ void tsl258x_lost(void) { light_losts++; }
 int32_t light_finish(void) { return light_shared ? lux : -1; }
 uint32_t hub_steps(void) { return steps; }
 uint32_t hub_tilts(void) { return tilts; }
+void hub_tilt_share(bool on) { tilt_shared = on; }
 /* The MCU's clock in µs, which starts over at a reset. */
 uint64_t timer_count(void) { return (uint64_t)(now_ms - clock_from_ms) * 1000; }
 uint32_t timer_hz(void) { return 1000000; }
@@ -1231,6 +1232,18 @@ static void sensor_scenario(void)
 	CHECK(got.events == 1 && got.ev[0].heart && got.ev[0].status == PROTO_SNS_NO_CONTACT);
 	ap_sensors(20000);
 	CHECK(got.events == 1);
+	ap_activate(PROTO_SNS_HEART_RATE, false, 0);
+
+	/* Wrist tilt turns the hub's detection on while it is subscribed. */
+	CHECK(!tilt_shared);
+	ap_activate(PROTO_SNS_WRIST_TILT, true, 0);
+	CHECK(tilt_shared);
+	memset(&got, 0, sizeof got);
+	tilts++;
+	ap_sensors(5);
+	CHECK(got.events == 1 && got.ev[0].id == PROTO_SNS_WRIST_TILT && bits_float(got.ev[0].w[0]) == 1.0f);
+	ap_activate(PROTO_SNS_WRIST_TILT, false, 0);
+	CHECK(!tilt_shared);
 }
 
 int main(void)

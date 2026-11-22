@@ -40,6 +40,8 @@ uint32_t hub_tilts(void);
 /* Tilt detection, off with the screen on as the vendor has it; false
  * if the hub did not take it, which the hub's poll asks again. */
 bool hub_tilt_on(bool on);
+/* A second user of the tilts: detection is on while either wants it. */
+void hub_tilt_share(bool on);
 void hub_accel_on(bool on);
 /* A second user of the readings: the accelerometer is on while either
  * wants it. */
