@@ -53,6 +53,12 @@ void hub_accel_on(bool on);
  * wants it. */
 void hub_accel_share(bool on);
 bool hub_accel(int16_t v[3]);
+/* The Compass app's sensors, on a hub with a magnetometer: on, the
+ * heading in degrees clockwise from north (0-360) and, as the result,
+ * the field's accuracy (0-3), -1 while there is none. */
+bool hub_has_compass(void);
+void hub_compass_on(bool on);
+int hub_heading(float *degrees);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);
 void hub_asleep(bool asleep);

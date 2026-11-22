@@ -124,6 +124,9 @@ struct hub_driver {
 	unsigned (*heart_log)(uint32_t *t, uint8_t *bpm, unsigned max);
 	/* One of the hub's display modes, for the console; < 0 if refused. */
 	int (*mode)(unsigned code);
+	/* A magnetometer for the Compass app: see hub_compass_on. */
+	void (*compass_on)(bool on);
+	int (*heading)(float *degrees);
 };
 
 /* A fuel gauge read by the AP, for a charger that does not measure the

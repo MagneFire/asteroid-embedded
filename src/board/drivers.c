@@ -240,6 +240,13 @@ void hub_accel_share(bool on)
 	accel_apply();
 }
 bool hub_accel(int16_t v[3]) { return HUB(accel) && board->hub->accel(v); }
+bool hub_has_compass(void) { return HUB(heading); }
+void hub_compass_on(bool on)
+{
+	if (HUB(compass_on))
+		board->hub->compass_on(on);
+}
+int hub_heading(float *degrees) { return HUB(heading) ? board->hub->heading(degrees) : -1; }
 bool hub_can_sleep(void) { return !HUB(can_sleep) || board->hub->can_sleep(); }
 int hub_raw(uint8_t bank, uint8_t offset, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
 {

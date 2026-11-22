@@ -10,6 +10,7 @@
 #include "sensors/afe4900.h"
 #include "sensors/lsm6dso.h"
 #include "sensors/raise.h"
+#include "companion/sensors.h"
 
 #define BUS		(board->hub_pins.i2c.bus)
 #define ADDR		(board->hub_pins.i2c.addr)
@@ -343,4 +344,5 @@ const struct hub_driver hub_lsm6dso = {
 	.accel_on = lsm_accel_on, .accel = lsm_accel, .can_sleep = lsm_can_sleep, .sleep = lsm_sleep,
 	.power_down = lsm_power_down,
 	.status = lsm_status, .raw = lsm_raw, .heart_rate_on = afe4900_on, .heart_rate = afe4900_rate,
+	.compass_on = sns_compass, .heading = sns_heading,
 };
