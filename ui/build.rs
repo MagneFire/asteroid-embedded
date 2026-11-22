@@ -198,7 +198,7 @@ const AP_LEAVE_OUT: &[&str] = &["compass"];
 
 /// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
 /// empty for none): what does not fit its flash after the watchface, the notifications, the
-/// quick settings and the pages of Timer, Music, Flashlight, Heart Rate, Steps and Compass in place
+/// quick settings and the pages of Music, Timer, Steps, Heart Rate, Compass and Flashlight in place
 /// of the launcher, and the digital face's halo, which is not visible on black and takes four
 /// times as long to draw as the labels themselves.
 const MCU_LEAVE_OUT: &[&str] = &[
@@ -210,12 +210,12 @@ const MCU_LEAVE_OUT: &[&str] = &[
 /// order: part, id (enum ui_app), and whether the app takes sideways drags of its own, so only a
 /// drag from the side edges turns its page.
 const PAGES: &[(&str, i32, bool)] = &[
-    ("timer", 3, false),
     ("music", 0, false),
-    ("flashlight", 7, false),
-    ("heart", 6, false),
+    ("timer", 3, false),
     ("steps", 12, false),
+    ("heart", 6, false),
     ("compass", 13, false),
+    ("flashlight", 7, false),
     ("alarm", 2, true),
     ("stopwatch", 4, true),
     ("calculator", 8, false),
