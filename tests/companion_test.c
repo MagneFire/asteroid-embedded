@@ -1464,6 +1464,96 @@ static void sensor_scenario(void)
 	}
 	ap_activate(PROTO_SNS_ORIENTATION, false, 0);
 	CHECK(!accel_shared && mag_period == 0 && gyro_period == 0);
+
+	/* The watch's own compass runs the same chips with the same
+	 * calibration, sends the AP nothing and keeps going through the
+	 * AP's orientation coming and going and the AP going down: turned
+	 * from the north to the east, the heading follows. */
+	float heading = -1;
+	CHECK(sns_heading(&heading) == -1);
+	set_field(north, iron);
+	sns_compass(true);
+	CHECK(accel_shared && mag_period == 20 && gyro_period == 20);
+	memset(&got, 0, sizeof got);
+	ap_sensors(500);
+	CHECK(got.events == 0);
+	CHECK(sns_heading(&heading) == 3 && (heading < 2 || heading > 358));
+	ap_activate(PROTO_SNS_ORIENTATION, true, 0);
+	ap_activate(PROTO_SNS_ORIENTATION, false, 0);
+	sns_reset();
+	CHECK(accel_shared && mag_period == 20 && gyro_period == 20);
+	for (int i = 1; i <= 50; i++) {
+		float t = (float)i / 50 * 3.14159265f / 2, f[3] = { -30 * sinf(t), 30 * cosf(t), -36 };
+		gyro_counts[2] = (int16_t)lroundf(-3.14159265f / 2 / GYRO_RADS);
+		set_field(f, iron);
+		ap_sensors(20);
+	}
+	gyro_counts[2] = 0;
+	ap_sensors(500);
+	CHECK(sns_heading(&heading) == 3 && fabsf(heading - 90) < 2);
+
+	/* The panel handed to the AP stops the chips the watch asked for,
+	 * those of the AP's orientation going on, and they start again
+	 * when the watch has it back. */
+	static const uint8_t m375[] = { 0x08, 0x01 };
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(3000);
+	CHECK(!power_lent && mag_period == 20 && gyro_period == 20);
+	ap_activate(PROTO_SNS_ORIENTATION, true, 0);
+	mode_message(373, NULL, 0, &a);
+	CHECK(power_lent && accel_shared && mag_period == 20 && gyro_period == 20 && sns_heading(&heading) == -1);
+	ap_activate(PROTO_SNS_ORIENTATION, false, 0);
+	CHECK(!accel_shared && mag_period == 0 && gyro_period == 0);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(3000);
+	CHECK(!power_lent && accel_shared && mag_period == 20 && gyro_period == 20);
+	ap_sensors(500);
+	CHECK(sns_heading(&heading) == 3);
+	/* A 374 stops them before a sample reads the bus, and a stop the
+	 * magnetometer does not take is asked again. */
+	mag_fails = 1;
+	mode_message(374, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_POWER_OFF && power_lent && hub_down);
+	CHECK(!accel_shared && gyro_period == 0 && mag_period == 20 && sns_heading(&heading) == -1);
+	ap_sensors(1100);
+	CHECK(mag_period == 0);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(3000);
+	CHECK(!power_lent && !hub_down && mag_period == 20 && gyro_period == 20);
+	ap_sensors(500);
+	CHECK(sns_heading(&heading) >= 0);
+	/* Without a field for a while the heading is not given. */
+	mag_result = AK09918_NONE;
+	ap_sensors(400);
+	CHECK(sns_heading(&heading) >= 0);
+	ap_sensors(200);
+	CHECK(sns_heading(&heading) == -1);
+	mag_result = AK09918_OK;
+	ap_sensors(100);
+	CHECK(sns_heading(&heading) >= 0);
+	sns_compass(false);
+	CHECK(!accel_shared && mag_period == 0 && gyro_period == 0 && sns_heading(&heading) == -1);
+
+	/* A sample the watch's compass left is not sent to an AP that
+	 * subscribes to the field later. */
+	sns_compass(true);
+	ap_sensors(100);
+	sns_compass(false);
+	mode_message(373, NULL, 0, &a);
+	run_ms(5000);
+	mag_result = AK09918_NONE;
+	memset(&got, 0, sizeof got);
+	ap_activate(PROTO_SNS_MAG, true, 0);
+	ap_sensors(300);
+	CHECK(got.events == 0);
+	mag_result = AK09918_OK;
+	ap_sensors(300);
+	CHECK(got.events >= 1);
+	ap_activate(PROTO_SNS_MAG, false, 0);
+	CHECK(mag_period == 0);
 	static const int16_t tilted[3] = { 0, -1000, 500 }, counts[3] = { 100, 200, -300 };
 	memcpy(accel_mg, tilted, sizeof tilted);
 	memcpy(mag_counts, counts, sizeof counts);
@@ -1598,7 +1688,6 @@ static void sensor_scenario(void)
 	/* No reports in the wristband mode, where the AP may be off and
 	 * its boot loader needs up_int low; they go again in the normal
 	 * mode. */
-	static const uint8_t m375[] = { 0x08, 0x01 };
 	ap_activate(PROTO_SNS_WRIST_TILT, true, 0);
 	ap_write(1, 375, m375, sizeof m375);
 	companion_pass();

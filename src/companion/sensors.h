@@ -18,6 +18,13 @@ void sns_lend(bool to_ap);
 /* The chips on the touch controller's bus were put to sleep behind
  * their drivers: they start over. */
 void sns_chips_off(void);
+/* The watch's own compass, kept apart from the AP's subscriptions:
+ * on, the magnetometer, the gyroscope and the accelerometer run as for
+ * the AP's orientation, with the same calibration. sns_heading gives
+ * the heading in degrees clockwise from north (0-360) and returns the
+ * field's accuracy (0-3), -1 while off or with none yet. */
+void sns_compass(bool on);
+int sns_heading(float *degrees);
 /* Whether the AP has any sensor on. */
 bool sns_active(void);
 /* A RequestBody; false if it is malformed. */

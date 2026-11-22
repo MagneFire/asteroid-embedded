@@ -31,6 +31,9 @@
  * this often while either compass sensor is on, as the vendor's
  * library does, whatever the AP asked for. */
 #define COMPASS_MS	20
+/* The watch's heading with no field for this long: the gyroscope's
+ * drift is no longer corrected. */
+#define FIELD_STALE_MS	500
 #define ORIENT_MIN_MS	ACCEL_MIN_MS
 /* The light sensor's integration. */
 #define LIGHT_MIN_MS	100
@@ -109,7 +112,7 @@ static struct {
 /* The calibration lasts for the boot, as the vendor's. */
 static struct compass compass;
 static struct fusion fusion;
-static bool compass_ready, field_new;
+static bool compass_ready, field_new, watch_compass;
 static float field[3];
 static int field_accuracy = -1;
 static uint32_t compass_t, compass_due, field_t;
@@ -173,7 +176,12 @@ static uint32_t period(int i)
 	return ms < min_ms[i] ? min_ms[i] : ms;
 }
 
-static bool compass_on(void) { return kept.subs[MAG].on || kept.subs[ORIENT].on; }
+/* The watch's vote counts only while it has the panel: the AP may be
+ * using the bus, and a power off takes the hub down. */
+static bool watch_on(void) { return watch_compass && !lent; }
+static unsigned compass_users(void) { return kept.subs[MAG].on + kept.subs[ORIENT].on + watch_on(); }
+static bool compass_on(void) { return compass_users() != 0; }
+static bool orient_on(void) { return kept.subs[ORIENT].on || watch_on(); }
 
 static uint32_t gyro_period(void)
 {
@@ -186,7 +194,7 @@ static uint32_t gyro_period(void)
 static void share(void)
 {
 	bool bus = BUS_WHILE_LENT || !lent;
-	hub_accel_share(kept.subs[ACCEL].on || kept.subs[ORIENT].on);
+	hub_accel_share(kept.subs[ACCEL].on || orient_on());
 	hub_tilt_share(kept.subs[TILT].on);
 	afe4900_share(kept.subs[HEART].on);
 	settled = lsm6dso_gyro_on(gyro_period());
@@ -211,10 +219,26 @@ static void settle(uint32_t now)
 	retry_wait = retry_wait < RETRY_MAX_MS / 2 ? 2 * retry_wait : RETRY_MAX_MS;
 }
 
+static void compass_start(uint32_t now);
+
+/* The watch's vote coming into effect, after it changed or the panel
+ * came back. */
+static void watch_started(bool was)
+{
+	if (!watch_on() || was)
+		return;
+	if (!kept.subs[ORIENT].on)
+		fusion_init(&fusion);
+	if (compass_users() == 1)
+		compass_start(time_ms());
+}
+
 void sns_lend(bool to_ap)
 {
+	bool was = watch_on();
 	lent = to_ap;
 	share();
+	watch_started(was);
 }
 
 void sns_chips_off(void)
@@ -238,6 +262,15 @@ static void heart_start(uint32_t now)
 	no_contact = false;
 }
 
+static void compass_start(uint32_t now)
+{
+	compass_due = now;
+	compass_t = field_t = now;
+	field_accuracy = -1;
+	field_new = false;
+	compass_restart(&compass);
+}
+
 static void activate(int i, bool on)
 {
 	if (kept.subs[i].on == on)
@@ -257,15 +290,30 @@ static void activate(int i, bool on)
 	} else if (i == TILT) {
 		seen_tilts = hub_tilts();
 		tilt_owed = false;
-	} else if (i == ORIENT)
+	} else if (i == ORIENT && !watch_on())
 		fusion_init(&fusion);
-	if ((i == MAG || i == ORIENT) && on && kept.subs[MAG].on + kept.subs[ORIENT].on == 1) {
-		compass_due = now;
-		compass_t = field_t = now;
-		field_accuracy = -1;
-		compass_restart(&compass);
-	}
+	if ((i == MAG || i == ORIENT) && on && compass_users() == 1)
+		compass_start(now);
 	keep();
+}
+
+void sns_compass(bool on)
+{
+	if (watch_compass == on)
+		return;
+	bool was = watch_on();
+	watch_compass = on;
+	share();
+	watch_started(was);
+}
+
+int sns_heading(float *degrees)
+{
+	float out[3];
+	if (!watch_on() || field_accuracy < 0 || time_ms() - field_t > FIELD_STALE_MS || !fusion_angles(&fusion, out))
+		return -1;
+	*degrees = out[0];
+	return field_accuracy;
 }
 
 static uint32_t ms_of(uint64_t ns) { return ns / 1000000 < LONGEST_MS ? (uint32_t)(ns / 1000000) : LONGEST_MS; }
@@ -407,7 +455,7 @@ static void sample_compass(uint32_t now)
 		field_new = true;
 	} else if (got == AK09918_OVERFLOW)
 		field_new = false;
-	if (kept.subs[ORIENT].on && hub_accel(v)) {
+	if (orient_on() && hub_accel(v)) {
 		float a[3] = { v[0], v[1], v[2] };
 		bool fresh = got == AK09918_OK;
 		fusion_update(&fusion, a, turned ? rate : NULL, fresh ? field : NULL, fresh ? field_accuracy : 0, dt);
@@ -651,6 +699,8 @@ void sns_status(void (*say)(const char *fmt, ...))
 	for (int i = 0; i < SUBS; i++)
 		if (kept.subs[i].on)
 			say("sensors: %s every %lu ms, latency %lu ms\n", names[i], period(i), kept.subs[i].latency_ms);
+	if (watch_compass)
+		say("sensors: compass on for the watch%s\n", lent ? ", held while lent" : "");
 	say("sensors: %lu commands (%lu bad), %lu flushes, %lu events in %lu reports of up to %u, %lu dropped, "
 	    "%u waiting; AP clock %s\n",
 	    count.commands, count.bad, count.flushes, count.events, count.reports, per_report, count.dropped, queued,
