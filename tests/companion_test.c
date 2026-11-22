@@ -14,6 +14,7 @@
 #include "companion/sensors.h"
 #include "board/board.h"
 #include "sensors/ak09918.h"
+#include "sensors/compass.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
 #include "sensors/tsl258x.h"
@@ -148,6 +149,8 @@ static void (*ios_fn)(uint32_t);
 static uint8_t lram[120], staged[256];
 static unsigned staged_n;
 static int kv_mode = -1;
+static uint8_t kv_mag[64];
+static unsigned kv_mag_len;
 static int32_t kv_zone;
 static uint32_t steps = HUB_NONE, tilts, clock_from_ms, ms_per_read;
 static bool accel_shared, hr_shared, tilt_shared;
@@ -204,7 +207,10 @@ int kv_get(const char *key, void *buf, unsigned size)
 int kv_set(const char *key, const void *val, unsigned len)
 {
 	kv_sets++;
-	if (!strcmp(key, "ap.mode"))
+	if (!strcmp(key, "mag.cal") && len <= sizeof kv_mag) {
+		memcpy(kv_mag, val, len);
+		kv_mag_len = len;
+	} else if (!strcmp(key, "ap.mode"))
 		kv_mode = *(const uint8_t *)val;
 	else if (!strcmp(key, "ap.zone"))
 		memcpy(&kv_zone, val, sizeof kv_zone);
@@ -294,9 +300,10 @@ void ak09918_lost(void)
 	mag_losts++;
 	mag_period = 0;
 }
+static int16_t mag_counts[3] = { 100, 200, -300 };
 int ak09918_read(int16_t v[3])
 {
-	v[0] = 100, v[1] = 200, v[2] = -300;
+	memcpy(v, mag_counts, sizeof mag_counts);
 	return mag_period ? mag_result : AK09918_NONE;
 }
 void ak09918_status(void (*say)(const char *fmt, ...)) {}
@@ -1141,8 +1148,38 @@ static void sensor_scenario(void)
 	ap_sensors(1000);
 	CHECK(got.events == 0);
 	mag_result = AK09918_OK;
+
+	/* Turned every way with a hard-iron offset, the field comes out
+	 * without it and the accuracy goes up to high. The calibration is
+	 * stored once the magnetometer is off and the link is quiet. */
+	static const float iron[3] = { 20, -35, 50 };
+	ap_batch(PROTO_SNS_MAG, 20000000, 0);
+	memset(&got, 0, sizeof got);
+	for (int k = 0; k < 600; k++) {
+		float a = (float)k * 0.37f, b = (float)k * 0.113f, f[3];
+		float x = __builtin_cosf(a) * __builtin_cosf(b), y = __builtin_sinf(a) * __builtin_cosf(b),
+		      z = __builtin_sinf(b);
+		f[0] = 45 * x + iron[0], f[1] = 45 * y + iron[1], f[2] = 45 * z + iron[2];
+		mag_counts[0] = (int16_t)(f[1] / 0.15f);
+		mag_counts[1] = (int16_t)(-f[0] / 0.15f);
+		mag_counts[2] = (int16_t)(f[2] / 0.15f);
+		got.events = 0;
+		ap_sensors(20);
+		if (k == 599) {
+			CHECK(got.events == 1 && got.ev[0].w[3] == PROTO_SNS_HIGH);
+			CHECK(fabsf(bits_float(got.ev[0].w[0]) - 45 * x) < 1 && fabsf(bits_float(got.ev[0].w[1]) - 45 * y) < 1 &&
+			      fabsf(bits_float(got.ev[0].w[2]) - 45 * z) < 1);
+		}
+	}
+	CHECK(!kv_mag_len);
 	ap_activate(PROTO_SNS_MAG, false, 0);
 	CHECK(mag_period == 0);
+	run_ms(4000);
+	struct compass_cal cal;
+	CHECK(kv_mag_len == sizeof cal);
+	memcpy(&cal, kv_mag, sizeof cal);
+	CHECK(cal.status == PROTO_SNS_HIGH && fabsf(cal.offset[0] - iron[0]) < 1 && fabsf(cal.offset[1] - iron[1]) < 1 &&
+	      fabsf(cal.offset[2] - iron[2]) < 1);
 
 	/* The light sensor is powered while the AP wants it, and sends
 	 * lux when it changes, read at most once an integration. */

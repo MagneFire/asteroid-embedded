@@ -11,9 +11,12 @@
 #include "asteroid.h"
 #include "sensors/afe4900.h"
 #include "sensors/ak09918.h"
+#include "sensors/compass.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
 #include "sensors/tsl258x.h"
+#include "storage/storage.h"
+#include "companion/companion.h"
 #include "companion/link.h"
 #include "companion/proto.h"
 #include "companion/sensors.h"
@@ -51,6 +54,7 @@
 #define MG_TO_MS2	0.00980665f
 #define GYRO_TO_RADS	(LSM6DSO_MDPS_PER_COUNT * 0.001f * 3.14159265f / 180)
 #define KEPT_MAGIC	0x534e5331u	/* "SNS1" */
+#define KV_MAG_CAL	"mag.cal"
 
 #ifdef HOST_TEST
 #define KEPT
@@ -98,6 +102,8 @@ static unsigned flush_n;
 static struct {
 	uint32_t commands, bad, flushes, events, reports, dropped;
 } count;
+static struct compass compass;
+static bool compass_loaded;
 
 static uint32_t kept_sum(void)
 {
@@ -338,21 +344,59 @@ static void push_vector(uint32_t handle, const int16_t v[3], float scale, uint32
 	push(handle, mcu_ns(), w, false);
 }
 
-/* The LSM6DSO's axes are taken as Android's. Neither the gyroscope's
- * zero-rate offset nor the magnetometer's hard iron is removed, hence
- * their accuracy. A magnetometer sample out of range is left out. */
+static void push_floats(uint32_t handle, const float v[3], int accuracy)
+{
+	uint32_t w[4] = { proto_float_bits(v[0]), proto_float_bits(v[1]), proto_float_bits(v[2]), (uint32_t)accuracy };
+	push(handle, mcu_ns(), w, false);
+}
+
+static void compass_load(void)
+{
+	struct compass_cal saved;
+	if (compass_loaded)
+		return;
+	compass_loaded = true;
+	bool ok = kv_get(KV_MAG_CAL, &saved, sizeof saved) == (int)sizeof saved;
+	compass_init(&compass, ok ? &saved : NULL);
+}
+
+/* The calibration is written once the magnetometer is off, as the
+ * flash write masks interrupts. */
+static void compass_save(void)
+{
+	if (compass.changed && !kept.subs[MAG].on && companion_store_ok()) {
+		compass.changed = false;
+		kv_set(KV_MAG_CAL, &compass.cal, sizeof compass.cal);
+	}
+}
+
+/* A magnetometer sample out of range is left out. */
+static bool read_field(float field[3], int *accuracy)
+{
+	int16_t c[3];
+	if (ak09918_read(c) != AK09918_OK)
+		return false;
+	float raw[3];
+	for (int i = 0; i < 3; i++)
+		raw[i] = (float)(mag_axes[i].sign * c[mag_axes[i].from]) * AK09918_UT_PER_COUNT;
+	compass_load();
+	*accuracy = compass_feed(&compass, raw, field);
+	return true;
+}
+
+/* The LSM6DSO's axes are taken as Android's. The gyroscope's zero-rate
+ * offset is not removed, hence its accuracy. */
 static void sample_vectors(uint32_t now)
 {
-	int16_t v[3], c[3];
+	int16_t v[3];
+	float field[3];
+	int accuracy;
 	if (sample_due(ACCEL, now) && hub_accel(v))
 		push_vector(PROTO_SNS_ACCEL, v, MG_TO_MS2, PROTO_SNS_HIGH);
 	if (sample_due(GYRO, now) && lsm6dso_gyro(v))
 		push_vector(PROTO_SNS_GYRO, v, GYRO_TO_RADS, PROTO_SNS_LOW);
-	if (sample_due(MAG, now) && ak09918_read(c) == AK09918_OK) {
-		for (int i = 0; i < 3; i++)
-			v[i] = (int16_t)(mag_axes[i].sign * c[mag_axes[i].from]);
-		push_vector(PROTO_SNS_MAG, v, AK09918_UT_PER_COUNT, PROTO_SNS_UNRELIABLE);
-	}
+	if (sample_due(MAG, now) && read_field(field, &accuracy))
+		push_floats(PROTO_SNS_MAG, field, accuracy);
 }
 
 /* Lux as the scalar, sent when it changes, as the light sensor is an
@@ -426,6 +470,7 @@ void sns_pass(void)
 	sample_light(now);
 	sample_steps(now);
 	sample_heart(now);
+	compass_save();
 	/* Raises close together go as one. */
 	uint32_t t = hub_tilts();
 	if (t != seen_tilts) {
@@ -570,4 +615,8 @@ void sns_status(void (*say)(const char *fmt, ...))
 	    count.commands, count.bad, count.flushes, count.events, count.reports, per_report, count.dropped, queued,
 	    kept.synced ? "known" : "not known");
 	ak09918_status(say);
+	if (compass_loaded)
+		say("compass: accuracy %ld, %u of %u directions, offset %ld %ld %ld uT, radius %ld uT\n",
+		    (long)compass.cal.status, compass_bins(&compass), COMPASS_BINS, (long)compass.cal.offset[0],
+		    (long)compass.cal.offset[1], (long)compass.cal.offset[2], (long)compass.cal.radius);
 }
