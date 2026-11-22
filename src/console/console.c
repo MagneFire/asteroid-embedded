@@ -495,14 +495,23 @@ static void cmd_vadc(const char *args)
 #endif
 
 /* gauge <reg>...: 16-bit registers of a MAX17050 fuel gauge, in hex. */
+static bool has_max17050(void)
+{
+#ifdef PMIC_VADC
+	if (board->battery_driver == &battery_pmic_max17050)
+		return true;
+#endif
+	return board->battery_driver == &battery_max17050;
+}
+
 static void cmd_gauge(const char *args)
 {
 	uint32_t reg;
-	if (board->battery_driver == &battery_max17050 && !strcmp(args, "load")) {
+	if (has_max17050() && !strcmp(args, "load")) {
 		say("gauge: cell model %s\n", gauge_model_load() ? "loaded" : "not loaded");
 		return;
 	}
-	if (board->battery_driver != &battery_max17050 || !parse_num(&args, 16, &reg)) {
+	if (!has_max17050() || !parse_num(&args, 16, &reg)) {
 		say("usage: gauge <reg>... | load (hex, MAX17050 only)\n");
 		return;
 	}

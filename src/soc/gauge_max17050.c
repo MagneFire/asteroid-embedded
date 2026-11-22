@@ -95,6 +95,10 @@ static bool model_load(void)
 		wr(MAX17050_ICHGTERM, m->ichgt_term) | wr(MAX17050_LEARNCFG, m->learn_cfg) |
 		wr(MAX17050_FILTERCFG, m->filter_cfg) | wr(MAX17050_RELAXCFG, m->relax_cfg) |
 		wr(MAX17050_FULLCAP, m->fullcap) | wr(MAX17050_FULLCAPNOM, m->fullcapnom);
+	if (m->misc_cfg)
+		r |= wr(MAX17050_MISCCFG, m->misc_cfg);
+	if (m->v_empty)
+		r |= wr(MAX17050_VEMPTY, m->v_empty);
 	wait_ms(500);
 	r |= wr(MAX17050_CONFIG, m->config) | wr(MAX17050_LEARNCFG, m->learn_cfg) | wr(MAX17050_FILTERCFG, m->filter_cfg) |
 	     wr(MAX17050_RELAXCFG, m->relax_cfg) | wr(MAX17050_FULLSOCTHR, m->full_soc_thresh);
@@ -267,6 +271,23 @@ static void charge_check(void)
 	}
 }
 
+static bool probe(void)
+{
+	uint16_t id = 0;
+	int r = i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
+	if (!r)
+		r = rd(MAX17050_DEVNAME, &id);
+	if (r || id != MAX17050_DEVNAME_ID) {
+		log_printf("gauge: not found (%d, id %04x)\n", r, id);
+		return false;
+	}
+	ready = true;
+	model_check();
+	refresh();
+	poll_t = time_ms();
+	return true;
+}
+
 static void gauge_init(void)
 {
 	gpio_config(GPIO_DOCK, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
@@ -280,22 +301,13 @@ static void gauge_init(void)
 		gpio_config(board->gauge.kill_disable, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 		gpio_set(board->gauge.kill_disable, 1);
 	}
-	uint16_t id = 0;
-	int r = i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
 	dock_state = dock_line();
-	if (!r)
-		r = rd(MAX17050_DEVNAME, &id);
-	if (r || id != MAX17050_DEVNAME_ID) {
-		log_printf("gauge: not found (%d, id %04x)\n", r, id);
+	if (!probe()) {
 		charge_lines(true, true);
 		return;
 	}
-	ready = true;
-	model_check();
-	refresh();
 	log_printf("gauge: max17050, %lu%%, status %04x%s, dock %u\n", soc, last_status,
 		   max17050_lost_model(last_status) ? ", lost its cell model" : "", docked());
-	poll_t = time_ms();
 	charge_check();
 }
 
@@ -456,3 +468,27 @@ const struct battery_driver battery_max17050 = {
 	.avg_ua = gauge_avg_ua,
 	.status = gauge_status,
 };
+
+/* For a watch whose PMIC charges the cell and this gauge only measures it. */
+bool max17050_probe(void) { return probe(); }
+
+void max17050_update(void)
+{
+	poll_t = time_ms();
+	model_check();
+	refresh();
+}
+
+/* A gauge set to take the temperature from the host. */
+void max17050_host_temp(int decidegrees)
+{
+	if (ready)
+		wr(MAX17050_TEMP, (uint16_t)(int16_t)(decidegrees * 256 / 10));
+}
+
+uint32_t max17050_soc(void) { return soc; }
+uint32_t max17050_cell_mv(void) { return gauge_mv(); }
+int32_t max17050_cell_ua(void) { return gauge_ua(); }
+int32_t max17050_cell_avg_ua(void) { return gauge_avg_ua(); }
+uint16_t max17050_last_status(void) { return last_status; }
+unsigned max17050_errors(void) { return errors; }

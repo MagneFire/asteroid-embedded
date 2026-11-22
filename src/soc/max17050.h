@@ -40,6 +40,8 @@
 #define MAX17050_VFSOC0_ENABLE	0x60
 #define MAX17050_MLOCK1		0x62
 #define MAX17050_MLOCK2		0x63
+#define MAX17050_MISCCFG	0x2b
+#define MAX17050_VEMPTY		0x3a
 #define MAX17050_MODEL		0x80
 #define MAX17050_VFSOC		0xff
 
@@ -60,6 +62,9 @@ struct max17050_model {
 	uint16_t config, learn_cfg, filter_cfg, relax_cfg, full_soc_thresh;
 	uint16_t design_cap, fullcap, fullcapnom, ichgt_term;
 	uint16_t rcomp0, tempco, qrtbl[4], tgain, toff, version;
+	/* Written with the configuration where the vendor sets them, 0 to
+	 * leave the gauge's own. */
+	uint16_t misc_cfg, v_empty;
 	uint16_t cell[MAX17050_MODEL_WORDS];
 };
 

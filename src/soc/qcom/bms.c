@@ -261,24 +261,36 @@ static int ratiometric_mv(uint8_t chan)
 {
 	int gnd = pmic_vadc_raw(CHAN_GND_REF, 0), vdd = pmic_vadc_raw(CHAN_VDD_VADC, 0);
 	int code = pmic_vadc_raw(chan, 2);
-	if (vdd <= gnd || code < 0)
+	if (gnd < 0 || vdd <= gnd || code < 0)
 		return -1;
 	return (code - gnd) * 1800 / (vdd - gnd);
 }
 
-static int battery_temp(void)
+static int therm_t(unsigned i) { return board->therm ? board->therm[i].decidegrees : therm[i].t; }
+static int therm_mv(unsigned i) { return board->therm ? board->therm[i].mv : therm[i].mv; }
+
+bool pmic_battery_temp(int *t)
 {
 	int mv = ratiometric_mv(CHAN_BATT_THERM);
+	unsigned n = board->therm ? board->therm_n : ARRAY_SIZE(therm);
 	if (mv < 0)
-		return 250;
+		return false;
 	unsigned i = 0;
-	while (i < ARRAY_SIZE(therm) && therm[i].mv >= mv)
+	while (i < n && therm_mv(i) >= mv)
 		i++;
 	if (i == 0)
-		return therm[0].t;
-	if (i == ARRAY_SIZE(therm))
-		return therm[i - 1].t;
-	return (therm[i].t - therm[i - 1].t) * (mv - therm[i - 1].mv) / (therm[i].mv - therm[i - 1].mv) + therm[i - 1].t;
+		*t = therm_t(0);
+	else if (i == n)
+		*t = therm_t(i - 1);
+	else
+		*t = (therm_t(i) - therm_t(i - 1)) * (mv - therm_mv(i - 1)) / (therm_mv(i) - therm_mv(i - 1)) + therm_t(i - 1);
+	return true;
+}
+
+static int battery_temp(void)
+{
+	int t;
+	return pmic_battery_temp(&t) ? t : 250;
 }
 
 /* Battery voltage register reading to uV, corrected for the PMIC's
@@ -906,7 +918,7 @@ static void pmic_battery_init(void)
 
 static void pmic_battery_poll(void)
 {
-	pmic_charger_poll();
+	pmic_charger_poll(bms_soc());
 	bms_poll();
 }
 

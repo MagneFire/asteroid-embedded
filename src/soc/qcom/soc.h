@@ -196,7 +196,15 @@ int32_t pmic_battery_ua(void);
 int32_t pmic_battery_avg_ua(void);
 void pmic_iadc_trim(void);
 void pmic_charger_configure(void);
-void pmic_charger_poll(void);
+/* soc is the state of charge the charger resumes by. */
+void pmic_charger_poll(uint32_t soc);
+/* Charging held off whatever the charger's own state, for a cell too
+ * hot or too cold, or with no temperature to go by. */
+void pmic_charger_inhibit(bool on);
+/* The charge voltage and current in place of the board's, 0 for its own. */
+void pmic_charger_limits(uint16_t vdd_mv, uint16_t ibat_ma);
+/* The battery thermistor in tenths of a degree; false if unread. */
+bool pmic_battery_temp(int *t);
 void bms_init(void);
 void bms_poll(void);
 uint32_t bms_soc(void);

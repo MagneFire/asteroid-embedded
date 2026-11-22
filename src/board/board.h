@@ -41,6 +41,10 @@ struct board_battery {
 	unsigned ncells;
 };
 
+struct board_therm {
+	int16_t decidegrees, mv;
+};
+
 /* A driver for one kind of chip; a watch without the part has none. */
 struct touch_driver {
 	bool (*init)(void);
@@ -162,7 +166,7 @@ struct battery_driver {
 	const char *(*status)(void);
 };
 
-extern const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
+extern const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm;
@@ -253,6 +257,9 @@ struct board {
 
 	struct {
 		uint16_t vdd_max_mv, vdd_safe_mv, vin_min_mv, ibat_max_ma, ibat_safe_ma, iterm_ma;
+		/* A cell without a thermistor: the charger's hot and cold
+		 * comparators are switched off, or they would stop it. */
+		bool no_thermistor;
 	} chg;
 	/* The battery current sense resistor. */
 	uint32_t rsense_uohm;
@@ -269,6 +276,10 @@ struct board {
 	uint8_t unused_ldos[4];
 	const struct board_battery *battery;
 	const struct battery_driver *battery_driver;
+	/* The cell's thermistor at the PMIC's ADC, in tenths of a degree
+	 * against mV and with mV falling, where it is not sturgeon's. */
+	const struct board_therm *therm;
+	uint8_t therm_n;
 	/* A MAX17050 gauge, the wireless pad line (low on the pad), the
 	 * receiver's charge output and its termination (high stops charging)
 	 * and reduced rate inputs. */

@@ -331,6 +331,8 @@ uint32_t pmic_battery_mv(void)
 #define BAT_IF_PRES_STATUS	(SMBB_BAT_IF + 0x08)
 #define BAT_IF_BPD_CTRL		(SMBB_BAT_IF + 0x48)
 #define BAT_IF_VREF_THM_CTRL	(SMBB_BAT_IF + 0x4a)
+#define BAT_IF_BTC_CTRL		(SMBB_BAT_IF + 0x49)
+#define BTC_ENABLED		BIT(7)
 #define BAT_IF_BATFET_CTRL4	(SMBB_BAT_IF + 0x93)
 #define USB_OVP_CTL		(SMBB_USB + 0x42)
 #define USB_IMAX		(SMBB_USB + 0x44)
@@ -352,10 +354,10 @@ uint32_t pmic_battery_mv(void)
 #define USB_RT_VALID		BIT(1)
 #define CHG_EN			BIT(7)
 #define CHG_ON_BAT_FORCE	BIT(0)
-#define VDDMAX_MV		(board->chg.vdd_max_mv)
+#define VDDMAX_MV		(vddmax_mv ? vddmax_mv : board->chg.vdd_max_mv)
 #define VDDSAFE_MV		(board->chg.vdd_safe_mv)
 #define VINMIN_MV		(board->chg.vin_min_mv)
-#define IBATMAX_MA		(board->chg.ibat_max_ma)
+#define IBATMAX_MA		(ibatmax_ma ? ibatmax_ma : board->chg.ibat_max_ma)
 #define IBATSAFE_MA		(board->chg.ibat_safe_ma)
 #define ITERM_MA		(board->chg.iterm_ma)
 #define RESUME_DELTA_MV		100
@@ -371,6 +373,7 @@ uint32_t pmic_battery_mv(void)
  * checks each table. */
 
 static uint8_t trim_center;
+static uint16_t vddmax_mv, ibatmax_ma;
 static int32_t vddmax_delta_mv;
 static bool usb_present, fast_on, chg_done, chg_failed, resuming, eoc_active;
 static unsigned eoc_count, vbat_low_count;
@@ -389,9 +392,23 @@ static void smbb_update_secure(uint32_t addr, uint8_t mask, uint8_t val)
 	pmic_write(addr, v);
 }
 
+static bool inhibited;
+
 static void charge_enable(bool on)
 {
-	smbb_update(CHGR_CHG_CTRL, CHG_EN, on ? CHG_EN : 0);
+	smbb_update(CHGR_CHG_CTRL, CHG_EN, on && !inhibited ? CHG_EN : 0);
+}
+
+/* Held off, the enable bit is written again each time, so a write that
+ * did not take is not left standing. */
+void pmic_charger_inhibit(bool on)
+{
+	if (on == inhibited && !on)
+		return;
+	inhibited = on;
+	charge_enable(!chg_done);
+	if (on && (pmic_read(CHGR_CHG_CTRL) & CHG_EN))
+		log_printf("charger: still enabled after holding it off\n");
 }
 
 static void force_run_on_battery(bool on)
@@ -554,6 +571,8 @@ void pmic_charger_configure(void)
 
 	smbb_update(BAT_IF_BPD_CTRL, 0x03, BIT(1));
 	smbb_update(BAT_IF_VREF_THM_CTRL, 0xc0, 0xc0);
+	if (board->chg.no_thermistor)
+		smbb_update(BAT_IF_BTC_CTRL, BTC_ENABLED, 0);
 
 	smbb_update(USB_OVP_CTL, 0x03, 0x03);
 	smbb_update(USB_ENUM_T_STOP, BIT(0), BIT(0));
@@ -613,7 +632,19 @@ static void eoc_check(uint8_t chg, uint8_t bat)
 	eoc_active = false;
 }
 
-void pmic_charger_poll(void)
+void pmic_charger_limits(uint16_t vdd_mv, uint16_t ibat_ma)
+{
+	if (vdd_mv == vddmax_mv && ibat_ma == ibatmax_ma)
+		return;
+	vddmax_mv = vdd_mv;
+	ibatmax_ma = ibat_ma;
+	vddmax_set();
+	vbatdet_set(VDDMAX_MV + (resuming ? RESUME_DELTA_MV : -RESUME_DELTA_MV));
+	smbb_update(CHGR_IBAT_MAX, 0x3f, (uint8_t)(IBATMAX_MA / 50));
+	log_printf("charger: %u mV, %u mA\n", VDDMAX_MV, IBATMAX_MA);
+}
+
+void pmic_charger_poll(uint32_t soc)
 {
 	uint32_t now = time_ms();
 	if (now - poll_ms < 1000)
@@ -678,10 +709,10 @@ void pmic_charger_poll(void)
 	}
 	if (resuming && !(chg & (CHGR_RT_FAST | CHGR_RT_TRICKLE)))
 		resuming = false;
-	if (charging_now(chg, bat) || resuming || done_wait || arb_wait || !(bat & BAT_IF_RT_PRESENT))
+	if (inhibited || charging_now(chg, bat) || resuming || done_wait || arb_wait || !(bat & BAT_IF_RT_PRESENT))
 		return;
-	if (bms_soc() <= RESUME_PERCENT) {
-		log_printf("charger: resuming at %lu%%\n", bms_soc());
+	if (soc <= RESUME_PERCENT) {
+		log_printf("charger: resuming at %lu%%\n", soc);
 		resuming = true;
 		vbatdet_set(VDDMAX_MV + RESUME_DELTA_MV);
 		charge_enable(true);

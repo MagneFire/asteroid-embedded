@@ -238,6 +238,17 @@ bool batt_ua_aged(void);
 uint32_t batt_ua_age_ms(void);
 const char *batt_status(void);
 bool gauge_model_load(void);
+/* The MAX17050 gauge on its own, for a watch whose PMIC charges the cell:
+ * found and its model checked, then looked at again by update. */
+bool max17050_probe(void);
+void max17050_update(void);
+void max17050_host_temp(int decidegrees);
+uint32_t max17050_soc(void);
+uint32_t max17050_cell_mv(void);
+int32_t max17050_cell_ua(void);
+int32_t max17050_cell_avg_ua(void);
+uint16_t max17050_last_status(void);
+unsigned max17050_errors(void);
 /* The watch's light sensor (board->light): light_finish gives the lux
  * since light_start, or -1 without a reading. */
 void light_init(void);
