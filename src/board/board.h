@@ -90,6 +90,7 @@ struct hub_driver {
 	uint32_t (*heart_rate)(uint8_t *status, unsigned *readings);
 	bool (*tilted)(void);
 	bool (*tilt_on)(bool on);
+	void (*tilt_screen)(int state);
 	void (*accel_on)(bool on);
 	bool (*accel)(int16_t v[3]);
 	bool (*can_sleep)(void);

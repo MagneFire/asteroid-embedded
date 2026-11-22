@@ -37,11 +37,17 @@ uint32_t hub_heart_rate(uint8_t *status, unsigned *readings);
 bool hub_tilted(void);
 /* The tilts hub_tilted has returned so far, for another reader. */
 uint32_t hub_tilts(void);
-/* Tilt detection, off with the screen on as the vendor has it; false
- * if the hub did not take it, which the hub's poll asks again. */
+/* Tilt detection, off with the screen on as the vendor has it unless
+ * the hub takes the screen; false if the hub did not take it, which
+ * the hub's poll asks again. */
 bool hub_tilt_on(bool on);
 /* A second user of the tilts: detection is on while either wants it. */
 void hub_tilt_share(bool on);
+/* The screen a raise detector that tells lowers too takes into account:
+ * unknown while the AP has it. */
+enum { HUB_SCREEN_OFF, HUB_SCREEN_ON, HUB_SCREEN_UNKNOWN };
+void hub_tilt_screen(int state);
+bool hub_has_tilt_screen(void);
 void hub_accel_on(bool on);
 /* A second user of the readings: the accelerometer is on while either
  * wants it. */

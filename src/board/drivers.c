@@ -215,6 +215,14 @@ void hub_tilt_share(bool on)
 	}
 }
 
+void hub_tilt_screen(int state)
+{
+	if (HUB(tilt_screen))
+		board->hub->tilt_screen(state);
+}
+
+bool hub_has_tilt_screen(void) { return HUB(tilt_screen); }
+
 static bool accel_own, accel_shared;
 static void accel_apply(void)
 {
