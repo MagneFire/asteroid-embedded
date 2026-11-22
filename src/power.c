@@ -115,6 +115,8 @@ void power_lend_display(bool on)
 	lent = on;
 }
 
+bool power_display_lent(void) { return lent; }
+
 void power_dark_until_wake(void)
 {
 	dark = true;

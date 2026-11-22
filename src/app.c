@@ -261,11 +261,12 @@ static void tasks_init(uint32_t now)
 	sched_after(&steps_flush_task, now, steps_flush_next_ms());
 }
 
-/* The hub's tilt wake is on only while the screen sleeps. */
+/* The hub's tilt wake is on only while the screen sleeps; while the AP
+ * has the panel the watch's own wakes are dropped. */
 static void app_tilt(void)
 {
-	static bool tilt_on = true;
-	bool want_tilt = !power_awake();
+	static int tilt_on = -1;
+	bool want_tilt = !power_awake() && !power_display_lent() && setting_get(SETTING_TILT) != TILT_OFF;
 	if (want_tilt != tilt_on) {
 		hub_tilt_on(want_tilt);
 		tilt_on = want_tilt;
