@@ -6,7 +6,9 @@
  * after a mode change, and the store is only written while the
  * link has been quiet for a while, as a flash write masks interrupts
  * for longer than the AP's handshakes allow. The RTC keeps local time,
- * so the AP's Unix time is moved by its zone. */
+ * so the AP's Unix time is moved by its zone. The AP's clock can be far
+ * off, so its time is only taken while the AP set the clock last or
+ * nothing has; its zone is always taken. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -151,7 +153,11 @@ static void set_time(const struct proto_time *t)
 		zone_min = t->zone_min;
 		save_zone = true;
 	}
-	rtc_write((uint32_t)(t->time + zone_min * 60));
+	if (rtc_valid() && !rtc_from_ap()) {
+		log_printf("companion: time %ld from the AP left alone, zone %ld min\n", (long)t->time, (long)zone_min);
+		return;
+	}
+	rtc_write_from_ap((uint32_t)(t->time + zone_min * 60));
 	hub_set_time();
 	log_printf("companion: time %ld from the AP, zone %ld min\n", (long)t->time, (long)zone_min);
 }

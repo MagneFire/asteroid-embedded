@@ -193,6 +193,10 @@ void battery_from_ap(unsigned percent);
 uint32_t reset_status(void);
 /* Where the wall clock came from: kept across a reset, set, or not set. */
 const char *rtc_origin(void);
+/* The application processor's time, which gives way to any other. */
+void rtc_write_from_ap(uint32_t secs);
+/* Whether the AP set the clock last, also before a warm reset. */
+bool rtc_from_ap(void);
 
 void gpio_init(void);
 void gpio_swdck_irq(void (*fn)(unsigned n));

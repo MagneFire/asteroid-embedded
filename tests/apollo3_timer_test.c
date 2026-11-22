@@ -111,9 +111,24 @@ int main(void)
 	reset(true, BIT(5));
 	CHECK(rtc_valid() && rtc_read() == last);
 
+	/* The AP's time is known as such across a warm reset, until any
+	 * other sets the clock; it is gone with the time at a power-on. */
+	CHECK(!rtc_from_ap());
+	rtc_write_from_ap(1750000000);
+	CHECK(rtc_from_ap() && rtc_read() == 1750000000 && !strcmp(rtc_origin(), "set by the AP"));
+	reset(true, BIT(4));
+	CHECK(rtc_valid() && rtc_from_ap());
+	reset(false, BIT(4));
+	CHECK(rtc_valid() && rtc_from_ap());
+	rtc_write(1760000000);
+	CHECK(!rtc_from_ap());
+	reset(true, BIT(4));
+	CHECK(rtc_valid() && !rtc_from_ap());
+	rtc_write_from_ap(1750000000);
+
 	/* Power-on and brown-out start without a time. */
 	reset(true, BIT(1));
-	CHECK(!rtc_valid() && !strcmp(rtc_origin(), "not set"));
+	CHECK(!rtc_valid() && !strcmp(rtc_origin(), "not set") && !rtc_from_ap());
 	reset(true, BIT(4));
 	CHECK(!rtc_valid());
 

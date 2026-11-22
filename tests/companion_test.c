@@ -229,8 +229,16 @@ const char *log_previous_record(void) { return NULL; }
 uint32_t reset_status(void) { return reset_bits; }
 uint32_t rtc_read(void) { return rtc_last; }
 bool rtc_valid(void) { return rtc_writes != 0; }
+static bool rtc_ap;
+bool rtc_from_ap(void) { return rtc_ap; }
+void rtc_write_from_ap(uint32_t secs)
+{
+	rtc_write(secs);
+	rtc_ap = true;
+}
 void rtc_write(uint32_t secs)
 {
+	rtc_ap = false;
 	rtc_writes++;
 	rtc_last = secs;
 }
@@ -649,6 +657,24 @@ static void companion_scenario(void)
 	CHECK(a.mode == PROTO_MODE_WRISTBAND && a.last_mode == PROTO_MODE_NORMAL && a.reboot == PROTO_REBOOT_DEBUG);
 	wait_ms(5000);
 	CHECK(!display_lent && kv_sets == 2);
+
+	/* The AP's time replaces the AP's, but not a time the phone set;
+	 * the AP's zone is used either way. */
+	static const uint8_t b386[] = { 0x08, 0x02, 0x12, 0x02, 0x08, 0x01, 0x1a, 0x09,
+					0x08, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xd7, 0x04 };
+	CHECK(rtc_ap && rtc_last == 1700000000 - 300 * 60);
+	rtc_last += 3600;
+	ap_write(1, PROTO_BOOT, b386, sizeof b386);
+	companion_pass();
+	CHECK(rtc_ap && rtc_last == 1700000000 - 300 * 60 && rtc_writes == 2);
+	rtc_write(1800000000);
+	ap_write(1, PROTO_BOOT, b386, sizeof b386);
+	companion_pass();
+	CHECK(!rtc_ap && rtc_last == 1800000000 && rtc_writes == 3);
+	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
+	CHECK(a.time == 1800000000 + 300 * 60 && a.zone == -300);
+	wait_ms(5000);
+	CHECK(kv_sets == 2);
 
 	/* A 377 the AP never reads: no panel for the AP, no mode stored. */
 	ap_write(1, 373, NULL, 0);

@@ -24,6 +24,7 @@
 #define STCFG_MODE	(STCFG_FREEZE | STCFG_CLEAR | 0xfu)
 #define RESET_COLD	(BIT(1) | BIT(2))
 #define KEPT_MAGIC	0x52544331u	/* "RTC1" */
+#define AP_TAG		0x41503031u	/* "AP01" */
 /* Longer than any sleep, shorter than the counter's wrap. */
 #define KEPT_GAP_S	(30u * 3600u)
 
@@ -33,10 +34,12 @@
 #define KEPT		__attribute__((section(".kept")))
 #endif
 
-/* wraps and wall change all the time, so the sum leaves them out. */
+/* wraps and wall change all the time, so the sum leaves them out; ap
+ * is the base with AP_TAG while the time is the AP's, and outside the
+ * sum so that a clock kept by an older build stays valid. */
 static volatile struct {
 	uint32_t magic, base, sum;
-	uint32_t wraps, wall;
+	uint32_t wraps, wall, ap;
 } kept KEPT;
 
 static volatile uint32_t ticks;
@@ -146,7 +149,7 @@ static void tick_irq(void)
 void timer_resume(void) {}
 
 static uint32_t base;
-static bool set;
+static bool set, from_ap;
 
 static uint32_t kept_sum(void)
 {
@@ -158,15 +161,18 @@ static void keep_base(void)
 	kept.base = base;
 	kept.magic = KEPT_MAGIC;
 	kept.sum = kept_sum();
+	kept.ap = from_ap ? base ^ AP_TAG : 0;
 }
 
 /* The wall clock from before a warm reset: 0 when there is none. */
 static uint32_t kept_wall(void)
 {
 	origin = "not set";
+	from_ap = false;
 	if (kept.magic != KEPT_MAGIC || kept.sum != kept_sum() || (reset_status() & RESET_COLD))
 		return 0;
 	uint32_t wall = kept.wall;
+	from_ap = kept.ap == (kept.base ^ AP_TAG);
 	origin = "kept, last read";
 	if ((readl(STCFG) & STCFG_MODE) == STCFG_XTAL) {
 		uint32_t lo = readl(STTMR), hi = kept.wraps;
@@ -223,7 +229,18 @@ void rtc_write(uint32_t secs)
 {
 	base = secs - (uint32_t)(cnt_now() / SLEEP_CLK_HZ);
 	set = true;
+	from_ap = false;
 	origin = "set";
 	kept.wall = secs;
 	keep_base();
 }
+
+void rtc_write_from_ap(uint32_t secs)
+{
+	rtc_write(secs);
+	from_ap = true;
+	origin = "set by the AP";
+	keep_base();
+}
+
+bool rtc_from_ap(void) { return from_ap; }
