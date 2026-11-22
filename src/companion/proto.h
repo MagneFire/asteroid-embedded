@@ -54,6 +54,8 @@ int proto_reply_put(uint8_t *out, unsigned cap, const struct proto_reply *r);
 unsigned proto_reboot_reason(uint32_t reset_status, bool faulted);
 /* Whether the reset status bits say power-on or brown-out. */
 bool proto_powered_up(uint32_t reset_status);
+/* Whether the AP reset the Apollo3 through its reset pin. */
+bool proto_pin_reset(uint32_t reset_status);
 
 /* The sensor channel: a RequestBody from the AP's sensor HAL, with
  * fixed32 handles (the Android types) and fixed64 times in ns, and a

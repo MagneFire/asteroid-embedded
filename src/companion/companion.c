@@ -35,7 +35,7 @@
  * back, for an AP that is not there to give it back. */
 #define ESCAPE_MS	5000
 
-static bool ready, boot_lent, chips_on, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
+static bool ready, boot_lent, pin_reset, chips_on, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
 static bool replying, reporting, burst, key_held;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason;
 /* The mode a 377 queued or under way makes take effect once the AP has
@@ -78,9 +78,10 @@ static const char *const mode_names[] = { "normal", "wristband", "power off" };
 
 /* Stock's lines around a handover besides the panel's and the touch
  * controller's: own_gpio low takes touch and haptics off our side, and
- * release_gpio is let go of. Taken back, both go high first, so the
- * chips are there when their drivers start again. */
-static void lend_lines(bool to_ap)
+ * release_gpio is let go of, or held high after the AP's reset as
+ * stock does. Taken back, both go high first, so the chips are there
+ * when their drivers start again. */
+static void lend_lines(bool to_ap, bool hold_release)
 {
 	const uint8_t own = board->ap_link.own_gpio, rel = board->ap_link.release_gpio;
 	if (to_ap) {
@@ -88,7 +89,10 @@ static void lend_lines(bool to_ap)
 			gpio_set(own, 0);
 			gpio_config(own, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 		}
-		if (rel)
+		if (rel && hold_release) {
+			gpio_set(rel, 1);
+			gpio_config(rel, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		} else if (rel)
 			gpio_config(rel, 0, GPIO_INPUT, GPIO_PULL_NONE, 2);
 		return;
 	}
@@ -114,19 +118,25 @@ bool companion_boot(void)
 		zone_min = z;
 	uint32_t st = reset_status();
 	reboot_reason = proto_reboot_reason(st, log_previous_record() != NULL);
-	if (!proto_powered_up(st) && kept.magic == KEPT_MAGIC && kept.check == kept_check() &&
-	    kept.mode <= PROTO_MODE_POWER_OFF && kept.last <= PROTO_MODE_POWER_OFF) {
+	pin_reset = proto_pin_reset(st);
+	if (pin_reset) {
+		last_mode = mode;
+		mode = PROTO_MODE_NORMAL;
+		save_mode = last_mode != mode;
+	} else if (!proto_powered_up(st) && kept.magic == KEPT_MAGIC && kept.check == kept_check() &&
+		   kept.mode <= PROTO_MODE_POWER_OFF && kept.last <= PROTO_MODE_POWER_OFF) {
 		save_mode = kept.mode != mode;
 		mode = kept.mode;
 		last_mode = kept.last;
 	}
 	keep_mode();
-	if (mode == PROTO_MODE_NORMAL && !proto_powered_up(st)) {
-		boot_lent = chips_on = true;
+	boot_lent = mode == PROTO_MODE_NORMAL && (pin_reset || !proto_powered_up(st));
+	if (boot_lent) {
+		chips_on = true;
 		display_start_lent();
 		touch_start_lent();
 		haptics_hold(true);
-		lend_lines(true);
+		lend_lines(true, pin_reset);
 	}
 	return boot_lent;
 }
@@ -141,7 +151,8 @@ void companion_init(void)
 	if (boot_lent) {
 		ap_has_panel = want_ap = true;
 		power_lend_display(true);
-		log_printf("companion: normal mode before the reset, the AP keeps the panel\n");
+		log_printf(pin_reset ? "companion: reset by the AP, it keeps the panel\n"
+				     : "companion: normal mode before the reset, the AP keeps the panel\n");
 	}
 }
 
@@ -293,10 +304,10 @@ static void switch_panel(void)
 		haptics_hold(true);
 		display_lend(true);
 		touch_lend(true);
-		lend_lines(true);
+		lend_lines(true, false);
 		power_lend_display(true);
 	} else {
-		lend_lines(false);
+		lend_lines(false, false);
 		if (chips_on) {
 			chips_on = false;
 			if (board_chips_off())

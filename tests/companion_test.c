@@ -1410,6 +1410,83 @@ static void sensor_scenario(void)
 	CHECK(got.events == 0);
 }
 
+static char status[4096];
+static unsigned status_n;
+
+static void say(const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	int n = vsnprintf(status + status_n, sizeof status - status_n, fmt, ap);
+	va_end(ap);
+	if (n > 0 && status_n + (unsigned)n < sizeof status)
+		status_n += (unsigned)n;
+}
+
+static bool status_has(const char *s)
+{
+	status_n = 0;
+	status[0] = 0;
+	companion_status(say);
+	return strstr(status, s) != NULL;
+}
+
+/* Who has the panel after each kind of reset, from each stored mode.
+ * A power-on before each one leaves the kept mode the stored one. */
+static void boot_decisions(void)
+{
+	enum { REL = 14 };
+	static const struct { uint32_t bits; bool pin, powered; } resets[] = {
+		{ 1u << 0, true, false },	/* the AP's pin */
+		{ 1u << 0 | 1u << 1, true, true },
+		{ 1u << 1, false, true },	/* power-on */
+		{ 1u << 2, false, true },	/* brown-out */
+		{ 1u << 3, false, false },	/* software POR */
+		{ 1u << 4, false, false },	/* software POI */
+		{ 1u << 5, false, false },	/* debugger, as swdtool flash */
+		{ 1u << 6, false, false },	/* watchdog */
+	};
+	static const char *const names[] = { "normal", "wristband", "power off" };
+	char want[64];
+	for (unsigned r = 0; r < sizeof resets / sizeof resets[0]; r++)
+		for (int m = PROTO_MODE_NORMAL; m <= PROTO_MODE_POWER_OFF; m++) {
+			kv_mode = m;
+			reset_bits = 1u << 1;
+			companion_boot();
+			reset_bits = resets[r].bits;
+			levels[OWN] = 1;
+			outputs[OWN] = true;
+			levels[REL] = 0;
+			outputs[REL] = true;
+			bool lent = companion_boot(), want_lent = resets[r].pin || (m == PROTO_MODE_NORMAL && !resets[r].powered);
+			CHECK(lent == want_lent);
+			if (resets[r].pin)
+				snprintf(want, sizeof want, "normal mode, %s before", names[m]);
+			else
+				snprintf(want, sizeof want, "%s mode, %s before", names[m], names[m]);
+			if (!status_has(want))
+				printf("reset %08x, stored %s: %s", resets[r].bits, names[m], status);
+			CHECK(status_has(want));
+			if (resets[r].pin)
+				CHECK(!levels[OWN] && outputs[OWN] && levels[REL] && outputs[REL]);
+			else if (lent)
+				CHECK(!levels[OWN] && outputs[OWN] && !outputs[REL]);
+			else
+				CHECK(levels[OWN] && outputs[REL]);
+		}
+
+	/* The normal mode is stored after the AP's reset without a 373,
+	 * and the 377 says where it came from. */
+	struct ap_reply a;
+	kv_mode = PROTO_MODE_WRISTBAND;
+	reset_bits = 1u << 0;
+	CHECK(companion_boot());
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_NORMAL);
+	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND && a.reboot == PROTO_REBOOT_PIN);
+}
+
 int main(void)
 {
 	sensor_tests();
@@ -1572,6 +1649,7 @@ int main(void)
 
 	companion_scenario();
 	sensor_scenario();
+	boot_decisions();
 
 	if (failures)
 		printf("companion_test: %d failures\n", failures);

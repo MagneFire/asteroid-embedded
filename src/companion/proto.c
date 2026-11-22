@@ -220,6 +220,8 @@ int proto_reply_put(uint8_t *out, unsigned cap, const struct proto_reply *r)
 
 bool proto_powered_up(uint32_t st) { return st & (RESET_POWER_ON | RESET_BROWN_OUT); }
 
+bool proto_pin_reset(uint32_t st) { return st & RESET_PIN; }
+
 unsigned proto_reboot_reason(uint32_t st, bool faulted)
 {
 	if ((st & RESET_WATCHDOG) || faulted)

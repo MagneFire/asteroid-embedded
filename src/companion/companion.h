@@ -3,7 +3,8 @@
  * normal mode the AP has the panel and the touch controller; in the
  * wristband and power off modes the watch here has them. Until the AP
  * says otherwise the watch runs on its own, but for a reset other than
- * a power-on in the normal mode: then the AP keeps them. */
+ * a power-on in the normal mode, or any reset by the AP: then the AP
+ * keeps them. */
 #ifndef COMPANION_H
 #define COMPANION_H
 #include <stdbool.h>
