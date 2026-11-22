@@ -637,6 +637,20 @@ static int cmd_log(void)
 	return read_zone(log_base + log_console, LOG_RECORD, false, stdout);
 }
 
+/* Raw bytes of RAM to stdout, for reading the firmware's state. */
+static int cmd_peek(const char *a, const char *n)
+{
+	uint32_t addr = strtoul(a, NULL, 0), len = strtoul(n, NULL, 0);
+	if (addr < 0x10000000u || len > 0x10000u || addr + len > 0x10060000u)
+		return refuse("only SRAM is read");
+	uint8_t *buf = malloc(len);
+	if (!buf || debug_on() || swd.read_block(NULL, addr, buf, len))
+		return fail("read failed");
+	fwrite(buf, 1, len, stdout);
+	free(buf);
+	return 0;
+}
+
 /* 1 while the ring is full; the byte is kept for the next try. */
 static int put_in(uint8_t c)
 {
@@ -716,7 +730,8 @@ int main(int argc, char **argv)
 {
 	if (argc < 2) {
 		fprintf(stderr, "usage: swdtool probe | backup <dir> | flash <image> | restore <dir>/mcu.flash |\n"
-				"               ramrun <image> <addr> | log | shell | reset | probe-reset\n");
+				"               ramrun <image> <addr> | log | shell | peek <addr> <bytes> |\n"
+				"               reset | probe-reset\n");
 		return 2;
 	}
 	const char *c = argv[1];
@@ -746,12 +761,14 @@ int main(int argc, char **argv)
 		return cmd_restore(argv[2]);
 	if (!strcmp(c, "ramrun") && argc == 4)
 		return cmd_ramrun(argv[2], argv[3]);
-	if (swd.read_block && (!strcmp(c, "log") || !strcmp(c, "shell")))
+	if (swd.read_block && (!strcmp(c, "log") || !strcmp(c, "shell") || !strcmp(c, "peek")))
 		swd.read_block = link_read_live;
 	if (!strcmp(c, "log"))
 		return cmd_log();
 	if (!strcmp(c, "shell"))
 		return cmd_shell();
+	if (!strcmp(c, "peek") && argc == 4)
+		return cmd_peek(argv[2], argv[3]);
 	if (!strcmp(c, "reset"))
 		return hard_reset() ? fail("reset failed") : 0;
 	fprintf(stderr, "swdtool: unknown command %s\n", c);
