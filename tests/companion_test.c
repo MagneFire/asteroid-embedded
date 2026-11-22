@@ -249,6 +249,13 @@ void display_start_lent(void) { display_lent = true; }
 void touch_lend(bool to_ap) { touch_lent = to_ap; }
 void touch_start_lent(void) { touch_lent = true; }
 void power_lend_display(bool on) { power_lent = on; }
+static bool bt_lent;
+static unsigned bt_lends;
+void action_bluetooth_lend(bool to_ap, uint32_t now)
+{
+	bt_lent = to_ap;
+	bt_lends++;
+}
 void power_dark_until_wake(void) { darks++; }
 bool board_chips_off(void)
 {
@@ -622,7 +629,7 @@ static void companion_scenario(void)
 	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && !levels[OWN] && !chips_offs);
 	CHECK(haptics_init() && !outputs[MOTOR_EN]);
 	companion_init();
-	CHECK(power_lent && irq_on[DN_INT]);
+	CHECK(power_lent && irq_on[DN_INT] && bt_lent);
 
 	/* The AP's boot loader strobes dn_int for 80 ms and takes any answer
 	 * as a boot state: none comes, and a 377 waiting goes after it. */
@@ -669,6 +676,7 @@ static void companion_scenario(void)
 	CHECK(display_lent);
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
+	CHECK(!bt_lent);
 	CHECK(outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	/* The chips on the AP's bus are put to sleep once it is the watch's,
 	 * and their drivers start over. */
@@ -714,14 +722,15 @@ static void companion_scenario(void)
 	CHECK(levels[UP_INT]);
 	wait_ms(LINK_TX_MS);
 	CHECK(!levels[UP_INT]);
+	unsigned lends = bt_lends;
 	wait_ms(11000);
 	wait_ms(1);
-	CHECK(!display_lent && !power_lent && kv_sets == 2);
+	CHECK(!display_lent && !power_lent && kv_sets == 2 && !bt_lent && bt_lends == lends);
 
 	/* 373, then 374: taken back without waking. */
 	mode_message(373, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
-	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && power_lent && !levels[OWN]);
+	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && power_lent && !levels[OWN] && bt_lent);
 	/* A reset before the store has the normal mode keeps the AP's
 	 * panel. */
 	CHECK(kv_mode == PROTO_MODE_WRISTBAND);
@@ -731,6 +740,7 @@ static void companion_scenario(void)
 	CHECK(a.mode == PROTO_MODE_POWER_OFF && a.last_mode == PROTO_MODE_NORMAL && display_lent);
 	wait_ms(1000);
 	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2 && light_losts == 2);
+	CHECK(!bt_lent);
 
 	/* The power key held for 5 s takes the panel back from an AP that
 	 * does not answer, and power off is stored at once. */
@@ -743,7 +753,7 @@ static void companion_scenario(void)
 	wait_ms(4999);
 	CHECK(display_lent);
 	wait_ms(1);
-	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF);
+	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF && !bt_lent);
 	key_down = false;
 
 	/* A 374 whose 377 the AP never reads, as it is on its way down:

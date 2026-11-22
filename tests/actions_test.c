@@ -13,6 +13,7 @@
 #include "present.h"
 #include "app.h"
 #include "storage/storage.h"
+#include "sched.h"
 #include "actions.h"
 
 static int values[SETTINGS];
@@ -36,8 +37,30 @@ int bt_addr_load(uint8_t *a) { return 0; }
 int bt_addr_get(uint8_t *a) { return 0; }
 static bool bt_chip = true;
 bool bt_present(void) { return bt_chip; }
-int bt_start(const uint8_t *a, struct bt_info *i) { bt_started++; return 0; }
-void bt_stop(void) { bt_stopped++; }
+static bool bt_on;
+int bt_start(const uint8_t *a, struct bt_info *i)
+{
+	memset(i, 0, sizeof *i);
+	bt_started++;
+	bt_on = true;
+	return 0;
+}
+void bt_stop(void)
+{
+	bt_stopped++;
+	bt_on = false;
+}
+bool bt_running(void) { return bt_on; }
+/* The one task the actions add, and when it is due, or 0. */
+static struct sched_task *task;
+static uint32_t task_at;
+bool sched_add(struct sched_task *t)
+{
+	task = t;
+	return true;
+}
+void sched_after(struct sched_task *t, uint32_t now, uint32_t ms) { task_at = now + ms; }
+void sched_cancel(struct sched_task *t) { task_at = 0; }
 int bt_host_start(void) { return 0; }
 void bt_host_stop(void) {}
 void power_off_arm(void) {}
@@ -220,6 +243,44 @@ static void reset_watch(void)
 	reboot_ok = false;
 }
 
+/* The radio is off while the AP has the panel and back a while after
+ * the watch takes it, if the setting has it on. */
+static void lend(void)
+{
+	values[SETTING_BLUETOOTH] = 1;
+	bt_started = bt_stopped = 0;
+	bt_on = true;
+	action_bluetooth_lend(true, 1000);
+	CHECK(!bt_on && bt_stopped == 1 && !task_at);
+	action_bluetooth_start();
+	CHECK(!bt_on && !bt_started);
+	action_bluetooth_lend(false, 2000);
+	CHECK(!bt_on && task && task_at == 4000);
+	/* Lent again before the start: no start. */
+	action_bluetooth_lend(true, 3000);
+	CHECK(!task_at && bt_stopped == 1);
+	action_bluetooth_lend(false, 5000);
+	CHECK(task_at == 7000);
+	task->run(7000);
+	CHECK(bt_on && bt_started == 1);
+	/* The setting off: nothing starts it when the watch takes the
+	 * panel back. */
+	action_bluetooth_lend(true, 8000);
+	values[SETTING_BLUETOOTH] = 0;
+	action_bluetooth_lend(false, 9000);
+	CHECK(!bt_on && !task_at);
+	/* Switched on while lent: it waits for the panel. */
+	action_bluetooth_lend(true, 10000);
+	action_setting_toggled(SETTING_BLUETOOTH);
+	CHECK(values[SETTING_BLUETOOTH] == 1 && !bt_on && bt_started == 1);
+	action_bluetooth_lend(false, 11000);
+	CHECK(task_at == 13000);
+	task->run(13000);
+	CHECK(bt_on && bt_started == 2);
+	action_bluetooth_lend(false, 14000);
+	CHECK(task_at == 13000);
+}
+
 int main(void)
 {
 	reset_watch();
@@ -229,6 +290,7 @@ int main(void)
 	steps();
 	clock_set();
 	civil_days();
+	lend();
 	if (failures)
 		return 1;
 	puts("actions_test: ok");

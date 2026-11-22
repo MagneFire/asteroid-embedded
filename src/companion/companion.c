@@ -16,6 +16,7 @@
 #include "sensors/hub.h"
 #include "storage/storage.h"
 #include "power.h"
+#include "actions.h"
 #include "companion/companion.h"
 #include "companion/link.h"
 #include "companion/proto.h"
@@ -151,6 +152,7 @@ void companion_init(void)
 	if (boot_lent) {
 		ap_has_panel = want_ap = true;
 		power_lend_display(true);
+		action_bluetooth_lend(true, time_ms());
 		log_printf(pin_reset ? "companion: reset by the AP, it keeps the panel\n"
 				     : "companion: normal mode before the reset, the AP keeps the panel\n");
 	}
@@ -295,10 +297,11 @@ static void message(const uint8_t *p, unsigned n, uint32_t now)
 
 /* Taken back for a 374, the panel stays dark: the AP is still on its
  * way down and turns it off. */
-static void switch_panel(void)
+static void switch_panel(uint32_t now)
 {
 	switching = false;
 	ap_has_panel = want_ap;
+	action_bluetooth_lend(want_ap, now);
 	if (want_ap) {
 		sns_lend(true);
 		haptics_hold(true);
@@ -410,7 +413,7 @@ static void replied(uint32_t now)
 static void settle(uint32_t now)
 {
 	if (switching && (want_ap || now - take_t >= TAKE_DELAY_MS))
-		switch_panel();
+		switch_panel(now);
 	if ((save_mode || save_zone) && store_wait_ms(now) == 0) {
 		if (save_mode) {
 			uint8_t m = (uint8_t)mode;

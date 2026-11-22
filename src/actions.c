@@ -7,10 +7,26 @@
 #include "present.h"
 #include "app.h"
 #include "storage/storage.h"
+#include "sched.h"
 #include "actions.h"
+
+/* Starting the radio holds up the main loop for a while, and the face
+ * comes first. */
+#define BT_TAKE_MS	2000
+
+static bool bt_lent;
+static struct sched_task bt_task;
+
+static bool bt_run(uint32_t now)
+{
+	action_bluetooth_start();
+	return false;
+}
 
 void action_bluetooth_start(void)
 {
+	if (bt_lent)
+		return;
 	uint8_t addr[6];
 	struct bt_info info;
 	if (!bt_present())
@@ -25,6 +41,28 @@ void action_bluetooth_start(void)
 	int r = bt_host_start();
 	if (r)
 		log_printf("bt: host failed (%d)\n", r);
+}
+
+void action_bluetooth_lend(bool to_ap, uint32_t now)
+{
+	bt_lent = to_ap;
+	if (to_ap) {
+		sched_cancel(&bt_task);
+		if (bt_running()) {
+			bt_host_stop();
+			bt_stop();
+			log_printf("bt: off while the AP has the panel\n");
+		}
+		return;
+	}
+	if (!setting_get(SETTING_BLUETOOTH) || bt_running())
+		return;
+	if (!bt_task.run) {
+		bt_task.name = "bt";
+		bt_task.run = bt_run;
+		sched_add(&bt_task);
+	}
+	sched_after(&bt_task, now, BT_TAKE_MS);
 }
 
 #ifdef SOC_RESET_WATCH
