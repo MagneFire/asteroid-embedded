@@ -21,16 +21,25 @@ void stats_init(uint32_t start)
 	frames0 = display_frames();
 }
 
+/* In tenths of a milliamp, as a change asleep is often less than one. */
+static const char *tenths(int32_t ua, char *s)
+{
+	int32_t t = (ua < 0 ? -ua : ua) / 100;
+	snprintf(s, 16, "%s%ld.%ld", ua < 0 && t ? "-" : "", t / 10, t % 10);
+	return s;
+}
+
 /* A gauge without an average of its own gives a reading that can be
  * minutes old while asleep, so the line says how old it is. */
 static const char *current(bool now_too)
 {
 	static char s[64];
+	char avg[16];
 	if (!batt_ua_aged()) {
 		if (now_too)
-			snprintf(s, sizeof s, "battery %ld mA, %ld mA average", batt_ua() / 1000, batt_avg_ua() / 1000);
+			snprintf(s, sizeof s, "battery %ld mA, %s mA average", batt_ua() / 1000, tenths(batt_avg_ua(), avg));
 		else
-			snprintf(s, sizeof s, "%ld mA average", batt_avg_ua() / 1000);
+			snprintf(s, sizeof s, "%s mA average", tenths(batt_avg_ua(), avg));
 	} else if (batt_ua_age_ms() == UINT32_MAX) {
 		snprintf(s, sizeof s, "no battery current yet");
 	} else {
