@@ -12,6 +12,7 @@
 #define BATT_SETUP(fn) (!board_assumed && BATT(fn))
 #define TOUCH(fn) (touch && touch->fn)
 #define HUB(fn) (board->hub && board->hub->fn)
+#define TILT_RETRY_MS	1000
 #define LIGHT(fn) (board->light && board->light->fn)
 
 bool board_chips_off(void)
@@ -137,10 +138,20 @@ void touch_stats(uint32_t *attentions, uint32_t *errors)
 }
 
 bool hub_init(void) { return HUB(init) && board->hub->init(); }
+static bool tilt_own, tilt_taken = true;
+static uint32_t tilt_t;
+static bool tilt_apply(void)
+{
+	tilt_t = time_ms();
+	tilt_taken = !HUB(tilt_on) || board->hub->tilt_on(tilt_own);
+	return tilt_taken;
+}
 void hub_poll(void)
 {
 	if (HUB(poll))
 		board->hub->poll();
+	if (!tilt_taken && time_ms() - tilt_t >= TILT_RETRY_MS)
+		tilt_apply();
 }
 int hub_send(const uint8_t *p, unsigned n) { return HUB(send) ? board->hub->send(p, n) : -1; }
 void hub_set_time(void)
@@ -193,7 +204,8 @@ bool hub_tilted(void)
 uint32_t hub_tilts(void) { return tilts; }
 bool hub_tilt_on(bool on)
 {
-	return !HUB(tilt_on) || board->hub->tilt_on(on);
+	tilt_own = on;
+	return tilt_apply();
 }
 
 static bool accel_own, accel_shared;

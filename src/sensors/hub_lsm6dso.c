@@ -87,19 +87,22 @@ static int main_page(void) { return emb_open ? emb(false) : 0; }
 static void line_up(unsigned pin) { irq_seen = true; }
 
 /* The accelerometer runs while the step counter or tilt needs it, and
- * for readings. */
-static void apply(void)
+ * for readings. False if any write failed. */
+static bool apply(void)
 {
 	if (main_page())
-		return;
-	wr(CTRL1_XL, XL_26HZ_4G);
-	if (!emb(true)) {
-		wr(EMB_FUNC_EN_A, PEDO_EN | (tilt_wanted ? TILT_EN : 0));
-		wr(EMB_FUNC_INT1, tilt_wanted ? INT1_TILT : 0);
-		wr(PAGE_RW, EMB_LIR);
+		return false;
+	int e = wr(CTRL1_XL, XL_26HZ_4G);
+	e |= emb(true);
+	if (!e) {
+		e |= wr(EMB_FUNC_EN_A, PEDO_EN | (tilt_wanted ? TILT_EN : 0));
+		e |= wr(EMB_FUNC_INT1, tilt_wanted ? INT1_TILT : 0);
+		e |= wr(PAGE_RW, EMB_LIR);
 	}
-	if (!emb(false))
-		wr(MD1_CFG, tilt_wanted ? INT1_EMB_FUNC : 0);
+	if (emb(false))
+		return false;
+	e |= wr(MD1_CFG, tilt_wanted ? INT1_EMB_FUNC : 0);
+	return !e;
 }
 
 static bool lsm_init(void)
@@ -169,8 +172,7 @@ static bool lsm_tilt_on(bool on)
 	if (!ready)
 		return false;
 	tilt_wanted = on;
-	apply();
-	return true;
+	return apply();
 }
 
 static void lsm_accel_on(bool on) { accel_wanted = on; }

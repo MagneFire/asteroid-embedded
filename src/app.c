@@ -266,8 +266,10 @@ static void app_tilt(void)
 {
 	static bool tilt_on = true;
 	bool want_tilt = !power_awake();
-	if (want_tilt != tilt_on && hub_tilt_on(want_tilt))
+	if (want_tilt != tilt_on) {
+		hub_tilt_on(want_tilt);
 		tilt_on = want_tilt;
+	}
 }
 
 void app_sensors(uint32_t now)
