@@ -1249,18 +1249,25 @@ static void sensor_scenario(void)
 	CHECK(got.events >= 1 && got.ev[0].w[3] == PROTO_SNS_HIGH);
 	ap_activate(PROTO_SNS_MAG, false, 0);
 
-	/* The orientation runs the accelerometer and the magnetometer while
-	 * it is subscribed: face up with 12 o'clock to the north, then to
-	 * the east, with the field's accuracy. */
+	/* The orientation runs the accelerometer, the gyroscope and the
+	 * magnetometer while it is subscribed: face up with 12 o'clock to
+	 * the north, then turned to the east in a second, with the field's
+	 * accuracy. */
 	static const int16_t flat[3] = { 0, 0, 1000 };
-	static const float north[3] = { 0, 30, -36 }, east[3] = { -30, 0, -36 };
+	static const float north[3] = { 0, 30, -36 };
 	memcpy(accel_mg, flat, sizeof flat);
+	set_field(north, iron);
 	ap_batch(PROTO_SNS_ORIENTATION, 100000000, 0);
 	ap_activate(PROTO_SNS_ORIENTATION, true, 0);
 	CHECK(accel_shared && mag_period == 20 && gyro_period == 20);
 	for (int k = 0; k < 2; k++) {
-		const float *f = k ? east : north;
-		set_field(f, iron);
+		for (int i = 1; k && i <= 50; i++) {
+			float t = (float)i / 50 * 3.14159265f / 2, f[3] = { -30 * sinf(t), 30 * cosf(t), -36 };
+			gyro_counts[2] = (int16_t)lroundf(-3.14159265f / 2 / GYRO_RADS);
+			set_field(f, iron);
+			ap_sensors(20);
+		}
+		gyro_counts[2] = 0;
 		memset(&got, 0, sizeof got);
 		ap_sensors(1000);
 		CHECK(got.events >= 9 && got.events <= 11);

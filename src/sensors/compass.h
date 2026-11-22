@@ -52,8 +52,4 @@ void compass_correct(const float raw[3], float out[3]);
  * time since the last one: out is the field, the result its accuracy. */
 int compass_feed(struct compass *c, const float raw[3], const float gyro[3], float dt, float out[3]);
 unsigned compass_bins(const struct compass *c);
-/* Azimuth (0-360), pitch (±180) and roll (±90) in degrees, from the
- * accelerometer (any unit) and the calibrated field; false if the
- * field is along gravity or either is 0. */
-bool compass_orientation(const float g[3], const float m[3], float out[3]);
 #endif

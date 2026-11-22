@@ -479,26 +479,3 @@ int compass_feed(struct compass *c, const float raw[3], const float gyro[3], flo
 	}
 	return off > OFF_FIELD && c->status > LOW ? LOW : c->status;
 }
-
-bool compass_orientation(const float g[3], const float m[3], float out[3])
-{
-	float h[3], a[3], n[3];
-	float gl = len3(g);
-	if (gl == 0)
-		return false;
-	for (int i = 0; i < 3; i++)
-		a[i] = g[i] / gl;
-	/* East, then north, in the device's axes. */
-	cross(m, a, h);
-	float hl = len3(h), ml = len3(m);
-	if (hl < 0.1f * ml || hl == 0)
-		return false;
-	for (int i = 0; i < 3; i++)
-		h[i] /= hl;
-	cross(a, h, n);
-	float az = fm_atan2(h[1], n[1]) * 180 / FM_PI;
-	out[0] = az < 0 ? az + 360 : az;
-	out[1] = fm_atan2(-a[1], a[2]) * 180 / FM_PI;
-	out[2] = fm_atan2(a[0], fm_sqrt(a[1] * a[1] + a[2] * a[2])) * 180 / FM_PI;
-	return true;
-}

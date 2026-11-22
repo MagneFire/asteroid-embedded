@@ -12,6 +12,7 @@
 #include "sensors/afe4900.h"
 #include "sensors/ak09918.h"
 #include "sensors/compass.h"
+#include "sensors/fusion.h"
 #include "sensors/hub.h"
 #include "sensors/lsm6dso.h"
 #include "sensors/tsl258x.h"
@@ -107,8 +108,9 @@ static struct {
 } count;
 /* The calibration lasts for the boot, as the vendor's. */
 static struct compass compass;
-static bool compass_ready, smoothed, field_new;
-static float field[3], gravity[3];
+static struct fusion fusion;
+static bool compass_ready, field_new;
+static float field[3];
 static int field_accuracy = -1;
 static uint32_t compass_t, compass_due;
 
@@ -256,7 +258,7 @@ static void activate(int i, bool on)
 		seen_tilts = hub_tilts();
 		tilt_owed = false;
 	} else if (i == ORIENT)
-		smoothed = false;
+		fusion_init(&fusion);
 	if ((i == MAG || i == ORIENT) && on && kept.subs[MAG].on + kept.subs[ORIENT].on == 1) {
 		compass_due = now;
 		compass_t = now;
@@ -374,8 +376,9 @@ static void push_floats(uint32_t handle, const float v[3], int accuracy)
 	push(handle, mcu_ns(), w, false);
 }
 
-/* The magnetometer and the gyroscope into the calibration, every
- * COMPASS_MS; a magnetometer sample out of range is left out. */
+/* The magnetometer and the gyroscope into the calibration every
+ * COMPASS_MS, and with the accelerometer into the orientation; a
+ * magnetometer sample out of range is left out. */
 static void sample_compass(uint32_t now)
 {
 	if (!compass_on() || (int32_t)(now - compass_due) < 0)
@@ -383,26 +386,29 @@ static void sample_compass(uint32_t now)
 	compass_due += COMPASS_MS;
 	if ((int32_t)(now - compass_due) >= 0)
 		compass_due = now + COMPASS_MS;
-	int16_t c[3], g[3];
+	int16_t c[3], g[3], v[3];
 	int got = ak09918_read(c);
-	if (got == AK09918_OVERFLOW)
-		field_new = false;
-	if (got != AK09918_OK)
-		return;
-	float raw[3], rate[3];
-	for (int i = 0; i < 3; i++)
-		raw[i] = (float)(mag_axes[i].sign * c[mag_axes[i].from]) * AK09918_UT_PER_COUNT;
 	bool turned = lsm6dso_gyro(g);
-	for (int i = 0; i < 3; i++)
+	float raw[3], rate[3], dt = (float)(now - compass_t) / 1000;
+	compass_t = now;
+	for (int i = 0; i < 3; i++) {
+		raw[i] = (float)(mag_axes[i].sign * c[mag_axes[i].from]) * AK09918_UT_PER_COUNT;
 		rate[i] = g[i] * GYRO_TO_RADS;
+	}
 	if (!compass_ready) {
 		compass_init(&compass);
 		compass_ready = true;
 	}
-	float dt = (float)(now - compass_t) / 1000;
-	compass_t = now;
-	field_accuracy = compass_feed(&compass, raw, turned ? rate : NULL, dt, field);
-	field_new = true;
+	if (got == AK09918_OK) {
+		field_accuracy = compass_feed(&compass, raw, turned ? rate : NULL, dt, field);
+		field_new = true;
+	} else if (got == AK09918_OVERFLOW)
+		field_new = false;
+	if (kept.subs[ORIENT].on && hub_accel(v)) {
+		float a[3] = { v[0], v[1], v[2] };
+		bool fresh = got == AK09918_OK;
+		fusion_update(&fusion, a, turned ? rate : NULL, fresh ? field : NULL, fresh ? field_accuracy : 0, dt);
+	}
 }
 
 /* The LSM6DSO's axes are taken as Android's. The gyroscope's zero-rate
@@ -420,20 +426,11 @@ static void sample_vectors(uint32_t now)
 	}
 }
 
-/* Azimuth, pitch and roll with the field's accuracy. Gravity is
- * smoothed, as the accelerometer also has the arm's movement in it. */
+/* Azimuth, pitch and roll with the field's accuracy. */
 static void sample_orientation(uint32_t now)
 {
-	int16_t v[3];
-	if (!sample_due(ORIENT, now))
-		return;
-	if (!hub_accel(v) || field_accuracy < 0)
-		return;
-	for (int i = 0; i < 3; i++)
-		gravity[i] = smoothed ? (gravity[i] + v[i]) / 2 : v[i];
-	smoothed = true;
 	float out[3];
-	if (compass_orientation(gravity, field, out))
+	if (sample_due(ORIENT, now) && field_accuracy >= 0 && fusion_angles(&fusion, out))
 		push_floats(PROTO_SNS_ORIENTATION, out, field_accuracy);
 }
 
