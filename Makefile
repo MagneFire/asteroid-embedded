@@ -43,7 +43,7 @@ SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c s
                suspend.S i2c_qup.c spi_qup.c uart_dm.c rpm.c) \
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_nanohub.c src/sensors/hr_accept.c src/sensors/nanohub_proto.c src/sensors/light_tsl2584.c \
-        src/input/touch.c src/input/touch_it7260.c src/input/fts.c src/input/touch_fts.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/display/backlight_lm3530.c \
+        src/input/touch.c src/input/touch_it7260.c src/input/fts.c src/input/touch_fts.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/input/haptics_gp.c src/display/backlight_lm3530.c \
         src/display/display.c src/display/mdp3.c src/display/dsi.c src/soc/charger_smb231.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c src/gpu/soft.c src/gpu/qcom_compose.c \
         src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc_msm.c
 CPU_qcom  := cortex-a7

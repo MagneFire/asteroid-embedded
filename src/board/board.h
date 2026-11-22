@@ -165,7 +165,7 @@ struct battery_driver {
 extern const struct battery_driver battery_pmic, battery_max17050, battery_smb231;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub;
-extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo;
+extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm;
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530;
 extern const struct light_driver light_tsl2584, light_m4, light_nanohub;
 
@@ -368,6 +368,9 @@ struct board {
 		/* A motor fed by an LDO of its own, and that LDO's voltage. */
 		uint8_t ldo;
 		uint32_t ldo_uv;
+		/* A motor driven by a general purpose clock's duty cycle: its
+		 * pin and function, the clock's N and the drive in percent. */
+		uint8_t pwm_gpio, pwm_func, pwm_n, pwm_percent;
 	} motor_pins;
 
 	/* The speaker amplifier, addr 0 if there is none. */
