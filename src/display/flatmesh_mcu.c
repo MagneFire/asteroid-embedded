@@ -24,16 +24,14 @@
 #define IND_LOW_A	0.6f
 #define IND_HIGH_A	0.8f
 #define IND_FAR		12
-/* The strip's dots: diamonds along the bottom, the page on show large
- * and bright, the one a drag would turn to large. */
-#define DOTS		12
-#define DOT_GAP		16.0f
-#define DOT_UP		14
-#define DOT_W		5.0f
-#define DOT_A		0.4f
-#define DOT_ON_W	7.0f
-#define DOT_ON_A	0.9f
-#define DOT_NEXT_A	0.6f
+/* The strip's dots, as qml-asteroid's PageDot in asteroid-weather: discs
+ * 3 % of the screen wide, 3.75 % up, a quarter of a disc apart, the
+ * page on show at full opacity and the others at half. */
+#define DOTS		16
+#define DOT_W		3.0f
+#define DOT_UP		3.75f
+#define DOT_A		0.5f
+#define DOT_ON_A	1.0f
 
 typedef uint32_t __attribute__((may_alias)) word;
 
@@ -61,6 +59,7 @@ static struct view {
 
 struct ind {
 	float x, y, w, a;
+	bool round;
 };
 static struct ind inds[4 + DOTS];
 static unsigned n_inds;
@@ -204,10 +203,10 @@ void ui_line_under(uint32_t y, uint32_t x, uint32_t w, uint16_t *rgb565)
 }
 
 /* AsteroidOS's indicator: a white square turned 45 degrees, w wide,
- * its edges smoothed over a pixel, at opacity a. */
+ * or a disc w across, its edges smoothed over a pixel, at opacity a. */
 static void ind_line(uint16_t *px, int y, int x0, int w, const struct ind *d)
 {
-	float h = d->w * 0.70710678f, dy = (float)y + 0.5f - d->y;
+	float h = d->round ? d->w * 0.5f : d->w * 0.70710678f, dy = (float)y + 0.5f - d->y;
 	if (dy < 0)
 		dy = -dy;
 	if (dy >= h + 0.5f)
@@ -219,7 +218,7 @@ static void ind_line(uint16_t *px, int y, int x0, int w, const struct ind *d)
 		to = x0 + w;
 	for (int x = from; x < to; x++) {
 		float dx = (float)x + 0.5f - d->x;
-		float c = h - ((dx < 0 ? -dx : dx) + dy) + 0.5f;
+		float c = h + 0.5f - (d->round ? __builtin_sqrtf(dx * dx + dy * dy) : (dx < 0 ? -dx : dx) + dy);
 		if (c <= 0)
 			continue;
 		unsigned a = (unsigned)((c > 1 ? 1 : c) * d->a * 255.0f + 0.5f), p = px[x - x0];
@@ -254,7 +253,7 @@ static unsigned indicators(const struct backdrop *b, struct ind *out)
 	unsigned n = 0;
 	if (b->ambient) {
 		if (b->pending)
-			out[n++] = (struct ind){ (float)(IND_FAR + b->dx), (float)(screen_h / 2 + b->dy), IND_HIGH_W, IND_HIGH_A };
+			out[n++] = (struct ind){ (float)(IND_FAR + b->dx), (float)(screen_h / 2 + b->dy), IND_HIGH_W, IND_HIGH_A, false };
 		return n;
 	}
 	if (b->modal)
@@ -266,14 +265,15 @@ static unsigned indicators(const struct backdrop *b, struct ind *out)
 		float in = kept ? IND_FAR : 0.0f;
 		out[n++] = (struct ind){ e == 0 ? in : e == 1 ? (float)screen_w - in : (float)(screen_w / 2),
 					 e == 2 ? in : e == 3 ? (float)screen_h - in : (float)(screen_h / 2),
-					 kept ? IND_HIGH_W : IND_LOW_W, kept ? IND_HIGH_A : IND_LOW_A };
+					 kept ? IND_HIGH_W : IND_LOW_W, kept ? IND_HIGH_A : IND_LOW_A, false };
 	}
-	for (unsigned i = 0; i < b->pages && i < DOTS; i++) {
-		bool on = i == b->page, next = (int)i == b->next;
-		out[n++] = (struct ind){ (float)screen_w / 2 + ((float)i - (float)(b->pages - 1) / 2) * DOT_GAP,
-					 (float)(screen_h - DOT_UP), on || next ? DOT_ON_W : DOT_W,
-					 on ? DOT_ON_A : next ? DOT_NEXT_A : DOT_A };
-	}
+	/* A drag that would turn the page lights its dot, as a ListView's
+	 * current item follows the drag. */
+	float unit = (float)(screen_w < screen_h ? screen_w : screen_h) / 100, size = DOT_W * unit;
+	unsigned lit = b->next >= 0 ? (unsigned)b->next : b->page;
+	for (unsigned i = 0; i < b->pages && i < DOTS; i++)
+		out[n++] = (struct ind){ (float)screen_w / 2 + ((float)i - (float)(b->pages - 1) / 2) * size * 1.25f,
+					 (float)screen_h - (DOT_UP * unit + size / 2), size, i == lit ? DOT_ON_A : DOT_A, true };
 	return n;
 }
 
@@ -302,7 +302,8 @@ bool flatmesh_mcu_draw(unsigned panel, const struct backdrop *b, bool whole)
 	unsigned n = indicators(b, now);
 	bool same = n == n_inds;
 	for (unsigned i = 0; i < n && same; i++)
-		same = now[i].x == inds[i].x && now[i].y == inds[i].y && now[i].w == inds[i].w && now[i].a == inds[i].a;
+		same = now[i].x == inds[i].x && now[i].y == inds[i].y && now[i].w == inds[i].w && now[i].a == inds[i].a &&
+		       now[i].round == inds[i].round;
 	if (!same && !whole) {
 		for (unsigned i = 0; i < n_inds; i++)
 			ind_dirty(&inds[i]);
