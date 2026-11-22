@@ -16,11 +16,11 @@
 /* The AP sleeps 100 ms after it reports an error. */
 #define RETRY_MS	150
 
-enum state { IDLE, RX, RX_HOLD, TX, TX_ACK };
+enum state { IDLE, RX, RX_HOLD, TX, TX_ACK, LK_ANSWER };
 enum tx_end { TX_OK, TX_CHECK, TX_TIMEOUT, TX_STUCK };
 
 static volatile enum state state;
-static volatile bool rx_ready, dn_waiting, tx_queued, deaf;
+static volatile bool rx_ready, dn_waiting, tx_queued, deaf, answer_lk, lk_asked;
 static volatile uint32_t state_ms, ack_us, retry_ms, active_ms, dn_ms, deaf_ms, deaf_wait;
 static volatile unsigned unfinished_run;
 static volatile enum link_result tx_result = LINK_SENT;
@@ -33,7 +33,8 @@ static uint16_t seq_out;
 static bool resync_out = true, ready, task_added;
 
 static volatile struct {
-	uint32_t rx, rx_errors[WIRE_BAD_SEQ + 1], rx_timeouts, tx, tx_check, tx_timeouts, tx_stuck, writes, reads, deaf, strobes;
+	uint32_t rx, rx_errors[WIRE_BAD_SEQ + 1], rx_timeouts, tx, tx_check, tx_timeouts, tx_stuck, writes, reads, deaf, strobes,
+		lk_asks, lk_dropped;
 } count;
 
 static const char *const rx_why[] = { "", "header", "length", "checksum", "sequence" };
@@ -167,8 +168,25 @@ static void dn_rose(void)
 	dn_ms = time_ms();
 }
 
+/* Answer 2, at once: the boot loader takes the AP out of charger mode
+ * and resets the MCU for it. */
+static void lk_answer(void)
+{
+	count.lk_asks++;
+	dn_waiting = false;
+	wire_rx_start(&rx);
+	state = LK_ANSWER;
+	state_ms = time_ms();
+	gpio_set(DN_ACK, 1);
+	wake();
+}
+
 static void dn_int_irq(unsigned pin)
 {
+	if (answer_lk && state == IDLE && !rx_ready && gpio_get(UP_ACK)) {
+		lk_answer();
+		return;
+	}
 	if (deaf)
 		return;
 	dn_rose();
@@ -178,7 +196,7 @@ static void dn_int_irq(unsigned pin)
 static void hear(bool on)
 {
 	deaf = !on;
-	gpio_irq_enable(DN_INT, on);
+	gpio_irq_enable(DN_INT, on || answer_lk);
 	if (on && gpio_get(DN_INT))
 		dn_rose();
 }
@@ -193,6 +211,8 @@ static void ios_event(uint32_t st)
 			hear(true);
 			wake();
 		}
+		if (state == LK_ANSWER)
+			state = RX;
 		if (state == RX)
 			rx_part();
 	}
@@ -283,6 +303,16 @@ void link_poll(void)
 		tx_end(TX_TIMEOUT);
 	else if (state == TX_ACK && gone >= LINK_ACK_STUCK_MS)
 		tx_end(gpio_get(UP_ACK) ? TX_STUCK : TX_CHECK);
+	else if (state == LK_ANSWER && gone >= LINK_LK_ANSWER_MS) {
+		gpio_set(DN_ACK, 0);
+		state = IDLE;
+		active_ms = now;
+		/* The boot loader keeps both up until the answer drops. */
+		if (gpio_get(DN_INT) && gpio_get(UP_ACK))
+			lk_asked = true;
+		else
+			count.lk_dropped++;
+	}
 	if (state == IDLE && dn_waiting && !rx_ready) {
 		if (!gpio_get(DN_INT)) {
 			dn_waiting = false;
@@ -347,6 +377,8 @@ static uint32_t state_next_ms(uint32_t now)
 		return ms_left(state_ms, LINK_TX_MS, now);
 	case TX_ACK:
 		return ms_left(state_ms, LINK_ACK_STUCK_MS, now);
+	case LK_ANSWER:
+		return ms_left(state_ms, LINK_LK_ANSWER_MS, now);
 	default:
 		if (dn_waiting)
 			return gpio_get(DN_INT) ? ms_left(dn_ms, LINK_DN_SETTLE_MS, now) : 0;
@@ -360,7 +392,7 @@ uint32_t link_next_ms(void)
 {
 	if (!ready)
 		return UINT32_MAX;
-	if (rx_ready)
+	if (rx_ready || lk_asked)
 		return 0;
 	uint32_t flags = irq_save(), now = time_ms(), next = state_next_ms(now);
 	if (deaf) {
@@ -371,9 +403,28 @@ uint32_t link_next_ms(void)
 	return next;
 }
 
+void link_answer_lk(bool on)
+{
+	uint32_t flags = irq_save();
+	answer_lk = on;
+	if (deaf)
+		gpio_irq_enable(DN_INT, on);
+	irq_restore(flags);
+}
+
+bool link_lk_asked(void)
+{
+	uint32_t flags = irq_save();
+	bool asked = lk_asked;
+	lk_asked = false;
+	irq_restore(flags);
+	return asked;
+}
+
 void link_status(void (*say)(const char *fmt, ...))
 {
-	static const char *const names[] = { "idle", "receiving", "holding dn_ack", "sending", "answered" };
+	static const char *const names[] = { "idle", "receiving", "holding dn_ack", "sending", "answered",
+					     "answering the boot loader" };
 	if (!ready) {
 		say("link: none\n");
 		return;
@@ -388,4 +439,6 @@ void link_status(void (*say)(const char *fmt, ...))
 	    count.tx, count.tx_check, count.tx_timeouts, count.tx_stuck, count.writes, count.reads, ios_interrupts());
 	say("link: dn_int ignored %lu times%s, %lu requests dropped before %u ms\n", count.deaf, deaf ? ", now" : "",
 	    count.strobes, LINK_DN_SETTLE_MS);
+	say("link: boot loader answered %lu times%s, %lu let go early\n", count.lk_asks, answer_lk ? " (on)" : "",
+	    count.lk_dropped);
 }

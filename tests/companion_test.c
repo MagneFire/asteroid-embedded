@@ -616,6 +616,9 @@ static void mode_message(uint16_t id, const uint8_t *body, unsigned len, struct 
 static bool status_has(const char *s);
 #define STORED_OFF 3
 
+static void lk_ask(void);
+static void lk_done(void);
+
 /* After a 374: nothing taken back, no wake, no Bluetooth and the
  * sensors off, also with the power key held. */
 static void powered_off(unsigned lends, unsigned woken)
@@ -623,11 +626,142 @@ static void powered_off(unsigned lends, unsigned woken)
 	run_ms(3000);
 	CHECK(display_lent && touch_lent && power_lent && !levels[OWN] && !outputs[MOTOR_EN]);
 	CHECK(bt_lent && bt_lends == lends && hub_down && wakes == woken);
+	lk_ask();
+	CHECK(!levels[DN_ACK]);
+	wait_ms(80);
+	lk_done();
+	run_ms(LINK_DN_SETTLE_MS);
+	CHECK(!levels[DN_ACK] && !levels[UP_INT] && status_has("boot loader answered 0 times"));
 	key_down = true;
 	run_ms(ESCAPE_TEST_MS);
 	key_down = false;
 	wait_ms(1);
 	CHECK(display_lent && wakes == woken && status_has("power off mode") && status_has("nobody has the panel"));
+}
+
+/* The boot loader's ask: dn_int up with up_ack, its notice, held
+ * until the answer has dropped. */
+static void lk_ask(void)
+{
+	levels[UP_ACK] = 1;
+	fire(UP_ACK);
+	levels[DN_INT] = 1;
+	fire(DN_INT);
+}
+
+static void lk_done(void)
+{
+	levels[DN_INT] = levels[UP_ACK] = 0;
+	fire(UP_ACK);
+}
+
+/* The watch has the panel and the AP boots. */
+static void lk_answered(void)
+{
+	lk_ask();
+	CHECK(levels[DN_ACK] && !levels[UP_INT] && !display_lent);
+	CHECK(companion_next_ms() <= LINK_LK_ANSWER_MS);
+	wait_ms(LINK_LK_ANSWER_MS - 1);
+	CHECK(levels[DN_ACK] && !display_lent);
+	wait_ms(1);
+	CHECK(!levels[DN_ACK]);
+	CHECK(display_lent && touch_lent && power_lent && !levels[OWN] && !outputs[MOTOR_EN] && bt_lent);
+	lk_done();
+}
+
+static void lk_scenario(void)
+{
+	static const uint8_t m375[] = { 0x08, 0x01 };
+	struct ap_reply a;
+	struct wire_msg m;
+	uint8_t copy[WIRE_PAYLOAD_MAX];
+	CHECK(!display_lent && status_has("wristband mode"));
+
+	/* An ordinary request from the AP waits as before. */
+	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_WRISTBAND && !display_lent && status_has("boot loader answered 0 times"));
+
+	/* No reset after it: the AP keeps the panel and the mode is normal
+	 * a second later. */
+	lk_answered();
+	CHECK(status_has("wristband mode") && companion_next_ms() <= 1000);
+	wait_ms(999);
+	CHECK(status_has("wristband mode"));
+	wait_ms(1);
+	CHECK(status_has("normal mode, wristband before") && status_has("1 lent after the boot loader"));
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_NORMAL && display_lent);
+
+	/* Not while the AP has the panel. */
+	lk_ask();
+	CHECK(!levels[DN_ACK]);
+	wait_ms(80);
+	lk_done();
+	run_ms(LINK_DN_SETTLE_MS);
+	CHECK(!levels[DN_ACK] && status_has("boot loader answered 1 times"));
+
+	/* Not with a packet for the AP under way either: up_ack is the AP's
+	 * answer to it then. */
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(1000);
+	CHECK(!display_lent);
+	ap_reads = false;
+	ap_write(1, PROTO_MODE_REQUEST, NULL, 0);
+	companion_pass();
+	CHECK(levels[UP_INT]);
+	lk_ask();
+	CHECK(!levels[DN_ACK]);
+	levels[DN_INT] = levels[UP_ACK] = 0;
+	ap_reads = true;
+	CHECK(ap_take(&m, copy) && m.id == PROTO_REPLY);
+	run_ms(LINK_DN_SETTLE_MS);
+	CHECK(!levels[DN_ACK] && !display_lent && status_has("boot loader answered 1 times"));
+
+	/* Lines that drop before the answer does were not the boot loader. */
+	lk_ask();
+	CHECK(levels[DN_ACK]);
+	wait_ms(10);
+	lk_done();
+	run_ms(LINK_LK_ANSWER_MS);
+	CHECK(!levels[DN_ACK] && !display_lent && status_has("1 let go early"));
+
+	/* A packet after the answer is the AP after all, and taken. */
+	uint8_t env[16], parts[5][121];
+	ap_write_parts(env, wire_wrap(env, sizeof env, 1, PROTO_MODE_REQUEST, NULL, 0), ap_seq++, parts);
+	lk_ask();
+	CHECK(levels[DN_ACK]);
+	wait_ms(5);
+	memcpy(lram, parts[0], sizeof lram);
+	ios_fn(IOS_WRITTEN);
+	CHECK(!levels[DN_ACK]);
+	lk_done();
+	companion_pass();
+	CHECK(ap_take(&m, copy) && m.id == PROTO_REPLY);
+	run_ms(LINK_LK_ANSWER_MS);
+	CHECK(!display_lent && status_has("1 lent after the boot loader"));
+
+	/* Answered also with dn_int ignored, and the reset that follows
+	 * boots lent. */
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_WRISTBAND);
+	for (int i = 0; i < LINK_UNFINISHED_MAX; i++) {
+		ap_request();
+		levels[DN_INT] = 0;
+		wait_ms(LINK_RX_MS);
+	}
+	CHECK(status_has("times, now") && irq_on[DN_INT]);
+	lk_answered();
+	wait_ms(200);
+	reset_bits = 1u << 0;
+	CHECK(companion_boot());
+	companion_init();
+	CHECK(display_lent && !levels[OWN] && status_has("normal mode, wristband before"));
+	/* A reset would clear the link's counters, the AP's next write does here. */
+	run_ms(LINK_DEAF_MS + STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_NORMAL && !status_has("times, now"));
+	mode_message(PROTO_MODE_REQUEST, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND && a.reboot == PROTO_REBOOT_PIN);
 }
 
 static void companion_scenario(void)
@@ -857,6 +991,8 @@ static void companion_scenario(void)
 	run_ms(1000);
 	CHECK(!display_lent && outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	run_ms(STORE_WAIT_MS);
+
+	lk_scenario();
 
 	/* Requests without a packet: dn_int is ignored after three, until
 	 * the AP writes, or for a while. */
@@ -1394,6 +1530,7 @@ static void sensor_scenario(void)
 	memset(&got, 0, sizeof got);
 	ap_sensors(2000);
 	CHECK(got.reports == 0);
+	mode_message(373, NULL, 0, &a);
 
 	/* The daemon's 386, also after a restart of the daemon alone,
 	 * keeps them; a malformed one changes nothing. */
@@ -1456,6 +1593,24 @@ static void sensor_scenario(void)
 	tilts++;
 	ap_sensors(100);
 	CHECK(got.events == 0);
+
+	/* No reports in the wristband mode, where the AP may be off and
+	 * its boot loader needs up_int low; they go again in the normal
+	 * mode. */
+	static const uint8_t m375[] = { 0x08, 0x01 };
+	ap_activate(PROTO_SNS_WRIST_TILT, true, 0);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	tilts++;
+	for (int i = 0; i < 3000; i++) {
+		wait_ms(1);
+		CHECK(!levels[UP_INT]);
+	}
+	mode_message(373, NULL, 0, &a);
+	memset(&got, 0, sizeof got);
+	ap_sensors(100);
+	CHECK(got.events == 1 && got.ev[0].id == PROTO_SNS_WRIST_TILT);
+	ap_activate(PROTO_SNS_WRIST_TILT, false, 0);
 }
 
 static char status[4096];

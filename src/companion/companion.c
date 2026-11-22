@@ -38,18 +38,20 @@
 /* The power key held this long while the AP has the panel takes it
  * back, for an AP that is not there to give it back. */
 #define ESCAPE_MS	5000
+/* The boot loader resets the MCU about 0.2 s after its ask. */
+#define LK_RESET_MS	1000
 
 static bool ready, boot_lent, pin_reset, chips_on, ap_has_panel, want_ap, switching, save_mode, save_zone;
 /* Powered off by the AP: nobody has the panel and the watch stays dark
  * until the AP comes back. */
 static bool off;
-static bool replying, reporting, burst, key_held;
+static bool replying, reporting, burst, key_held, lk_wait;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason;
 /* The mode a 377 queued or under way makes take effect once the AP has
  * it, or -1. */
 static int reply_to = -1, sending_to = -1;
 static int32_t zone_min;
-static uint32_t take_t, burst_t, key_t;
+static uint32_t take_t, burst_t, key_t, lk_t;
 static uint8_t reply_buf[REPLY_MAX], report_buf[LINK_SEND_MAX];
 static unsigned reply_len;
 static int battery = -1;
@@ -86,7 +88,7 @@ static void keep_mode(void)
 }
 static struct {
 	uint32_t messages, work_modes, battery, boot, other, sensors, batch, unknown, bad, replies_lost, replies_failed,
-		escapes;
+		escapes, lk_lends;
 } count;
 
 static const char *const mode_names[] = { "normal", "wristband", "power off" };
@@ -248,6 +250,7 @@ static void enter(unsigned to, uint32_t now)
 {
 	bool was_off = off;
 	off = to == PROTO_MODE_POWER_OFF;
+	lk_wait = false;
 	if (to != mode || off != was_off) {
 		if (to != mode)
 			last_mode = mode;
@@ -374,6 +377,17 @@ static void escape(uint32_t now)
 	take_t = now - TAKE_DELAY_MS;
 }
 
+/* The AP is booting: the panel goes now, the mode once it is clear that
+ * no reset follows. */
+static void lk_asked(uint32_t now)
+{
+	log_printf("companion: the AP's boot loader asks, the AP gets the panel\n");
+	want_ap = true;
+	switching = !ap_has_panel;
+	lk_wait = true;
+	lk_t = now;
+}
+
 static void watch_key(uint32_t now)
 {
 	if (off || !ap_has_panel || switching || !power_key())
@@ -386,6 +400,10 @@ static void watch_key(uint32_t now)
 }
 
 static bool link_idle(void) { return !reply_len && !replying && !reporting && link_sent() != LINK_PENDING; }
+
+/* up_int stays low while the AP may be off, or the boot loader stops
+ * before it asks. */
+static bool report_ok(void) { return link_idle() && mode == PROTO_MODE_NORMAL; }
 
 static uint32_t store_wait_ms(uint32_t now)
 {
@@ -436,6 +454,11 @@ static void settle(uint32_t now)
 {
 	if (switching && (want_ap || now - take_t >= TAKE_DELAY_MS))
 		switch_panel(now);
+	if (lk_wait && now - lk_t >= LK_RESET_MS) {
+		count.lk_lends++;
+		log_printf("companion: no reset after the boot loader's ask, normal mode\n");
+		enter(PROTO_MODE_NORMAL, now);
+	}
 	if ((save_mode || save_zone) && store_wait_ms(now) == 0) {
 		if (save_mode) {
 			uint8_t m = stored_mode();
@@ -454,7 +477,10 @@ void companion_pass(void)
 	if (!ready)
 		return;
 	uint32_t now = time_ms();
+	link_answer_lk(!ap_has_panel);
 	link_poll();
+	if (link_lk_asked())
+		lk_asked(now);
 	uint8_t buf[WIRE_PAYLOAD_MAX];
 	unsigned n;
 	while ((n = link_recv(buf, sizeof buf)))
@@ -472,7 +498,7 @@ void companion_pass(void)
 	 * them waiting. */
 	settle(now);
 	sns_pass();
-	if (link_idle() && sns_due() && (n = sns_report(report_buf, sizeof report_buf)) && link_send(report_buf, n)) {
+	if (report_ok() && sns_due() && (n = sns_report(report_buf, sizeof report_buf)) && link_send(report_buf, n)) {
 		reporting = true;
 		link_poll();
 	}
@@ -495,7 +521,9 @@ uint32_t companion_next_ms(void)
 		next = sooner(next, store_wait_ms(now));
 	if (key_held)
 		next = sooner(next, ms_left(key_t, ESCAPE_MS, now));
-	return sooner(next, sns_next_ms(link_idle()));
+	if (lk_wait)
+		next = sooner(next, ms_left(lk_t, LK_RESET_MS, now));
+	return sooner(next, sns_next_ms(report_ok()));
 }
 
 void companion_status(void (*say)(const char *fmt, ...))
@@ -508,9 +536,11 @@ void companion_status(void (*say)(const char *fmt, ...))
 	    mode_names[last_mode], off ? "nobody" : ap_has_panel ? "the AP" : "the watch",
 	    boot_lent ? " (kept at the start)" : "", (long)zone_min, reboot_reason);
 	say("companion: %lu messages: %lu work mode, %lu battery (%d %%), %lu boot, %lu other, %lu sensor, %lu batch, "
-	    "%lu unknown, %lu bad; %lu replies replaced, %lu not taken; %lu taken back with the key\n",
+	    "%lu unknown, %lu bad; %lu replies replaced, %lu not taken; %lu taken back with the key; %lu lent after "
+	    "the boot loader without a reset\n",
 	    count.messages, count.work_modes, count.battery, battery, count.boot, count.other, count.sensors,
-	    count.batch, count.unknown, count.bad, count.replies_lost, count.replies_failed, count.escapes);
+	    count.batch, count.unknown, count.bad, count.replies_lost, count.replies_failed, count.escapes,
+	    count.lk_lends);
 	sns_status(say);
 	link_status(say);
 }

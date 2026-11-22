@@ -25,9 +25,13 @@
  * answer as the MCU's boot state; the AP's writes hold it until
  * dn_ack. */
 #define LINK_DN_SETTLE_MS	150
+/* The boot loader's ask comes with up_ack high, its boot notice. It
+ * reads the answer within 75 ms and waits 195 ms for it to drop; the
+ * vendor drops it after 80 of its ticks. */
+#define LINK_LK_ANSWER_MS	78
 /* Unfinished packets in a row after which dn_int is ignored until the
  * AP writes, or for LINK_DEAF_MS, twice that after each further one up
- * to LINK_DEAF_MAX_MS. */
+ * to LINK_DEAF_MAX_MS. The boot loader's ask is still answered. */
 #define LINK_UNFINISHED_MAX	3
 #define LINK_DEAF_MS		5000
 #define LINK_DEAF_MAX_MS	80000
@@ -52,5 +56,10 @@ bool link_busy(void);
 /* How long nothing has happened on the link, 0 while something is. */
 uint32_t link_quiet_ms(void);
 uint32_t link_next_ms(void);
+/* Whether the boot loader's ask is answered: while the watch has the
+ * panel, with the AP off. */
+void link_answer_lk(bool on);
+/* Once for each ask answered that the boot loader held to the end. */
+bool link_lk_asked(void);
 void link_status(void (*say)(const char *fmt, ...));
 #endif
