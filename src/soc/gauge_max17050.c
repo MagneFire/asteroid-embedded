@@ -123,7 +123,12 @@ static bool model_load(void)
 	r |= wr_verify(MAX17050_FULLCAP, m->fullcap) | wr(MAX17050_DESIGNCAP, m->design_cap) |
 	     wr_verify(MAX17050_FULLCAPNOM, m->fullcapnom);
 	wait_ms(350);
-	r |= rd(MAX17050_VFSOC, &vfsoc);
+	/* Without it the charge left would be made up; power on reset stays
+	 * set for another try. */
+	if (rd(MAX17050_VFSOC, &vfsoc)) {
+		log_printf("gauge: no charge by voltage, cell model not loaded\n");
+		return false;
+	}
 	r |= wr(MAX17050_VFSOC0_ENABLE, MAX17050_VFSOC0_UNLOCK) | wr_verify(MAX17050_VFSOC0, vfsoc) |
 	     wr(MAX17050_VFSOC0_ENABLE, 0);
 	r |= wr_verify(MAX17050_CYCLES, MAX17050_INIT_CYCLES);
