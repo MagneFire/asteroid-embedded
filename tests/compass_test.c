@@ -3,7 +3,8 @@
  * rotated with the watch, plus a hard-iron offset and noise. Turned
  * every way, the offset is found and the accuracy climbs to high;
  * turned in one plane only, it stays unreliable; a new offset after
- * that is found again; a saved one is low until it fits new samples. */
+ * that is found again; a saved one is low until it fits new samples;
+ * samples from the charger's magnets do not hold it back. */
 #include <math.h>
 #include <stdio.h>
 #include "sensors/compass.h"
@@ -180,6 +181,17 @@ static void calibration(void)
 	for (int i = 0; i < 1500 && status < 3; i++)
 		status = feed(&c, rnd() * 360, rnd() * 160 - 80, rnd() * 360 - 180, offset, g, m, r);
 	CHECK(status == 3);
+
+	/* On the charger first, its magnets far stronger than the Earth's
+	 * field, then a figure 8 off it, as on the watch. */
+	static const double charger[3] = { 1300, -680, -300 };
+	compass_init(&c, NULL);
+	for (int i = 0; i < 100; i++)
+		status = feed(&c, rnd() * 20, 0, 0, charger, g, m, r);
+	for (int i = 0; i < 1500 && status < 3; i++)
+		status = feed(&c, rnd() * 360, rnd() * 160 - 80, rnd() * 360 - 180, offset, g, m, r);
+	CHECK(status == 3 && offset_error(&c, offset) < 1.5);
+
 	struct compass_cal bad = { { 0, 0, 0 }, 500, 3 };
 	compass_init(&c, &bad);
 	CHECK(c.cal.status == 0);

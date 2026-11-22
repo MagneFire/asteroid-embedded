@@ -196,6 +196,14 @@ int compass_feed(struct compass *c, const float raw[3], float out[3])
 {
 	float d[3];
 	bool had = c->cal.status > UNRELIABLE;
+	/* Samples wider apart than any field's sphere are from a magnet
+	 * that came or went, such as the charger's: start over from this
+	 * one. */
+	for (int i = 0; i < 3 && c->seen; i++)
+		if (raw[i] - c->lo[i] > 2 * RADIUS_MAX || c->hi[i] - raw[i] > 2 * RADIUS_MAX) {
+			c->seen = false;
+			c->filled = 0;
+		}
 	for (int i = 0; i < 3; i++) {
 		if (!c->seen || raw[i] < c->lo[i])
 			c->lo[i] = raw[i];
