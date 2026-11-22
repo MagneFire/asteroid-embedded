@@ -131,6 +131,7 @@ static void ap_parse(const uint8_t *p, unsigned n, struct ap_reply *r)
 }
 
 #define STORE_WAIT_MS 13000
+#define ESCAPE_TEST_MS 6000
 enum { UP_INT = 29, DN_INT = 30, DN_ACK = 31, UP_ACK = 33, PINS = 64 };
 #define OWN 36
 #define MOTOR_EN 26
@@ -140,9 +141,9 @@ static const struct board test_board = {
 };
 const struct board *board = &test_board;
 
-static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, darks, chips_offs;
+static uint32_t now_ms, extra_us, reset_bits, rtc_writes, rtc_last, kv_sets, wakes, chips_offs;
 static unsigned levels[PINS];
-static bool irq_on[PINS], outputs[PINS], display_lent, touch_lent, power_lent, key_down;
+static bool irq_on[PINS], outputs[PINS], display_lent, touch_lent, power_lent, key_down, hub_down;
 static unsigned i2c_fails;
 static void (*irq_fn[PINS])(unsigned);
 static void (*ios_fn)(uint32_t);
@@ -256,7 +257,7 @@ void action_bluetooth_lend(bool to_ap, uint32_t now)
 	bt_lent = to_ap;
 	bt_lends++;
 }
-void power_dark_until_wake(void) { darks++; }
+void hub_power_down(bool down) { hub_down = down; }
 bool board_chips_off(void)
 {
 	chips_offs++;
@@ -612,6 +613,23 @@ static void mode_message(uint16_t id, const uint8_t *body, unsigned len, struct 
 	companion_pass();
 }
 
+static bool status_has(const char *s);
+#define STORED_OFF 3
+
+/* After a 374: nothing taken back, no wake, no Bluetooth and the
+ * sensors off, also with the power key held. */
+static void powered_off(unsigned lends, unsigned woken)
+{
+	run_ms(3000);
+	CHECK(display_lent && touch_lent && power_lent && !levels[OWN] && !outputs[MOTOR_EN]);
+	CHECK(bt_lent && bt_lends == lends && hub_down && wakes == woken);
+	key_down = true;
+	run_ms(ESCAPE_TEST_MS);
+	key_down = false;
+	wait_ms(1);
+	CHECK(display_lent && wakes == woken && status_has("power off mode") && status_has("nobody has the panel"));
+}
+
 static void companion_scenario(void)
 {
 	static const uint8_t m375[] = { 0x08, 0x01, 0x12, 0x09, 0x08, 0x80, 0xe2, 0xcf, 0xaa, 0x06, 0x18, 0xd7, 0x04 };
@@ -727,7 +745,7 @@ static void companion_scenario(void)
 	wait_ms(1);
 	CHECK(!display_lent && !power_lent && kv_sets == 2 && !bt_lent && bt_lends == lends);
 
-	/* 373, then 374: taken back without waking. */
+	/* 373, then 374: nobody takes the panel back. */
 	mode_message(373, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
 	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && power_lent && !levels[OWN] && bt_lent);
@@ -736,11 +754,31 @@ static void companion_scenario(void)
 	CHECK(kv_mode == PROTO_MODE_WRISTBAND);
 	reset_bits = 1u << 0;
 	CHECK(companion_boot() && display_lent && !levels[OWN]);
+	lends = bt_lends;
 	mode_message(374, m374, sizeof m374, &a);
 	CHECK(a.mode == PROTO_MODE_POWER_OFF && a.last_mode == PROTO_MODE_NORMAL && display_lent);
-	wait_ms(1000);
-	CHECK(!display_lent && !power_lent && wakes == 1 && darks == 1 && chips_offs == 2 && light_losts == 2);
-	CHECK(!bt_lent);
+	powered_off(lends, 1);
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == STORED_OFF);
+
+	/* A reset without the AP's pin keeps it off, also a power-on. */
+	static const uint32_t not_pin[] = { 1u << 1, 1u << 2, 1u << 3, 1u << 6 };
+	for (unsigned i = 0; i < sizeof not_pin / sizeof not_pin[0]; i++) {
+		reset_bits = not_pin[i];
+		hub_down = bt_lent = display_lent = touch_lent = power_lent = false;
+		levels[OWN] = 1;
+		CHECK(companion_boot() && display_lent && touch_lent && !levels[OWN] && !outputs[MOTOR_EN]);
+		companion_init();
+		CHECK(power_lent && bt_lent && hub_down && status_has("power off mode") && status_has("nobody has the panel"));
+		powered_off(bt_lends, 1);
+	}
+
+	/* A 373 brings it back lent. */
+	mode_message(373, NULL, 0, &a);
+	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_POWER_OFF);
+	CHECK(display_lent && power_lent && bt_lent && !hub_down && !levels[OWN]);
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_NORMAL);
 
 	/* The power key held for 5 s takes the panel back from an AP that
 	 * does not answer, and power off is stored at once. */
@@ -757,20 +795,18 @@ static void companion_scenario(void)
 	key_down = false;
 
 	/* A 374 whose 377 the AP never reads, as it is on its way down:
-	 * power off all the same, and the panel back a second later. */
+	 * power off all the same. */
 	mode_message(373, NULL, 0, &a);
 	CHECK(display_lent && !levels[OWN]);
+	lends = bt_lends;
 	ap_write(1, 374, m374, sizeof m374);
 	companion_pass();
 	CHECK(levels[UP_INT] && display_lent);
-	wait_ms(999);
-	CHECK(display_lent);
-	wait_ms(1);
-	CHECK(!display_lent && levels[OWN] && wakes == 2 && darks == 2);
+	powered_off(lends, 2);
 	run_ms(2 * LINK_TX_MS + 150);
 	CHECK(!levels[UP_INT]);
 	run_ms(STORE_WAIT_MS);
-	CHECK(kv_mode == PROTO_MODE_POWER_OFF);
+	CHECK(kv_mode == STORED_OFF);
 
 	/* A 376 crossing a 373 whose 377 the AP never reads: the 377 for
 	 * the 376 does not make the normal mode take effect. */
@@ -786,7 +822,7 @@ static void companion_scenario(void)
 	ap_parse(m.body, m.len, &a);
 	CHECK(a.mode == PROTO_MODE_POWER_OFF);
 	run_ms(1000);
-	CHECK(!display_lent && !power_lent && levels[OWN]);
+	CHECK(display_lent && power_lent && !levels[OWN]);
 
 	/* A 375 crossing a 373 whose 377 the AP reads late: the 375 wins. */
 	ap_reads = false;
@@ -810,12 +846,14 @@ static void companion_scenario(void)
 	mode_message(373, NULL, 0, &a);
 	CHECK(display_lent && !outputs[MOTOR_EN]);
 	i2c_fails = 1;
-	mode_message(374, m374, sizeof m374, &a);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
 	run_ms(1000);
 	CHECK(!display_lent && !i2c_fails && !outputs[MOTOR_EN]);
 	mode_message(373, NULL, 0, &a);
 	CHECK(display_lent && !outputs[MOTOR_EN]);
-	mode_message(374, m374, sizeof m374, &a);
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
 	run_ms(1000);
 	CHECK(!display_lent && outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	run_ms(STORE_WAIT_MS);
@@ -1456,10 +1494,10 @@ static void boot_decisions(void)
 		{ 1u << 5, false, false },	/* debugger, as swdtool flash */
 		{ 1u << 6, false, false },	/* watchdog */
 	};
-	static const char *const names[] = { "normal", "wristband", "power off" };
+	static const char *const names[] = { "normal", "wristband", "power off", "power off" };
 	char want[64];
 	for (unsigned r = 0; r < sizeof resets / sizeof resets[0]; r++)
-		for (int m = PROTO_MODE_NORMAL; m <= PROTO_MODE_POWER_OFF; m++) {
+		for (int m = PROTO_MODE_NORMAL; m <= STORED_OFF; m++) {
 			kv_mode = m;
 			reset_bits = 1u << 1;
 			companion_boot();
@@ -1468,7 +1506,8 @@ static void boot_decisions(void)
 			outputs[OWN] = true;
 			levels[REL] = 0;
 			outputs[REL] = true;
-			bool lent = companion_boot(), want_lent = resets[r].pin || (m == PROTO_MODE_NORMAL && !resets[r].powered);
+			bool lent = companion_boot(), want_lent = resets[r].pin || m == STORED_OFF ||
+								    (m == PROTO_MODE_NORMAL && !resets[r].powered);
 			CHECK(lent == want_lent);
 			if (resets[r].pin)
 				snprintf(want, sizeof want, "normal mode, %s before", names[m]);
@@ -1477,6 +1516,7 @@ static void boot_decisions(void)
 			if (!status_has(want))
 				printf("reset %08x, stored %s: %s", resets[r].bits, names[m], status);
 			CHECK(status_has(want));
+			CHECK(status_has("nobody has the panel") == (m == STORED_OFF && !resets[r].pin));
 			if (resets[r].pin)
 				CHECK(!levels[OWN] && outputs[OWN] && levels[REL] && outputs[REL]);
 			else if (lent)

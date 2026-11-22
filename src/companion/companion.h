@@ -1,9 +1,10 @@
 /* Companion mode: the Apollo3 next to beluga's application processor,
  * answering its framework messages as the stock firmware does. In the
  * normal mode the AP has the panel and the touch controller; in the
- * wristband and power off modes the watch here has them. Until the AP
- * says otherwise the watch runs on its own, but for a reset other than
- * a power-on in the normal mode, or any reset by the AP: then the AP
+ * wristband mode the watch here has them, and after a 374 nobody does:
+ * the watch stays dark until the AP is back. Until the AP says
+ * otherwise the watch runs on its own, but for a reset other than a
+ * power-on in the normal mode, or any reset by the AP: then the AP
  * keeps them. */
 #ifndef COMPANION_H
 #define COMPANION_H

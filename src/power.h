@@ -45,6 +45,4 @@ uint32_t power_idle_us(void);
  * asleep with the screen off. */
 void power_lend_display(bool lent);
 bool power_display_lent(void);
-/* The screen stays off until the next wake. */
-void power_dark_until_wake(void);
 #endif

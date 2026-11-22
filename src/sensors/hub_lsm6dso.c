@@ -304,6 +304,12 @@ bool lsm6dso_gyro(int16_t v[3])
 	return true;
 }
 
+static void lsm_power_down(bool down)
+{
+	if (ready && !main_page())
+		wr(CTRL1_XL, down ? 0 : XL_26HZ_8G);
+}
+
 static bool lsm_can_sleep(void) { return !irq_seen && !(fifo_on && gpio_get(IRQ)) && afe4900_can_sleep(); }
 static void lsm_sleep(bool asleep) {}
 
@@ -335,5 +341,6 @@ const struct hub_driver hub_lsm6dso = {
 	.init = lsm_init, .poll = lsm_poll, .steps = lsm_steps, .tilted = lsm_tilted, .tilt_on = lsm_tilt_on,
 	.tilt_screen = lsm_tilt_screen,
 	.accel_on = lsm_accel_on, .accel = lsm_accel, .can_sleep = lsm_can_sleep, .sleep = lsm_sleep,
+	.power_down = lsm_power_down,
 	.status = lsm_status, .raw = lsm_raw, .heart_rate_on = afe4900_on, .heart_rate = afe4900_rate,
 };

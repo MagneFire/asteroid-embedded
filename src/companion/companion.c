@@ -26,6 +26,9 @@
 #define KV_MODE		"ap.mode"
 #define KEPT_MAGIC	0x4d4f4431u	/* "MOD1" */
 #define KV_ZONE		"ap.zone"
+/* The power off mode as a 374 leaves it, stored apart from the one a
+ * watch on its own runs in. */
+#define STORED_OFF	3
 #define REPLY_MAX	64
 /* The AP lets go of the panel only after it sent the 375. */
 #define TAKE_DELAY_MS	1000
@@ -36,7 +39,10 @@
  * back, for an AP that is not there to give it back. */
 #define ESCAPE_MS	5000
 
-static bool ready, boot_lent, pin_reset, chips_on, ap_has_panel, want_ap, wake_on_take, switching, save_mode, save_zone;
+static bool ready, boot_lent, pin_reset, chips_on, ap_has_panel, want_ap, switching, save_mode, save_zone;
+/* Powered off by the AP: nobody has the panel and the watch stays dark
+ * until the AP comes back. */
+static bool off;
 static bool replying, reporting, burst, key_held;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason;
 /* The mode a 377 queued or under way makes take effect once the AP has
@@ -63,9 +69,17 @@ static struct {
 
 static uint16_t kept_check(void) { return (uint16_t)~(kept.mode | kept.last << 8); }
 
+static uint8_t stored_mode(void) { return off ? STORED_OFF : (uint8_t)mode; }
+
+static void take_stored(uint8_t m)
+{
+	off = m == STORED_OFF;
+	mode = off ? PROTO_MODE_POWER_OFF : m;
+}
+
 static void keep_mode(void)
 {
-	kept.mode = (uint8_t)mode;
+	kept.mode = stored_mode();
 	kept.last = (uint8_t)last_mode;
 	kept.check = kept_check();
 	kept.magic = KEPT_MAGIC;
@@ -112,8 +126,10 @@ bool companion_boot(void)
 	if (!board->ap_link.up_int)
 		return false;
 	uint8_t m;
-	if (kv_get(KV_MODE, &m, 1) == 1 && m <= PROTO_MODE_POWER_OFF)
-		mode = last_mode = m;
+	if (kv_get(KV_MODE, &m, 1) == 1 && m <= STORED_OFF) {
+		take_stored(m);
+		last_mode = mode;
+	}
 	int32_t z;
 	if (kv_get(KV_ZONE, &z, sizeof z) == (int)sizeof z)
 		zone_min = z;
@@ -121,17 +137,18 @@ bool companion_boot(void)
 	reboot_reason = proto_reboot_reason(st, log_previous_record() != NULL);
 	pin_reset = proto_pin_reset(st);
 	if (pin_reset) {
+		save_mode = mode != PROTO_MODE_NORMAL || off;
 		last_mode = mode;
 		mode = PROTO_MODE_NORMAL;
-		save_mode = last_mode != mode;
+		off = false;
 	} else if (!proto_powered_up(st) && kept.magic == KEPT_MAGIC && kept.check == kept_check() &&
-		   kept.mode <= PROTO_MODE_POWER_OFF && kept.last <= PROTO_MODE_POWER_OFF) {
-		save_mode = kept.mode != mode;
-		mode = kept.mode;
+		   kept.mode <= STORED_OFF && kept.last <= PROTO_MODE_POWER_OFF) {
+		save_mode = kept.mode != stored_mode();
+		take_stored(kept.mode);
 		last_mode = kept.last;
 	}
 	keep_mode();
-	boot_lent = mode == PROTO_MODE_NORMAL && (pin_reset || !proto_powered_up(st));
+	boot_lent = off || (mode == PROTO_MODE_NORMAL && (pin_reset || !proto_powered_up(st)));
 	if (boot_lent) {
 		chips_on = true;
 		display_start_lent();
@@ -147,14 +164,18 @@ void companion_init(void)
 	if (!board->ap_link.up_int)
 		return;
 	link_init();
-	sns_start(boot_lent);
+	sns_start(boot_lent && !off);
 	ready = true;
 	if (boot_lent) {
 		ap_has_panel = want_ap = true;
 		power_lend_display(true);
 		action_bluetooth_lend(true, time_ms());
-		log_printf(pin_reset ? "companion: reset by the AP, it keeps the panel\n"
-				     : "companion: normal mode before the reset, the AP keeps the panel\n");
+		if (off) {
+			hub_power_down(true);
+			log_printf("companion: powered off by the AP, the watch stays dark\n");
+		} else
+			log_printf(pin_reset ? "companion: reset by the AP, it keeps the panel\n"
+					     : "companion: normal mode before the reset, the AP keeps the panel\n");
 	}
 }
 
@@ -222,18 +243,23 @@ static void work_mode(const struct wire_msg *m, unsigned to, uint32_t now)
 	enter(to, now);
 }
 
+/* Only a 374 enters the power off mode here. */
 static void enter(unsigned to, uint32_t now)
 {
-	if (to != mode) {
-		last_mode = mode;
+	bool was_off = off;
+	off = to == PROTO_MODE_POWER_OFF;
+	if (to != mode || off != was_off) {
+		if (to != mode)
+			last_mode = mode;
 		mode = to;
 		save_mode = true;
 		keep_mode();
 	}
-	if (to == PROTO_MODE_POWER_OFF)
+	if (off != was_off)
+		hub_power_down(off);
+	if (off)
 		sns_reset();
-	want_ap = to == PROTO_MODE_NORMAL;
-	wake_on_take = to == PROTO_MODE_WRISTBAND;
+	want_ap = to == PROTO_MODE_NORMAL || off;
 	switching = want_ap != ap_has_panel;
 	take_t = now;
 }
@@ -295,8 +321,6 @@ static void message(const uint8_t *p, unsigned n, uint32_t now)
 	}
 }
 
-/* Taken back for a 374, the panel stays dark: the AP is still on its
- * way down and turns it off. */
 static void switch_panel(uint32_t now)
 {
 	switching = false;
@@ -322,12 +346,10 @@ static void switch_panel(uint32_t now)
 		touch_lend(false);
 		haptics_hold(false);
 		sns_lend(false);
-		if (wake_on_take)
-			power_wake("companion");
-		else
-			power_dark_until_wake();
+		power_wake("companion");
 	}
-	log_printf("companion: the %s has the panel\n", want_ap ? "AP" : "watch");
+	log_printf(off ? "companion: powered off, nobody has the panel\n" : "companion: the %s has the panel\n",
+		   want_ap ? "AP" : "watch");
 }
 
 /* Power off is what a watch that never heard from the AP starts in, so
@@ -348,13 +370,13 @@ static void escape(uint32_t now)
 	}
 	sns_reset();
 	want_ap = false;
-	wake_on_take = switching = true;
+	switching = true;
 	take_t = now - TAKE_DELAY_MS;
 }
 
 static void watch_key(uint32_t now)
 {
-	if (!ap_has_panel || switching || !power_key())
+	if (off || !ap_has_panel || switching || !power_key())
 		key_held = false;
 	else if (!key_held) {
 		key_held = true;
@@ -416,7 +438,7 @@ static void settle(uint32_t now)
 		switch_panel(now);
 	if ((save_mode || save_zone) && store_wait_ms(now) == 0) {
 		if (save_mode) {
-			uint8_t m = (uint8_t)mode;
+			uint8_t m = stored_mode();
 			save_mode = false;
 			kv_set(KV_MODE, &m, 1);
 		}
@@ -482,9 +504,9 @@ void companion_status(void (*say)(const char *fmt, ...))
 		say("companion: no link on this watch\n");
 		return;
 	}
-	say("companion: %s mode, %s before, the %s has the panel%s, zone %ld min, reboot reason %u\n", mode_names[mode],
-	    mode_names[last_mode], ap_has_panel ? "AP" : "watch", boot_lent ? " (kept at the start)" : "", (long)zone_min,
-	    reboot_reason);
+	say("companion: %s mode, %s before, %s has the panel%s, zone %ld min, reboot reason %u\n", mode_names[mode],
+	    mode_names[last_mode], off ? "nobody" : ap_has_panel ? "the AP" : "the watch",
+	    boot_lent ? " (kept at the start)" : "", (long)zone_min, reboot_reason);
 	say("companion: %lu messages: %lu work mode, %lu battery (%d %%), %lu boot, %lu other, %lu sensor, %lu batch, "
 	    "%lu unknown, %lu bad; %lu replies replaced, %lu not taken; %lu taken back with the key\n",
 	    count.messages, count.work_modes, count.battery, battery, count.boot, count.other, count.sensors,

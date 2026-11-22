@@ -105,6 +105,8 @@ struct hub_driver {
 	/* A runtime setting of the driver, for the console; < 0 if it has
 	 * no such setting. */
 	int (*option)(const char *name, uint32_t v);
+	/* Every sensor off, also the step counter, until powered up. */
+	void (*power_down)(bool down);
 	/* The watch's screen on or off, for a hub with a display of its own. */
 	void (*screen)(bool on);
 	bool (*gauge)(struct hub_gauge *g);

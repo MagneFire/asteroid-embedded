@@ -56,6 +56,7 @@ bool hub_accel(int16_t v[3]);
 bool hub_can_sleep(void);
 void hub_sleep(bool asleep);
 void hub_asleep(bool asleep);
+void hub_power_down(bool down);
 void hub_screen(bool on);
 void hub_status(void (*say)(const char *fmt, ...));
 /* A register access for the console: wn bytes written after the bank
