@@ -17,6 +17,7 @@
 #include "soc/qcom/smd.h"
 #include "soc/qcom/smem_find.h"
 #include "soc/qcom/wcnss_msg.h"
+#include "bt/bt.h"
 
 #define IO(pa)			(IO_8009_BASE + (pa))
 #define PAS_WCNSS		6
@@ -565,14 +566,14 @@ static void kick(void)
 	writel(KICK_SMD, APCS_IPC);
 }
 
-static bool open_ctrl(void)
+static bool open_channel(const char *name, struct smd_chan *c)
 {
 	uint32_t t0 = time_ms();
 	const struct smd_table *tbl = NULL;
 	int cid;
-	while ((cid = find_channel("WCNSS_CTRL", &tbl)) < 0) {
+	while ((cid = find_channel(name, &tbl)) < 0) {
 		if (time_ms() - t0 > CHANNEL_MS) {
-			note("wcnss: no WCNSS_CTRL channel after %u ms\n", CHANNEL_MS);
+			note("wcnss: no %s channel after %u ms\n", name, CHANNEL_MS);
 			return false;
 		}
 		wait_ms(5);
@@ -581,39 +582,45 @@ static bool open_ctrl(void)
 	volatile struct smd_half *h = smem_get(tbl->info + (unsigned)cid, SMEM_HOST_WCNSS, &info);
 	volatile uint8_t *f = smem_get(tbl->fifo + (unsigned)cid, SMEM_HOST_WCNSS, &fifo);
 	bool fits = h && f && info == 2 * sizeof *h && fifo >= 2 * 64 && fifo % 32 == 0;
-	note("wcnss: WCNSS_CTRL is channel %d of the %s table after %lu ms, info %lu fifo %lu bytes, states %lu/%lu\n", cid,
+	note("wcnss: %s is channel %d of the %s table after %lu ms, info %lu fifo %lu bytes, states %lu/%lu\n", name, cid,
 	     tbl->name, time_ms() - t0, info, fifo, fits ? h[0].state : 0, fits ? h[1].state : 0);
 	if (!fits)
 		return false;
-	ctrl = (struct smd_chan){ &h[0], &h[1], f, f + fifo / 2, fifo / 2 };
-	ctrl.recv->tail = 0;
-	ctrl.send->head = 0;
-	ctrl.send->block_read_intr = 0;
-	smd_set_state(&ctrl, SMD_OPENING);
+	*c = (struct smd_chan){ &h[0], &h[1], f, f + fifo / 2, fifo / 2 };
+	c->recv->tail = 0;
+	c->send->head = 0;
+	c->send->block_read_intr = 0;
+	smd_set_state(c, SMD_OPENING);
 	kick();
 	t0 = time_ms();
-	while (ctrl.recv->state != SMD_OPENED) {
+	while (c->recv->state != SMD_OPENED) {
 		if (time_ms() - t0 > OPEN_MS) {
-			note("wcnss: channel not opened, remote state %lu\n", ctrl.recv->state);
+			note("wcnss: %s not opened, remote state %lu\n", name, c->recv->state);
+			smd_set_state(c, SMD_CLOSED);
+			kick();
+			*c = (struct smd_chan){ 0 };
 			return false;
 		}
 		wait_ms(1);
 	}
-	smd_set_state(&ctrl, SMD_OPENED);
-	smd_flags_seen(&ctrl);
+	smd_set_state(c, SMD_OPENED);
+	smd_flags_seen(c);
 	kick();
-	note("wcnss: channel open after %lu ms\n", time_ms() - t0);
+	note("wcnss: %s open after %lu ms\n", name, time_ms() - t0);
 	return true;
 }
 
-static void close_ctrl(void)
+static void close_channel(struct smd_chan *c)
 {
-	if (!ctrl.send)
+	if (!c->send)
 		return;
-	smd_set_state(&ctrl, SMD_CLOSED);
+	smd_set_state(c, SMD_CLOSED);
 	kick();
-	ctrl = (struct smd_chan){ 0 };
+	*c = (struct smd_chan){ 0 };
 }
+
+static bool open_ctrl(void) { return open_channel("WCNSS_CTRL", &ctrl); }
+static void close_ctrl(void) { close_channel(&ctrl); }
 
 static bool ctrl_open(void)
 {
@@ -834,6 +841,135 @@ static bool nv_download(void)
 	return got.nv == WCNSS_NV_DONE || got.nv == WCNSS_NV_WAIT_CBC;
 }
 
+/* Bluetooth: HCI commands and events on one channel, ACL data on the
+ * other, each SMD packet one HCI packet without the H4 type byte. */
+#define HCI_RESET		0x0c03
+#define HCI_READ_LOCAL_VERSION	0x1001
+#define HCI_READ_BD_ADDR	0x1009
+#define HCI_LE_READ_BUFFER_SIZE	0x2002
+#define HCI_MS			2000
+#define SEND_MS			100
+
+static struct smd_chan bt_cmd, bt_acl;
+static uint8_t bt_rx[4 + 1024];
+static uint32_t bt_dropped;
+
+static bool remote_open(const struct smd_chan *c)
+{
+	return c->send && (c->recv->state == SMD_OPENED || c->recv->state == SMD_FLUSHING);
+}
+
+static void bt_read(struct smd_chan *c, uint8_t type)
+{
+	if (!remote_open(c))
+		return;
+	smd_flags_seen(c);
+	for (unsigned i = 0; i < 16; i++) {
+		uint32_t avail = smd_read_avail(c);
+		int n = smd_packet_read(c, bt_rx, sizeof bt_rx);
+		if (n && smd_read_kick_wanted(c))
+			kick();
+		if (n < 0)
+			bt_dropped++;
+		if (n < 0 && smd_read_avail(c) == avail)
+			return;
+		if (n > 0)
+			hci_rx_packet(type, bt_rx, (unsigned)n);
+		else if (!n)
+			return;
+	}
+}
+
+static void link_poll(void)
+{
+	if (remote_open(&ctrl))
+		ctrl_poll();
+	bt_read(&bt_cmd, HCI_EVENT);
+	bt_read(&bt_acl, HCI_ACL);
+}
+
+static int link_send(uint8_t type, const uint8_t *p, unsigned n)
+{
+	struct smd_chan *c = type == HCI_COMMAND ? &bt_cmd : type == HCI_ACL ? &bt_acl : NULL;
+	if (!c || !remote_open(c))
+		return -1;
+	uint32_t t0 = time_ms();
+	while (smd_packet_write(c, p, n)) {
+		if (time_ms() - t0 > SEND_MS)
+			return -1;
+		delay_ms(1);
+	}
+	kick();
+	return 0;
+}
+
+static const struct hci_link link = { link_send, link_poll };
+
+static bool bt_open(void)
+{
+	if (bt_cmd.send)
+		return true;
+	if (core != CORE_RUNNING || !ctrl.send) {
+		note("wcnss: core not running, wcnss probe keep first\n");
+		return false;
+	}
+	if (!open_channel("APPS_RIVA_BT_CMD", &bt_cmd) || !open_channel("APPS_RIVA_BT_ACL", &bt_acl)) {
+		close_channel(&bt_cmd);
+		return false;
+	}
+	hci_set_link(&link);
+	return true;
+}
+
+static void bt_close(void)
+{
+	if (hci_link_attached()) {
+		if (bt_host_running())
+			bt_host_stop();
+		hci_set_link(NULL);
+	}
+	close_channel(&bt_acl);
+	close_channel(&bt_cmd);
+}
+
+/* Reset, then what the vendor's stack reads first. */
+static bool hci(void)
+{
+	if (bt_host_running()) {
+		note("wcnss: Bluetooth host running, wcnss stop first\n");
+		return false;
+	}
+	if (!bt_open())
+		return false;
+	uint8_t rsp[32];
+	unsigned n = sizeof rsp;
+	uint32_t t0 = time_ms();
+	int r = hci_cmd(HCI_RESET, NULL, 0, rsp, &n, HCI_MS);
+	note("wcnss: HCI reset %d after %lu ms\n", r, time_ms() - t0);
+	if (r)
+		return false;
+	n = sizeof rsp;
+	r = hci_cmd(HCI_READ_LOCAL_VERSION, NULL, 0, rsp, &n, HCI_MS);
+	if (!r && n >= 9)
+		note("wcnss: hci %u rev %04x, lmp %u subversion %04x, manufacturer %u\n", rsp[1], rsp[2] | rsp[3] << 8, rsp[4],
+		     rsp[7] | rsp[8] << 8, rsp[5] | rsp[6] << 8);
+	else
+		note("wcnss: local version %d, %u bytes\n", r, n);
+	n = sizeof rsp;
+	r = hci_cmd(HCI_READ_BD_ADDR, NULL, 0, rsp, &n, HCI_MS);
+	if (!r && n >= 7)
+		note("wcnss: bd_addr %02x:%02x:%02x:%02x:%02x:%02x\n", rsp[6], rsp[5], rsp[4], rsp[3], rsp[2], rsp[1]);
+	else
+		note("wcnss: bd_addr %d, %u bytes\n", r, n);
+	n = sizeof rsp;
+	r = hci_cmd(HCI_LE_READ_BUFFER_SIZE, NULL, 0, rsp, &n, HCI_MS);
+	if (!r && n >= 4)
+		note("wcnss: LE ACL %u packets of %u bytes\n", rsp[3], rsp[1] | rsp[2] << 8);
+	else
+		note("wcnss: LE buffer size %d, %u bytes\n", r, n);
+	return true;
+}
+
 static void probe(bool keep)
 {
 	if (core == CORE_UNKNOWN || scm_pas_stuck()) {
@@ -869,6 +1005,9 @@ static void status(void)
 		note("wcnss: NV reply %d, calibration %s, %lu bytes of calibration data kept\n", got.nv, got.cbc ? "done" : "not done",
 		     cal.done ? cal.have : 0);
 	}
+	if (bt_cmd.send)
+		note("wcnss: Bluetooth channel states %lu/%lu and %lu/%lu, %lu packets dropped\n", bt_cmd.send->state,
+		     bt_cmd.recv->state, bt_acl.send->state, bt_acl.recv->state, bt_dropped);
 	reason();
 }
 
@@ -879,7 +1018,10 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 		note("wcnss: not on this watch\n");
 	} else if (!strncmp(args, "probe", 5)) {
 		probe(!strcmp(args, "probe keep"));
+	} else if (!strcmp(args, "hci")) {
+		hci();
 	} else if (!strcmp(args, "stop")) {
+		bt_close();
 		close_ctrl();
 		if (core != CORE_OFF && !scm_pas_stuck())
 			shutdown();
@@ -887,7 +1029,7 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 	} else if (!strcmp(args, "status")) {
 		status();
 	} else {
-		say("usage: wcnss probe [keep] | stop | status\n");
+		say("usage: wcnss probe [keep] | hci | stop | status\n");
 	}
 	say = NULL;
 }
