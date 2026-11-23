@@ -83,6 +83,7 @@ const struct board board_swift = {
 	.name = "swift",
 	.compatible = "asus,swift",
 	.smem_subtype = 5,
+	.bt = { .wcnss = true },
 	/* AUO H139BLN01, 400x400 AMOLED in command mode on one lane, TE
 	 * into the MDP. */
 	.panel = {

@@ -3,6 +3,8 @@
 #define SOC_H
 #include "memmap.h"
 
+#define UI_HEAP_START		UI_HEAP_BASE
+
 /* System control module: the pads and the scratchpad the bootloader
  * reads after a reset. */
 #define CONTROL_BASE		0x48002000u

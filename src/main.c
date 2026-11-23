@@ -138,7 +138,7 @@ void main(uint32_t machtype, const void *fdt)
 	light_init();
 	cpu_idle_init();
 	bool have_gpu = gpu_init() && gpu_selftest();
-	bool have_ui = have_display && ui_init((void *)UI_HEAP_BASE, UI_HEAP_SIZE, layers, UI_LAYER_STRIDE / 4, fb.stride,
+	bool have_ui = have_display && ui_init((void *)UI_HEAP_START, UI_HEAP_BASE + UI_HEAP_SIZE - UI_HEAP_START, layers, UI_LAYER_STRIDE / 4, fb.stride,
 					       fb.width, fb.height);
 	if (have_ui) {
 		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round, board->light, !board->panel.lcd,

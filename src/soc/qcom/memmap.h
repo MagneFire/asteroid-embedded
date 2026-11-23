@@ -42,6 +42,10 @@
 /* The section its Linux reserves for ramoops, at the top of DRAM: the
  * persistent log is mapped there, so that Linux can read it after a reset. */
 #define RAMOOPS_8009_PHYS	0x9ff00000
+/* The region the secure world loads the WCNSS firmware into, inside the
+ * UI heap: a watch that starts it has the heap begin after it. */
+#define WCNSS_8009_BASE		0x0a600000
+#define WCNSS_8009_END		0x0ab00000
 
 #define GPU_MEM_BASE		0x1e000000	/* ring buffer, command and vertex memory */
 #define GPU_MEM_SIZE		0x00f00000
@@ -57,6 +61,7 @@ _Static_assert(UI_LAYER_BASE + UI_LAYER_SIZE <= SCREENSHOT_BASE, "layers overlap
 _Static_assert(SCREENSHOT_BASE + SCREENSHOT_SIZE <= HOLE_8009_BASE, "screenshot overlaps the APQ8009W's hole");
 _Static_assert(HOLE_8009_END <= UI_HEAP_BASE, "UI heap overlaps the APQ8009W's hole");
 _Static_assert(HOLE_8009_BASE <= SMEM_8009_BASE && SMEM_8009_END <= HOLE_8009_END, "APQ8009W SMEM outside its hole");
+_Static_assert(UI_HEAP_BASE <= WCNSS_8009_BASE && WCNSS_8009_END < UI_HEAP_BASE + UI_HEAP_SIZE, "WCNSS region outside the UI heap");
 _Static_assert(UI_HEAP_BASE + UI_HEAP_SIZE <= GPU_MEM_BASE, "UI heap overlaps GPU memory");
 _Static_assert(GPU_MEM_BASE + GPU_MEM_SIZE <= RAMOOPS_BASE, "GPU memory overlaps ramoops");
 _Static_assert(RAMOOPS_BASE + RAMOOPS_SIZE <= DRAM_END, "ramoops outside DRAM");

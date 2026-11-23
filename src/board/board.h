@@ -276,6 +276,8 @@ struct board {
 		const char *addr_part, *addr_path;
 		const char *patch;
 		uint8_t sleep_mode[12];	/* the 0xfc27 parameters */
+		/* The SoC's own WCNSS core instead of a chip. */
+		bool wcnss;
 	} bt;
 
 	/* The PMIC's interrupt line (power key, charger) as an MPM pin. */

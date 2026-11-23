@@ -167,6 +167,7 @@
 #define GPIO_COUNT		(chip->gpios)
 #define PMIC_ADDR_MAX		0xfffffu
 #define PMIC_VADC		1
+#define UI_HEAP_START		(board->bt.wcnss ? WCNSS_8009_END : UI_HEAP_BASE)
 #define WDT_MAX_MS (0x0fffffffu / SLEEP_CLK_HZ * 1000u)	/* about 2.3 hours */
 
 #ifndef __ASSEMBLER__

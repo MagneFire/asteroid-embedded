@@ -181,6 +181,8 @@ int main(int argc, char **argv)
 	CHECK(board_swift.charger.irqs_awake == 0xbb && board_swift.charger.cmd1 == 1 &&
 	      board_swift.charger.cell_mah == 340 && board_swift.charger.hold_low == 17 &&
 	      board_swift.charger.pmic_charger_off && !board_catfish.charger.pmic_charger_off);
+	/* Only swift has the WCNSS, so only its UI heap starts after it. */
+	CHECK(board_swift.bt.wcnss && !board_catfish.bt.wcnss && !board_smelt.bt.wcnss && !board_dory.bt.wcnss);
 	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
 	CHECK(!board_catfish.key_reset_ms);
 	/* Only swift, still being brought up, stops in fastboot after a crash. */
