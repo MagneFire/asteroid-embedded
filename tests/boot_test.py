@@ -4,8 +4,8 @@
 # dependencies = []
 # ///
 """The boot image's device trees: sparrow's and sturgeon's QCDT entries, at the
-offsets they have always had, with smelt's and catfish's after them, dory's
-in LG's own layout last, and the
+offsets they have always had, with smelt's, catfish's and swift's after
+them, dory's in LG's own layout last, and the
 tree behind the
 kernel where a bootloader looks for it."""
 import os, struct, sys
@@ -22,7 +22,7 @@ def entries(img):
 
 def compatible(blob):
     return (b"moto,smelt" in blob, b"asus,sparrow" in blob, b"huawei,sturgeon" in blob,
-            b"mobvoi,catfish" in blob, b"lge,dory" in blob)
+            b"mobvoi,catfish" in blob, b"lge,dory" in blob, b"asus,swift" in blob)
 
 def main():
     img = open(sys.argv[1], "rb").read()
@@ -38,19 +38,23 @@ def main():
     assert len({x[4] for x in smelt}) == 1
     off, size = smelt[0][4:6]
     assert off >= e[2][4] + e[2][5]
-    assert compatible(img[off:off + size]) == (True, False, False, False, False)
-    assert compatible(img[e[0][4]:e[0][4] + e[0][5]]) == (False, True, False, False, False)
-    assert compatible(img[e[2][4]:e[2][4] + e[2][5]]) == (False, False, True, False, False)
+    assert compatible(img[off:off + size]) == (True, False, False, False, False, False)
+    assert compatible(img[e[0][4]:e[0][4] + e[0][5]]) == (False, True, False, False, False, False)
+    assert compatible(img[e[2][4]:e[2][4] + e[2][5]]) == (False, False, True, False, False, False)
     catfish = e[18:22]
     assert [x[:4] for x in catfish] == [(265, 8, 0x105, 0), (265, 8, 5, 0), (301, 8, 0x105, 0), (301, 8, 5, 0)], catfish
     assert len({x[4] for x in catfish}) == 1 and catfish[0][4] >= off + size
-    assert compatible(img[catfish[0][4]:catfish[0][4] + catfish[0][5]]) == (False, False, False, True, False)
+    assert compatible(img[catfish[0][4]:catfish[0][4] + catfish[0][5]]) == (False, False, False, True, False, False)
+    swift = e[22:24]
+    assert [x[:4] for x in swift] == [(265, 8, 0x133, 0), (301, 8, 0x133, 0)], swift
+    assert len({x[4] for x in swift}) == 1 and swift[0][4] >= catfish[0][4] + catfish[0][5]
+    assert compatible(img[swift[0][4]:swift[0][4] + swift[0][5]]) == (False, False, False, False, False, True)
     # LG's layout: platform, board, soc rev, offset, size, board revision.
-    dory = e[22:]
+    dory = e[24:]
     assert len(dory) == 12 and all(x[1] == 131 and x[5] in (10, 11) for x in dory), dory
     assert dory[:2] == [dory[0][:5] + (10,), dory[0][:5] + (11,)] and dory[0][:3] == (199, 131, 0x20000), dory
-    assert len({x[3:5] for x in dory}) == 1 and dory[0][3] >= catfish[0][4] + catfish[0][5]
-    assert compatible(img[dory[0][3]:dory[0][3] + dory[0][4]]) == (False, False, False, False, True)
+    assert len({x[3:5] for x in dory}) == 1 and dory[0][3] >= swift[0][4] + swift[0][5]
+    assert compatible(img[dory[0][3]:dory[0][3] + dory[0][4]]) == (False, False, False, False, True, False)
 
     kernel = bytes(0x31) + b"code"
     out = appenddtb.append(kernel, b"\xd0\x0d\xfe\xedtree")

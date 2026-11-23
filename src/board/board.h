@@ -188,8 +188,9 @@ struct board {
 	 * place here where another watch has an MPM pin. */
 	const uint16_t *wake_pads;
 	uint8_t wake_pad_count;
-	/* SMEM's hardware platform, where it is enough to name the watch. */
-	uint32_t smem_platform;
+	/* SMEM's hardware platform, where it is enough to name the watch,
+	 * and its subtype, where that tells watches of one SoC apart. */
+	uint32_t smem_platform, smem_subtype;
 	bool heart_rate;
 
 	struct {
@@ -254,6 +255,9 @@ struct board {
 
 	/* The PMIC's interrupt line (power key, charger) as an MPM pin. */
 	uint8_t pmic_mpm;
+	/* Holding the power key this long resets the watch, as the vendor
+	 * sets it; 0 leaves what the bootloader set. */
+	uint16_t key_reset_ms;
 
 	struct {
 		uint16_t vdd_max_mv, vdd_safe_mv, vin_min_mv, ibat_max_ma, ibat_safe_ma, iterm_ma;
@@ -403,7 +407,7 @@ struct board {
 			       (ibat_safe) / 50 <= 0x3f && (ibat_max) <= (ibat_safe),                             \
 		       "charger current off the 50 mA steps")
 
-extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory;
+extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory, board_swift;
 /* The watch this is, set by board_detect before anything uses it. */
 extern const struct board *board;
 extern const char *board_detected_by;

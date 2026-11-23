@@ -12,7 +12,11 @@
  * smelt's fuel gauge is asked: this only happens with the display off, so
  * the other watches' boots stay as they are. With neither a tree nor a
  * splash the first table is a guess, and board_assumed keeps its charger
- * setup from running. */
+ * setup from running.
+ *
+ * On the APQ8009W the tree, then SMEM's platform subtype, names catfish
+ * or swift; both have a 400x400 panel, so it is not looked at. With
+ * neither, catfish is assumed as before. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -20,24 +24,35 @@
 #include "soc/max17050.h"
 
 static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt, &board_dory };
+static const struct board *const boards_8009[] = { &board_catfish, &board_swift };
+
+#define N(a) (sizeof (a) / sizeof (a)[0])
 
 const struct board *board;
 const char *board_detected_by;
 bool board_assumed;
 
-static const struct board *by_compatible(const void *fdt)
+static const struct board *by_compatible(const void *fdt, const struct board *const *list, unsigned n)
 {
 	uint32_t len;
 	const char *compat = fdt_prop(fdt, "/", "compatible", &len);
-	for (unsigned i = 0; compat && i < sizeof boards / sizeof boards[0]; i++)
-		if (fdt_strlist_has(compat, len, boards[i]->compatible))
-			return boards[i];
+	for (unsigned i = 0; compat && i < n; i++)
+		if (fdt_strlist_has(compat, len, list[i]->compatible))
+			return list[i];
+	return NULL;
+}
+
+static const struct board *by_subtype(uint32_t subtype)
+{
+	for (unsigned i = 0; subtype && i < N(boards_8009); i++)
+		if (subtype == boards_8009[i]->smem_subtype)
+			return boards_8009[i];
 	return NULL;
 }
 
 static const struct board *by_panel(uint32_t w, uint32_t h)
 {
-	for (unsigned i = 0; i < sizeof boards / sizeof boards[0]; i++)
+	for (unsigned i = 0; i < N(boards); i++)
 		if (w == boards[i]->panel.width && (h == boards[i]->panel.height || h == boards[i]->panel.height_alt))
 			return boards[i];
 	return NULL;
@@ -56,10 +71,17 @@ void board_detect(uint32_t machtype, const void *fdt)
 {
 	uint32_t w = 0, h = 0;
 	const char *model = fdt_valid(fdt) ? fdt_prop(fdt, "/", "model", NULL) : NULL;
-	uint32_t platform = smem_hw_platform();
+	uint32_t platform = smem_hw_platform(), subtype = smem_hw_subtype();
 	if (chip == &chip_8009) {
-		board = &board_catfish;
-		board_detected_by = "SoC";
+		if (fdt_valid(fdt) && (board = by_compatible(fdt, boards_8009, N(boards_8009))))
+			board_detected_by = "device tree";
+		else if ((board = by_subtype(subtype)))
+			board_detected_by = "SMEM";
+		else {
+			board = &board_catfish;
+			board_detected_by = "nothing, assumed";
+			board_assumed = true;
+		}
 	} else if (display_splash_size(&w, &h), platform == board_smelt.smem_platform) {
 		board = &board_smelt;
 		board_detected_by = "SMEM";
@@ -69,7 +91,7 @@ void board_detect(uint32_t machtype, const void *fdt)
 	} else if (!w && smelt_gauge_answers()) {
 		board = &board_smelt;
 		board_detected_by = "fuel gauge";
-	} else if (fdt_valid(fdt) && (board = by_compatible(fdt)))
+	} else if (fdt_valid(fdt) && (board = by_compatible(fdt, boards, N(boards))))
 		board_detected_by = "device tree";
 	else if ((board = by_panel(w, h)))
 		board_detected_by = "panel size";
@@ -78,6 +100,6 @@ void board_detect(uint32_t machtype, const void *fdt)
 		board_detected_by = "nothing, assumed";
 		board_assumed = true;
 	}
-	log_printf("board: %s by %s (tree %08lx %s, machtype %lu, panel %lux%lu, platform %lu)\n", board->name, board_detected_by,
-		   (uint32_t)(uintptr_t)fdt, model ? model : "none", machtype, w, h, platform);
+	log_printf("board: %s by %s (tree %08lx %s, machtype %lu, panel %lux%lu, platform %lu.%lu)\n", board->name,
+		   board_detected_by, (uint32_t)(uintptr_t)fdt, model ? model : "none", machtype, w, h, platform, subtype);
 }

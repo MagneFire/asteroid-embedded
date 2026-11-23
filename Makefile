@@ -41,7 +41,7 @@ SRCS := src/start.S src/soc/cache.S src/main.c src/version.c src/prof.c src/sett
 
 SRCS_qcom := $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c timer.c wdt.c spmi.c pmic.c bms.c reboot.c scm.c tlmm.c clock.c spm.c \
                suspend.S i2c_qup.c spi_qup.c uart_dm.c rpm.c) \
-        src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c \
+        src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/board/swift.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_lis3dsh.c src/sensors/hub_nanohub.c src/sensors/hr_accept.c src/sensors/nanohub_proto.c src/sensors/light_tsl2584.c \
         src/input/touch.c src/input/touch_it7260.c src/input/fts.c src/input/touch_fts.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/input/haptics_gp.c src/display/backlight_lm3530.c src/soc/qcom/battery_pmic_gauge.c \
         src/display/display.c src/display/mdp3.c src/display/dsi.c src/soc/charger_smb231.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c src/gpu/soft.c src/gpu/qcom_compose.c \
@@ -150,7 +150,7 @@ $(BUILD)/%.dtb: dts/%.dts
 ifeq ($(SOC),qcom)
 # One tree per watch: each bootloader picks the one whose board-id it has.
 # A new tree goes last, so the entries before it stay as they are.
-DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb $(BUILD)/catfish.dtb
+DTBS := $(BUILD)/sparrow.dtb $(BUILD)/sturgeon.dtb $(BUILD)/smelt.dtb $(BUILD)/catfish.dtb $(BUILD)/swift.dtb
 
 # dory's bootloader reads entries of its own layout, after the others.
 $(BUILD)/qcdt.img: $(DTBS) $(BUILD)/dory.dtb tools/qcdt.py
@@ -159,9 +159,11 @@ $(BUILD)/qcdt.img: $(DTBS) $(BUILD)/dory.dtb tools/qcdt.py
 # One image for every watch. Bootloaders that read the table use it, and
 # ignore what follows the firmware. smelt's own images have no table and
 # the tree behind the kernel, so that is there too, in case its bootloader
-# only looks there.
-$(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb tools/appenddtb.py
-	$(PYTHON) tools/appenddtb.py -o $@ $< $(BUILD)/catfish.dtb $(BUILD)/smelt.dtb
+# only looks there. catfish's bootloader takes the tree from there and
+# dies on smelt's, so catfish's goes first, and swift's, whose bootloader
+# is of the same kind, before smelt's too.
+$(BUILD)/asteroid-tree.bin: $(BUILD)/asteroid.bin $(BUILD)/catfish.dtb $(BUILD)/swift.dtb $(BUILD)/smelt.dtb tools/appenddtb.py
+	$(PYTHON) tools/appenddtb.py -o $@ $< $(BUILD)/catfish.dtb $(BUILD)/swift.dtb $(BUILD)/smelt.dtb
 
 $(BUILD)/asteroid.img: $(BUILD)/asteroid-tree.bin $(BUILD)/qcdt.img tools/mkbootimg.py
 	$(PYTHON) tools/mkbootimg.py --kernel $< --dt $(BUILD)/qcdt.img -o $@
@@ -333,9 +335,9 @@ $(BUILD)/test/sgx_paint_test: tests/sgx_paint_test.c $(SGX_PAINT) $(wildcard tes
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(SGX_PAINT) -o $@
 
-$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/board_test: tests/board_test.c src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/board/swift.c src/sensors/m4_proto.c src/lib/fdt.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/board/swift.c src/sensors/m4_proto.c src/lib/fdt.c -o $@
 
 $(BUILD)/test/small.ext4: tests/data/small.ext4.gz
 	@mkdir -p $(dir $@)
@@ -384,7 +386,7 @@ test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_
 	$(BUILD)/test/sgx_test
 	$(BUILD)/test/sgx_stack_test
 	$(BUILD)/test/sgx_paint_test
-	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb $(BUILD)/dory.dtb
+	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb $(BUILD)/dory.dtb $(BUILD)/catfish.dtb $(BUILD)/swift.dtb
 	$(PYTHON) tests/boot_test.py $(BUILD)/qcdt.img
 	$(BUILD)/test/stack_test
 	$(BUILD)/test/adb_test

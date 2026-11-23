@@ -23,6 +23,11 @@
 #define PON_POFF_REASON2	0x00080d
 #define PON_PS_HOLD_RESET_CTL	0x00085a
 #define PON_PS_HOLD_RESET_CTL2	0x00085b
+#define PON_KPDPWR_S1_TIMER	0x000840
+#define PON_KPDPWR_S2_TIMER	0x000841
+#define PON_KPDPWR_S2_CNTL	0x000842
+#define PON_KPDPWR_S2_CNTL2	0x000843
+#define RESET_TYPE_HARD		0x7
 #define RESET_TYPE_WARM		0x1
 #define RESET_TYPE_SHUTDOWN	0x4
 #define S2_RESET_EN		BIT(7)
@@ -43,6 +48,23 @@ static void names(char *s, size_t cap, uint8_t bits, const char *const *table)
 	for (unsigned i = 0; i < 8; i++)
 		if ((bits & 1u << i) && table[i] && n < cap)
 			n += (size_t)snprintf(s + n, cap - n, " %s", table[i]);
+}
+
+/* The power key's hold before a reset, at the S1 timer's steps, and
+ * 10 ms more on the S2 timer, as the vendor trees set it. */
+static void key_reset(uint16_t ms)
+{
+	static const uint16_t s1_ms[16] = { 0, 32, 56, 80, 138, 184, 272, 408, 608, 904, 1352, 2048, 3072, 4480, 6720, 10256 };
+	unsigned i = 15;
+	while (i && s1_ms[i] > ms)
+		i--;
+	pmic_write(PON_KPDPWR_S2_CNTL2, 0);
+	delay_us(300);
+	pmic_write(PON_KPDPWR_S1_TIMER, (uint8_t)i);
+	pmic_write(PON_KPDPWR_S2_TIMER, 1);
+	pmic_write(PON_KPDPWR_S2_CNTL, RESET_TYPE_HARD);
+	pmic_write(PON_KPDPWR_S2_CNTL2, S2_RESET_EN);
+	snprintf(reason + strlen(reason), sizeof reason - strlen(reason), ", key reset %u ms", s1_ms[i]);
 }
 
 void pmic_init(void)
@@ -69,6 +91,8 @@ void pmic_init(void)
 
 	if (chip == &chip_8026)
 		pmic_write(SMPS2_MODE, SMPS_MODE_AUTO);
+	if (board->key_reset_ms)
+		key_reset(board->key_reset_ms);
 
 	/* The system rail and the battery sense pin, both divided by three,
 	 * and USB in, divided by twenty: on smelt the sense pin follows the

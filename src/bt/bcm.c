@@ -148,8 +148,10 @@ static void host_wake_irq(unsigned n)
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	uint32_t hcd_len;
-	const uint8_t *hcd = firmware_get(PATCH_NAME, &hcd_len);
 	memset(info, 0, sizeof *info);
+	if (!PATCH_NAME)
+		return fail(info, "no Broadcom chip", -1);
+	const uint8_t *hcd = firmware_get(PATCH_NAME, &hcd_len);
 	uint32_t t0 = time_ms();
 	if (!hcd)
 		return fail(info, "patch file", -1);

@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "ASUS ZenWatch 3";
+	compatible = "asus,swift", "qcom,apq8009w";
+	qcom,msm-id = <265 0>, <301 0>;
+	qcom,board-id = <8 0x133>;
+	qcom,pmic-id = <0x1000b 0 0 0>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};

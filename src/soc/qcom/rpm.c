@@ -50,16 +50,21 @@ static void *smem_item(unsigned id, uint32_t *size)
 }
 
 /* The hardware platform in the chip's description: the third word after
- * the 32-byte build id. 0 if there is none. */
+ * the 32-byte build id, and its subtype three words on. 0 if there is
+ * none. */
 #define SMEM_SOCINFO		137
 #define SOCINFO_HW_PLATFORM	13
+#define SOCINFO_HW_SUBTYPE	16
 
-uint32_t smem_hw_platform(void)
+static uint32_t socinfo(unsigned word)
 {
 	uint32_t size = 0;
 	volatile uint32_t *info = smem_item(SMEM_SOCINFO, &size);
-	return info && size > SOCINFO_HW_PLATFORM * 4 ? info[SOCINFO_HW_PLATFORM] : 0;
+	return info && size > word * 4 ? info[word] : 0;
 }
+
+uint32_t smem_hw_platform(void) { return socinfo(SOCINFO_HW_PLATFORM); }
+uint32_t smem_hw_subtype(void) { return socinfo(SOCINFO_HW_SUBTYPE); }
 
 static void notify(void)
 {

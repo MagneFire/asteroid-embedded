@@ -1,5 +1,6 @@
 /* Telling the watches apart, with the real board tables and device
- * trees: argv are smelt's, sturgeon's and dory's compiled trees. */
+ * trees: argv are smelt's, sturgeon's, dory's, catfish's and swift's
+ * compiled trees. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,8 +17,9 @@ const struct light_driver light_tsl2584, light_nanohub;
 const struct qcom_chip chip_8026, chip_8009;
 const struct qcom_chip *chip = &chip_8026;
 
-static uint32_t splash_w, splash_h, platform = 8;
+static uint32_t splash_w, splash_h, platform = 8, subtype;
 uint32_t smem_hw_platform(void) { return platform; }
+uint32_t smem_hw_subtype(void) { return subtype; }
 
 /* smelt's fuel gauge, for the boots with no splash. */
 static bool gauge_present;
@@ -60,7 +62,7 @@ static void *load(const char *path)
 		printf("%s: not found\n", path);
 		exit(1);
 	}
-	static char bufs[3][4096];
+	static char bufs[5][4096];
 	static int n;
 	char *b = bufs[n++];
 	fread(b, 1, sizeof bufs[0], f);
@@ -71,6 +73,7 @@ static void *load(const char *path)
 int main(int argc, char **argv)
 {
 	void *smelt = load(argv[1]), *sturgeon = load(argv[2]), *dory = load(argv[3]);
+	void *catfish = load(argv[4]), *swift = load(argv[5]);
 	/* The tree names the watch. */
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon);
 	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
@@ -105,12 +108,26 @@ int main(int argc, char **argv)
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon && gauge_reads == 0);
 	gauge_present = false;
 	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
-	/* On the APQ8009W only catfish, and the APQ8026's display is not
-	 * looked at. */
+	/* On the APQ8009W the tree names catfish or swift, then SMEM's
+	 * subtype does, and the display is not looked at. Another SoC's
+	 * tree names neither. */
 	chip = &chip_8009;
 	splash_reads = 0;
-	CHECK(detect(400, 400, sturgeon) == &board_catfish && !board_assumed && splash_reads == 0);
+	CHECK(detect(400, 400, catfish) == &board_catfish && !board_assumed && splash_reads == 0);
+	CHECK(detect(400, 400, swift) == &board_swift && !board_assumed && splash_reads == 0);
+	subtype = 5;
+	CHECK(detect(400, 400, swift) == &board_swift && !board_assumed);
+	CHECK(detect(400, 400, NULL) == &board_catfish && !board_assumed);
+	CHECK(detect(400, 400, sturgeon) == &board_catfish && !board_assumed);
+	subtype = 0x33;
+	CHECK(detect(400, 400, NULL) == &board_swift && !board_assumed);
+	CHECK(detect(0, 0, catfish) == &board_catfish && !board_assumed);
+	subtype = 0;
+	CHECK(detect(400, 400, sturgeon) == &board_catfish && board_assumed);
+	CHECK(detect(0, 0, NULL) == &board_catfish && board_assumed);
 	chip = &chip_8026;
+	/* An APQ8026 is never taken for either. */
+	CHECK(detect(400, 400, swift) == &board_sturgeon && !board_assumed);
 	/* A guess stays a guess. */
 	CHECK(detect(0, 0, NULL) == &board_sturgeon && board_assumed);
 	CHECK(detect(123, 456, NULL) == &board_sturgeon && board_assumed);
@@ -129,6 +146,12 @@ int main(int argc, char **argv)
 	for (unsigned i = 1; i < board_dory.therm_n; i++)
 		CHECK(board_dory.therm[i].decidegrees > board_dory.therm[i - 1].decidegrees &&
 		      board_dory.therm[i].mv < board_dory.therm[i - 1].mv);
+
+	/* swift has none of the parts catfish's other drivers run, and
+	 * the vendor's power key reset. */
+	CHECK(!board_swift.battery_driver && !board_swift.touch && !board_swift.hub && !board_swift.light);
+	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
+	CHECK(!board_catfish.key_reset_ms && board_catfish.smem_subtype != board_swift.smem_subtype);
 
 	/* Only smelt's always-on face has its own backlight code. */
 	CHECK(board_smelt.backlight_aod_code == 36);

@@ -10,6 +10,7 @@ static const struct dcs_step panel_wake[] = { { 0x53, 1, 0, { 0x20 } } };
 const struct board board_catfish = {
 	.name = "catfish",
 	.compatible = "mobvoi,catfish",
+	.smem_subtype = 5,
 	.heart_rate = true,
 	/* RM67162 or RM69080, 400x400 command mode on one lane, TE into
 	 * the MDP. */
