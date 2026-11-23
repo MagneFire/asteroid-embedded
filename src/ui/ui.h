@@ -242,6 +242,9 @@ void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t week
  * watch off. */
 void ui_set_timepiece(bool on);
 void ui_set_tilt_light(bool on);
+/* The application processor is off and the watch runs without it: only
+ * its own power key starts it, so Reboot says so instead. */
+void ui_set_ap_off(bool off);
 /* The watch has a magnetometer: the Compass app is there. */
 void ui_set_magnetometer(bool on);
 void ui_set_board(const char *name, uint32_t len, bool heart_rate, bool round, bool light_sensor, bool burn_in,

@@ -17,6 +17,7 @@
 #include "storage/storage.h"
 #include "power.h"
 #include "actions.h"
+#include "ui/ui.h"
 #include "companion/companion.h"
 #include "companion/link.h"
 #include "companion/proto.h"
@@ -45,7 +46,7 @@ static bool ready, boot_lent, pin_reset, chips_on, ap_has_panel, want_ap, switch
 /* Powered off by the AP: nobody has the panel and the watch stays dark
  * until the AP comes back. */
 static bool off;
-static bool replying, reporting, burst, key_held, lk_wait;
+static bool replying, reporting, burst, key_held, lk_wait, ap_off_shown;
 static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, reboot_reason;
 /* The mode a 377 queued or under way makes take effect once the AP has
  * it, or -1. */
@@ -501,6 +502,9 @@ void companion_pass(void)
 	/* A report is queued after these, so that reports do not keep
 	 * them waiting. */
 	settle(now);
+	bool ap_off = mode == PROTO_MODE_WRISTBAND && !ap_has_panel;
+	if (ap_off != ap_off_shown)
+		ui_set_ap_off(ap_off_shown = ap_off);
 	sns_pass();
 	if (report_ok() && sns_due() && (n = sns_report(report_buf, sizeof report_buf)) && link_send(report_buf, n)) {
 		reporting = true;

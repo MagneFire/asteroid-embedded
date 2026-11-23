@@ -775,6 +775,21 @@ static void tour(void)
 		}
 		if (!tilt || !reset || rebooted)
 			fail("quick: tilt-to-wake or the reset hold goes wrong");
+		/* With the AP off a tap on reboot only says how to start it. */
+		for (int off = 1; off >= 0; off--) {
+			ui_set_ap_off(off);
+			touch(UI_PANEL_TOP, UI_TOUCH_DOWN, reboot_x, row);
+			run(UI_PANEL_TOP, 50);
+			touch(UI_PANEL_TOP, UI_TOUCH_UP, reboot_x, row);
+			run(UI_PANEL_TOP, 1000);
+			step("quick", n++);
+			run(UI_PANEL_TOP, 3000);
+			rebooted = false;
+			for (struct ui_event e; ui_next_event(&e);)
+				rebooted |= e.kind == UI_EVENT_SETTING && e.value == UI_REBOOT;
+			if (rebooted == off)
+				fail("quick: reboot goes wrong with the AP off or on");
+		}
 		step_panel = UI_PANEL_APP;
 	}
 	/* The nightstand's battery ring as the battery fills, and moved against

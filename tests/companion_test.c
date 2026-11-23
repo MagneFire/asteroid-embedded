@@ -268,6 +268,8 @@ bool board_chips_off(void)
 void iom_stop(unsigned bus) {}
 void power_wake(const char *cause) { wakes++; }
 bool power_key(void) { return key_down; }
+static bool ap_off_ui;
+void ui_set_ap_off(bool off) { ap_off_ui = off; }
 void hub_accel_share(bool on) { accel_shared = on; }
 static int16_t accel_mg[3] = { 0, -1000, 500 };
 bool hub_accel(int16_t v[3])
@@ -668,6 +670,7 @@ static void lk_answered(void)
 	wait_ms(1);
 	CHECK(!levels[DN_ACK]);
 	CHECK(display_lent && touch_lent && power_lent && !levels[OWN] && !outputs[MOTOR_EN] && bt_lent);
+	CHECK(!ap_off_ui);
 	lk_done();
 }
 
@@ -827,9 +830,11 @@ static void companion_scenario(void)
 	uint32_t left = companion_next_ms();
 	CHECK(left > 900 && left <= 1000);
 	wait_ms(left - 1);
-	CHECK(display_lent);
+	CHECK(display_lent && !ap_off_ui);
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
+	/* Only the AP's own key starts it now, and the UI says so. */
+	CHECK(ap_off_ui);
 	CHECK(!bt_lent);
 	CHECK(outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	/* The chips on the AP's bus are put to sleep once it is the watch's,
@@ -885,6 +890,7 @@ static void companion_scenario(void)
 	mode_message(373, NULL, 0, &a);
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND);
 	CHECK(display_lent && touch_lent && !outputs[MOTOR_EN] && power_lent && !levels[OWN] && bt_lent);
+	CHECK(!ap_off_ui);
 	/* A reset before the store has the normal mode keeps the AP's
 	 * panel. */
 	CHECK(kv_mode == PROTO_MODE_WRISTBAND);
@@ -928,6 +934,8 @@ static void companion_scenario(void)
 	CHECK(display_lent);
 	wait_ms(1);
 	CHECK(!display_lent && wakes == 2 && kv_sets == sets + 1 && kv_mode == PROTO_MODE_POWER_OFF && !bt_lent);
+	/* On its own the watch keeps its Reboot. */
+	CHECK(!ap_off_ui);
 	key_down = false;
 
 	/* A 374 whose 377 the AP never reads, as it is on its way down:

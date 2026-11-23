@@ -507,6 +507,11 @@ pub extern "C" fn ui_set_timepiece(on: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_ap_off(off: bool) {
+    each(|face| face.set_ap_off(off));
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_tilt_light(on: bool) {
     each(|face| face.set_has_tilt_light(on));
 }

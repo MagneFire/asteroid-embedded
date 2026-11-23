@@ -754,13 +754,15 @@ export component Page {
 // RemorseTimer: black at 80 % over the screen with the action's name over a countdown of duration
 // (3 s unless set) and "Tap to cancel" below it, fading in over 300 ms; unless tapped, it then calls
 // Face.setting-toggled with code. Started by start, and code is back at -1 when done. Going to
-// sleep cancels it: the countdown would otherwise run out on the first frame after waking.
+// sleep cancels it: the countdown would otherwise run out on the first frame after waking. tell
+// only shows a line of text for as long, or until tapped.
 export component Remorse {
     in-out property <int> code: -1;
     in-out property <string> action;
     in property <duration> duration: 3s;
     property <duration> started;
     property <int> sleeps;
+    property <bool> telling;
     property <bool> armed: self.code >= 0 && self.sleeps == Face.sleeps;
     property <int> left: self.armed ? Math.max(1, self.duration / 1s - Math.floor((animation-tick() - self.started) / 1s)) : self.duration / 1s;
 
@@ -772,8 +774,14 @@ export component Remorse {
     public function start(action: string, code: int) {
         self.action = action;
         self.code = code;
+        self.telling = false;
         self.sleeps = Face.sleeps;
         self.started = animation-tick();
+    }
+
+    public function tell(text: string) {
+        self.start(text, 0);
+        self.telling = true;
     }
 
     Rectangle {
@@ -785,13 +793,16 @@ export component Remorse {
         }
 
         Text {
-            y: root.height / 2 - 18 * Theme.unit;
-            width: root.width;
-            height: 6 * Theme.unit;
+            x: 15 * Theme.unit;
+            y: root.height / 2 - (root.telling ? 12 : 18) * Theme.unit;
+            width: root.width - 30 * Theme.unit;
+            height: (root.telling ? 24 : 6) * Theme.unit;
             text: root.action;
             color: white;
             font-size: 6 * Theme.unit;
             horizontal-alignment: center;
+            vertical-alignment: root.telling ? center : top;
+            wrap: word-wrap;
         }
 
         Text {
@@ -799,6 +810,7 @@ export component Remorse {
             width: root.width;
             height: 22 * Theme.unit;
             text: root.left;
+            visible: !root.telling;
             color: white;
             font-family: "Noto Sans SemiCondensed SemiBold";
             font-size: 18 * Theme.unit;
@@ -810,6 +822,7 @@ export component Remorse {
             y: root.height / 2 + 12 * Theme.unit;
             width: root.width;
             text: "Tap to cancel";
+            visible: !root.telling;
             color: white;
             font-size: 6 * Theme.unit;
             horizontal-alignment: center;
@@ -826,7 +839,7 @@ export component Remorse {
             interval: root.duration;
             running: root.armed;
             triggered => {
-                if root.armed {
+                if root.armed && !root.telling {
                     Face.setting-toggled(root.code);
                 }
                 root.code = -1;

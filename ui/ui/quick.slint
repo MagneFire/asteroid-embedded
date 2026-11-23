@@ -10,7 +10,8 @@
 // The numbers passed to setting-toggled are the firmware's enum setting, 37 to lock, 38 for
 // Settings, 39 to reboot, 40 to power off and 41 for cinema mode. A build without Settings has
 // one more toggle, tilt-to-wake, and its reboot toggle held for 3 s resets the watch instead, after
-// a countdown of 5 s.
+// a countdown of 5 s. While the application processor is off, a reboot would only come back to this
+// watch without it, so the reboot toggle says how to start it instead.
 import { Face } from "face.slint";
 import { Codes } from "codes.slint";
 import { Remorse } from "controls.slint";
@@ -128,7 +129,11 @@ export component QuickSettings {
         } else if i == 5 {
             remorse.start("Power Off", Codes.ui-power-off);
         } else if i == 6 {
-            remorse.start("Reboot", Codes.ui-reboot);
+            if Face.ap-off {
+                remorse.tell("Hold the lower button to restart");
+            } else {
+                remorse.start("Reboot", Codes.ui-reboot);
+            }
         } else if i == 7 {
             Face.setting-set(Codes.setting-tilt, Face.tilt > 0 ? 0 : 1);
         }
