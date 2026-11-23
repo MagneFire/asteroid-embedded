@@ -60,12 +60,11 @@
 #define LDO_PA			9	/* the RF power amplifier, 3.3 V */
 #define SMPS_RFA		3	/* the RF chip, 1.3 V */
 
-#define SMEM_CHANNELS		13
-#define SMEM_SMD_INFO		14
-#define SMEM_SMD_FIFO		338
+#define SMD_CHANNELS		64
 #define SMEM_PRONTO_REASON	422
 #define SMEM_SMP2P_WCNSS	451
 #define EDGE_APPS_WCNSS		6
+#define XFER_PACKET		2
 #define KICK_SMD		BIT(17)
 
 #define SMP2P_MAGIC		0x504d5324u
@@ -352,15 +351,33 @@ static bool wait_ready(void)
 	}
 }
 
-static int find_channel(const char *name)
+/* As the vendor kernel looks: in the primary and the secondary channel
+ * table, each with its own half channel and FIFO items, as seen from
+ * the WCNSS's partition. */
+static const struct smd_table {
+	unsigned alloc, info, fifo;
+	const char *name;
+} tables[] = { { 13, 14, 338, "primary" }, { 266, 138, 202, "secondary" } };
+
+static int find_channel(const char *name, const struct smd_table **in)
 {
-	uint32_t size = 0;
-	volatile uint8_t *t = smem_get(SMEM_CHANNELS, SMEM_HOST_ANY, &size);
-	for (uint32_t i = 0; t && (i + 1) * 32 <= size; i++) {
-		volatile uint8_t *e = t + i * 32;
-		uint32_t cid = *(volatile uint32_t *)(e + 20), type = *(volatile uint32_t *)(e + 24);
-		if ((type & 0xff) == EDGE_APPS_WCNSS && !strncmp((const char *)(uintptr_t)e, name, 20))
+	for (unsigned k = 0; k < ARRAY_SIZE(tables); k++) {
+		uint32_t size = 0;
+		volatile uint8_t *t = smem_get(tables[k].alloc, SMEM_HOST_WCNSS, &size);
+		for (uint32_t i = 0; t && i < SMD_CHANNELS && (i + 1) * 32 <= size; i++) {
+			volatile uint8_t *e = t + i * 32;
+			uint32_t cid = *(volatile uint32_t *)(e + 20), type = *(volatile uint32_t *)(e + 24),
+				 refs = *(volatile uint32_t *)(e + 28);
+			if ((type & 0xff) != EDGE_APPS_WCNSS || !refs || strncmp((const char *)(uintptr_t)e, name, 20))
+				continue;
+			if ((type >> 8 & 0xf) != XFER_PACKET || cid >= SMD_CHANNELS) {
+				note("wcnss: %s in the %s table, type %08lx cid %lu, not usable\n", name, tables[k].name, type, cid);
+				return -1;
+			}
+			if (in)
+				*in = &tables[k];
 			return (int)cid;
+		}
 	}
 	return -1;
 }
@@ -374,8 +391,9 @@ static void kick(void)
 static bool open_ctrl(void)
 {
 	uint32_t t0 = time_ms();
+	const struct smd_table *tbl = NULL;
 	int cid;
-	while ((cid = find_channel("WCNSS_CTRL")) < 0) {
+	while ((cid = find_channel("WCNSS_CTRL", &tbl)) < 0) {
 		if (time_ms() - t0 > CHANNEL_MS) {
 			note("wcnss: no WCNSS_CTRL channel after %u ms\n", CHANNEL_MS);
 			return false;
@@ -383,11 +401,12 @@ static bool open_ctrl(void)
 		wait_ms(5);
 	}
 	uint32_t info = 0, fifo = 0;
-	volatile struct smd_half *h = smem_get(SMEM_SMD_INFO + (unsigned)cid, SMEM_HOST_WCNSS, &info);
-	volatile uint8_t *f = smem_get(SMEM_SMD_FIFO + (unsigned)cid, SMEM_HOST_WCNSS, &fifo);
-	note("wcnss: WCNSS_CTRL is channel %d after %lu ms, info %lu fifo %lu bytes, states %lu/%lu\n", cid, time_ms() - t0,
-	     info, fifo, h && info >= 2 * sizeof *h ? h[0].state : 0, h && info >= 2 * sizeof *h ? h[1].state : 0);
-	if (!h || !f || info < 2 * sizeof *h || fifo < 2 * 64)
+	volatile struct smd_half *h = smem_get(tbl->info + (unsigned)cid, SMEM_HOST_WCNSS, &info);
+	volatile uint8_t *f = smem_get(tbl->fifo + (unsigned)cid, SMEM_HOST_WCNSS, &fifo);
+	bool fits = h && f && info == 2 * sizeof *h && fifo >= 2 * 64 && fifo % 32 == 0;
+	note("wcnss: WCNSS_CTRL is channel %d of the %s table after %lu ms, info %lu fifo %lu bytes, states %lu/%lu\n", cid,
+	     tbl->name, time_ms() - t0, info, fifo, fits ? h[0].state : 0, fits ? h[1].state : 0);
+	if (!fits)
 		return false;
 	ctrl = (struct smd_chan){ &h[0], &h[1], f, f + fifo / 2, fifo / 2 };
 	ctrl.recv->tail = 0;
@@ -488,7 +507,7 @@ static void probe(bool keep)
 	}
 	uint32_t size = 0;
 	note("wcnss: smem channel table %s, smp2p bits %08lx before start\n",
-	     smem_get(SMEM_CHANNELS, SMEM_HOST_ANY, &size) ? "found" : "missing", slave_bits());
+	     smem_get(tables[0].alloc, SMEM_HOST_WCNSS, &size) ? "found" : "missing", slave_bits());
 	bool ok = power_on() && xo_setup() && boot() && wait_ready() && open_ctrl() && versions();
 	note("wcnss: probe %s\n", ok ? "done" : "stopped");
 	if (!(ok && keep))
@@ -502,7 +521,7 @@ static void probe(bool keep)
 static void status(void)
 {
 	note("wcnss: %s, smp2p bits %08lx, channel %d\n", started ? "started" : "not started", slave_bits(),
-	     find_channel("WCNSS_CTRL"));
+	     find_channel("WCNSS_CTRL", NULL));
 	if (ctrl.send)
 		note("wcnss: channel states %lu/%lu, %lu bytes waiting\n", ctrl.send->state, ctrl.recv->state, smd_read_avail(&ctrl));
 	reason();
