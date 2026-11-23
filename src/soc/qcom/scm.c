@@ -62,20 +62,21 @@ int scm_wdog_debug_disable(void)
 #define SCM_RESP_HDR		12
 #define SCM_REQ_MAX		6
 
-static uint32_t scm_cmd[16] __attribute__((aligned(64)));
+static uint32_t scm_cmd_buf[16] __attribute__((aligned(64)));
 
-static int scm_call_buf_ms(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp, uint32_t wait_ms)
+static int scm_call_in(uint32_t *scm_cmd, uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp,
+		       uint32_t wait_ms)
 {
 	if (n > SCM_REQ_MAX)
 		return -5;
 	unsigned resp_hdr = SCM_CMD_HDR + 4 * n;
-	memset(scm_cmd, 0, sizeof scm_cmd);
+	memset(scm_cmd, 0, sizeof scm_cmd_buf);
 	scm_cmd[0] = resp_hdr + SCM_RESP_HDR + 4;
 	scm_cmd[1] = SCM_CMD_HDR;
 	scm_cmd[2] = resp_hdr;
 	scm_cmd[3] = svc << 10 | cmd;
 	memcpy(&scm_cmd[SCM_CMD_HDR / 4], req, 4 * n);
-	dcache_clean_invalidate_range(scm_cmd, sizeof scm_cmd);
+	dcache_clean_invalidate_range(scm_cmd, sizeof scm_cmd_buf);
 	uint32_t context = 0, t0 = time_ms();
 	register uint32_t r0 __asm__("r0");
 	do {
@@ -92,7 +93,7 @@ static int scm_call_buf_ms(uint32_t svc, uint32_t cmd, const uint32_t *req, unsi
 		return (int)r0;
 	const volatile uint32_t *rh = &scm_cmd[resp_hdr / 4];
 	for (;;) {
-		dcache_invalidate_range(scm_cmd, sizeof scm_cmd);
+		dcache_invalidate_range(scm_cmd, sizeof scm_cmd_buf);
 		bool done = rh[2];
 #if defined(TEST_SCM_SLOW)
 		/* Once, after a minute: complete only after 20 ms. */
@@ -113,7 +114,7 @@ static int scm_call_buf_ms(uint32_t svc, uint32_t cmd, const uint32_t *req, unsi
 	/* The response follows its header unless the secure world says
 	 * otherwise. */
 	uint32_t at = resp_hdr + (rh[1] ? rh[1] : SCM_RESP_HDR);
-	if (at % 4 || at + 4 > sizeof scm_cmd)
+	if (at % 4 || at + 4 > sizeof scm_cmd_buf)
 		return -4;
 	if (resp)
 		*resp = scm_cmd[at / 4];
@@ -122,7 +123,7 @@ static int scm_call_buf_ms(uint32_t svc, uint32_t cmd, const uint32_t *req, unsi
 
 static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp)
 {
-	return scm_call_buf_ms(svc, cmd, req, n, resp, SCM_WAIT_MS);
+	return scm_call_in(scm_cmd_buf, svc, cmd, req, n, resp, SCM_WAIT_MS);
 }
 
 /* After its power domain collapsed, a device behind a TZ-managed SMMU
@@ -187,13 +188,26 @@ int scm_set_boot_addr(uint32_t phys, uint32_t cpus, bool warm)
 #define PAS_AUTH_AND_RESET	5
 #define PAS_SHUTDOWN		6
 #define PAS_WAIT_MS		10000
+#define PAS_STUCK		-7
+
+/* A call given up on may still be running in the secure world with its
+ * buffer, so the loader gets a buffer of its own and no further call
+ * once one timed out. */
+static uint32_t pas_cmd[16] __attribute__((aligned(64)));
+static bool pas_stuck;
 
 static int pas_call(uint32_t cmd, const uint32_t *req, unsigned n)
 {
+	if (pas_stuck)
+		return PAS_STUCK;
 	uint32_t resp = ~0u;
-	int r = scm_call_buf_ms(SCM_SVC_PIL, cmd, req, n, &resp, PAS_WAIT_MS);
+	int r = scm_call_in(pas_cmd, SCM_SVC_PIL, cmd, req, n, &resp, PAS_WAIT_MS);
+	if (r == -2 || r == -3)
+		pas_stuck = true;
 	return r ? r : (int)resp;
 }
+
+bool scm_pas_stuck(void) { return pas_stuck; }
 
 int scm_pas_init_image(uint32_t pas_id, uint32_t metadata_phys)
 {
