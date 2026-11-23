@@ -12,6 +12,7 @@ const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh,
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
 const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231;
+const struct gauge_driver gauge_stc3117;
 const struct light_driver light_tsl2584, light_nanohub, light_al3320;
 
 const struct qcom_chip chip_8026, chip_8009;
@@ -158,10 +159,25 @@ int main(int argc, char **argv)
 	/* swift: its own touch controller, none of catfish's hub or
 	 * Bluetooth, and the vendor's power key reset. */
 	CHECK(board_swift.touch == &touch_hx852x && !board_swift.touch_alt && board_swift.touch_pins.mpm == 10);
-	CHECK(!board_swift.battery_driver && board_swift.light == &light_al3320 && board_swift.light_pins.i2c.bus == 1);
+	CHECK(board_swift.light == &light_al3320 && board_swift.light_pins.i2c.bus == 1);
 	/* Its LSM6DS3 is on SPI, apart from the touch and charger buses. */
 	CHECK(board_swift.hub == &hub_lsm6ds3 && board_swift.hub_pins.spi == 3 && board_swift.hub_pins.cs == 2 &&
 	      board_swift.hub_pins.mpm == 36);
+	/* Its charger is set up as stock leaves it, with the cell's numbers
+	 * from its STC3117. */
+	CHECK(board_swift.battery_driver == &battery_smb231 && board_swift.fuel_gauge == &gauge_stc3117 &&
+	      board_swift.gauge.cell && board_swift.gauge.i2c.bus == board_swift.charger.i2c.bus);
+	static const uint8_t live[] = { 0xc4, 0x30, 0x01, 0x17, 0x12, 0x0d, 0x23, 0x08, 0x61 };
+	uint8_t chip[9];
+	memcpy(chip, live, sizeof chip);
+	for (unsigned i = 0; i < board_swift.charger.setup_n; i++) {
+		const struct board_reg *s = &board_swift.charger.setup[i];
+		uint8_t v = s->mask ? (uint8_t)((chip[s->reg] & ~s->mask) | s->value) : s->value;
+		CHECK(v == live[s->reg]);
+	}
+	CHECK(board_swift.charger.irqs_awake == 0xbb && board_swift.charger.cmd1 == 1 &&
+	      board_swift.charger.cell_mah == 340 && board_swift.charger.hold_low == 17 &&
+	      board_swift.charger.pmic_charger_off && !board_catfish.charger.pmic_charger_off);
 	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
 	CHECK(!board_catfish.key_reset_ms && board_catfish.smem_subtype != board_swift.smem_subtype);
 	/* Only swift's RESIN is a key, and catfish keeps its one gpio key. */
