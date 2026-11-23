@@ -46,6 +46,10 @@ const struct board board_swift = {
 	.touch = &touch_hx852x,
 	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 2, .addr = 0x48 }, .range = 400,
 			.irq = 13, .reset = 12, .mpm = 10, .ldo = 18, .ldo_uv = 2700000 },
+	/* No hub: an LSM6DS3 on BLSP1 QUP3 as SPI (gpio 0-3, function 1, chip
+	 * select gpio 2), INT1 on gpio 96. */
+	.hub = &hub_lsm6ds3,
+	.hub_pins = { .spi = 3, .gpio = 0, .func = 1, .cs = 2, .irq = 96, .mpm = 36 },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2000 },
 };
