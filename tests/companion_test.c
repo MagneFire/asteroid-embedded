@@ -197,11 +197,18 @@ void ios_stage(const uint8_t *direct, unsigned dn, const uint8_t *fifo, unsigned
 	memcpy(staged + dn, fifo, fn);
 	staged_n = dn + fn;
 }
+static const char *kv_fade;
+static uint32_t fade_asked;
+void power_fade_in(uint32_t ms) { fade_asked = ms; }
 int kv_get(const char *key, void *buf, unsigned size)
 {
 	if (!strcmp(key, "ap.mode") && kv_mode >= 0) {
 		*(uint8_t *)buf = (uint8_t)kv_mode;
 		return 1;
+	}
+	if (!strcmp(key, "ap.fade") && kv_fade) {
+		memcpy(buf, kv_fade, strlen(kv_fade) < size ? strlen(kv_fade) : size);
+		return (int)strlen(kv_fade);
 	}
 	return -2;
 }
@@ -833,6 +840,7 @@ static void companion_scenario(void)
 	CHECK(display_lent && !ap_off_ui);
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
+	CHECK(fade_asked == 400);
 	/* Only the AP's own key starts it now, and the UI says so. */
 	CHECK(ap_off_ui);
 	CHECK(!bt_lent);
@@ -1000,6 +1008,28 @@ static void companion_scenario(void)
 	companion_pass();
 	run_ms(1000);
 	CHECK(!display_lent && outputs[MOTOR_EN] && levels[MOTOR_EN]);
+	run_ms(STORE_WAIT_MS);
+
+	/* The store's time for the fade; text that is no number changes
+	 * nothing. */
+	static const struct { const char *fade; uint32_t faded; } stored[] = {
+		{ "0", 0 }, { "9999", 2000 }, { "", 400 }, { "x", 400 }, { "123456789", 400 },
+	};
+	mode_message(373, NULL, 0, &a);
+	for (unsigned i = 0; i < sizeof stored / sizeof stored[0]; i++) {
+		CHECK(display_lent);
+		kv_fade = stored[i].fade;
+		ap_write(1, 375, m375, sizeof m375);
+		companion_pass();
+		run_ms(1000);
+		CHECK(!display_lent && fade_asked == stored[i].faded);
+		mode_message(373, NULL, 0, &a);
+	}
+	kv_fade = NULL;
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(1000);
+	CHECK(!display_lent);
 	run_ms(STORE_WAIT_MS);
 
 	lk_scenario();

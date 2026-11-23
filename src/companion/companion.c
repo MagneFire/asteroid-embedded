@@ -3,12 +3,14 @@
  * of the panel right after it sent a 375 or 374, without waiting for
  * an answer: those take effect at once, and only the 374 gets a 377,
  * as with the vendor's firmware. The panel comes back TAKE_DELAY_MS
- * after a mode change, and the store is only written while the
- * link has been quiet for a while, as a flash write masks interrupts
- * for longer than the AP's handshakes allow. The RTC keeps local time,
- * so the AP's Unix time is moved by its zone. The AP's clock can be far
- * off, so its time is only taken while the AP set the clock last or
- * nothing has; its zone is always taken. */
+ * after a mode change, and its picture fades in over FADE_IN_MS, or
+ * over the store's ap.fade: milliseconds as decimal text, for trying
+ * times on the watch. The store is only written while the link has
+ * been quiet for a while, as a flash write masks interrupts for longer
+ * than the AP's handshakes allow. The RTC keeps local time, so the
+ * AP's Unix time is moved by its zone. The AP's clock can be far off,
+ * so its time is only taken while the AP set the clock last or nothing
+ * has; its zone is always taken. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -27,12 +29,15 @@
 #define KV_MODE		"ap.mode"
 #define KEPT_MAGIC	0x4d4f4431u	/* "MOD1" */
 #define KV_ZONE		"ap.zone"
+#define KV_FADE		"ap.fade"
 /* The power off mode as a 374 leaves it, stored apart from the one a
  * watch on its own runs in. */
 #define STORED_OFF	3
 #define REPLY_MAX	64
 /* The AP lets go of the panel only after it sent the 375. */
 #define TAKE_DELAY_MS	1000
+#define FADE_IN_MS	400
+#define FADE_MAX_MS	2000
 #define STORE_QUIET_MS	3000
 /* From a 373 until the AP's 384 at the latest. */
 #define BURST_MS	10000
@@ -213,6 +218,21 @@ static bool reply(uint16_t chan, unsigned now_mode, unsigned before)
 	return reply_len != 0;
 }
 
+static uint32_t stored_ms(const char *key, uint32_t unset, uint32_t min, uint32_t max)
+{
+	char text[8];
+	int n = kv_get(key, text, sizeof text);
+	if (n <= 0 || n > (int)sizeof text)
+		return unset;
+	uint32_t ms = 0;
+	for (int i = 0; i < n; i++) {
+		if (text[i] < '0' || text[i] > '9')
+			return unset;
+		ms = ms * 10 + (uint32_t)(text[i] - '0');
+	}
+	return ms < min ? min : ms > max ? max : ms;
+}
+
 static void enter(unsigned to, uint32_t now);
 
 /* A malformed message gets no 377, so the AP's retry and reset take
@@ -353,6 +373,7 @@ static void switch_panel(uint32_t now)
 		touch_lend(false);
 		haptics_hold(false);
 		sns_lend(false);
+		power_fade_in(stored_ms(KV_FADE, FADE_IN_MS, 0, FADE_MAX_MS));
 		power_wake("companion");
 	}
 	log_printf(off ? "companion: powered off, nobody has the panel\n" : "companion: the %s has the panel\n",
