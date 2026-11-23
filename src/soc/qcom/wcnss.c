@@ -71,13 +71,17 @@
 #define SLAVE_ERR_FATAL		BIT(0)
 #define SLAVE_ERR_READY		BIT(1)
 #define SLAVE_PROXY_UNVOTE	BIT(2)
+#define SMP2P_VERSION		1
+#define SMP2P_PID_APPS		0
+#define SMP2P_PID_WCNSS		4
+#define SMP2P_ENTRIES_MAX	16
 
 #define MSG_VERSION_REQ		0x01000000u
 #define MSG_VERSION_RSP		0x01000001u
 #define MSG_BUILD_VER_REQ	0x01000009u
 #define MSG_BUILD_VER_RSP	0x0100000au
 
-#define READY_MS		5000
+#define READY_MS		10000
 #define CHANNEL_MS		3000
 #define OPEN_MS			2000
 #define REPLY_MS		2000
@@ -343,17 +347,34 @@ static bool boot(void)
 }
 
 /* The core's bits in its smp2p entry to us, ~0 while it has none. */
+/* The header as the vendor's smp2p checks it: version 1, from the WCNSS
+ * to us, no more valid entries than there are, and all of them in the
+ * item. */
+static const char *smp2p_why;
+
 static uint32_t slave_bits(void)
 {
 	uint32_t size = 0;
 	volatile uint32_t *h = smem_get(SMEM_SMP2P_WCNSS, SMEM_HOST_WCNSS, &size);
-	if (!h || size < 20 || h[0] != SMP2P_MAGIC)
+	smp2p_why = !h ? "no item" : size < 20 || h[0] != SMP2P_MAGIC ? "no header" : NULL;
+	if (smp2p_why)
 		return ~0u;
-	unsigned valid = h[3] >> 16;
-	for (unsigned i = 0; i < valid && 20 + (i + 1) * 20 <= size; i++) {
+	unsigned total = h[3] & 0xffff, valid = h[3] >> 16;
+	if ((h[1] & 0xff) != SMP2P_VERSION)
+		smp2p_why = "unknown version";
+	else if ((h[2] & 0xffff) != SMP2P_PID_WCNSS || h[2] >> 16 != SMP2P_PID_APPS)
+		smp2p_why = "other processors";
+	else if (total > SMP2P_ENTRIES_MAX || valid > total || size < 20 + total * 20)
+		smp2p_why = "bad entry count";
+	if (smp2p_why)
+		return ~0u;
+	smp2p_why = "no slave-kernel entry";
+	for (unsigned i = 0; i < valid; i++) {
 		volatile uint32_t *e = h + 5 + i * 5;
-		if (!strncmp((const char *)(uintptr_t)e, "slave-kernel", 16))
+		if (!strncmp((const char *)(uintptr_t)e, "slave-kernel", 16)) {
+			smp2p_why = NULL;
 			return e[4];
+		}
 	}
 	return ~0u;
 }
@@ -374,24 +395,36 @@ static void reason(void)
 	}
 }
 
-static bool wait_ready(void)
+/* SMEM outlives a reboot, so bits the core left there under the
+ * previous system count only once they have changed since the start.
+ * Without a ready bit in time, the channel is looked for anyway: that
+ * wait has its own limit, and says more. Bit 2 is the vendor's proxy
+ * unvote, not ready. */
+static bool wait_ready(uint32_t before)
 {
 	uint32_t t0 = time_ms(), last = ~0u;
+	bool changed = before == ~0u;
+	const char *why = NULL;
 	for (;;) {
 		uint32_t bits = slave_bits();
-		if (bits != last) {
-			note("wcnss: smp2p %08lx after %lu ms\n", bits, time_ms() - t0);
+		if (bits != last || smp2p_why != why) {
+			note("wcnss: smp2p %08lx after %lu ms%s%s\n", bits, time_ms() - t0, smp2p_why ? ", " : "",
+			     smp2p_why ? smp2p_why : "");
 			last = bits;
+			why = smp2p_why;
 		}
-		if (bits != ~0u && (bits & SLAVE_ERR_FATAL)) {
+		changed |= bits != before;
+		if (bits != ~0u && (bits & SLAVE_ERR_FATAL) && changed) {
 			reason();
 			return false;
 		}
-		if (bits != ~0u && (bits & SLAVE_ERR_READY))
+		if (bits != ~0u && (bits & SLAVE_ERR_READY) && changed)
 			return true;
 		if (time_ms() - t0 > READY_MS) {
 			reason();
-			return false;
+			note("wcnss: no %s after %u ms, looking for the channel anyway\n", changed ? "ready bit" : "new ready bit",
+			     READY_MS);
+			return true;
 		}
 		wait_ms(5);
 	}
@@ -566,10 +599,11 @@ static void probe(bool keep)
 		note("wcnss: already started, stop it first\n");
 		return;
 	}
-	uint32_t size = 0;
-	note("wcnss: smem channel table %s, smp2p bits %08lx before start\n",
-	     smem_get(tables[0].alloc, SMEM_HOST_WCNSS, &size) ? "found" : "missing", slave_bits());
-	bool ok = power_on() && xo_setup() && boot() && wait_ready() && open_ctrl() && versions();
+	uint32_t size = 0, before = slave_bits();
+	note("wcnss: smem channel table %s, smp2p bits %08lx before start%s%s\n",
+	     smem_get(tables[0].alloc, SMEM_HOST_WCNSS, &size) ? "found" : "missing", before, smp2p_why ? ", " : "",
+	     smp2p_why ? smp2p_why : "");
+	bool ok = power_on() && xo_setup() && boot() && wait_ready(before) && open_ctrl() && versions();
 	note("wcnss: probe %s\n", ok ? "done" : "stopped");
 	if (!(ok && keep))
 		close_ctrl();
