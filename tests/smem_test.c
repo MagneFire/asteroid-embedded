@@ -45,6 +45,11 @@ int main(void)
 	alloc(14, 0x40, 0x100, 0x60000);
 	CHECK(!smem_find(smem, SIZE, 13, SMEM_HOST_ANY, &l) && l.offset == 0x1000 && l.size == 0x200 && !l.base_ext);
 	CHECK(!smem_find(smem, SIZE, 14, SMEM_HOST_ANY, &l) && l.offset == 0x40 && l.base_ext == 0x60000);
+	/* The low two bits of the base are flags. */
+	alloc(15, 0x80, 0x10, 0x60003);
+	CHECK(!smem_find(smem, SIZE, 15, SMEM_HOST_ANY, &l) && l.base_ext == 0x60000);
+	alloc(15, 0x80, 0x10, 0x2);
+	CHECK(!smem_find(smem, SIZE, 15, SMEM_HOST_ANY, &l) && !l.base_ext);
 	CHECK(smem_find(smem, SIZE, 20, SMEM_HOST_ANY, &l) == -1);
 	/* An item running off the end. */
 	alloc(21, SIZE - 0x10, 0x20, 0);
@@ -81,6 +86,14 @@ int main(void)
 	/* The fixed items are always shared. */
 	alloc(3, 0x3000, 0x10, 0);
 	CHECK(!smem_find(smem, SIZE, 3, SMEM_HOST_WCNSS, &l) && l.offset == 0x3000);
+	/* A partition header for other hosts than its entry says is not used. */
+	put16(PART + 6, 1);
+	CHECK(smem_find(smem, SIZE, 451, SMEM_HOST_WCNSS, &l) == -1);
+	put16(PART + 6, 4);
+	/* More data padding than data. */
+	put16(PART + 32 + 8, 0x41);
+	CHECK(smem_find(smem, SIZE, 451, SMEM_HOST_WCNSS, &l) == -2);
+	put16(PART + 32 + 8, 4);
 	/* A broken canary. */
 	put16(PART + 32, 0x1234);
 	CHECK(smem_find(smem, SIZE, 17, SMEM_HOST_WCNSS, &l) == -2);

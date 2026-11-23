@@ -33,7 +33,9 @@ static const volatile struct part *partition(const volatile uint8_t *smem, uint3
 		if (!ours || !e->offset || !e->size || e->offset >= smem_size || e->size > smem_size - e->offset)
 			continue;
 		const volatile struct part *p = (const volatile struct part *)(smem + e->offset);
-		if (p->magic == PART_MAGIC && p->free_uncached <= p->size && p->size <= e->size)
+		bool hosts = (p->host0 == HOST_APPS || p->host1 == HOST_APPS) && (p->host0 == host || p->host1 == host);
+		if (p->magic == PART_MAGIC && hosts && p->free_uncached <= p->size && p->free_cached <= p->size &&
+		    p->size <= e->size)
 			return p;
 	}
 	return NULL;
@@ -50,7 +52,7 @@ int smem_find(const volatile void *base, uint32_t smem_size, unsigned id, int ho
 			if (it->canary != CANARY)
 				return -2;
 			const volatile uint8_t *data = at + sizeof *it + it->padding_hdr;
-			if (data > end || it->size > (uint32_t)(end - data))
+			if (data > end || it->size > (uint32_t)(end - data) || it->padding_data > it->size)
 				return -2;
 			if (it->type == id) {
 				*loc = (struct smem_loc){ (uint32_t)(data - smem), (it->size - it->padding_data + 7) & ~7u, 0, true };
@@ -65,8 +67,10 @@ int smem_find(const volatile void *base, uint32_t smem_size, unsigned id, int ho
 	const volatile struct alloc_entry *e = (const volatile struct alloc_entry *)(smem + ALLOC_TABLE) + id;
 	if (!e->allocated || !e->size)
 		return -1;
-	if (!e->base_ext && (e->offset >= smem_size || e->size > smem_size - e->offset))
+	/* The low two bits of the base are not part of the address. */
+	uint32_t base_ext = e->base_ext & ~3u;
+	if (!base_ext && (e->offset >= smem_size || e->size > smem_size - e->offset))
 		return -2;
-	*loc = (struct smem_loc){ e->offset, e->size, e->base_ext, false };
+	*loc = (struct smem_loc){ e->offset, e->size, base_ext, false };
 	return 0;
 }
