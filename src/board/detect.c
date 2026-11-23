@@ -14,9 +14,10 @@
  * splash the first table is a guess, and board_assumed keeps its charger
  * setup from running.
  *
- * On the APQ8009W the tree, then SMEM's platform subtype, names catfish
- * or swift; both have a 400x400 panel, so it is not looked at. With
- * neither, catfish is assumed as before. */
+ * On the APQ8009W only the tree names catfish or swift: swift reads
+ * subtype 5 like catfish, and both have a 400x400 panel. Without one the
+ * watch gets catfish's display and USB and none of its other parts,
+ * whose pins could be another watch's touch reset or charger bus. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -42,12 +43,32 @@ static const struct board *by_compatible(const void *fdt, const struct board *co
 	return NULL;
 }
 
+/* Only a subtype that one watch alone has. */
 static const struct board *by_subtype(uint32_t subtype)
 {
+	const struct board *found = NULL;
 	for (unsigned i = 0; subtype && i < N(boards_8009); i++)
-		if (subtype == boards_8009[i]->smem_subtype)
-			return boards_8009[i];
-	return NULL;
+		if (subtype == boards_8009[i]->smem_subtype) {
+			if (found)
+				return NULL;
+			found = boards_8009[i];
+		}
+	return found;
+}
+
+static struct board unknown_8009;
+
+static const struct board *bare_8009(void)
+{
+	unknown_8009 = (struct board){
+		.name = "apq8009w",
+		.panel = board_catfish.panel,
+		.firmware_dirs = board_catfish.firmware_dirs,
+		.firmware_part = board_catfish.firmware_part,
+		.pmic_mpm = board_catfish.pmic_mpm,
+	};
+	memcpy(unknown_8009.usb_phy_init, board_catfish.usb_phy_init, sizeof unknown_8009.usb_phy_init);
+	return &unknown_8009;
 }
 
 static const struct board *by_panel(uint32_t w, uint32_t h)
@@ -78,7 +99,7 @@ void board_detect(uint32_t machtype, const void *fdt)
 		else if ((board = by_subtype(subtype)))
 			board_detected_by = "SMEM";
 		else {
-			board = &board_catfish;
+			board = bare_8009();
 			board_detected_by = "nothing, assumed";
 			board_assumed = true;
 		}

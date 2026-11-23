@@ -109,23 +109,26 @@ int main(int argc, char **argv)
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon && gauge_reads == 0);
 	gauge_present = false;
 	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
-	/* On the APQ8009W the tree names catfish or swift, then SMEM's
-	 * subtype does, and the display is not looked at. Another SoC's
-	 * tree names neither. */
+	/* On the APQ8009W only the tree names catfish or swift, which both
+	 * read subtype 5, and the display is not looked at. Another SoC's
+	 * tree names neither, and the guess drives nothing but the display
+	 * and USB. */
 	chip = &chip_8009;
 	splash_reads = 0;
 	CHECK(detect(400, 400, catfish) == &board_catfish && !board_assumed && splash_reads == 0);
 	CHECK(detect(400, 400, swift) == &board_swift && !board_assumed && splash_reads == 0);
 	subtype = 5;
 	CHECK(detect(400, 400, swift) == &board_swift && !board_assumed);
-	CHECK(detect(400, 400, NULL) == &board_catfish && !board_assumed);
-	CHECK(detect(400, 400, sturgeon) == &board_catfish && !board_assumed);
-	subtype = 0x33;
-	CHECK(detect(400, 400, NULL) == &board_swift && !board_assumed);
 	CHECK(detect(0, 0, catfish) == &board_catfish && !board_assumed);
+	const struct board *bare = detect(400, 400, NULL);
+	CHECK(bare != &board_catfish && bare != &board_swift && board_assumed);
+	CHECK(detect(400, 400, sturgeon) == bare && board_assumed);
+	CHECK(bare->panel.width == 400 && bare->panel.reset_gpio == board_catfish.panel.reset_gpio &&
+	      bare->usb_phy_init[0] == board_catfish.usb_phy_init[0]);
+	CHECK(!bare->touch && !bare->touch_alt && !bare->hub && !bare->light && !bare->motor && !bare->battery_driver &&
+	      !bare->bt.patch && !bare->keys[0].gpio && !bare->fuel_gauge);
 	subtype = 0;
-	CHECK(detect(400, 400, sturgeon) == &board_catfish && board_assumed);
-	CHECK(detect(0, 0, NULL) == &board_catfish && board_assumed);
+	CHECK(detect(0, 0, NULL) == bare && board_assumed);
 	chip = &chip_8026;
 	/* An APQ8026 is never taken for either. */
 	CHECK(detect(400, 400, swift) == &board_sturgeon && !board_assumed);
@@ -179,7 +182,7 @@ int main(int argc, char **argv)
 	      board_swift.charger.cell_mah == 340 && board_swift.charger.hold_low == 17 &&
 	      board_swift.charger.pmic_charger_off && !board_catfish.charger.pmic_charger_off);
 	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
-	CHECK(!board_catfish.key_reset_ms && board_catfish.smem_subtype != board_swift.smem_subtype);
+	CHECK(!board_catfish.key_reset_ms);
 	/* Only swift, still being brought up, stops in fastboot after a crash. */
 	CHECK(board_swift.crash_to_fastboot && !board_catfish.crash_to_fastboot && !board_dory.crash_to_fastboot &&
 	      !board_smelt.crash_to_fastboot && !board_sturgeon.crash_to_fastboot && !board_sparrow.crash_to_fastboot);

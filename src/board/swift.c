@@ -82,7 +82,7 @@ static const struct dcs_step idle_off[] = {
 const struct board board_swift = {
 	.name = "swift",
 	.compatible = "asus,swift",
-	.smem_subtype = 0x33,
+	.smem_subtype = 5,
 	/* AUO H139BLN01, 400x400 AMOLED in command mode on one lane, TE
 	 * into the MDP. */
 	.panel = {
