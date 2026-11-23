@@ -198,7 +198,8 @@ void ios_stage(const uint8_t *direct, unsigned dn, const uint8_t *fifo, unsigned
 	staged_n = dn + fn;
 }
 static const char *kv_take, *kv_fade;
-static uint32_t fade_asked;
+static uint32_t frames_shown, fade_asked;
+uint32_t display_frames(void) { return frames_shown; }
 void power_fade_in(uint32_t ms) { fade_asked = ms; }
 int kv_get(const char *key, void *buf, unsigned size)
 {
@@ -844,7 +845,14 @@ static void companion_scenario(void)
 	CHECK(display_lent && !ap_off_ui);
 	wait_ms(1);
 	CHECK(!display_lent && !touch_lent && !power_lent && wakes == 1 && !kv_sets && levels[OWN]);
-	CHECK(fade_asked == 400);
+	/* The picture fades in, and its first frame is timed for the
+	 * history. */
+	CHECK(fade_asked == 400 && !strstr(noted, "face shown"));
+	wait_ms(120);
+	CHECK(!strstr(noted, "face shown"));
+	frames_shown++;
+	wait_ms(5);
+	CHECK(!strcmp(noted, "face shown 125 ms after the take, asked 1000 ms before it"));
 	/* Only the AP's own key starts it now, and the UI says so. */
 	CHECK(ap_off_ui);
 	CHECK(!bt_lent);
@@ -1031,7 +1039,12 @@ static void companion_scenario(void)
 		CHECK(display_lent);
 		run_ms(1);
 		CHECK(!display_lent && fade_asked == stored[i].faded);
+		/* Lent again before a frame: nothing is timed. */
+		noted[0] = 0;
 		mode_message(373, NULL, 0, &a);
+		frames_shown++;
+		run_ms(2);
+		CHECK(!strstr(noted, "face shown"));
 	}
 	kv_take = kv_fade = NULL;
 	ap_write(1, 375, m375, sizeof m375);

@@ -64,6 +64,9 @@ static int reply_to = -1, sending_to = -1;
 static int32_t zone_min;
 static uint32_t take_t, burst_t, key_t, lk_t;
 static uint32_t take_ms = TAKE_DELAY_MS;
+/* From a take until its first picture, for the event that times it. */
+static bool face_wait;
+static uint32_t asked_t, taken_t, face_frames;
 static uint8_t reply_buf[REPLY_MAX], report_buf[LINK_SEND_MAX];
 static unsigned reply_len;
 static int battery = -1;
@@ -383,6 +386,10 @@ static void switch_panel(uint32_t now)
 		sns_lend(false);
 		power_fade_in(stored_ms(KV_FADE, FADE_IN_MS, 0, FADE_MAX_MS));
 		power_wake("companion");
+		face_wait = true;
+		asked_t = take_t;
+		taken_t = now;
+		face_frames = display_frames();
 	}
 	log_printf(off ? "companion: powered off, nobody has the panel\n" : "companion: the %s has the panel\n",
 		   want_ap ? "AP" : "watch");
@@ -488,6 +495,16 @@ static void settle(uint32_t now)
 {
 	if (switching && (want_ap || now - take_t >= take_ms))
 		switch_panel(now);
+	if (face_wait && ap_has_panel)
+		face_wait = false;
+	if (face_wait && display_frames() != face_frames) {
+		face_wait = false;
+		char what[64];
+		snprintf(what, sizeof what, "face shown %lu ms after the take, asked %lu ms before it",
+			 (unsigned long)(now - taken_t), (unsigned long)(taken_t - asked_t));
+		log_printf("companion: %s\n", what);
+		events_note(what);
+	}
 	if (lk_wait && now - lk_t >= LK_RESET_MS) {
 		count.lk_lends++;
 		log_printf("companion: no reset after the boot loader's ask, normal mode\n");
