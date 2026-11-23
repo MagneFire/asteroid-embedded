@@ -28,8 +28,13 @@ static const struct stc3117_cell cell = {
 	.soc = { 0x00, 0x06, 0x0c, 0x14, 0x1e, 0x28, 0x32, 0x3c, 0x50, 0x64, 0x78, 0x82, 0x8c, 0xa0, 0xb4, 0xc8 },
 };
 
-/* Brightness control on, as the vendor's on-commands have it. */
-static const struct dcs_step panel_wake[] = { { 0x53, 1, 0, { 0x20 } } };
+/* The vendor's on-commands up to sleep out, sent again before each wake
+ * in case the panel lost them asleep: a page 1 register, TE on and
+ * brightness control on. */
+static const struct dcs_step panel_wake[] = {
+	{ 0xfe, 1, 0, { 0x01 } }, { 0x0a, 1, 0, { 0xf0 } }, { 0xfe, 1, 0, { 0x00 } },
+	{ 0x35, 1, 0, { 0x00 } }, { 0x53, 1, 0, { 0x20 } },
+};
 /* The GPU microcode is under vendor on the system partition. */
 static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
 /* The vendor's ambient mode, through the panel's command pages. */
@@ -58,7 +63,7 @@ const struct board board_swift = {
 	.panel = {
 		.width = 400, .height = 400,
 		.hz = 60, .te_gpio = 24, .round = true, .reset_gpio = 25,
-		.wake = panel_wake, .wake_n = 1,
+		.wake = panel_wake, .wake_n = sizeof panel_wake / sizeof panel_wake[0],
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
 	},
