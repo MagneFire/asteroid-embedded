@@ -229,7 +229,8 @@ void log_printf(const char *fmt, ...)
 const char *log_previous_record(void) { return NULL; }
 uint32_t reset_status(void) { return reset_bits; }
 uint32_t rtc_read(void) { return rtc_last; }
-void events_note(const char *what) {}
+static char noted[64];
+void events_note(const char *what) { snprintf(noted, sizeof noted, "%s", what); }
 bool rtc_valid(void) { return rtc_writes != 0; }
 static bool rtc_ap;
 bool rtc_from_ap(void) { return rtc_ap; }
@@ -1789,6 +1790,69 @@ static void boot_decisions(void)
 	CHECK(a.mode == PROTO_MODE_NORMAL && a.last_mode == PROTO_MODE_WRISTBAND && a.reboot == PROTO_REBOOT_PIN);
 }
 
+/* Timepiece mode from the AP, then the watch's own reboot before the
+ * mode is in the store: it starts with the panel again. */
+static void reboot_in_wristband(void)
+{
+	static const uint8_t m375[] = { 0x08, 0x01 };
+	int stored = kv_mode;
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(1000);
+	CHECK(!display_lent && levels[OWN] && kv_mode == stored);
+	reset_bits = 1u << 4;
+	CHECK(!companion_boot());
+	companion_init();
+	wait_ms(1);
+	CHECK(!display_lent && !touch_lent && levels[OWN] && !levels[UP_INT] && !levels[DN_ACK] && irq_on[DN_INT]);
+	CHECK(status_has("wristband mode") && status_has("the watch has the panel"));
+}
+
+static void pin_reset_lends(void)
+{
+	reset_bits = 1u << 0;
+	CHECK(companion_boot());
+	companion_init();
+	CHECK(display_lent && touch_lent && !levels[OWN] && status_has("normal mode, "));
+	CHECK(status_has("the AP has the panel"));
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_NORMAL);
+}
+
+/* The AP boots after the watch rebooted itself in wristband mode. */
+static void reboot_scenario(void)
+{
+	/* From the power key the notice is low: no answer, the lines stay
+	 * low for the boot loader's check, and its reset lends. */
+	reboot_in_wristband();
+	levels[DN_INT] = 1;
+	fire(DN_INT);
+	wait_ms(75);
+	CHECK(!levels[DN_ACK] && !levels[UP_INT] && !display_lent);
+	levels[DN_INT] = 0;
+	pin_reset_lends();
+
+	/* From the charger it is answered, and its reset lends. */
+	reboot_in_wristband();
+	lk_answered();
+	wait_ms(200);
+	pin_reset_lends();
+
+	/* The mode from before the reboot is stored after it. */
+	reboot_in_wristband();
+	run_ms(STORE_WAIT_MS);
+	CHECK(kv_mode == PROTO_MODE_WRISTBAND && !display_lent);
+
+	/* Without a reset the AP still gets the panel, and the event
+	 * history says so. */
+	noted[0] = 0;
+	lk_answered();
+	CHECK(!noted[0]);
+	wait_ms(1000);
+	CHECK(status_has("normal mode, wristband before") && strstr(noted, "no reset after the boot loader"));
+	CHECK(display_lent && touch_lent && !levels[OWN]);
+}
+
 int main(void)
 {
 	sensor_tests();
@@ -1952,6 +2016,7 @@ int main(void)
 	companion_scenario();
 	sensor_scenario();
 	boot_decisions();
+	reboot_scenario();
 
 	if (failures)
 		printf("companion_test: %d failures\n", failures);

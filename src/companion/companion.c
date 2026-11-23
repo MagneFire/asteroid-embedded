@@ -460,6 +460,7 @@ static void settle(uint32_t now)
 	if (lk_wait && now - lk_t >= LK_RESET_MS) {
 		count.lk_lends++;
 		log_printf("companion: no reset after the boot loader's ask, normal mode\n");
+		events_note("no reset after the boot loader's ask, was wristband");
 		enter(PROTO_MODE_NORMAL, now);
 	}
 	if ((save_mode || save_zone) && store_wait_ms(now) == 0) {
