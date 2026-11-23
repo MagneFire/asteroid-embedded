@@ -12,6 +12,9 @@
 
 #define BUS		(board->charger.i2c.bus)
 #define ADDR		(board->charger.i2c.addr)
+#define CFG3		0x03
+#define FLOAT_MASK	0x1f
+#define FLOAT_CODE(mv)	(((mv) - 3480) / 40)
 #define IRQ_CFG		0x09
 #define I2C_COMM_CFG	0x0a
 #define NV_CFG		0x14
@@ -43,7 +46,7 @@
 
 static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale, keeps_settings, asleep;
 static uint32_t poll_t, gauge_ask_t, errors, empty_polls, quiet_polls;
-static bool gauge_asked;
+static bool gauge_asked, trimmed;
 static bool empty_from_pmic;
 /* The last gauge reading taken in. */
 static struct hub_gauge seen;
@@ -98,6 +101,8 @@ static bool configure(void)
 	}
 	for (unsigned i = 0; !r && i < board->charger.setup_n; i++)
 		r = check(&board->charger.setup[i]);
+	if (!r && trimmed)
+		r = update(CFG3, FLOAT_MASK, FLOAT_CODE(board->charger.ov_float_mv));
 	if (!r)
 		r = wr(IRQ_CFG, asleep ? IRQS_ASLEEP : IRQS_AWAKE);
 	if (!r)
@@ -185,6 +190,19 @@ static void check_empty(uint32_t percent, bool pmic)
 	reboot();
 }
 
+/* As the vendor's gauge driver does: a cell that reaches ov_mv on the
+ * cable is charged to the lower float voltage for the rest of it. */
+static void overvoltage(uint32_t mv)
+{
+	if (!board->charger.ov_mv || !cable_now || trimmed || mv < board->charger.ov_mv)
+		return;
+	trimmed = true;
+	int r = update(CFG3, FLOAT_MASK, FLOAT_CODE(board->charger.ov_float_mv));
+	if (r)
+		configured = false;
+	log_printf("charger: %lu mV, float voltage %u mV (%d)\n", mv, board->charger.ov_float_mv, r);
+}
+
 static uint32_t poll_ms(void) { return (cable_now && !keeps_settings) || !configured ? CABLE_POLL_MS : POLL_MS; }
 
 static bool gauge(struct hub_gauge *g);
@@ -207,6 +225,8 @@ static void smb231_poll(void)
 		uint8_t reg = IRQ_A;
 		i2c_xfer(BUS, ADDR, &reg, 1, irqs, sizeof irqs);
 		bool c = vbus(), changed = c != cable_now;
+		if (changed && !c)
+			trimmed = false;
 		if (changed || !configured)
 			configured = configure();
 		cable_now = c;
@@ -226,6 +246,7 @@ static void smb231_poll(void)
 	if (reading_new()) {
 		gauge(&seen);
 		have_seen = fresh = true;
+		overvoltage(seen.mv);
 		check_empty(seen.percent, false);
 	} else if (due && stale) {
 		uint32_t mv = pmic_battery_mv();

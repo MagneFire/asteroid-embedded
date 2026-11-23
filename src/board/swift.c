@@ -89,7 +89,7 @@ const struct board board_swift = {
 	.charger = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x12 }, .irq = 49, .mpm = 11, .suspend = 58,
 		     .setup = charger_setup, .setup_n = sizeof charger_setup / sizeof charger_setup[0],
 		     .irqs_awake = 0xbb, .irqs_asleep = 0x21, .cmd1 = 1, .cell_mah = 340, .hold_low = 17,
-		     .pmic_charger_off = true },
+		     .pmic_charger_off = true, .ov_mv = 4420, .ov_float_mv = 4360 },
 	.fuel_gauge = &gauge_stc3117,
 	.gauge = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = STC3117_ADDR }, .cell = &cell },
 	.motor = &motor_pm8226,

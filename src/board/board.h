@@ -334,7 +334,9 @@ struct board {
 	/* A charger of its own, with the cell's numbers from fuel_gauge or
 	 * the hub: its setup, the interrupts enabled
 	 * awake and asleep, its input mode and the cell's size. A line held
-	 * low for it, 0 for none, and the PMIC's own charger kept off. */
+	 * low for it, 0 for none, and the PMIC's own charger kept off. A
+	 * cell measured at ov_mv while charging has its float voltage
+	 * lowered to ov_float_mv until the cable goes, 0 for none. */
 	struct {
 		struct board_i2c i2c;
 		uint8_t irq, mpm, suspend;
@@ -343,6 +345,7 @@ struct board {
 		uint16_t cell_mah;
 		uint8_t hold_low;
 		bool pmic_charger_off;
+		uint16_t ov_mv, ov_float_mv;
 	} charger;
 	const struct gauge_driver *fuel_gauge;
 
