@@ -12,7 +12,7 @@ const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh,
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
 const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231;
-const struct light_driver light_tsl2584, light_nanohub;
+const struct light_driver light_tsl2584, light_nanohub, light_al3320;
 
 const struct qcom_chip chip_8026, chip_8009;
 const struct qcom_chip *chip = &chip_8026;
@@ -150,7 +150,7 @@ int main(int argc, char **argv)
 	/* swift: its own touch controller, none of catfish's hub or
 	 * Bluetooth, and the vendor's power key reset. */
 	CHECK(board_swift.touch == &touch_hx852x && !board_swift.touch_alt && board_swift.touch_pins.mpm == 10);
-	CHECK(!board_swift.battery_driver && !board_swift.light);
+	CHECK(!board_swift.battery_driver && board_swift.light == &light_al3320 && board_swift.light_pins.i2c.bus == 1);
 	/* Its LSM6DS3 is on SPI, apart from the touch and charger buses. */
 	CHECK(board_swift.hub == &hub_lsm6ds3 && board_swift.hub_pins.spi == 3 && board_swift.hub_pins.cs == 2 &&
 	      board_swift.hub_pins.mpm == 36);

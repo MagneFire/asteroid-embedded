@@ -50,6 +50,9 @@ const struct board board_swift = {
 	 * select gpio 2), INT1 on gpio 96. */
 	.hub = &hub_lsm6ds3,
 	.hub_pins = { .spi = 3, .gpio = 0, .func = 1, .cs = 2, .irq = 96, .mpm = 36 },
+	/* AL3320B on BLSP1 QUP1. */
+	.light = &light_al3320,
+	.light_pins = { .i2c = { .bus = 1, .sda = 6, .scl = 7, .func = 3, .addr = 0x1c } },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2000 },
 };
