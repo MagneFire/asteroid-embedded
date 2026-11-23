@@ -22,6 +22,16 @@ void hci_rx_byte(uint8_t c);
 int hci_send(uint8_t type, const uint8_t *p, unsigned n);
 int hci_cmd(uint16_t opcode, const void *param, uint8_t plen, uint8_t *rsp, unsigned *rsp_len, uint32_t timeout_ms);
 void hci_stats(uint32_t *packets, uint32_t *errors);
+
+/* Packets without the H4 type byte, each whole: the link's poll hands
+ * them to hci_rx_packet(). NULL goes back to the UART. */
+struct hci_link {
+	int (*send)(uint8_t type, const uint8_t *p, unsigned n);
+	void (*poll)(void);
+};
+void hci_set_link(const struct hci_link *l);
+bool hci_link_attached(void);
+void hci_rx_packet(uint8_t type, const uint8_t *p, unsigned n);
 unsigned hci_bad_bytes(char *out, unsigned size);
 
 struct bt_info {

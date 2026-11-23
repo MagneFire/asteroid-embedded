@@ -303,6 +303,8 @@ uint32_t bt_lpm_next_ms(void)
 
 bool bt_can_sleep(void)
 {
+	if (hci_link_attached())
+		return false;
 	return !running || (!dev_awake && !host_wake_asserted() && uart_idle(BT_UART));
 }
 

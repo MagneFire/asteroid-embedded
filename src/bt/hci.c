@@ -2,7 +2,9 @@
  * (event: code, length; ACL: handle, 16-bit length; SCO: handle, length).
  * The receive side is a byte parser over the UART ring, run from the
  * main loop; command complete and command status events for the command
- * being waited on end hci_cmd, everything else goes to the handler. */
+ * being waited on end hci_cmd, everything else goes to the handler.
+ * A link that carries whole packets, such as the WCNSS's SMD channels,
+ * can take the UART's place. */
 #include <string.h>
 #include "asteroid.h"
 #include "bt.h"
@@ -15,6 +17,7 @@ static unsigned have, need;
 static bool payload;
 static hci_packet_fn handler;
 static uint32_t packets, errors;
+static const struct hci_link *link;
 
 static struct {
 	uint16_t opcode;
@@ -112,10 +115,38 @@ void hci_set_handler(hci_packet_fn fn)
 	handler = fn;
 }
 
+void hci_set_link(const struct hci_link *l)
+{
+	link = l;
+	hci_reset_parser();
+}
+
+bool hci_link_attached(void) { return link != NULL; }
+
+void hci_rx_packet(uint8_t t, const uint8_t *p, unsigned n)
+{
+	if (n < header_len(t) || n > sizeof pkt) {
+		errors++;
+		return;
+	}
+	memcpy(pkt, p, n);
+	type = t;
+	have = n;
+	if (header_len(t) + payload_len() == n)
+		deliver();
+	else
+		errors++;
+	type = 0;
+}
+
 void hci_poll(void)
 {
 	uint8_t buf[64];
 	unsigned n;
+	if (link) {
+		link->poll();
+		return;
+	}
 	while ((n = uart_read(BT_UART, buf, sizeof buf)))
 		for (unsigned i = 0; i < n; i++)
 			feed(buf[i]);
@@ -125,6 +156,8 @@ int hci_send(uint8_t t, const uint8_t *p, unsigned n)
 {
 	if (n > MAX_PACKET)
 		return -1;
+	if (link)
+		return link->send(t, p, n);
 	bt_tx_activity();
 	txbuf[0] = t;
 	memcpy(txbuf + 1, p, n);
