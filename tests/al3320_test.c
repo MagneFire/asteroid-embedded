@@ -81,6 +81,23 @@ int main(void)
 	al3320_keep(false);
 	CHECK(regs[REG_CONFIG] == 0);
 
+	/* In the dark the data stays 0: a single reading still gives 0, also
+	 * after switching down from the coarse range. */
+	counts[RANGE_FINE] = 0;
+	counts[RANGE_COARSE] = 0;
+	al3320_start();
+	CHECK(al3320_finish() == 0);
+	fine = false;
+	al3320_start();
+	CHECK(al3320_finish() == 0 && fine);
+	/* Kept on, the first 0 after enabling waits for the next read. */
+	al3320_keep(true);
+	al3320_start();
+	CHECK(al3320_finish() == -1);
+	al3320_start();
+	CHECK(al3320_finish() == 0);
+	al3320_keep(false);
+
 	if (failures)
 		printf("%d failures\n", failures);
 	else

@@ -35,7 +35,7 @@
 
 #define CONVERSION_MS	100
 
-static bool ready, running, kept, fine = true;
+static bool ready, running, kept, fresh, fine = true;
 static uint32_t enabled_t;
 
 static int wr(uint8_t reg, uint8_t val)
@@ -52,6 +52,7 @@ static int enable(void)
 	if (!r)
 		r = wr(REG_CONFIG, CONFIG_ENABLE);
 	enabled_t = time_ms();
+	fresh = true;
 	return r;
 }
 
@@ -67,11 +68,22 @@ static int32_t measure(void)
 	if (rd(REG_DATA, b, 2))
 		return -1;
 	uint32_t count = (uint32_t)(b[0] | b[1] << 8);
+	/* The conversion time at this mean time is not known, and the data
+	 * reads 0 until the first one is done: a 0 straight after enabling
+	 * counts only once the next read agrees. In the coarse range a 0
+	 * switches to the fine one either way. */
+	bool first = fresh;
+	fresh = false;
+	if (first && !count && fine) {
+		enabled_t = time_ms();
+		return -1;
+	}
 	if (fine ? count >= FINE_TOP : count < COARSE_BOTTOM) {
 		fine = !fine;
 		if (wr(REG_RANGE, (fine ? RANGE_FINE : RANGE_COARSE) << RANGE_SHIFT))
 			return -1;
 		enabled_t = time_ms();
+		fresh = true;
 		return -1;
 	}
 	return (int32_t)(count * (fine ? FINE_MLUX : COARSE_MLUX) / 1000);
@@ -113,7 +125,7 @@ static int32_t al3320_finish(void)
 		return -1;
 	running = false;
 	int32_t lux = measure();
-	if (lux < 0 && !kept)
+	for (int i = 0; lux < 0 && !kept && i < 2; i++)
 		lux = measure();
 	if (!kept)
 		disable();
