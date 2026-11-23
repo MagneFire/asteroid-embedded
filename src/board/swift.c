@@ -1,7 +1,5 @@
 /* ASUS ZenWatch 3 (swift): APQ8009W with a PM8916, the production (PR)
- * board. Only the parts catfish's drivers already cover: no touch,
- * charger, gauge or sensors yet, and Bluetooth is the SoC's own WCNSS,
- * which nothing here starts. */
+ * board. Bluetooth is the SoC's own WCNSS, which nothing here starts. */
 #include "asteroid.h"
 #include "display/display.h"
 
@@ -22,6 +20,10 @@ const struct board board_swift = {
 	.pmic_mpm = 62,
 	.key_reset_ms = 6720,
 	.usb_phy_init = { 0x73, 0x33, 0x07, 0x13 },
+	/* HX852xES on BLSP1 QUP5, fed by L18. */
+	.touch = &touch_hx852x,
+	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 2, .addr = 0x48 }, .range = 400,
+			.irq = 13, .reset = 12, .mpm = 10, .ldo = 18, .ldo_uv = 2700000 },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2000 },
 };

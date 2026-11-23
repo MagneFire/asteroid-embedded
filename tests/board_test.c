@@ -7,7 +7,7 @@
 #include "asteroid.h"
 #include "soc/max17050.h"
 
-const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts;
+const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x;
 const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh;
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
@@ -147,9 +147,10 @@ int main(int argc, char **argv)
 		CHECK(board_dory.therm[i].decidegrees > board_dory.therm[i - 1].decidegrees &&
 		      board_dory.therm[i].mv < board_dory.therm[i - 1].mv);
 
-	/* swift has none of the parts catfish's other drivers run, and
-	 * the vendor's power key reset. */
-	CHECK(!board_swift.battery_driver && !board_swift.touch && !board_swift.hub && !board_swift.light);
+	/* swift: its own touch controller, none of catfish's hub or
+	 * Bluetooth, and the vendor's power key reset. */
+	CHECK(board_swift.touch == &touch_hx852x && !board_swift.touch_alt && board_swift.touch_pins.mpm == 10);
+	CHECK(!board_swift.battery_driver && !board_swift.hub && !board_swift.light);
 	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
 	CHECK(!board_catfish.key_reset_ms && board_catfish.smem_subtype != board_swift.smem_subtype);
 
