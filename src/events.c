@@ -4,7 +4,9 @@
  * when the watch last booted, what the PMIC gave as the reason, and when
  * the dock or USB last changed. It is written on a change only, so it
  * costs nothing while the watch sleeps. The lines are read back at the
- * first pass of the main loop, when the store is open, and logged. */
+ * first pass of the main loop, when the store is open, and logged. A
+ * line from events_note waits for the store to be quiet, and the main
+ * loop wakes for that. */
 #include <string.h>
 #include "asteroid.h"
 #include "storage/storage.h"
@@ -13,10 +15,12 @@
 #define EVENTS_MAX	800u
 #define SAMPLE_MS	1000u
 #define RETRY_MS	5000u
+/* A page that does not take the write is not erased every second. */
+#define SAVE_RETRY_MS	60000u
 
 static char history[EVENTS_MAX + 1];
-static bool loaded, unsaved;
-static uint32_t sample_t, retry_t;
+static bool loaded, tried, unsaved, failed;
+static uint32_t sample_t, retry_t, failed_t;
 static int cable = -1, usb = -1;
 
 /* Appends one line to buf, dropping the oldest lines until it fits in
@@ -40,12 +44,18 @@ void events_append(char *buf, unsigned cap, const char *line)
 	buf[at + n] = 0;
 }
 
-static void note(const char *what)
+static void save(uint32_t now)
+{
+	unsaved = failed = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
+	failed_t = now;
+}
+
+static void note(const char *what, uint32_t now)
 {
 	char line[320];
 	snprintf(line, sizeof line, "%lu %s", rtc_read(), what);
 	events_append(history, EVENTS_MAX, line);
-	unsaved = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
+	save(now);
 }
 
 /* For the rare events worth keeping across a reset that loses the log,
@@ -58,12 +68,29 @@ void events_note(const char *what)
 	snprintf(line, sizeof line, "%lu %s", rtc_read(), what);
 	events_append(history, EVENTS_MAX, line);
 	unsaved = true;
+	failed = false;
+}
+
+void events_flush(void)
+{
+	if (loaded && unsaved)
+		unsaved = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
+}
+
+uint32_t events_next_ms(uint32_t now)
+{
+	if (!loaded || !unsaved)
+		return UINT32_MAX;
+	uint32_t sample = ms_left(sample_t, SAMPLE_MS, now);
+	uint32_t wait = failed ? ms_left(failed_t, SAVE_RETRY_MS, now) : store_quiet_wait_ms();
+	return sample > wait ? sample : wait;
 }
 
 static bool load(uint32_t now)
 {
-	if (now - retry_t < RETRY_MS)
+	if (tried && now - retry_t < RETRY_MS)
 		return false;
+	tried = true;
 	retry_t = now;
 	int n = kv_get(KV_EVENTS, history, EVENTS_MAX);
 	if (n == -1)
@@ -89,15 +116,15 @@ void events_poll(uint32_t now)
 		char what[300];
 		snprintf(what, sizeof what, "boot cable %d usb %d, %s%s", cable, usb, boot_reason(),
 			 log_ring_lost() ? ", no log from the previous boot" : "");
-		note(what);
+		note(what, now);
 		sample_t = now;
 		return;
 	}
 	if (now - sample_t < SAMPLE_MS)
 		return;
 	sample_t = now;
-	if (unsaved && store_quiet())
-		unsaved = kv_set(KV_EVENTS, history, (unsigned)strlen(history)) != 0;
+	if (unsaved && store_quiet() && (!failed || now - failed_t >= SAVE_RETRY_MS))
+		save(now);
 	int c = batt_cable(), u = batt_usb();
 	if (c == cable && u == usb)
 		return;
@@ -105,5 +132,5 @@ void events_poll(uint32_t now)
 	usb = u;
 	char what[32];
 	snprintf(what, sizeof what, "cable %d usb %d", c, u);
-	note(what);
+	note(what, now);
 }

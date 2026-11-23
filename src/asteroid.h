@@ -301,6 +301,9 @@ bool log_ring_lost(void);
 void events_poll(uint32_t now);
 void events_append(char *buf, unsigned cap, const char *line);
 void events_note(const char *what);
+/* Before a reset the watch does itself. */
+void events_flush(void);
+uint32_t events_next_ms(uint32_t now);
 void log_set_sink(void (*fn)(const char *s, size_t n));
 void log_grep(const char *pat, unsigned lines, void (*out)(const char *s, size_t n, void *ctx), void *ctx);
 uint32_t log_end(void);

@@ -33,6 +33,8 @@ int store_write(uint32_t off, const void *buf, uint32_t len);
 /* Whether a write that can mask interrupts for long may go now; the
  * ones that can wait hold off while it is false. */
 bool store_quiet(void);
+/* How long until it is at the earliest, 0 when it is now. */
+uint32_t store_quiet_wait_ms(void);
 
 #ifndef KV_SLOT_SIZE
 #define KV_SLOT_SIZE		(16u * 1024)

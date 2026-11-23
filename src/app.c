@@ -696,13 +696,14 @@ uint32_t app_next_ms(const char **why)
 		batt_wake_ms(time_ms()),
 		power_next_ms(),
 		sched_next_ms(time_ms()),
+		events_next_ms(time_ms()),
 		have_heart_rate && !hub_has_passive() ? hrlog_next_ms(rtc_read(), setting_get(SETTING_HR_INTERVAL)) : UINT32_MAX,
 	}, min = UINT32_MAX;
 	static const char *const names[] = {
 #if ASLEEP_STATS
 		"stats",
 #endif
-		"clock apps", "touch", "usb", "emmc", "battery", "screen", NULL, "heart rate",
+		"clock apps", "touch", "usb", "emmc", "battery", "screen", NULL, "events", "heart rate",
 	};
 	_Static_assert(ARRAY_SIZE(names) == ARRAY_SIZE(next), "a name for each deadline");
 	*why = "nothing";

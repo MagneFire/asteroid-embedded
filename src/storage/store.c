@@ -28,6 +28,7 @@ static int resolve_partition(void)
 }
 
 bool store_quiet(void) { return true; }
+uint32_t store_quiet_wait_ms(void) { return 0; }
 
 int store_open(void)
 {

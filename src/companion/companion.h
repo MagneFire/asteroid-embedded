@@ -21,8 +21,8 @@ void companion_pass(void);
 /* The link alone, also from the display's waits. */
 void companion_poll(void);
 uint32_t companion_next_ms(void);
-/* Whether a long flash write may go now. */
-bool companion_store_ok(void);
+/* How long until a long flash write may go, 0 when it may now. */
+uint32_t companion_store_wait_ms(void);
 /* No transfer under way, so the core may sleep deeply. */
 bool companion_resting(void);
 void companion_status(void (*say)(const char *fmt, ...));

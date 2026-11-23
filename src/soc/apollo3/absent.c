@@ -26,7 +26,8 @@ void usb_poll(void)
 bool usb_connected(void) { return false; }
 bool usb_resting(void) { return companion_resting(); }
 bool usb_busy(void) { return companion_next_ms() == 0; }
-bool store_quiet(void) { return companion_store_ok(); }
+bool store_quiet(void) { return companion_store_wait_ms() == 0; }
+uint32_t store_quiet_wait_ms(void) { return companion_store_wait_ms(); }
 void usb_stats(uint32_t *rx, uint32_t *tx) { *rx = *tx = 0; }
 
 void screenshot_poll(void) {}

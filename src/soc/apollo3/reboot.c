@@ -81,6 +81,7 @@ static void __attribute__((noreturn)) reset_now(void)
 void reboot(void)
 {
 	settings_flush();
+	events_flush();
 	reset_now();
 }
 

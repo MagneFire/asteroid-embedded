@@ -418,7 +418,7 @@ static uint32_t store_wait_ms(uint32_t now)
 	return wait;
 }
 
-bool companion_store_ok(void) { return !ready || store_wait_ms(time_ms()) == 0; }
+uint32_t companion_store_wait_ms(void) { return ready ? store_wait_ms(time_ms()) : 0; }
 
 bool companion_resting(void) { return !link_busy(); }
 
