@@ -276,6 +276,11 @@ struct board {
 	/* Holding the power key this long resets the watch, as the vendor
 	 * sets it; 0 leaves what the bootloader set. */
 	uint16_t key_reset_ms;
+	/* Any reset but a deliberate one stops in fastboot, so the log in
+	 * RAM is still there for the next boot of this firmware instead of
+	 * being overwritten by the watch's own system; for a watch still
+	 * being brought up. */
+	bool crash_to_fastboot;
 
 	struct {
 		uint16_t vdd_max_mv, vdd_safe_mv, vin_min_mv, ibat_max_ma, ibat_safe_ma, iterm_ma;

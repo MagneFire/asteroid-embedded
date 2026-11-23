@@ -31,9 +31,20 @@ void dload_clear(void)
 
 bool reboot_to_bootloader;
 
+/* The bootloader reads the word and clears it on every boot, so a hang
+ * or watchdog bite from here on stops in fastboot. reset_now clears it
+ * again for a deliberate reboot. */
+void reboot_reason_fastboot(void)
+{
+	writel(RESTART_FASTBOOT, IMEM_RESTART_REASON);
+	dsb();
+}
+
 static void __attribute__((noreturn)) reset_now(void)
 {
 	irq_disable();
+	if (reboot_for_fault && board->crash_to_fastboot)
+		reboot_to_bootloader = true;
 	dload_clear();
 	if (reboot_to_bootloader)
 		writel(RESTART_FASTBOOT, IMEM_RESTART_REASON);
@@ -60,5 +71,6 @@ void reboot_fatal(const char *what)
 {
 	uint32_t lr = (uint32_t)(uintptr_t)__builtin_return_address(0);
 	fault_record(what, lr, lr, (uint32_t)(uintptr_t)__builtin_frame_address(0), NULL);
+	reboot_for_fault = true;
 	reset_now();
 }

@@ -31,4 +31,6 @@ void soc_board_init(void)
 		rpm_unused_rails_off();
 	}
 	log_printf("spmi arbiter %08lx, %s, scm %d\n", spmi_version(), boot_reason(), scm);
+	if (board->crash_to_fastboot)
+		reboot_reason_fastboot();
 }

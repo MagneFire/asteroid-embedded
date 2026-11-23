@@ -70,6 +70,7 @@ const struct board board_swift = {
 	.firmware_dirs = firmware_dirs,
 	.pmic_mpm = 62,
 	.key_reset_ms = 6720,
+	.crash_to_fastboot = true,
 	/* Which of the three buttons is which is not known yet: RESIN and
 	 * gpio 90 and 91 all act as the power key. */
 	.keys = { { .gpio = 90, .mpm = 30 }, { .gpio = 91, .mpm = 32 } },

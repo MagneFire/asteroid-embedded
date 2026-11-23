@@ -268,6 +268,10 @@ void reboot(void) __attribute__((noreturn));
 void reboot_fatal(const char *what) __attribute__((noreturn));
 void fault_record(const char *kind, uint32_t pc, uint32_t lr, uint32_t sp, const uint32_t *regs);
 extern bool reboot_to_bootloader;
+/* The reset comes after a fault, which a board may want to stop in
+ * fastboot. */
+extern bool reboot_for_fault;
+void reboot_reason_fastboot(void);
 /* Whether a reset the firmware did not do itself stops in the boot chain's
  * memory dump mode; < 0 where the SoC has none. A reboot clears it. */
 int soc_dload_mode(bool on);

@@ -59,8 +59,11 @@ static void show(const char *kind, uint32_t pc, uint32_t lr)
 	}
 }
 
+bool reboot_for_fault;
+
 void exception_handler(uint32_t type, uint32_t *frame)
 {
+	reboot_for_fault = true;
 	if (faulting)
 		reboot();
 	faulting = true;
@@ -83,6 +86,7 @@ extern const uint32_t *irq_frame;
 
 void wdt_bark_handler(void)
 {
+	reboot_for_fault = true;
 	if (faulting)
 		reboot();
 	faulting = true;

@@ -180,6 +180,9 @@ int main(int argc, char **argv)
 	      board_swift.charger.pmic_charger_off && !board_catfish.charger.pmic_charger_off);
 	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
 	CHECK(!board_catfish.key_reset_ms && board_catfish.smem_subtype != board_swift.smem_subtype);
+	/* Only swift, still being brought up, stops in fastboot after a crash. */
+	CHECK(board_swift.crash_to_fastboot && !board_catfish.crash_to_fastboot && !board_dory.crash_to_fastboot &&
+	      !board_smelt.crash_to_fastboot && !board_sturgeon.crash_to_fastboot && !board_sparrow.crash_to_fastboot);
 	/* Only swift's RESIN is a key, and catfish keeps its one gpio key. */
 	CHECK(board_swift.resin_key && board_swift.keys[0].gpio == 90 && board_swift.keys[1].gpio == 91);
 	CHECK(!board_catfish.resin_key && board_catfish.keys[0].gpio == 98 && !board_catfish.keys[1].gpio);
