@@ -970,6 +970,15 @@ static bool hci(void)
 	return true;
 }
 
+/* The NimBLE host on top, as "bt" starts it over a UART elsewhere. */
+static void host(void)
+{
+	if (!hci())
+		return;
+	int r = bt_host_start();
+	note(r ? "wcnss: Bluetooth host failed (%d)\n" : "wcnss: Bluetooth host starting, bt status for more\n", r);
+}
+
 static void probe(bool keep)
 {
 	if (core == CORE_UNKNOWN || scm_pas_stuck()) {
@@ -1020,6 +1029,8 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 		probe(!strcmp(args, "probe keep"));
 	} else if (!strcmp(args, "hci")) {
 		hci();
+	} else if (!strcmp(args, "bt")) {
+		host();
 	} else if (!strcmp(args, "stop")) {
 		bt_close();
 		close_ctrl();
@@ -1029,7 +1040,7 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 	} else if (!strcmp(args, "status")) {
 		status();
 	} else {
-		say("usage: wcnss probe [keep] | hci | stop | status\n");
+		say("usage: wcnss probe [keep] | hci | bt | stop | status\n");
 	}
 	say = NULL;
 }

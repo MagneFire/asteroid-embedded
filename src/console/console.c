@@ -1783,7 +1783,7 @@ static const struct command commands[] = {
 #endif
 	{ "bt", "[off | status | forget | params ... | <bd_addr>]", cmd_bt },
 #ifdef SOC_WCNSS
-	{ "wcnss", "probe [keep] | hci | stop | status", cmd_wcnss },
+	{ "wcnss", "probe [keep] | hci | bt | stop | status", cmd_wcnss },
 #endif
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
