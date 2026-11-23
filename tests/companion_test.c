@@ -197,7 +197,7 @@ void ios_stage(const uint8_t *direct, unsigned dn, const uint8_t *fifo, unsigned
 	memcpy(staged + dn, fifo, fn);
 	staged_n = dn + fn;
 }
-static const char *kv_fade;
+static const char *kv_take, *kv_fade;
 static uint32_t fade_asked;
 void power_fade_in(uint32_t ms) { fade_asked = ms; }
 int kv_get(const char *key, void *buf, unsigned size)
@@ -205,6 +205,10 @@ int kv_get(const char *key, void *buf, unsigned size)
 	if (!strcmp(key, "ap.mode") && kv_mode >= 0) {
 		*(uint8_t *)buf = (uint8_t)kv_mode;
 		return 1;
+	}
+	if (!strcmp(key, "ap.take") && kv_take) {
+		memcpy(buf, kv_take, strlen(kv_take) < size ? strlen(kv_take) : size);
+		return (int)strlen(kv_take);
 	}
 	if (!strcmp(key, "ap.fade") && kv_fade) {
 		memcpy(buf, kv_fade, strlen(kv_fade) < size ? strlen(kv_fade) : size);
@@ -1010,22 +1014,26 @@ static void companion_scenario(void)
 	CHECK(!display_lent && outputs[MOTOR_EN] && levels[MOTOR_EN]);
 	run_ms(STORE_WAIT_MS);
 
-	/* The store's time for the fade; text that is no number changes
-	 * nothing. */
-	static const struct { const char *fade; uint32_t faded; } stored[] = {
-		{ "0", 0 }, { "9999", 2000 }, { "", 400 }, { "x", 400 }, { "123456789", 400 },
+	/* The store's times for the take and the fade, and the shortest
+	 * take for one too short; text that is no number changes nothing. */
+	static const struct { const char *take, *fade; uint32_t wait, faded; } stored[] = {
+		{ "300", "0", 300, 0 }, { "5", "9999", 200, 2000 }, { "1s", "", 1000, 400 }, { "123456789", "x", 1000, 400 },
 	};
 	mode_message(373, NULL, 0, &a);
 	for (unsigned i = 0; i < sizeof stored / sizeof stored[0]; i++) {
 		CHECK(display_lent);
+		kv_take = stored[i].take;
 		kv_fade = stored[i].fade;
 		ap_write(1, 375, m375, sizeof m375);
 		companion_pass();
-		run_ms(1000);
+		CHECK(companion_next_ms() <= stored[i].wait);
+		run_ms(stored[i].wait - 1);
+		CHECK(display_lent);
+		run_ms(1);
 		CHECK(!display_lent && fade_asked == stored[i].faded);
 		mode_message(373, NULL, 0, &a);
 	}
-	kv_fade = NULL;
+	kv_take = kv_fade = NULL;
 	ap_write(1, 375, m375, sizeof m375);
 	companion_pass();
 	run_ms(1000);

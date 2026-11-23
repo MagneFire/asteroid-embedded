@@ -3,14 +3,15 @@
  * of the panel right after it sent a 375 or 374, without waiting for
  * an answer: those take effect at once, and only the 374 gets a 377,
  * as with the vendor's firmware. The panel comes back TAKE_DELAY_MS
- * after a mode change, and its picture fades in over FADE_IN_MS, or
- * over the store's ap.fade: milliseconds as decimal text, for trying
- * times on the watch. The store is only written while the link has
- * been quiet for a while, as a flash write masks interrupts for longer
- * than the AP's handshakes allow. The RTC keeps local time, so the
- * AP's Unix time is moved by its zone. The AP's clock can be far off,
- * so its time is only taken while the AP set the clock last or nothing
- * has; its zone is always taken. */
+ * after a mode change, or after the time in the store's ap.take, and
+ * its picture fades in over FADE_IN_MS, or over ap.fade: both are
+ * milliseconds as decimal text, for trying times on the watch. The
+ * store is only written while the link has been quiet for a while, as
+ * a flash write masks interrupts for longer than the AP's handshakes
+ * allow. The RTC keeps local time, so the AP's Unix time is moved by
+ * its zone. The AP's clock can be far off, so its time is only taken
+ * while the AP set the clock last or nothing has; its zone is always
+ * taken. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -29,6 +30,7 @@
 #define KV_MODE		"ap.mode"
 #define KEPT_MAGIC	0x4d4f4431u	/* "MOD1" */
 #define KV_ZONE		"ap.zone"
+#define KV_TAKE		"ap.take"
 #define KV_FADE		"ap.fade"
 /* The power off mode as a 374 leaves it, stored apart from the one a
  * watch on its own runs in. */
@@ -36,6 +38,9 @@
 #define REPLY_MAX	64
 /* The AP lets go of the panel only after it sent the 375. */
 #define TAKE_DELAY_MS	1000
+/* The AP's panel driver sleeps 96 ms in its own power down. */
+#define TAKE_MIN_MS	200
+#define TAKE_MAX_MS	10000
 #define FADE_IN_MS	400
 #define FADE_MAX_MS	2000
 #define STORE_QUIET_MS	3000
@@ -58,6 +63,7 @@ static unsigned mode = PROTO_MODE_POWER_OFF, last_mode = PROTO_MODE_POWER_OFF, r
 static int reply_to = -1, sending_to = -1;
 static int32_t zone_min;
 static uint32_t take_t, burst_t, key_t, lk_t;
+static uint32_t take_ms = TAKE_DELAY_MS;
 static uint8_t reply_buf[REPLY_MAX], report_buf[LINK_SEND_MAX];
 static unsigned reply_len;
 static int battery = -1;
@@ -289,6 +295,8 @@ static void enter(unsigned to, uint32_t now)
 	want_ap = to == PROTO_MODE_NORMAL || off;
 	switching = want_ap != ap_has_panel;
 	take_t = now;
+	if (!want_ap)
+		take_ms = stored_ms(KV_TAKE, TAKE_DELAY_MS, TAKE_MIN_MS, TAKE_MAX_MS);
 }
 
 /* Channel 5's layout is not known. */
@@ -399,7 +407,8 @@ static void escape(uint32_t now)
 	sns_reset();
 	want_ap = false;
 	switching = true;
-	take_t = now - TAKE_DELAY_MS;
+	take_t = now;
+	take_ms = 0;
 }
 
 /* The AP is booting: the panel goes now, the mode once it is clear that
@@ -477,7 +486,7 @@ static void replied(uint32_t now)
 
 static void settle(uint32_t now)
 {
-	if (switching && (want_ap || now - take_t >= TAKE_DELAY_MS))
+	if (switching && (want_ap || now - take_t >= take_ms))
 		switch_panel(now);
 	if (lk_wait && now - lk_t >= LK_RESET_MS) {
 		count.lk_lends++;
@@ -545,7 +554,7 @@ uint32_t companion_next_ms(void)
 	if (switching && want_ap)
 		return 0;
 	if (switching)
-		next = sooner(next, ms_left(take_t, TAKE_DELAY_MS, now));
+		next = sooner(next, ms_left(take_t, take_ms, now));
 	if (save_mode || save_zone)
 		next = sooner(next, store_wait_ms(now));
 	if (key_held)
