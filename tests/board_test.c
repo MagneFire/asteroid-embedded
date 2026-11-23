@@ -186,6 +186,8 @@ int main(int argc, char **argv)
 	/* Only swift, still being brought up, stops in fastboot after a crash. */
 	CHECK(board_swift.crash_to_fastboot && !board_catfish.crash_to_fastboot && !board_dory.crash_to_fastboot &&
 	      !board_smelt.crash_to_fastboot && !board_sturgeon.crash_to_fastboot && !board_sparrow.crash_to_fastboot);
+	CHECK(board_swift.panel.lp_commands && !board_catfish.panel.lp_commands && !board_dory.panel.lp_commands &&
+	      !board_smelt.panel.lp_commands && !board_sturgeon.panel.lp_commands && !board_sparrow.panel.lp_commands);
 	CHECK(board_swift.panel.brightness_levels && board_swift.panel.brightness_levels[6][0] == 8 &&
 	      board_swift.panel.brightness_levels[20][20] == 100 && !board_catfish.panel.brightness_levels &&
 	      !board_dory.panel.brightness_levels && !board_smelt.panel.brightness_levels &&

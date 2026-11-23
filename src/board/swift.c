@@ -88,6 +88,7 @@ const struct board board_swift = {
 	.panel = {
 		.width = 400, .height = 400,
 		.hz = 60, .te_gpio = 24, .round = true, .reset_gpio = 25, .brightness_levels = brightness_levels,
+		.lp_commands = true,
 		.wake = panel_wake, .wake_n = sizeof panel_wake / sizeof panel_wake[0],
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],

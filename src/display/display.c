@@ -578,6 +578,12 @@ static void panel_power(bool on)
 	dsi_low_power(false);
 }
 
+static void lp_commands(bool on)
+{
+	if (board->panel.lp_commands)
+		dsi_low_power(on);
+}
+
 void display_sleep(void)
 {
 	if (board->backlight)
@@ -585,8 +591,10 @@ void display_sleep(void)
 	backlight_code = 0;
 	display_active();
 	pp_wait();
+	lp_commands(true);
 	dsi_dcs_write(0x28, NULL, 0);
 	dsi_dcs_write(0x10, NULL, 0);
+	lp_commands(false);
 	sleep_in_t = time_ms();
 	if (panel_switched())
 		panel_power(false);
@@ -606,8 +614,10 @@ void display_wake_hidden(void)
 	uint32_t gone = time_ms() - sleep_in_t;
 	if (gone < PANEL_SLEEP_IN_MS)
 		delay_ms(PANEL_SLEEP_IN_MS - gone);
+	lp_commands(true);
 	dcs_sequence(board->panel.wake, board->panel.wake_n);
 	dsi_dcs_write(0x11, NULL, 0);
+	lp_commands(false);
 	delay_ms(120);
 }
 
@@ -615,7 +625,9 @@ void display_show(void)
 {
 	display_active();
 	pp_wait();
+	lp_commands(true);
 	dsi_dcs_write(0x29, NULL, 0);
+	lp_commands(false);
 	if (backlight_code)
 		board->backlight->set_code(backlight_code);
 	else if (board->backlight)
@@ -637,8 +649,10 @@ void display_idle(bool on)
 		return;
 	display_active();
 	pp_wait();
+	lp_commands(true);
 	if (on)
 		dcs_sequence(board->panel.idle_on, board->panel.idle_on_n);
 	else
 		dcs_sequence(board->panel.idle_off, board->panel.idle_off_n);
+	lp_commands(false);
 }

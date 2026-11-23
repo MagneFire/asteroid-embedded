@@ -219,6 +219,9 @@ struct board {
 		bool flip_ud, round;
 		/* An LCD needs no burn-in protection. */
 		bool lcd;
+		/* Sleep, wake, display on and idle commands in low power mode,
+		 * as the vendor sends them. */
+		bool lp_commands;
 		/* Automatic brightness levels of the panel's own, 21 curves of
 		 * 21 steps, or NULL for the default ones. */
 		const uint8_t (*brightness_levels)[21];
