@@ -7,10 +7,10 @@
 /* SMB231 as stock leaves it on a computer's USB port: 300 mA input, 20 mA
  * termination, 250 mA fast charge, recharge 150 mV below 4.4 V, a 360 min
  * safety timer, hard temperature limits at 5 and 60 C and soft ones at
- * 15 and 45 C. */
+ * 15 and 45 C. Recharge and termination are enabled explicitly. */
 static const struct board_reg charger_setup[] = {
 	{ 0x00, 0x1f, 1 << 2 | 0 },
-	{ 0x02, 1 << 6 | 7, 1 },
+	{ 0x02, 1 << 7 | 1 << 6 | 1 << 5 | 7, 1 },
 	{ 0x03, 0xff, (4400 - 3480) / 40 },
 	{ 0x04, 1 << 5 | 3 << 3 | 3, 2 << 3 | 2 },
 	{ 0x05, 0xff, 3 << 2 | 1 },

@@ -69,6 +69,20 @@ static bool vbus(void)
 	return ready && !rd(STATUS_A, &a) && !(a & (STATUS_A_OV | STATUS_A_UV));
 }
 
+/* A setup register that does not read back as written. */
+static int check(const struct board_reg *s)
+{
+	uint8_t v;
+	int r = rd(s->reg, &v);
+	if (!r && (v & (s->mask ? s->mask : 0xff)) != s->value) {
+		log_printf("charger: reg %02x reads %02x, wrote %02x\n", s->reg, v, s->value);
+		r = -5;
+	}
+	return r;
+}
+
+/* Charging stays off until every limit is in place and reads back, and
+ * while the PMIC's own charger could still be running beside it. */
 static bool configure(void)
 {
 	uint8_t comm;
@@ -77,20 +91,29 @@ static bool configure(void)
 		log_printf("charger: registers not writable (%d, %02x)\n", r, comm);
 		return false;
 	}
-	r = update(CMD0, CMD0_VOLATILE | CMD0_CHARGE, CMD0_VOLATILE | CMD0_CHARGE);
+	r = update(CMD0, CMD0_VOLATILE | CMD0_CHARGE, CMD0_VOLATILE);
 	for (unsigned i = 0; !r && i < board->charger.setup_n; i++) {
 		const struct board_reg *s = &board->charger.setup[i];
 		r = s->mask ? update(s->reg, s->mask, s->value) : wr(s->reg, s->value);
 	}
+	for (unsigned i = 0; !r && i < board->charger.setup_n; i++)
+		r = check(&board->charger.setup[i]);
 	if (!r)
 		r = wr(IRQ_CFG, asleep ? IRQS_ASLEEP : IRQS_AWAKE);
 	if (!r)
 		r = update(CMD1, 3, board->charger.cmd1);
 	if (!r)
 		r = update(CMD0, CMD0_SUSPEND | CMD0_STAT_OFF, CMD0_STAT_OFF);
+	if (!r && board->charger.pmic_charger_off) {
+		pmic_write(LBC_USB_SUSP, 1);
+		if (!(pmic_read(LBC_USB_SUSP) & 1))
+			r = -6;
+	}
+	if (!r)
+		r = update(CMD0, CMD0_CHARGE, CMD0_CHARGE);
 	if (r) {
 		errors++;
-		log_printf("charger: setup failed (%d)\n", r);
+		log_printf("charger: setup failed (%d), charging off\n", r);
 	}
 	return !r;
 }
