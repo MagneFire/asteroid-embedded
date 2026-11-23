@@ -96,8 +96,9 @@ const struct board board_swift = {
 	.pmic_mpm = 62,
 	.key_reset_ms = 6720,
 	.crash_to_fastboot = true,
-	/* Which of the three buttons is which is not known yet: RESIN and
-	 * gpio 90 and 91 all act as the power key. */
+	/* The top button is gpio 90, the middle one the PMIC's power key and
+	 * the bottom one gpio 91; all three act as the power key. RESIN is
+	 * on none of them, but stock sets it up as a key. */
 	.keys = { { .gpio = 90, .mpm = 30 }, { .gpio = 91, .mpm = 32 } },
 	.resin_key = true,
 	.usb_phy_init = { 0x73, 0x33, 0x07, 0x13 },
