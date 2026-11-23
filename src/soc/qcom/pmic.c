@@ -23,6 +23,8 @@
 #define PON_POFF_REASON2	0x00080d
 #define PON_PS_HOLD_RESET_CTL	0x00085a
 #define PON_PS_HOLD_RESET_CTL2	0x00085b
+#define PON_PULL_CTL		0x000870
+#define PULL_RESIN_KPDPWR	0x03
 #define PON_KPDPWR_S1_TIMER	0x000840
 #define PON_KPDPWR_S2_TIMER	0x000841
 #define PON_KPDPWR_S2_CNTL	0x000842
@@ -93,6 +95,14 @@ void pmic_init(void)
 		pmic_write(SMPS2_MODE, SMPS_MODE_AUTO);
 	if (board->key_reset_ms)
 		key_reset(board->key_reset_ms);
+	/* A RESIN key read without its pull-up could read as held. */
+	if (board->resin_key) {
+		uint8_t pull = pmic_read(PON_PULL_CTL);
+		if ((pull & PULL_RESIN_KPDPWR) != PULL_RESIN_KPDPWR) {
+			pmic_write(PON_PULL_CTL, pull | PULL_RESIN_KPDPWR);
+			log_printf("pmic: key pull-ups were %02x\n", pull);
+		}
+	}
 
 	/* The system rail and the battery sense pin, both divided by three,
 	 * and USB in, divided by twenty: on smelt the sense pin follows the
