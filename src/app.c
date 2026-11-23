@@ -477,6 +477,9 @@ void app_cable(uint32_t now)
 
 static void key_pressed(void)
 {
+	const char *name = power_key_name();
+	if (name)
+		log_printf("key: %s\n", name);
 	if (power_awake())
 		power_request(true);
 	else

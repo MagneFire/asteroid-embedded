@@ -160,6 +160,8 @@ bool power_key(void)
 
 static int pon_apid = -1, usb_apid = -1;
 static volatile bool key_irq, usb_irq;
+/* The gpio of the last key edge, 0 when the PMIC raised it. */
+static volatile unsigned key_gpio;
 
 /* The power key and the USB path share the PMIC's interrupt line; each
  * is masked until the main loop has handled it. One that comes with
@@ -170,6 +172,7 @@ static void spmi_periph_irq(void)
 	if (key || !usb) {
 		if (pon_apid >= 0)
 			spmi_irq_enable(pon_apid, false);
+		key_gpio = 0;
 		key_irq = true;
 	}
 	if (usb || !key) {
@@ -182,7 +185,30 @@ static void spmi_periph_irq(void)
 static void key_edge(unsigned n)
 {
 	gpio_irq_ack(n);
+	key_gpio = n;
 	key_irq = true;
+}
+
+/* A short press can be over before this runs, so without a key held the
+ * last interrupt tells. */
+const char *power_key_name(void)
+{
+	static char name[12];
+	if (!board->keys[0].gpio && !board->resin_key)
+		return NULL;
+	uint8_t sts = pmic_read(PON_INT_RT_STS);
+	if (sts & PON_KPDPWR)
+		return "power key";
+	if (sts & PON_KEYS & PON_RESIN)
+		return "resin";
+	unsigned gpio = key_gpio;
+	for (unsigned i = 0; i < ARRAY_SIZE(board->keys); i++)
+		if (board->keys[i].gpio && !gpio_get(board->keys[i].gpio))
+			gpio = board->keys[i].gpio;
+	if (!gpio)
+		return "power key or resin";
+	snprintf(name, sizeof name, "gpio %u", gpio);
+	return name;
 }
 
 void power_key_irq_init(void)

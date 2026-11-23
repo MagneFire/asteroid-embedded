@@ -210,6 +210,8 @@ void pmic_write(uint32_t addr, uint8_t val);
 void power_off_arm(void);
 const char *boot_reason(void);
 bool power_key(void);
+/* Which key that is on a watch with more than one, else NULL. */
+const char *power_key_name(void);
 void power_key_irq_init(void);
 bool power_key_irq(void);
 uint32_t rtc_read(void);

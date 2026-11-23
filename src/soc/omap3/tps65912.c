@@ -139,6 +139,8 @@ int regulator_off(uint32_t id)
 	return 0;
 }
 
+const char *power_key_name(void) { return NULL; }
+
 bool power_key(void)
 {
 	return ready && !(pmic_read(GPIO3) & GPIO_STS);
