@@ -147,6 +147,14 @@ int main(int argc, char **argv)
 		CHECK(board_dory.therm[i].decidegrees > board_dory.therm[i - 1].decidegrees &&
 		      board_dory.therm[i].mv < board_dory.therm[i - 1].mv);
 
+	/* catfish's SMB231 setup ends in a full write of CFG8, and its cell
+	 * numbers come from the hub. */
+	const struct board_reg *r = board_catfish.charger.setup;
+	unsigned n = board_catfish.charger.setup_n;
+	CHECK(n == 8 && r[n - 1].reg == 0x08 && !r[n - 1].mask && r[n - 1].value == 0xd9);
+	CHECK(board_catfish.charger.cell_mah == 415 && board_catfish.charger.irqs_awake == 0xbf &&
+	      board_catfish.charger.irqs_asleep == 0x21 && board_catfish.charger.cmd1 == 2 && !board_catfish.fuel_gauge);
+
 	/* swift: its own touch controller, none of catfish's hub or
 	 * Bluetooth, and the vendor's power key reset. */
 	CHECK(board_swift.touch == &touch_hx852x && !board_swift.touch_alt && board_swift.touch_pins.mpm == 10);

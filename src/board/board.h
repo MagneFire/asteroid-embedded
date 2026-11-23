@@ -117,6 +117,16 @@ struct hub_driver {
 	int (*mode)(unsigned code);
 };
 
+/* A fuel gauge read by the AP, for a charger that does not measure the
+ * cell: its start, a reading taken when one is due (or now), the last
+ * one, and the watch going to sleep or waking up. */
+struct gauge_driver {
+	bool (*init)(void);
+	void (*poll)(bool now);
+	bool (*read)(struct hub_gauge *g);
+	void (*asleep)(bool asleep);
+};
+
 struct motor_driver {
 	bool (*init)(void);
 	void (*set)(bool on);
@@ -172,6 +182,12 @@ extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_l
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm;
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530;
 extern const struct light_driver light_tsl2584, light_m4, light_nanohub, light_al3320;
+
+/* A register write: the bits of mask set to value, or with a mask of 0
+ * the whole register. */
+struct board_reg {
+	uint8_t reg, mask, value;
+};
 
 /* A pad whose mux or pull the bootloader's setup is changed in: its
  * offset in the SoC's pad registers and their value. */
@@ -284,7 +300,7 @@ struct board {
 	 * against mV and with mV falling, where it is not sturgeon's. */
 	const struct board_therm *therm;
 	uint8_t therm_n;
-	/* A MAX17050 gauge, the wireless pad line (low on the pad), the
+	/* A MAX17050 gauge (or the fuel gauge's bus), the wireless pad line (low on the pad), the
 	 * receiver's charge output and its termination (high stops charging)
 	 * and reduced rate inputs. */
 	struct {
@@ -311,11 +327,20 @@ struct board {
 	} keys[2];
 	bool resin_key;
 
-	/* A charger of its own, with the cell's numbers from the hub. */
+	/* A charger of its own, with the cell's numbers from fuel_gauge or
+	 * the hub: its setup, the interrupts enabled
+	 * awake and asleep, its input mode and the cell's size. A line held
+	 * low for it, 0 for none, and the PMIC's own charger kept off. */
 	struct {
 		struct board_i2c i2c;
 		uint8_t irq, mpm, suspend;
+		const struct board_reg *setup;
+		uint8_t setup_n, irqs_awake, irqs_asleep, cmd1;
+		uint16_t cell_mah;
+		uint8_t hold_low;
+		bool pmic_charger_off;
 	} charger;
+	const struct gauge_driver *fuel_gauge;
 
 	/* Some units of a watch have this controller instead, at alt_addr. */
 	const struct touch_driver *touch, *touch_alt;

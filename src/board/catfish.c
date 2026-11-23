@@ -3,6 +3,19 @@
 #include "display/display.h"
 
 static const char *const firmware_dirs[] = { "/firmware/", NULL };
+/* SMB231: 4.4 V, 300 mA, 20 mA termination, recharge 80 mV below, input
+ * limited to 500 mA, charging between -5 and 55 C and slower outside 5
+ * to 45 C. */
+static const struct board_reg charger_setup[] = {
+	{ 0x00, 0x1f, 2 << 2 | 0 },
+	{ 0x02, 1 << 6 | 7, 1 << 6 | 2 },
+	{ 0x03, 0xff, 1 << 5 | (4400 - 3480) / 40 },
+	{ 0x04, 1 << 5 | 3 << 3 | 3, 2 },
+	{ 0x05, 0xff, 3 << 4 | 3 << 2 | 1 },
+	{ 0x06, 3 << 6 | 3 << 4, 2 << 4 },
+	{ 0x07, 0xe8, 0x08 },
+	{ 0x08, 0, 3 << 6 | 1 << 4 | 2 << 2 | 1 },
+};
 /* Brightness control on with its dimming off, as the vendor sets it:
  * with dimming on, a new level ramps in over several frames. */
 static const struct dcs_step panel_wake[] = { { 0x53, 1, 0, { 0x20 } } };
@@ -37,7 +50,9 @@ const struct board board_catfish = {
 	.usb_phy_init = { 0x73 },
 	/* SMB231 on BLSP1 QUP1, its STAT line on gpio 95. */
 	.battery_driver = &battery_smb231,
-	.charger = { .i2c = { .bus = 1, .sda = 6, .scl = 7, .func = 3, .addr = 0x12 }, .irq = 95, .mpm = 35, .suspend = 58 },
+	.charger = { .i2c = { .bus = 1, .sda = 6, .scl = 7, .func = 3, .addr = 0x12 }, .irq = 95, .mpm = 35, .suspend = 58,
+		     .setup = charger_setup, .setup_n = sizeof charger_setup / sizeof charger_setup[0],
+		     .irqs_awake = 0xbf, .irqs_asleep = 0x21, .cmd1 = 2, .cell_mah = 415 },
 	/* FT3267 at 0x38, or an IT7259 at 0x46 on some units. */
 	.touch = &touch_fts,
 	.touch_alt = &touch_it7260,

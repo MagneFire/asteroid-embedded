@@ -1,7 +1,5 @@
-/* SMB231 linear charger on I2C, with the cell's numbers from the sensor
- * hub's fuel gauge. The charger takes its settings from registers: 4.4 V,
- * 300 mA, 20 mA termination, recharge 80 mV below, input limited to
- * 500 mA, charging between -5 and 55 C and slower outside 5 to 45 C. It
+/* SMB231 linear charger on I2C, with the cell's numbers from the board's
+ * fuel gauge or the sensor hub's, and its settings from the board. It
  * can reload its own defaults when the cable goes, so they are written
  * again on every cable change, and until they are taken. Its STAT line
  * falls on a change and stays low until its interrupt registers are
@@ -14,14 +12,6 @@
 
 #define BUS		(board->charger.i2c.bus)
 #define ADDR		(board->charger.i2c.addr)
-#define CFG0		0x00
-#define CFG2		0x02
-#define CFG3		0x03
-#define CFG4		0x04
-#define CFG5		0x05
-#define CFG6		0x06
-#define CFG7		0x07
-#define CFG8		0x08
 #define IRQ_CFG		0x09
 #define I2C_COMM_CFG	0x0a
 #define NV_CFG		0x14
@@ -39,16 +29,16 @@
 #define IRQ_C_DONE	BIT(0)
 #define STATUS_A_OV	BIT(6)
 #define STATUS_A_UV	BIT(4)
-/* Everything but battery overvoltage; asleep only a missing battery and
- * the input, as the vendor driver sets it on suspend. */
-#define IRQS_AWAKE	0xbf
-#define IRQS_ASLEEP	0x21
+#define IRQS_AWAKE	(board->charger.irqs_awake)
+#define IRQS_ASLEEP	(board->charger.irqs_asleep)
 #define POLL_MS		60000
 #define CABLE_POLL_MS	1000
 #define GAUGE_ASK_MS	60000
 
 #define EMPTY_POLLS	2
-#define CELL_MAH	415
+#define CELL_MAH	(board->charger.cell_mah)
+/* The PM8916 linear charger's USB input suspend. */
+#define LBC_USB_SUSP	0x1347
 #define CHARGER_TASK_MS	500
 
 static bool ready, configured, cable_now, cable_told, irq_seen, have_seen, fresh, stale, keeps_settings, asleep;
@@ -88,26 +78,14 @@ static bool configure(void)
 		return false;
 	}
 	r = update(CMD0, CMD0_VOLATILE | CMD0_CHARGE, CMD0_VOLATILE | CMD0_CHARGE);
-	if (!r)
-		r = update(CFG0, 0x1f, 2 << 2 | 0);
-	if (!r)
-		r = update(CFG2, BIT(6) | 7, BIT(6) | 2);
-	if (!r)
-		r = update(CFG3, 0xff, 1 << 5 | (4400 - 3480) / 40);
-	if (!r)
-		r = update(CFG4, BIT(5) | 3 << 3 | 3, 2);
-	if (!r)
-		r = update(CFG5, 0xff, 3 << 4 | 3 << 2 | 1);
-	if (!r)
-		r = update(CFG6, 3 << 6 | 3 << 4, 2 << 4);
-	if (!r)
-		r = update(CFG7, 0xe8, 0x08);
-	if (!r)
-		r = wr(CFG8, 3 << 6 | 1 << 4 | 2 << 2 | 1);
+	for (unsigned i = 0; !r && i < board->charger.setup_n; i++) {
+		const struct board_reg *s = &board->charger.setup[i];
+		r = s->mask ? update(s->reg, s->mask, s->value) : wr(s->reg, s->value);
+	}
 	if (!r)
 		r = wr(IRQ_CFG, asleep ? IRQS_ASLEEP : IRQS_AWAKE);
 	if (!r)
-		r = update(CMD1, 3, 2);
+		r = update(CMD1, 3, board->charger.cmd1);
 	if (!r)
 		r = update(CMD0, CMD0_SUSPEND | CMD0_STAT_OFF, CMD0_STAT_OFF);
 	if (r) {
@@ -128,9 +106,17 @@ static void smb231_init(void)
 	gpio_set(board->charger.suspend, 1);
 	gpio_config(board->charger.suspend, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	gpio_config(board->charger.irq, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
+	if (board->charger.hold_low) {
+		gpio_set(board->charger.hold_low, 0);
+		gpio_config(board->charger.hold_low, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
+	if (board->charger.pmic_charger_off)
+		pmic_write(LBC_USB_SUSP, 1);
 	const struct board_i2c *b = &board->charger.i2c;
 	if (i2c_init(b->bus, b->sda, b->scl, b->func, 100000))
 		return;
+	if (board->fuel_gauge && !board->fuel_gauge->init())
+		log_printf("charger: no fuel gauge\n");
 	uint8_t a;
 	if (rd(STATUS_A, &a)) {
 		log_printf("charger: no answer\n");
@@ -155,9 +141,9 @@ static void smb231_init(void)
 static uint32_t smb231_percent(void);
 static uint32_t smb231_mv(void);
 
-/* The hub's microcontroller stops at 3072 mV, and nothing else turns the
- * watch off before the cell runs flat, so at 0 % without a cable it goes
- * into Timepiece like the vendor's at shutdown, which powers it off.
+/* Nothing else turns the watch off before the cell runs flat (catfish's
+ * hub stops at 3072 mV), so at 0 % without a cable it powers off, through
+ * Timepiece where the hub has one like the vendor's at shutdown.
  * Each reading counts once. */
 static void check_empty(uint32_t percent, bool pmic)
 {
@@ -204,7 +190,9 @@ static void smb231_poll(void)
 		if (changed || !gauge_asked || now - gauge_ask_t >= GAUGE_ASK_MS) {
 			gauge_asked = true;
 			gauge_ask_t = now;
-			if (board->hub && board->hub->poll_gauge)
+			if (board->fuel_gauge)
+				board->fuel_gauge->poll(changed);
+			else if (board->hub && board->hub->poll_gauge)
 				board->hub->poll_gauge(changed);
 			quiet_polls = fresh || reading_new() ? 0 : quiet_polls + 1;
 			stale = quiet_polls >= 2;
@@ -248,6 +236,8 @@ static uint32_t smb231_next_ms(void)
 
 static bool gauge(struct hub_gauge *g)
 {
+	if (board->fuel_gauge)
+		return board->fuel_gauge->read(g);
 	return board->hub && board->hub->gauge && board->hub->gauge(g);
 }
 
@@ -257,7 +247,7 @@ static bool reading_new(void)
 	return gauge(&g) && (!have_seen || g.t_ms != seen.t_ms);
 }
 
-/* Until the hub's gauge has reported, a few seconds after boot, the charge
+/* Until the gauge has reported, a few seconds after boot, the charge
  * comes from the cell voltage the PMIC measures: a rough curve for a
  * 4.4 V cell, reading high while it charges. */
 static const struct {
@@ -320,6 +310,8 @@ static bool smb231_cable_irq(void)
 static void smb231_asleep(bool a)
 {
 	asleep = a;
+	if (board->fuel_gauge && board->fuel_gauge->asleep)
+		board->fuel_gauge->asleep(a);
 	if (ready && configured && wr(IRQ_CFG, a ? IRQS_ASLEEP : IRQS_AWAKE))
 		errors++;
 }
