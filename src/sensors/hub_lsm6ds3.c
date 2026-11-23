@@ -76,8 +76,9 @@ static int wr(uint8_t reg, uint8_t v)
 	return xfer(tx, NULL, 2);
 }
 
-/* Device axes from the chip's, as the vendor's sensor registry maps
- * them: minus chip X, chip Y, minus chip Z. */
+/* Device axes from the chip's, as measured on the watch: chip Y, minus
+ * chip X, chip Z. The vendor's sensor registry says minus X, Y, minus Z,
+ * which put the face down when it was up. */
 static int16_t neg(int16_t v) { return (int16_t)(v == INT16_MIN ? INT16_MAX : -v); }
 
 static bool sample(int16_t v[3])
@@ -85,9 +86,9 @@ static bool sample(int16_t v[3])
 	uint8_t b[6];
 	if (rd(OUTX_L_XL, b, 6))
 		return false;
-	v[0] = neg((int16_t)(b[0] | b[1] << 8));
-	v[1] = (int16_t)(b[2] | b[3] << 8);
-	v[2] = neg((int16_t)(b[4] | b[5] << 8));
+	v[0] = (int16_t)(b[2] | b[3] << 8);
+	v[1] = neg((int16_t)(b[0] | b[1] << 8));
+	v[2] = (int16_t)(b[4] | b[5] << 8);
 	return true;
 }
 
