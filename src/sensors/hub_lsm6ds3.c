@@ -110,7 +110,7 @@ static bool lsm6ds3_init(void)
 	gpio_config(PINS.cs, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	gpio_config(PINS.irq, 0, GPIO_INPUT, GPIO_PULL_DOWN, 2);
 	const uint8_t spi_pins[3] = { PINS.gpio, PINS.gpio + 1, PINS.gpio + 3 };
-	if (spi_init(PINS.spi, spi_pins, PINS.func, 3, SPI_HZ)) {
+	if (spi_init(PINS.spi, spi_pins, PINS.func, 0, SPI_HZ)) {
 		log_printf("motion: no spi\n");
 		return false;
 	}
