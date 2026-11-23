@@ -56,6 +56,9 @@ struct stc3117 {
 	int acc_soc, acc_voltage, acc_current, acc_temperature;
 	int batt_state, gg_mode, last_temperature, online;
 	int current_factor, crate_factor, ropt, nropt;
+	/* How the last start went: 'F' with a fresh RAM, 'P' after the
+	 * chip's reset, 'R' from the RAM. */
+	char start;
 	uint8_t ram[STC3117_RAM_SIZE];
 };
 

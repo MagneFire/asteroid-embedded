@@ -383,10 +383,13 @@ int stc3117_start(struct stc3117 *g, const struct stc3117_cell *cell, const stru
 	int res;
 	if (read_ram(g) || !ram_valid(g)) {
 		init_ram(g);
+		g->start = 'F';
 		res = startup(g);
 	} else if (status(g) & M_RST) {
+		g->start = 'P';
 		res = startup(g);
 	} else {
+		g->start = 'R';
 		res = restore(g);
 	}
 	g->ram[RAM_STATUS] = GG_INIT;

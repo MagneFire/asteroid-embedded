@@ -10,6 +10,7 @@
 struct dcs_step;
 struct touch;
 struct max17050_model;
+struct stc3117_cell;
 struct m4_variant;
 
 /* An I2C device: its bus and, where the SoC routes them by hand, the pins
@@ -182,6 +183,7 @@ extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_l
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm;
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530;
 extern const struct light_driver light_tsl2584, light_m4, light_nanohub, light_al3320;
+extern const struct gauge_driver gauge_stc3117;
 
 /* A register write: the bits of mask set to value, or with a mask of 0
  * the whole register. */
@@ -315,6 +317,8 @@ struct board {
 		uint8_t kill_disable;
 		/* The cell model to load when the gauge has lost it. */
 		const struct max17050_model *model;
+		/* An STC3117's cell. */
+		const struct stc3117_cell *cell;
 		/* USB power reaches the gauge's side of the cell, so what
 		 * it learned with USB in is thrown away when USB goes. */
 		bool usb_disturbs;
