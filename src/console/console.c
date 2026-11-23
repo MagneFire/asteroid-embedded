@@ -525,6 +525,72 @@ static void cmd_gauge(const char *args)
 	} while (parse_num(&args, 16, &reg));
 }
 
+/* Reads registers of a chip no driver has, for a board being brought up:
+ * the bus is set up on the pins given, which a driver may be using. */
+static void cmd_i2c(const char *args)
+{
+	uint32_t v[6], n = 1;
+	for (unsigned i = 0; i < 6; i++)
+		if (!parse_num(&args, i >= 4 ? 16 : 10, &v[i])) {
+			say("usage: i2c <bus> <sda> <scl> <func> <addr> <reg> [bytes] (addr, reg hex)\n");
+			return;
+		}
+	parse_num(&args, 10, &n);
+	uint8_t reg = (uint8_t)v[5], b[16];
+	if (n < 1 || n > sizeof b || v[4] > 0x7f || v[5] > 0xff) {
+		say("i2c: up to %u bytes, 7-bit address, 8-bit register\n", (unsigned)sizeof b);
+		return;
+	}
+	int r = i2c_init(v[0], v[1], v[2], v[3], 100000);
+	if (!r)
+		r = i2c_xfer(v[0], (uint8_t)v[4], &reg, 1, b, n);
+	if (r) {
+		say("i2c: bus %lu addr %02lx reg %02lx: error %d\n", v[0], v[4], v[5], r);
+		return;
+	}
+	say("i2c: bus %lu addr %02lx reg %02lx:", v[0], v[4], v[5]);
+	for (unsigned i = 0; i < n; i++)
+		say(" %02x", b[i]);
+	say("\n");
+}
+
+#ifdef PMIC_VADC
+/* The same for an SPI chip, in mode 0 at 1 MHz with a chip select line
+ * of its own: the register with bit 7 set, as motion sensors take a read. */
+static void cmd_spi(const char *args)
+{
+	uint32_t v[7], n = 1;
+	for (unsigned i = 0; i < 7; i++)
+		if (!parse_num(&args, i == 6 ? 16 : 10, &v[i])) {
+			say("usage: spi <qup> <mosi> <miso> <clk> <cs> <func> <reg> [bytes] (reg hex)\n");
+			return;
+		}
+	parse_num(&args, 10, &n);
+	uint8_t tx[17] = { (uint8_t)(v[6] | 0x80) }, rx[17];
+	if (n < 1 || n > sizeof rx - 1 || v[6] > 0x7f) {
+		say("spi: up to %u bytes, 7-bit register\n", (unsigned)sizeof rx - 1);
+		return;
+	}
+	const uint8_t pins[3] = { (uint8_t)v[1], (uint8_t)v[2], (uint8_t)v[3] };
+	gpio_config(v[4], 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	gpio_set(v[4], 1);
+	int r = spi_init(v[0], pins, v[5], 0, 1000000);
+	if (!r) {
+		gpio_set(v[4], 0);
+		r = spi_xfer(v[0], tx, rx, n + 1);
+		gpio_set(v[4], 1);
+	}
+	if (r) {
+		say("spi: qup %lu reg %02lx: error %d\n", v[0], v[6], r);
+		return;
+	}
+	say("spi: qup %lu reg %02lx:", v[0], v[6]);
+	for (unsigned i = 0; i < n; i++)
+		say(" %02x", rx[i + 1]);
+	say("\n");
+}
+#endif
+
 static bool parse_bdaddr(const char *s, uint8_t a[6])
 {
 	for (int i = 0; i < 6; i++) {
@@ -1707,6 +1773,10 @@ static const struct command commands[] = {
 	{ "gpio", "<pin> [= 0|1]", cmd_gpio },
 	{ "ldo", "<n> <uV> | off", cmd_ldo },
 	{ "gauge", "<reg>...", cmd_gauge },
+	{ "i2c", "<bus> <sda> <scl> <func> <addr> <reg> [bytes]", cmd_i2c },
+#ifdef PMIC_VADC
+	{ "spi", "<qup> <mosi> <miso> <clk> <cs> <func> <reg> [bytes]", cmd_spi },
+#endif
 	{ "bt", "[off | status | forget | params ... | <bd_addr>]", cmd_bt },
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
