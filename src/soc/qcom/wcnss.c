@@ -3,7 +3,8 @@
  * crystal set up from here, then the secure world checks the signed
  * firmware from the system partition and starts the core. The core
  * says it is up through smp2p and opens its control channel over SMD;
- * the first request on it asks for its version.
+ * on it we ask for the version, then hand over the NV file, after
+ * which the core calibrates its radio.
  *
  * Only a console command runs this, one stage after the other, and it
  * says how far it got. Unless told to keep it, the core is stopped
@@ -15,10 +16,12 @@
 #include "soc/qcom/mdt.h"
 #include "soc/qcom/smd.h"
 #include "soc/qcom/smem_find.h"
+#include "soc/qcom/wcnss_msg.h"
 
 #define IO(pa)			(IO_8009_BASE + (pa))
 #define PAS_WCNSS		6
 #define FW			"/etc/firmware/wcnss"
+#define NV			"/etc/firmware/wlan/prima/WCNSS_qcom_wlan_nv.bin"
 #define REGION			((uint8_t *)WCNSS_8009_BASE)
 #define REGION_SIZE		(WCNSS_8009_END - WCNSS_8009_BASE)
 #define SMEM_SIZE		(SMEM_8009_END - SMEM_8009_BASE)
@@ -86,15 +89,14 @@
 #define LOCK_APPS		1
 #define LOCK_MS			100
 
-#define MSG_VERSION_REQ		0x01000000u
-#define MSG_VERSION_RSP		0x01000001u
-#define MSG_BUILD_VER_REQ	0x01000009u
-#define MSG_BUILD_VER_RSP	0x0100000au
-
 #define READY_MS		10000
 #define CHANNEL_MS		3000
 #define OPEN_MS			2000
 #define REPLY_MS		2000
+#define ROOM_MS			1000
+#define NV_MS			5000
+#define CBC_MS			10000
+#define CAL_MAX			(64 * 1024)
 
 static void (*say)(const char *fmt, ...);
 /* What the secure world was last told: nothing, an image accepted, the
@@ -619,70 +621,217 @@ static bool ctrl_open(void)
 	return remote == SMD_OPENED || remote == SMD_FLUSHING;
 }
 
-static bool send(uint32_t type)
+/* What came on the control channel since the version request. */
+static struct {
+	bool version, build, nv_reply, cbc;
+	uint8_t major, minor;
+	int nv;
+	uint32_t asked, sent;
+} got;
+static uint8_t rx[WCNSS_MAX_MSG + 1];
+static uint8_t frag[WCNSS_CAL_HEADER + WCNSS_FRAGMENT + 1];
+static uint8_t cal_buf[CAL_MAX];
+static struct wcnss_cal cal = { .buf = cal_buf, .max = CAL_MAX };
+
+static bool send_now(const void *msg, uint32_t len)
 {
-	const uint32_t msg[2] = { type, 8 };
-	if (smd_packet_write(&ctrl, msg, sizeof msg))
+	if (smd_packet_write(&ctrl, msg, len))
 		return false;
 	kick();
 	return true;
 }
 
-/* The version, then the build: the vendor asks for the second once the
- * first has come. Only the version counts; the build is logged if it
- * comes. */
-#define BUILD_MAX	256
-
-static bool versions(void)
+static bool send(uint32_t type)
 {
-	if (!send(MSG_VERSION_REQ)) {
-		note("wcnss: no room for the version request\n");
+	uint8_t msg[WCNSS_HEADER];
+	wcnss_msg_header(msg, type, sizeof msg);
+	return send_now(msg, sizeof msg);
+}
+
+static void message(uint8_t *buf, uint32_t n)
+{
+	uint32_t type, len;
+	if (!wcnss_msg_parse(buf, n, &type, &len)) {
+		note("wcnss: message of %lu bytes, no header\n", n);
+		return;
+	}
+	if (len != n)
+		note("wcnss: message %08lx says %lu bytes, packet has %lu\n", type, len, n);
+	switch (type) {
+	case WCNSS_VERSION_RSP:
+		if (n != 12) {
+			note("wcnss: version reply of %lu bytes, not 12\n", n);
+		} else if (!got.version) {
+			note("wcnss: version %u.%u.%u.%u after %lu ms\n", buf[8], buf[9], buf[10], buf[11], time_ms() - got.asked);
+			got.version = true;
+			got.major = buf[8];
+			got.minor = buf[9];
+			if (!send(WCNSS_BUILD_VER_REQ))
+				note("wcnss: no room for the build request\n");
+		}
+		break;
+	case WCNSS_BUILD_VER_RSP:
+		buf[n] = 0;
+		note("wcnss: build %s (%lu bytes)\n", (const char *)buf + 8, n - 8);
+		got.build = true;
+		break;
+	case WCNSS_NV_RSP:
+	case WCNSS_CAL_DOWNLOAD_RSP:
+		note("wcnss: %s download reply %d after %lu ms\n", type == WCNSS_NV_RSP ? "NV" : "calibration",
+		     n > 8 ? buf[8] : -1, time_ms() - got.sent);
+		if (type == WCNSS_NV_RSP) {
+			got.nv = n > 8 ? buf[8] : -1;
+			got.nv_reply = true;
+		}
+		break;
+	case WCNSS_CBC_COMPLETE_IND:
+		note("wcnss: calibration done after %lu ms\n", time_ms() - got.sent);
+		got.cbc = true;
+		break;
+	case WCNSS_CAL_UPLOAD_REQ: {
+		int r = wcnss_cal_take(&cal, buf, n);
+		if (r < 0) {
+			note("wcnss: calibration upload fragment not taken, data dropped\n");
+		} else if (r) {
+			uint8_t rsp[WCNSS_HEADER + 1];
+			wcnss_msg_header(rsp, WCNSS_CAL_UPLOAD_RSP, sizeof rsp);
+			rsp[WCNSS_HEADER] = WCNSS_NV_DONE;
+			note("wcnss: calibration data from the core, %lu bytes%s\n", cal.have,
+			     send_now(rsp, sizeof rsp) ? "" : ", no room for the reply");
+		}
+		break;
+	}
+	default:
+		note("wcnss: message %08lx, %lu bytes, ignored\n", type, n);
+	}
+}
+
+/* Every message waiting, or false once the channel is no use. */
+static bool ctrl_poll(void)
+{
+	smd_flags_seen(&ctrl);
+	if (!ctrl_open()) {
+		note("wcnss: channel closed by the core, state %lu\n", ctrl.recv->state);
 		return false;
 	}
-	uint32_t t0 = time_ms();
-	bool version = false;
-	while (time_ms() - t0 < REPLY_MS) {
-		uint8_t buf[8 + BUILD_MAX + 1];
-		smd_flags_seen(&ctrl);
-		if (!ctrl_open()) {
-			note("wcnss: channel closed by the core, state %lu\n", ctrl.recv->state);
-			return false;
-		}
-		int n = smd_packet_read(&ctrl, buf, sizeof buf - 1);
+	for (;;) {
+		int n = smd_packet_read(&ctrl, rx, sizeof rx - 1);
 		if (n && smd_read_kick_wanted(&ctrl))
 			kick();
 		if (n < 0) {
 			note("wcnss: bad packet on the channel\n");
 			return false;
 		}
-		if (n < 8) {
-			wait_ms(1);
-			continue;
-		}
-		uint32_t type, len;
-		memcpy(&type, buf, 4);
-		memcpy(&len, buf + 4, 4);
-		if (len != (uint32_t)n)
-			note("wcnss: message %08lx says %lu bytes, packet has %d\n", type, len, n);
-		if (type == MSG_VERSION_RSP && n != 12) {
-			note("wcnss: version reply of %d bytes, not 12\n", n);
-		} else if (type == MSG_VERSION_RSP && !version) {
-			note("wcnss: version %u.%u.%u.%u after %lu ms\n", buf[8], buf[9], buf[10], buf[11], time_ms() - t0);
-			version = true;
-			if (!send(MSG_BUILD_VER_REQ)) {
-				note("wcnss: no room for the build request\n");
-				return true;
-			}
-		} else if (type == MSG_BUILD_VER_RSP && version) {
-			buf[n] = 0;
-			note("wcnss: build %s (%d bytes)\n", (const char *)buf + 8, n - 8);
+		if (!n)
 			return true;
-		} else {
-			note("wcnss: message %08lx, %d bytes, ignored\n", type, n);
-		}
+		message(rx, (uint32_t)n);
 	}
-	note("wcnss: %s\n", version ? "no build version, which is optional" : "no version reply");
-	return version;
+}
+
+static bool wait_for(const bool *flag, uint32_t ms)
+{
+	uint32_t t0 = time_ms();
+	while (!*flag) {
+		if (!ctrl_poll() || time_ms() - t0 > ms)
+			return false;
+		wait_ms(1);
+	}
+	return true;
+}
+
+/* The version, then the build: the vendor asks for the second once the
+ * first has come. Only the version counts. */
+static bool versions(void)
+{
+	got = (typeof(got)){ .nv = -1 };
+	got.asked = time_ms();
+	if (!send(WCNSS_VERSION_REQ)) {
+		note("wcnss: no room for the version request\n");
+		return false;
+	}
+	if (!wait_for(&got.version, REPLY_MS)) {
+		note("wcnss: no version reply\n");
+		return false;
+	}
+	if (!wait_for(&got.build, REPLY_MS))
+		note("wcnss: no build version, which is optional\n");
+	return true;
+}
+
+/* The FIFO takes two fragments at a time: wait for the core to read. */
+static bool send_wait(const uint8_t *msg, uint32_t len)
+{
+	uint32_t t0 = time_ms();
+	while (smd_write_avail(&ctrl) < SMD_HEADER + len) {
+		if (!ctrl_poll())
+			return false;
+		if (time_ms() - t0 > ROOM_MS) {
+			note("wcnss: no room for %lu bytes in %u ms\n", len, ROOM_MS);
+			return false;
+		}
+		wait_ms(1);
+	}
+	return send_now(msg, len);
+}
+
+/* What the core uploaded on an earlier start of this boot, before the
+ * NV file, as the vendor gives it back after a restart. */
+static bool cal_download(void)
+{
+	note("wcnss: calibration data of %lu bytes back to the core\n", cal.have);
+	for (uint32_t off = 0, num = 0; off < cal.have; num++) {
+		uint32_t size = cal.have - off < WCNSS_FRAGMENT ? cal.have - off : WCNSS_FRAGMENT;
+		bool last = off + size == cal.have;
+		memcpy(frag + WCNSS_CAL_HEADER, cal.buf + off, size);
+		uint32_t len = wcnss_cal_frag(frag, cal.have, (uint16_t)num, last ? WCNSS_FRAG_LAST | WCNSS_FRAG_MORE : 0, size);
+		if (!send_wait(frag, len))
+			return false;
+		off += size;
+	}
+	return true;
+}
+
+/* The NV file in fragments, read one byte past each to know the last.
+ * A reply of 2 means the core calibrates first and says when done. */
+static bool nv_download(void)
+{
+	if (got.major < 1 || (got.major == 1 && got.minor < 4)) {
+		note("wcnss: no NV download for version %u.%u\n", got.major, got.minor);
+		return true;
+	}
+	got.sent = time_ms();
+	if (cal.done && got.minor >= 5 && !cal_download())
+		return false;
+	uint32_t bytes = 0;
+	unsigned num = 0;
+	for (;; num++) {
+		int n = firmware_read(NV, WCNSS_NV_SKIP + num * WCNSS_FRAGMENT, frag + WCNSS_NV_HEADER, WCNSS_FRAGMENT + 1);
+		if (n < 0 || (!num && !n)) {
+			note("wcnss: " NV ": %d\n", n);
+			return false;
+		}
+		bool last = n <= WCNSS_FRAGMENT;
+		uint32_t size = last ? (uint32_t)n : WCNSS_FRAGMENT;
+		uint32_t len = wcnss_nv_frag(frag, (uint16_t)num, last ? WCNSS_FRAG_LAST | WCNSS_FRAG_CAL_OK : 0, size);
+		if (!send_wait(frag, len)) {
+			note("wcnss: NV fragment %u not sent\n", num);
+			return false;
+		}
+		bytes += size;
+		if (last)
+			break;
+	}
+	note("wcnss: NV file, %lu bytes in %u fragments, sent in %lu ms\n", bytes, num + 1, time_ms() - got.sent);
+	got.sent = time_ms();
+	if (!wait_for(&got.nv_reply, NV_MS)) {
+		note("wcnss: no NV download reply\n");
+		return false;
+	}
+	if (got.nv == WCNSS_NV_WAIT_CBC && !wait_for(&got.cbc, CBC_MS)) {
+		note("wcnss: no end of calibration in %u ms\n", CBC_MS);
+		return false;
+	}
+	return got.nv == WCNSS_NV_DONE || got.nv == WCNSS_NV_WAIT_CBC;
 }
 
 static void probe(bool keep)
@@ -700,7 +849,7 @@ static void probe(bool keep)
 	note("wcnss: smem channel table %s, smp2p bits %08lx before start%s%s\n",
 	     smem_get(tables[0].alloc, SMEM_HOST_WCNSS, &size) ? "found" : "missing", before, smp2p_why ? ", " : "",
 	     smp2p_why ? smp2p_why : "");
-	bool ok = power_on() && xo_setup() && boot() && wait_ready(before) && open_ctrl() && versions();
+	bool ok = power_on() && xo_setup() && boot() && wait_ready(before) && open_ctrl() && versions() && nv_download();
 	note("wcnss: probe %s\n", ok ? "done" : "stopped");
 	if (!(ok && keep))
 		close_ctrl();
@@ -714,8 +863,12 @@ static void status(void)
 	static const char *const names[] = { "off", "image accepted", "running", "state unknown" };
 	note("wcnss: %s, smp2p bits %08lx, channel %d\n", names[core], slave_bits(),
 	     find_channel("WCNSS_CTRL", NULL));
-	if (ctrl.send)
+	if (ctrl.send) {
 		note("wcnss: channel states %lu/%lu, %lu bytes waiting\n", ctrl.send->state, ctrl.recv->state, smd_read_avail(&ctrl));
+		ctrl_poll();
+		note("wcnss: NV reply %d, calibration %s, %lu bytes of calibration data kept\n", got.nv, got.cbc ? "done" : "not done",
+		     cal.done ? cal.have : 0);
+	}
 	reason();
 }
 
