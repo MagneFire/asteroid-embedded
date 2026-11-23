@@ -43,6 +43,7 @@
 #define LIGHT_INTEGRATE_MS 60
 #define LIGHT_FADE_MS 1000
 #define DCS_FADE_STEP_MS 100
+#define FADE_IN_STEP_MS 16
 /* Within the day and a half before the 32 kHz counter of minnow wraps. */
 #define MAX_SLEEP_MS (24 * 3600 * 1000u)
 
@@ -156,6 +157,18 @@ static struct auto_brightness autob;
 static bool light_on, light_reading;
 static uint32_t light_t, fade_t, step_t;
 static int fade_from, fade_to, fade_now;
+static uint32_t fade_ms = LIGHT_FADE_MS, fade_in_ms;
+static bool fading_in;
+
+void power_fade_in(uint32_t ms) { fade_in_ms = ms; }
+
+static uint32_t fade_step_ms(void) { return fading_in ? FADE_IN_STEP_MS : DCS_FADE_STEP_MS; }
+
+static void fade_in_end(void)
+{
+	fading_in = false;
+	fade_ms = LIGHT_FADE_MS;
+}
 
 static bool auto_brightness(void)
 {
@@ -173,6 +186,7 @@ static int brightness_wanted(void)
 void power_set_brightness(void)
 {
 	fade_from = fade_to = fade_now = brightness_wanted();
+	fade_in_end();
 	display_set_brightness((uint8_t)(fade_now * 255 / 100));
 }
 
@@ -192,9 +206,7 @@ void power_light(uint32_t now, bool hold)
 	bool on = policy.awake && have_display && !hold && auto_brightness();
 	if (on != light_on)
 		light_follow(on, now);
-	if (!on)
-		return;
-	if (light_reading && now - light_t >= LIGHT_INTEGRATE_MS) {
+	if (on && light_reading && now - light_t >= LIGHT_INTEGRATE_MS) {
 		light_reading = false;
 		int32_t lux = light_finish();
 		if (lux >= 0) {
@@ -202,27 +214,34 @@ void power_light(uint32_t now, bool hold)
 			int b = brightness_wanted();
 			if (b != fade_to) {
 				log_printf("light: %ld lux, brightness %d\n", lux, b);
-				fade_from = fade_now;
+				/* A fade in goes on to the new level. */
+				if (!fading_in) {
+					fade_from = fade_now;
+					fade_t = now;
+				}
 				fade_to = b;
-				fade_t = now;
 			}
 		}
-	} else if (!light_reading && now - light_t >= LIGHT_READ_MS) {
+	} else if (on && !light_reading && now - light_t >= LIGHT_READ_MS) {
 		light_start();
 		light_reading = true;
 		light_t = now;
 	}
+	if (!policy.awake || !have_display || hold)
+		return;
 	/* Without a backlight chip each step is a panel command that waits
 	 * for the frame being sent, so those panels take fewer steps. */
-	if (fade_now != fade_to && (board->backlight || now - step_t >= DCS_FADE_STEP_MS)) {
+	if (fade_now != fade_to && (board->backlight || now - step_t >= fade_step_ms())) {
 		uint32_t gone = now - fade_t;
-		int b = gone >= LIGHT_FADE_MS ? fade_to : fade_from + (fade_to - fade_from) * (int)gone / LIGHT_FADE_MS;
+		int b = gone >= fade_ms ? fade_to : fade_from + (fade_to - fade_from) * (int)gone / (int)fade_ms;
 		if (b != fade_now) {
 			fade_now = b;
 			step_t = now;
 			display_set_brightness((uint8_t)(b * 255 / 100));
 		}
 	}
+	if (fade_now == fade_to)
+		fade_in_end();
 }
 
 /* Awake, the time until the screen goes off, the light sensor's next
@@ -236,7 +255,7 @@ static uint32_t awake_next_ms(uint32_t now)
 			next = light;
 	}
 	if (fade_now != fade_to) {
-		uint32_t step = board->backlight ? 1 : ms_left(step_t, DCS_FADE_STEP_MS, now);
+		uint32_t step = board->backlight ? 1 : ms_left(step_t, fade_step_ms(), now);
 		if (step < next)
 			next = step;
 	}
@@ -575,15 +594,26 @@ enum power_change power_update(uint32_t *now_p)
 			lit_clear();
 			display_show();
 		} else if (screen == SCREEN_OFF) {
+			if (fade_in_ms)
+				display_set_brightness(0);
 			display_wake();
 		} else {
 			lit_clear();
 		}
+		bool fade_in = fade_in_ms && screen == SCREEN_OFF;
 		screen = SCREEN_OFF;
 		policy.awake = true;
 		asleep_ms += now - asleep_t;
 		idle_us = 0;
 		now = time_ms();
+		if (fade_in) {
+			fade_from = fade_now = 0;
+			fade_to = brightness_wanted();
+			fade_t = step_t = now;
+			fade_ms = fade_in_ms;
+			fading_in = true;
+		}
+		fade_in_ms = 0;
 		const char *cause = policy.charger_wake ? "charger" : wake_cause ? wake_cause : "other";
 		power_policy_woke(&policy, now);
 		if (have_ui)

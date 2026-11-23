@@ -44,5 +44,8 @@ uint32_t power_idle_us(void);
 /* While the application processor has the panel the watch stays
  * asleep with the screen off. */
 void power_lend_display(bool lent);
+/* The next wake from a dark panel starts at no brightness and reaches
+ * the set one over ms; 0 for none. */
+void power_fade_in(uint32_t ms);
 bool power_display_lent(void);
 #endif
