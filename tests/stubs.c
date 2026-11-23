@@ -44,6 +44,7 @@ int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t b
 int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }
 int spi_init(unsigned qup, const uint8_t pins[3], unsigned func, unsigned mode, uint32_t hz) { return -1; }
 int spi_xfer(unsigned qup, const uint8_t *tx, uint8_t *rx, unsigned n) { return -1; }
+void wcnss_command(const char *args, void (*say)(const char *fmt, ...)) {}
 void rtc_write(uint32_t secs) { stub_rtc = secs; }
 bool stub_rtc_invalid;
 bool rtc_valid(void) { return !stub_rtc_invalid; }

@@ -233,6 +233,9 @@ int scm_pas_init_image(uint32_t pas_id, uint32_t metadata_phys);
 int scm_pas_mem_setup(uint32_t pas_id, uint32_t start_phys, uint32_t size);
 int scm_pas_auth_and_reset(uint32_t pas_id);
 int scm_pas_shutdown(uint32_t pas_id);
+/* The WCNSS bring-up, one console command at a time. */
+#define SOC_WCNSS		1
+void wcnss_command(const char *args, void (*say)(const char *fmt, ...));
 #endif
 
 #endif

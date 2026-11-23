@@ -557,6 +557,10 @@ static void cmd_i2c(const char *args)
 #ifdef PMIC_VADC
 /* The same for an SPI chip, in mode 0 at 1 MHz with a chip select line
  * of its own: the register with bit 7 set, as motion sensors take a read. */
+#ifdef SOC_WCNSS
+static void cmd_wcnss(const char *args) { wcnss_command(skip_spaces(args), say); }
+#endif
+
 static void cmd_spi(const char *args)
 {
 	uint32_t v[7], n = 1;
@@ -1778,6 +1782,9 @@ static const struct command commands[] = {
 	{ "spi", "<qup> <mosi> <miso> <clk> <cs> <func> <reg> [bytes]", cmd_spi },
 #endif
 	{ "bt", "[off | status | forget | params ... | <bd_addr>]", cmd_bt },
+#ifdef SOC_WCNSS
+	{ "wcnss", "probe [keep] | stop | status", cmd_wcnss },
+#endif
 	{ "emmc", "[safe]", cmd_emmc },
 	{ "part", "", cmd_part },
 	{ "emmcrd", "<partition> <sector> [count]", cmd_emmcrd },
