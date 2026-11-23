@@ -186,11 +186,12 @@ static bool power_on(void)
 	return !fails && crypto;
 }
 
-static void iris_reset(uint32_t reg)
+static bool iris_reset(uint32_t reg)
 {
 	writel(reg | CFG_IRIS_RESET, PMU_CFG);
-	wait_clear(PMU_CFG, CFG_IRIS_RESET_STS, 10000);
+	bool done = wait_clear(PMU_CFG, CFG_IRIS_RESET_STS, 10000);
 	writel(reg & ~CFG_IRIS_RESET, PMU_CFG);
+	return done;
 }
 
 static bool iris_valid(uint32_t id)
@@ -211,7 +212,7 @@ static bool xo_setup(void)
 	uint32_t reg = readl(PMU_CFG) | CFG_BUS_MUX_TOP | CFG_XO_EN;
 	writel(reg, PMU_CFG);
 	uint32_t iris = readl(IRIS_READ);
-	iris_reset(reg);
+	unsigned stuck = !iris_reset(reg);
 	writel((iris & 0xffff) | IRIS_CHIP_ID, IRIS_READ);
 	bool valid = false;
 	for (unsigned i = 0; i < 6 && !valid; i++) {
@@ -221,14 +222,14 @@ static bool xo_setup(void)
 		valid = read && iris_valid(iris);
 		writel(reg, PMU_CFG);
 		if (!valid)
-			iris_reset(reg);
+			stuck += !iris_reset(reg);
 	}
 	if (valid && iris >> 30 == 0)
 		reg = (reg & ~CFG_XO_MODE) | CFG_XO_MODE;
 	else
 		reg &= ~CFG_XO_MODE;
 	writel(reg, PMU_CFG);
-	iris_reset(reg);
+	stuck += !iris_reset(reg);
 	writel(reg | CFG_XO_CFG, PMU_CFG);
 	bool done = wait_clear(PMU_CFG, CFG_XO_CFG_STS, 100000);
 	writel(reg & ~(CFG_BUS_MUX_TOP | CFG_XO_CFG), PMU_CFG);
@@ -238,9 +239,10 @@ static bool xo_setup(void)
 		ours.rf_clock = true;
 	}
 	wait_ms(20);
-	note("wcnss: RF chip id %08lx (%s), crystal %s MHz, setup %s, RF clock %s\n", iris, valid ? "known" : "unknown",
-	     iris >> 30 == 0 && valid ? "48" : "19.2", done ? "done" : "timed out", rf ? "not acknowledged" : "on");
-	return valid && done && !rf;
+	note("wcnss: RF chip id %08lx (%s), crystal %s MHz, setup %s, %u resets timed out, RF clock %s\n", iris,
+	     valid ? "known" : "unknown", iris >> 30 == 0 && valid ? "48" : "19.2", done ? "done" : "timed out", stuck,
+	     rf ? "not acknowledged" : "on");
+	return valid && done && !stuck && !rf;
 }
 
 /* Each segment from its own file into the region, the rest of it
