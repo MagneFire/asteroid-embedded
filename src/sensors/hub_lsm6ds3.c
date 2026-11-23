@@ -35,6 +35,7 @@
 #define I2C_DISABLE	0x04
 #define XL_LOW_POWER	0x10
 #define FUNC_EN		0x04
+#define PEDO_RST_STEP	0x02
 #define PEDO_TILT_LIR	0x61
 #define INT1_TILT	0x02
 #define TILT_IA		0x20
@@ -98,10 +99,12 @@ static void pin_irq(unsigned pin)
 }
 
 /* The vendor's sensor firmware may have left the chip running, so it
- * is reset first. */
+ * is reset first, and its step counter too, which the reset may not
+ * clear. */
 static const uint8_t setup[][2] = {
 	{ CTRL4_C, I2C_DISABLE }, { CTRL3_C, BDU_IF_INC }, { CTRL2_G, 0x00 }, { CTRL6_C, XL_LOW_POWER },
 	{ CTRL1_XL, XL_26HZ_2G }, { CTRL10_C, FUNC_EN }, { TAP_CFG, PEDO_TILT_LIR }, { MD1_CFG, INT1_TILT },
+	{ CTRL10_C, FUNC_EN | PEDO_RST_STEP }, { CTRL10_C, FUNC_EN },
 };
 
 static bool lsm6ds3_init(void)
