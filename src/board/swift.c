@@ -37,6 +37,10 @@ const struct board board_swift = {
 	},
 	.pmic_mpm = 62,
 	.key_reset_ms = 6720,
+	/* Which of the three buttons is which is not known yet: RESIN and
+	 * gpio 90 and 91 all act as the power key. */
+	.keys = { { .gpio = 90, .mpm = 30 }, { .gpio = 91, .mpm = 32 } },
+	.resin_key = true,
 	.usb_phy_init = { 0x73, 0x33, 0x07, 0x13 },
 	/* HX852xES on BLSP1 QUP5, fed by L18. */
 	.touch = &touch_hx852x,

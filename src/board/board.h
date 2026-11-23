@@ -304,10 +304,12 @@ struct board {
 		bool usb_disturbs;
 	} gauge;
 
-	/* A second key, low while pressed, that does what the power key does. */
+	/* Other keys, low while pressed, that do what the power key does,
+	 * and whether the PMIC's RESIN input is one. */
 	struct {
 		uint8_t gpio, mpm;
-	} key2;
+	} keys[2];
+	bool resin_key;
 
 	/* A charger of its own, with the cell's numbers from the hub. */
 	struct {

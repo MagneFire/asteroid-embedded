@@ -153,6 +153,10 @@ int main(int argc, char **argv)
 	CHECK(!board_swift.battery_driver && !board_swift.hub && !board_swift.light);
 	CHECK(!board_swift.bt.patch && board_swift.key_reset_ms == 6720 && board_swift.motor == &motor_pm8226);
 	CHECK(!board_catfish.key_reset_ms && board_catfish.smem_subtype != board_swift.smem_subtype);
+	/* Only swift's RESIN is a key, and catfish keeps its one gpio key. */
+	CHECK(board_swift.resin_key && board_swift.keys[0].gpio == 90 && board_swift.keys[1].gpio == 91);
+	CHECK(!board_catfish.resin_key && board_catfish.keys[0].gpio == 98 && !board_catfish.keys[1].gpio);
+	CHECK(!board_sturgeon.resin_key && !board_dory.resin_key && !board_smelt.resin_key && !board_sparrow.resin_key);
 
 	/* Only smelt's always-on face has its own backlight code. */
 	CHECK(board_smelt.backlight_aod_code == 36);

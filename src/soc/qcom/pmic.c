@@ -121,12 +121,21 @@ void power_off_arm(void)
 	pmic_write(PON_PS_HOLD_RESET_CTL2, S2_RESET_EN);
 }
 
-/* Power key: the PON block's real-time status, bit 0 = KPDPWR_N low. */
+/* Power key: the PON block's real-time status, bit 0 = KPDPWR_N low,
+ * bit 1 = RESIN_N low. */
 #define PON_INT_RT_STS		0x000810
+#define PON_KPDPWR		BIT(0)
+#define PON_RESIN		BIT(1)
+#define PON_KEYS		(PON_KPDPWR | (board->resin_key ? PON_RESIN : 0))
 
 bool power_key(void)
 {
-	return (pmic_read(PON_INT_RT_STS) & BIT(0)) || (board->key2.gpio && !gpio_get(board->key2.gpio));
+	if (pmic_read(PON_INT_RT_STS) & PON_KEYS)
+		return true;
+	for (unsigned i = 0; i < ARRAY_SIZE(board->keys); i++)
+		if (board->keys[i].gpio && !gpio_get(board->keys[i].gpio))
+			return true;
+	return false;
 }
 
 /* The key also raises a PMIC interrupt on both edges, which reaches the
@@ -138,7 +147,6 @@ bool power_key(void)
 #define PON_INT_POLARITY_LOW	0x000813
 #define PON_INT_LATCHED_CLR	0x000814
 #define PON_INT_EN_SET		0x000815
-#define PON_KPDPWR		BIT(0)
 
 static int pon_apid = -1, usb_apid = -1;
 static volatile bool key_irq, usb_irq;
@@ -161,7 +169,7 @@ static void spmi_periph_irq(void)
 	}
 }
 
-static void key2_edge(unsigned n)
+static void key_edge(unsigned n)
 {
 	gpio_irq_ack(n);
 	key_irq = true;
@@ -169,23 +177,26 @@ static void key2_edge(unsigned n)
 
 void power_key_irq_init(void)
 {
-	if (board->key2.gpio) {
-		gpio_config(board->key2.gpio, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
-		gpio_irq_config(board->key2.gpio, GPIO_IRQ_EDGE_BOTH, key2_edge);
-		gpio_irq_enable(board->key2.gpio, true);
-		if (board->key2.mpm)
-			wake_pin(board->key2.mpm, true, false);
+	for (unsigned i = 0; i < ARRAY_SIZE(board->keys); i++) {
+		unsigned gpio = board->keys[i].gpio;
+		if (!gpio)
+			continue;
+		gpio_config(gpio, 0, GPIO_INPUT, GPIO_PULL_UP, 2);
+		gpio_irq_config(gpio, GPIO_IRQ_EDGE_BOTH, key_edge);
+		gpio_irq_enable(gpio, true);
+		if (board->keys[i].mpm)
+			wake_pin(board->keys[i].mpm, true, false);
 	}
 	pon_apid = spmi_apid(0, 0x08);
 	if (pon_apid < 0) {
 		log_printf("pmic: no interrupt mapping for the power key\n");
 		return;
 	}
-	pmic_write(PON_INT_SET_TYPE, pmic_read(PON_INT_SET_TYPE) | PON_KPDPWR);
-	pmic_write(PON_INT_POLARITY_HIGH, pmic_read(PON_INT_POLARITY_HIGH) | PON_KPDPWR);
-	pmic_write(PON_INT_POLARITY_LOW, pmic_read(PON_INT_POLARITY_LOW) | PON_KPDPWR);
-	pmic_write(PON_INT_LATCHED_CLR, PON_KPDPWR);
-	pmic_write(PON_INT_EN_SET, PON_KPDPWR);
+	pmic_write(PON_INT_SET_TYPE, pmic_read(PON_INT_SET_TYPE) | PON_KEYS);
+	pmic_write(PON_INT_POLARITY_HIGH, pmic_read(PON_INT_POLARITY_HIGH) | PON_KEYS);
+	pmic_write(PON_INT_POLARITY_LOW, pmic_read(PON_INT_POLARITY_LOW) | PON_KEYS);
+	pmic_write(PON_INT_LATCHED_CLR, PON_KEYS);
+	pmic_write(PON_INT_EN_SET, PON_KEYS);
 	spmi_irq_clear(pon_apid, spmi_irq_status(pon_apid));
 	irq_attach(IRQ_SPMI_PERIPH, spmi_periph_irq);
 	spmi_irq_enable(pon_apid, true);
@@ -199,7 +210,7 @@ bool power_key_irq(void)
 	key_irq = false;
 	if (pon_apid < 0)
 		return true;
-	pmic_write(PON_INT_LATCHED_CLR, PON_KPDPWR);
+	pmic_write(PON_INT_LATCHED_CLR, PON_KEYS);
 	spmi_irq_clear(pon_apid, spmi_irq_status(pon_apid));
 	spmi_irq_enable(pon_apid, true);
 	return true;
