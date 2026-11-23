@@ -229,6 +229,10 @@ int scm_call2(uint32_t svc, uint32_t cmd, uint32_t arg1, uint32_t arg2);
 int scm_wdog_debug_disable(void);
 int scm_restore_sec_cfg(uint32_t device, uint32_t bank);
 int scm_set_boot_addr(uint32_t phys, uint32_t cpus, bool warm);
+int scm_pas_init_image(uint32_t pas_id, uint32_t metadata_phys);
+int scm_pas_mem_setup(uint32_t pas_id, uint32_t start_phys, uint32_t size);
+int scm_pas_auth_and_reset(uint32_t pas_id);
+int scm_pas_shutdown(uint32_t pas_id);
 #endif
 
 #endif

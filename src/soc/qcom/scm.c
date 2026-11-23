@@ -64,7 +64,7 @@ int scm_wdog_debug_disable(void)
 
 static uint32_t scm_cmd[16] __attribute__((aligned(64)));
 
-static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp)
+static int scm_call_buf_ms(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp, uint32_t wait_ms)
 {
 	if (n > SCM_REQ_MAX)
 		return -5;
@@ -83,8 +83,10 @@ static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigne
 		register uint32_t r2 __asm__("r2") = dma_addr(scm_cmd);
 		r0 = SCM_INTERRUPTED;
 		__asm__ volatile("smc #0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "memory");
-		if (r0 == SCM_INTERRUPTED && time_ms() - t0 > SCM_WAIT_MS)
+		if (r0 == SCM_INTERRUPTED && time_ms() - t0 > wait_ms)
 			return -2;
+		if (wait_ms > SCM_WAIT_MS)
+			wdt_feed();
 	} while (r0 == SCM_INTERRUPTED);
 	if (r0)
 		return (int)r0;
@@ -103,8 +105,10 @@ static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigne
 #endif
 		if (done)
 			break;
-		if (time_ms() - t0 > SCM_WAIT_MS)
+		if (time_ms() - t0 > wait_ms)
 			return -3;
+		if (wait_ms > SCM_WAIT_MS)
+			wdt_feed();
 	}
 	/* The response follows its header unless the secure world says
 	 * otherwise. */
@@ -114,6 +118,11 @@ static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigne
 	if (resp)
 		*resp = scm_cmd[at / 4];
 	return 0;
+}
+
+static int scm_call_buf(uint32_t svc, uint32_t cmd, const uint32_t *req, unsigned n, uint32_t *resp)
+{
+	return scm_call_buf_ms(svc, cmd, req, n, resp, SCM_WAIT_MS);
 }
 
 /* After its power domain collapsed, a device behind a TZ-managed SMMU
@@ -166,3 +175,38 @@ int scm_set_boot_addr(uint32_t phys, uint32_t cpus, bool warm)
 	const uint32_t req[2] = { flags, phys };
 	return scm_call_buf(SCM_SVC_BOOT, SCM_BOOT_ADDR, req, 2, NULL);
 }
+
+/* The peripheral image loader in the secure world: it takes the image's
+ * headers and hash table, the region the image goes to, and then checks
+ * the loaded segments and starts the processor. Checking several MB of
+ * firmware takes much longer than the other calls. Each returns the call's
+ * error or else the secure world's answer, 0 for success. */
+#define SCM_SVC_PIL		0x02
+#define PAS_INIT_IMAGE		1
+#define PAS_MEM_SETUP		2
+#define PAS_AUTH_AND_RESET	5
+#define PAS_SHUTDOWN		6
+#define PAS_WAIT_MS		10000
+
+static int pas_call(uint32_t cmd, const uint32_t *req, unsigned n)
+{
+	uint32_t resp = ~0u;
+	int r = scm_call_buf_ms(SCM_SVC_PIL, cmd, req, n, &resp, PAS_WAIT_MS);
+	return r ? r : (int)resp;
+}
+
+int scm_pas_init_image(uint32_t pas_id, uint32_t metadata_phys)
+{
+	const uint32_t req[2] = { pas_id, metadata_phys };
+	return pas_call(PAS_INIT_IMAGE, req, 2);
+}
+
+int scm_pas_mem_setup(uint32_t pas_id, uint32_t start_phys, uint32_t size)
+{
+	const uint32_t req[3] = { pas_id, start_phys, size };
+	return pas_call(PAS_MEM_SETUP, req, 3);
+}
+
+int scm_pas_auth_and_reset(uint32_t pas_id) { return pas_call(PAS_AUTH_AND_RESET, &pas_id, 1); }
+
+int scm_pas_shutdown(uint32_t pas_id) { return pas_call(PAS_SHUTDOWN, &pas_id, 1); }
