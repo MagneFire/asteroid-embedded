@@ -219,6 +219,9 @@ struct board {
 		bool flip_ud, round;
 		/* An LCD needs no burn-in protection. */
 		bool lcd;
+		/* Automatic brightness levels of the panel's own, 21 curves of
+		 * 21 steps, or NULL for the default ones. */
+		const uint8_t (*brightness_levels)[21];
 		/* How far from an edge a drag starts from it, 0 for the default. */
 		uint8_t edge_px;
 		/* For the panel of the first height only. */

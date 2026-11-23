@@ -183,6 +183,10 @@ int main(int argc, char **argv)
 	/* Only swift, still being brought up, stops in fastboot after a crash. */
 	CHECK(board_swift.crash_to_fastboot && !board_catfish.crash_to_fastboot && !board_dory.crash_to_fastboot &&
 	      !board_smelt.crash_to_fastboot && !board_sturgeon.crash_to_fastboot && !board_sparrow.crash_to_fastboot);
+	CHECK(board_swift.panel.brightness_levels && board_swift.panel.brightness_levels[6][0] == 8 &&
+	      board_swift.panel.brightness_levels[20][20] == 100 && !board_catfish.panel.brightness_levels &&
+	      !board_dory.panel.brightness_levels && !board_smelt.panel.brightness_levels &&
+	      !board_sturgeon.panel.brightness_levels && !board_sparrow.panel.brightness_levels);
 	/* Only swift's RESIN is a key, and catfish keeps its one gpio key. */
 	CHECK(board_swift.resin_key && board_swift.keys[0].gpio == 90 && board_swift.keys[1].gpio == 91);
 	CHECK(!board_catfish.resin_key && board_catfish.keys[0].gpio == 98 && !board_catfish.keys[1].gpio);

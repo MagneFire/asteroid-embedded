@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #define AUTO_BRIGHTNESS_WINDOW 5
+#define AUTO_BRIGHTNESS_STEPS 21
 
 /* All zeros is the starting state: no reading yet. */
 struct auto_brightness {
@@ -17,6 +18,9 @@ struct auto_brightness {
 	bool have_level;
 	int profile, level;
 	int32_t lo, hi;
+	/* A board's own levels for the same steps, one row per curve, or
+	 * NULL for smelt's. */
+	const uint8_t (*levels)[AUTO_BRIGHTNESS_STEPS];
 };
 
 /* Forget the recent readings; the last lux stays until a new one. */

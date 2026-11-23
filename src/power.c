@@ -172,6 +172,7 @@ static void light_follow(bool on, uint32_t now)
 	light_reading = false;
 	light_keep(on);
 	auto_brightness_reset(&autob);
+	autob.levels = board->panel.brightness_levels;
 	/* The first reading right away. */
 	light_t = now - LIGHT_READ_MS;
 }

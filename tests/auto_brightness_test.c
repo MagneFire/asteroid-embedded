@@ -28,6 +28,12 @@ int main(void)
 		CHECK(at(st, 2) >= 4);
 	CHECK(at(50, 0) == 5);
 	CHECK(at(100, 0) == 25);
+	/* A board's own levels: swift's darkest step at a setting of 30 %. */
+	static uint8_t own[21][21];
+	own[6][0] = 8;
+	struct auto_brightness o = { .levels = own };
+	auto_brightness_add(&o, 0);
+	CHECK(auto_brightness_percent(&o, 30) == 8);
 	CHECK(at(1, 2000) == 100);
 	CHECK(at(100, 1000) == 100);
 	CHECK(at(100, 900) == 98);

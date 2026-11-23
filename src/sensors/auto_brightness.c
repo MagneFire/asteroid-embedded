@@ -4,7 +4,7 @@
 #include "auto_brightness.h"
 
 #define PROFILES 21
-#define STEPS 21
+#define STEPS AUTO_BRIGHTNESS_STEPS
 
 static const uint16_t limits[PROFILES][STEPS] = {
 	{ 1, 2, 4, 6, 11, 19, 34, 61, 109, 195, 350, 417, 496, 591, 703, 837, 996, 1186, 1412, 1681, 2000 },
@@ -102,7 +102,8 @@ int auto_brightness_percent(struct auto_brightness *a, int setting)
 	int32_t below2 = limit(profile, step - 2), below = limit(profile, step - 1), above = limit(profile, step);
 	a->have_level = true;
 	a->profile = profile;
-	a->level = step < STEPS ? levels[profile][step] : 100;
+	const uint8_t (*curve)[STEPS] = a->levels ? a->levels : levels;
+	a->level = step < STEPS ? curve[profile][step] : 100;
 	a->lo = below - min32(below - below2, above - below) / 10;
 	a->hi = above;
 	return a->level;
