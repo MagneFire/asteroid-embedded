@@ -79,6 +79,20 @@ int main(void)
 	half[1].head = whole;
 	/* Too long for the buffer: dropped. */
 	CHECK(smd_packet_read(&c, buf, 4) == -1 && smd_read_avail(&c) == 0);
+	/* A length that could never fit in the FIFO. */
+	uint32_t big[5] = { FIFO - 20 - 3 };
+	for (unsigned i = 0; i < 20; i++)
+		fifo[FIFO + (half[1].head + i) % FIFO] = ((uint8_t *)big)[i];
+	half[1].head = (half[1].head + 20) % FIFO;
+	CHECK(smd_packet_read(&c, buf, sizeof buf) == -1);
+	half[1].tail = half[1].head;
+	/* The other side's flags, and whether it wants a read kick. */
+	half[1].head_changed = half[1].tail_changed = half[1].state_changed = 1;
+	smd_flags_seen(&c);
+	CHECK(!half[1].head_changed && !half[1].tail_changed && !half[1].state_changed);
+	CHECK(smd_read_kick_wanted(&c));
+	half[1].block_read_intr = 1;
+	CHECK(!smd_read_kick_wanted(&c));
 	/* Indexes past the FIFO. */
 	half[1].head = FIFO;
 	CHECK(smd_read_avail(&c) == 0);

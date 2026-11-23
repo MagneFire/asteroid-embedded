@@ -385,8 +385,8 @@ static bool open_ctrl(void)
 	uint32_t info = 0, fifo = 0;
 	volatile struct smd_half *h = smem_get(SMEM_SMD_INFO + (unsigned)cid, SMEM_HOST_WCNSS, &info);
 	volatile uint8_t *f = smem_get(SMEM_SMD_FIFO + (unsigned)cid, SMEM_HOST_WCNSS, &fifo);
-	note("wcnss: WCNSS_CTRL is channel %d after %lu ms, info %lu fifo %lu bytes, remote state %lu\n", cid, time_ms() - t0,
-	     info, fifo, h && info >= 2 * sizeof *h ? h[1].state : 0);
+	note("wcnss: WCNSS_CTRL is channel %d after %lu ms, info %lu fifo %lu bytes, states %lu/%lu\n", cid, time_ms() - t0,
+	     info, fifo, h && info >= 2 * sizeof *h ? h[0].state : 0, h && info >= 2 * sizeof *h ? h[1].state : 0);
 	if (!h || !f || info < 2 * sizeof *h || fifo < 2 * 64)
 		return false;
 	ctrl = (struct smd_chan){ &h[0], &h[1], f, f + fifo / 2, fifo / 2 };
@@ -404,9 +404,25 @@ static bool open_ctrl(void)
 		wait_ms(1);
 	}
 	smd_set_state(&ctrl, SMD_OPENED);
+	smd_flags_seen(&ctrl);
 	kick();
 	note("wcnss: channel open after %lu ms\n", time_ms() - t0);
 	return true;
+}
+
+static void close_ctrl(void)
+{
+	if (!ctrl.send)
+		return;
+	smd_set_state(&ctrl, SMD_CLOSED);
+	kick();
+	ctrl = (struct smd_chan){ 0 };
+}
+
+static bool ctrl_open(void)
+{
+	uint32_t remote = ctrl.recv->state;
+	return remote == SMD_OPENED || remote == SMD_FLUSHING;
 }
 
 static bool send(uint32_t type)
@@ -430,7 +446,14 @@ static bool versions(void)
 	bool version = false;
 	while (time_ms() - t0 < REPLY_MS) {
 		uint8_t buf[128];
+		smd_flags_seen(&ctrl);
+		if (!ctrl_open()) {
+			note("wcnss: channel closed by the core, state %lu\n", ctrl.recv->state);
+			return false;
+		}
 		int n = smd_packet_read(&ctrl, buf, sizeof buf - 1);
+		if (n && smd_read_kick_wanted(&ctrl))
+			kick();
 		if (n < 0) {
 			note("wcnss: bad packet on the channel\n");
 			return false;
@@ -468,6 +491,8 @@ static void probe(bool keep)
 	     smem_get(SMEM_CHANNELS, SMEM_HOST_ANY, &size) ? "found" : "missing", slave_bits());
 	bool ok = power_on() && xo_setup() && boot() && wait_ready() && open_ctrl() && versions();
 	note("wcnss: probe %s\n", ok ? "done" : "stopped");
+	if (!(ok && keep))
+		close_ctrl();
 	if (started && !(ok && keep))
 		shutdown();
 	if (!started)
@@ -491,6 +516,7 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 	} else if (!strncmp(args, "probe", 5)) {
 		probe(!strcmp(args, "probe keep"));
 	} else if (!strcmp(args, "stop")) {
+		close_ctrl();
 		if (started)
 			shutdown();
 		power_off();

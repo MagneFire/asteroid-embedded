@@ -36,6 +36,11 @@ void smd_set_state(struct smd_chan *c, uint32_t state);
 /* 0, or -1 without room for the header and all of it. */
 int smd_packet_write(struct smd_chan *c, const void *data, uint32_t len);
 /* A whole packet's length when one is there, 0 if not yet, -1 for one
- * longer than max (dropped) or a FIFO that makes no sense. */
+ * longer than max (dropped), one that could never fit or a FIFO that
+ * makes no sense. */
 int smd_packet_read(struct smd_chan *c, void *buf, uint32_t max);
+/* Whether the other side wants to be told about a read: it can ask not to. */
+bool smd_read_kick_wanted(const struct smd_chan *c);
+/* Clears the other side's changed flags once they have been looked at. */
+void smd_flags_seen(struct smd_chan *c);
 #endif

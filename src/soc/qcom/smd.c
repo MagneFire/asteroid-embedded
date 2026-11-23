@@ -74,7 +74,7 @@ int smd_packet_read(struct smd_chan *c, void *buf, uint32_t max)
 	uint32_t hdr[SMD_HEADER / 4];
 	get(c, tail, (uint8_t *)hdr, SMD_HEADER);
 	uint32_t len = hdr[0];
-	if (len > c->fifo)
+	if (len > c->fifo - SMD_HEADER - FULL_RESERVE)
 		return -1;
 	if (avail < SMD_HEADER + len)
 		return 0;
@@ -84,4 +84,11 @@ int smd_packet_read(struct smd_chan *c, void *buf, uint32_t max)
 	dmb();
 	c->send->tail_changed = 1;
 	return len <= max ? (int)len : -1;
+}
+
+bool smd_read_kick_wanted(const struct smd_chan *c) { return !c->recv->block_read_intr; }
+
+void smd_flags_seen(struct smd_chan *c)
+{
+	c->recv->head_changed = c->recv->tail_changed = c->recv->state_changed = 0;
 }
