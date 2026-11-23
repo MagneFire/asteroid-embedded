@@ -66,10 +66,13 @@ static int update(uint8_t reg, uint8_t mask, uint8_t v)
 	return r ? r : wr(reg, (uint8_t)((old & ~mask) | v));
 }
 
-static bool vbus(void)
+/* 1 with USB, 0 without, -1 when the charger does not answer. */
+static int vbus(void)
 {
 	uint8_t a;
-	return ready && !rd(STATUS_A, &a) && !(a & (STATUS_A_OV | STATUS_A_UV));
+	if (!ready || rd(STATUS_A, &a))
+		return -1;
+	return !(a & (STATUS_A_OV | STATUS_A_UV));
 }
 
 /* A setup register that does not read back as written. */
@@ -161,7 +164,7 @@ static void smb231_init(void)
 			   nv & NV_UNPLUG_KEEP ? "settings kept on unplug, irq only" : "defaults on unplug, needs polling");
 	}
 	configured = configure();
-	cable_now = cable_told = vbus();
+	cable_now = cable_told = vbus() == 1;
 	log_printf("charger: smb231 %s, usb %u\n", configured ? "set up" : "not set up", cable_now);
 	irq_seen = true;
 }
@@ -170,20 +173,25 @@ static uint32_t smb231_percent(void);
 static uint32_t smb231_mv(void);
 
 /* Nothing else turns the watch off before the cell runs flat (catfish's
- * hub stops at 3072 mV), so at 0 % without a cable it powers off, through
- * Timepiece where the hub has one like the vendor's at shutdown.
- * Each reading counts once. */
-static void check_empty(uint32_t percent, bool pmic)
+ * hub stops at 3072 mV), so without a cable it powers off, through
+ * Timepiece where the hub has one like the vendor's at shutdown: at 0 %,
+ * or like swift's vendor after five readings at or below empty_mv. Each
+ * reading counts once. */
+#define EMPTY_MV_POLLS	5
+
+static void check_empty(uint32_t percent, uint32_t mv, bool pmic)
 {
-	if (cable_now || percent > 0 || pmic != empty_from_pmic) {
+	bool by_mv = board->charger.empty_mv;
+	bool low = by_mv ? mv && mv <= board->charger.empty_mv : percent == 0;
+	if (cable_now || !low || pmic != empty_from_pmic) {
 		empty_polls = 0;
 		empty_from_pmic = pmic;
-		if (cable_now || percent > 0)
+		if (cable_now || !low)
 			return;
 	}
-	if (++empty_polls < EMPTY_POLLS)
+	if (++empty_polls < (by_mv ? EMPTY_MV_POLLS : EMPTY_POLLS))
 		return;
-	log_printf("charger: battery empty, powering off\n");
+	log_printf("charger: battery empty (%lu %%, %lu mV), powering off\n", percent, mv);
 	if (hub_has_timepiece())
 		power_timepiece();
 	power_off_arm();
@@ -224,7 +232,10 @@ static void smb231_poll(void)
 		uint8_t irqs[4];
 		uint8_t reg = IRQ_A;
 		i2c_xfer(BUS, ADDR, &reg, 1, irqs, sizeof irqs);
-		bool c = vbus(), changed = c != cable_now;
+		int v = vbus();
+		if (v < 0)
+			errors++;
+		bool c = v < 0 ? cable_now : v, changed = c != cable_now;
 		if (changed && !c)
 			trimmed = false;
 		if (changed || !configured)
@@ -247,11 +258,11 @@ static void smb231_poll(void)
 		gauge(&seen);
 		have_seen = fresh = true;
 		overvoltage(seen.mv);
-		check_empty(seen.percent, false);
+		check_empty(seen.percent, seen.mv, false);
 	} else if (due && stale) {
 		uint32_t mv = pmic_battery_mv();
 		if (mv)
-			check_empty(percent_from_mv(mv), true);
+			check_empty(percent_from_mv(mv), mv, true);
 	}
 }
 
