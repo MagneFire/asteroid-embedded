@@ -2,7 +2,10 @@
  * the board's cell. Started like the vendor's probe: the algorithm's
  * start, a first task 200 ms later, and the chip left in mixed mode,
  * which it is put back to whenever the watch sleeps or wakes. A task
- * runs whenever the charger asks for a reading. */
+ * runs whenever the charger asks for a reading, and on each wake. A gauge
+ * that did not start is tried again on the next ask. After FAILS_STALE
+ * failed tasks in a row the last reading is not given out, so the
+ * charger falls back on the PMIC's voltage. */
 #include "asteroid.h"
 #include "soc/stc3117.h"
 
@@ -13,11 +16,12 @@
 /* Asked again within this, the last reading stands. */
 #define MIN_TASK_MS	1000
 #define MAX_SOC		1000
+#define FAILS_STALE	3
 
 static struct stc3117 gg;
 static struct hub_gauge last;
 static bool ready, have;
-static uint32_t task_t, errors;
+static uint32_t task_t, errors, fails;
 static int last_res = 2;
 
 static int io_read(uint8_t reg, uint8_t *buf, unsigned n)
@@ -62,19 +66,18 @@ static void task(void)
 			   (r.decidegrees < 0 ? -r.decidegrees : r.decidegrees) % 10, gg.status & 0xff,
 			   (gg.status >> 8) & 0xff, errors);
 	last_res = res;
-	if (res < 0)
+	if (res < 0) {
+		fails++;
 		return;
+	}
+	fails = 0;
 	int soc = r.soc < 0 ? 0 : r.soc > MAX_SOC ? MAX_SOC : r.soc;
 	last = (struct hub_gauge){ (uint32_t)r.mv, (uint32_t)(soc + 5) / 10, -r.ma * 1000, r.decidegrees, task_t };
 	have = true;
 }
 
-static bool stc3117_init(void)
+static bool start(void)
 {
-	if (!board->gauge.cell)
-		return false;
-	if (i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ))
-		return false;
 	int res = stc3117_start(&gg, board->gauge.cell, &io);
 	if (res < 0) {
 		log_printf("gauge: no STC3117 (%d, %lu errors)\n", res, errors);
@@ -90,15 +93,29 @@ static bool stc3117_init(void)
 	return true;
 }
 
+static bool stc3117_init(void)
+{
+	if (!board->gauge.cell)
+		return false;
+	if (i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ))
+		return false;
+	return start();
+}
+
 static void stc3117_poll(bool now)
 {
-	if (ready && (!have || time_ms() - task_t >= MIN_TASK_MS))
+	if (!ready) {
+		if (board->gauge.cell)
+			start();
+		return;
+	}
+	if (!have || time_ms() - task_t >= MIN_TASK_MS)
 		task();
 }
 
 static bool stc3117_read(struct hub_gauge *g)
 {
-	if (!have)
+	if (!have || fails >= FAILS_STALE)
 		return false;
 	*g = last;
 	return true;
@@ -106,8 +123,11 @@ static bool stc3117_read(struct hub_gauge *g)
 
 static void stc3117_asleep(bool asleep)
 {
-	if (ready)
-		mode_run();
+	if (!ready)
+		return;
+	mode_run();
+	if (!asleep && time_ms() - task_t >= MIN_TASK_MS)
+		task();
 }
 
 const struct gauge_driver gauge_stc3117 = {
