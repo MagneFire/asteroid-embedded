@@ -186,6 +186,12 @@ int main(int argc, char **argv)
 	/* Only swift, still being brought up, stops in fastboot after a crash. */
 	CHECK(board_swift.crash_to_fastboot && !board_catfish.crash_to_fastboot && !board_dory.crash_to_fastboot &&
 	      !board_smelt.crash_to_fastboot && !board_sturgeon.crash_to_fastboot && !board_sparrow.crash_to_fastboot);
+	/* swift's AsteroidOS ramoops is in RAM that the firmware maps and
+	 * leaves alone: between the UI heap and GPU memory. */
+	CHECK(board_swift.aos_ramoops.phys == 0x8fe00000 && board_swift.aos_ramoops.size == 0x200000 &&
+	      board_swift.aos_ramoops.phys - PHYS_OFFSET_8009 >= UI_HEAP_BASE + UI_HEAP_SIZE &&
+	      board_swift.aos_ramoops.phys - PHYS_OFFSET_8009 + board_swift.aos_ramoops.size <= GPU_MEM_BASE);
+	CHECK(!board_catfish.aos_ramoops.size && !board_dory.aos_ramoops.size && !board_smelt.aos_ramoops.size);
 	CHECK(board_swift.panel.lp_commands && !board_catfish.panel.lp_commands && !board_dory.panel.lp_commands &&
 	      !board_smelt.panel.lp_commands && !board_sturgeon.panel.lp_commands && !board_sparrow.panel.lp_commands);
 	CHECK(board_swift.panel.brightness_levels && board_swift.panel.brightness_levels[6][0] == 8 &&

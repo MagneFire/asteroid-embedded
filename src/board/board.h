@@ -6,6 +6,7 @@
 #define BOARD_H
 #include <stdbool.h>
 #include <stdint.h>
+#include "lib/ramoops.h"
 
 struct dcs_step;
 struct touch;
@@ -287,6 +288,10 @@ struct board {
 	 * being overwritten by the watch's own system; for a watch still
 	 * being brought up. */
 	bool crash_to_fastboot;
+	/* Where the ramoops of its AsteroidOS kernel is, when that is not
+	 * where this log lives: each reset copies the log and any fault
+	 * record there, so that pstore under AsteroidOS shows them. */
+	struct ramoops_layout aos_ramoops;
 
 	struct {
 		uint16_t vdd_max_mv, vdd_safe_mv, vin_min_mv, ibat_max_ma, ibat_safe_ma, iterm_ma;

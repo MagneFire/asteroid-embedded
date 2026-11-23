@@ -97,6 +97,9 @@ const struct board board_swift = {
 	.pmic_mpm = 62,
 	.key_reset_ms = 6720,
 	.crash_to_fastboot = true,
+	/* fs/pstore/ram_dev.c of its kernel. */
+	.aos_ramoops = { .phys = 0x8fe00000, .size = 0x200000, .record_size = 0x10000, .console_size = 0x10000,
+			 .ftrace_size = 0x1000 },
 	/* The top button is gpio 90, the middle one the PMIC's power key and
 	 * the bottom one gpio 91; all three act as the power key. RESIN is
 	 * on none of them, but stock sets it up as a key. */

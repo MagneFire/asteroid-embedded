@@ -6,6 +6,7 @@
  * writes one record for the next boot to report. */
 #include <string.h>
 #include "asteroid.h"
+#include "lib/ramoops.h"
 
 #define SIG 0x43474244u		/* "DBGC" */
 
@@ -113,6 +114,22 @@ void log_record(const char *text)
 	r->size = len;
 	r->sig = SIG;
 	dsb();
+}
+
+/* The end of the console ring into the region's console zone, and the
+ * fault record, if there is one, into its first dump zone. */
+void log_export(volatile uint8_t *region, const struct ramoops_layout *l)
+{
+	uint32_t console = ramoops_console_offset(l);
+	if (!console)
+		return;
+	volatile struct zone *z = CONSOLE;
+	uint32_t size = z->size, base = (z->start + CONSOLE_CAP - size) % CONSOLE_CAP;
+	uint32_t an = base + size > CONSOLE_CAP ? CONSOLE_CAP - base : size;
+	ramoops_zone_fill(region + console, l->console_size, z->data + base, an, z->data, size - an);
+	volatile struct zone *r = RECORD;
+	if (r->sig == SIG && r->size && r->size <= RECORD_CAP)
+		ramoops_zone_fill(region, l->record_size, r->data, r->size, NULL, 0);
 }
 
 uint32_t log_end(void)

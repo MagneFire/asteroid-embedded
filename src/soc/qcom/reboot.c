@@ -51,6 +51,10 @@ static void __attribute__((noreturn)) reset_now(void)
 	if (chip->pon_restart_reason)
 		pmic_write(PON_SOFT_RB_SPARE, (pmic_read(PON_SOFT_RB_SPARE) & 3) | (reboot_to_bootloader ? PON_RESTART_FASTBOOT : 0));
 	scm_wdog_debug_disable();
+	const struct ramoops_layout *aos = &board->aos_ramoops;
+	if (phys_offset && aos->size && aos->phys >= phys_offset + HOLE_8009_END &&
+	    aos->phys + aos->size <= RAMOOPS_8009_PHYS)
+		log_export((volatile uint8_t *)(uintptr_t)(aos->phys - phys_offset), aos);
 	dcache_clean_invalidate_all();
 	writel(0, MPM2_PS_HOLD);
 	delay_ms(1000);

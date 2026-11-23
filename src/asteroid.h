@@ -283,6 +283,7 @@ void log_init(void);
 void log_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log_puts(const char *s);
 void log_record(const char *text);
+void log_export(volatile uint8_t *region, const struct ramoops_layout *l);
 const char *log_previous_record(void);
 #define BOOT_STAGE(s)	((uint32_t)(s)[0] | (uint32_t)(s)[1] << 8 | (uint32_t)(s)[2] << 16 | (uint32_t)(s)[3] << 24)
 void boot_stage(uint32_t tag);
