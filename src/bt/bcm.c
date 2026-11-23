@@ -145,6 +145,8 @@ static void host_wake_irq(unsigned n)
 	bt_tx_activity();
 }
 
+bool bt_present(void) { return PATCH_NAME != NULL; }
+
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	uint32_t hcd_len;

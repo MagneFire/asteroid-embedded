@@ -12,6 +12,8 @@ void action_bluetooth_start(void)
 {
 	uint8_t addr[6];
 	struct bt_info info;
+	if (!bt_present())
+		return;
 	bool have_addr = !bt_addr_get(addr);
 	if (bt_start(have_addr ? addr : NULL, &info)) {
 		log_printf("bt: %s failed (%d)\n", info.failed, info.status);

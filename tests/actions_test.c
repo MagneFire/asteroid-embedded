@@ -32,6 +32,8 @@ bool bt_store_bonded(void) { return false; }
 void ui_set_connected(bool c, bool b) {}
 int bt_addr_load(uint8_t *a) { return 0; }
 int bt_addr_get(uint8_t *a) { return 0; }
+static bool bt_chip = true;
+bool bt_present(void) { return bt_chip; }
 int bt_start(const uint8_t *a, struct bt_info *i) { bt_started++; return 0; }
 void bt_stop(void) { bt_stopped++; }
 int bt_host_start(void) { return 0; }
@@ -95,6 +97,12 @@ static void others(void)
 	CHECK(values[SETTING_BLUETOOTH] == 1 && bt_started == 1);
 	action_setting_toggled(SETTING_BLUETOOTH);
 	CHECK(values[SETTING_BLUETOOTH] == 0 && bt_stopped == 1);
+	/* Without a chip the setting still changes, nothing is started. */
+	bt_chip = false;
+	action_setting_toggled(SETTING_BLUETOOTH);
+	CHECK(values[SETTING_BLUETOOTH] == 1 && bt_started == 1);
+	action_setting_toggled(SETTING_BLUETOOTH);
+	bt_chip = true;
 	int b = brightness_set;
 	action_setting_toggled(SETTING_NIGHTSTAND);
 	CHECK(values[SETTING_NIGHTSTAND] == 1 && brightness_set == b + 1);

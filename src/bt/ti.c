@@ -197,6 +197,8 @@ static int write_bdaddr(const uint8_t *bdaddr)
 	return -4;
 }
 
+bool bt_present(void) { return true; }
+
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	uint32_t script_len;

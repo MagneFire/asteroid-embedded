@@ -34,6 +34,8 @@ struct bt_info {
 	int status;
 };
 
+/* Whether the watch has a chip of this driver to start. */
+bool bt_present(void);
 int bt_start(const uint8_t *bdaddr, struct bt_info *info);
 void bt_stop(void);
 bool bt_running(void);
