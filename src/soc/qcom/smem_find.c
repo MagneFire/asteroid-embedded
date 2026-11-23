@@ -74,3 +74,28 @@ int smem_find(const volatile void *base, uint32_t smem_size, unsigned id, int ho
 	*loc = (struct smem_loc){ e->offset, e->size, base_ext, false };
 	return 0;
 }
+
+int smem_alloc(volatile void *base, uint32_t smem_size, unsigned id, unsigned host, uint32_t size, struct smem_loc *loc)
+{
+	volatile uint8_t *smem = base;
+	int r = smem_find(base, smem_size, id, (int)host, loc);
+	if (r != -1)
+		return r;
+	volatile struct part *p = (volatile struct part *)partition(smem, smem_size, host);
+	uint32_t data = (size + 7) & ~7u;
+	if (!p || id <= FIXED_ITEM_LAST || size > 0xfff0 || p->free_uncached > p->free_cached ||
+	    p->free_cached - p->free_uncached < sizeof(struct part_item) + data)
+		return -1;
+	volatile struct part_item *it = (volatile struct part_item *)((volatile uint8_t *)p + p->free_uncached);
+	it->canary = CANARY;
+	it->type = (uint16_t)id;
+	it->size = data;
+	it->padding_data = (uint16_t)(data - size);
+	it->padding_hdr = 0;
+	it->reserved = 0;
+	/* The item before the space it takes, as the other side reads them. */
+	__sync_synchronize();
+	p->free_uncached += sizeof *it + data;
+	*loc = (struct smem_loc){ (uint32_t)((volatile uint8_t *)it + sizeof *it - smem), data, 0, true };
+	return 0;
+}

@@ -11,6 +11,7 @@ static uint32_t smem[SIZE / 4];
 
 static void put32(uint32_t off, uint32_t v) { memcpy((uint8_t *)smem + off, &v, 4); }
 static void put16(uint32_t off, uint16_t v) { memcpy((uint8_t *)smem + off, &v, 2); }
+static uint32_t get32(uint32_t off) { uint32_t v; memcpy(&v, (uint8_t *)smem + off, 4); return v; }
 
 static void alloc(unsigned id, uint32_t offset, uint32_t size, uint32_t base_ext)
 {
@@ -86,6 +87,23 @@ int main(void)
 	/* The fixed items are always shared. */
 	alloc(3, 0x3000, 0x10, 0);
 	CHECK(!smem_find(smem, SIZE, 3, SMEM_HOST_WCNSS, &l) && l.offset == 0x3000);
+	/* Added after the last item, the space taken from the free part. */
+	put32(PART + 16, 0x2000);
+	uint32_t at = part_end;
+	CHECK(!smem_alloc(smem, SIZE, 431, SMEM_HOST_WCNSS, 340, &l) && l.partitioned && l.offset == at + 16 && l.size == 344);
+	CHECK(get32(at) == (431u << 16 | 0xa5a5) && get32(at + 4) == 344 && get32(at + 8) == 4);
+	CHECK(get32(PART + 12) == at + 16 + 344 - PART);
+	CHECK(!smem_find(smem, SIZE, 431, SMEM_HOST_WCNSS, &l) && l.offset == at + 16 && l.size == 344);
+	/* Found the second time, nothing more taken. */
+	CHECK(!smem_alloc(smem, SIZE, 431, SMEM_HOST_WCNSS, 340, &l) && l.offset == at + 16);
+	CHECK(get32(PART + 12) == at + 16 + 344 - PART);
+	/* No room, no partition, a fixed item. */
+	put32(PART + 16, get32(PART + 12) + 100);
+	CHECK(smem_alloc(smem, SIZE, 432, SMEM_HOST_WCNSS, 340, &l) == -1);
+	CHECK(smem_alloc(smem, SIZE, 432, 1, 8, &l) == -1);
+	put32(PART + 16, 0x2000);
+	CHECK(smem_alloc(smem, SIZE, 7, SMEM_HOST_WCNSS, 8, &l) == -1);
+	CHECK(get32(PART + 12) == at + 16 + 344 - PART);
 	/* A partition header for other hosts than its entry says is not used. */
 	put16(PART + 6, 1);
 	CHECK(smem_find(smem, SIZE, 451, SMEM_HOST_WCNSS, &l) == -1);
