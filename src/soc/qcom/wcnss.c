@@ -75,6 +75,16 @@
 #define SMP2P_PID_APPS		0
 #define SMP2P_PID_WCNSS		4
 #define SMP2P_ENTRIES_MAX	16
+#define SMEM_SMP2P_APPS		431
+#define SMP2P_ITEM_SIZE		(20 + SMP2P_ENTRIES_MAX * 20)
+#define SMP2P_SSR_ACK		1
+#define SMP2P_HEADER		(SMP2P_SSR_ACK << 8 | SMP2P_VERSION)
+#define RESTART_DONE		BIT(0)
+#define RESTART_ACK		BIT(1)
+#define KICK_SMP2P		BIT(18)
+#define SMEM_ALLOC_LOCK		IO(0x01905000 + 3 * 0x1000)
+#define LOCK_APPS		1
+#define LOCK_MS			100
 
 #define MSG_VERSION_REQ		0x01000000u
 #define MSG_VERSION_RSP		0x01000001u
@@ -346,6 +356,90 @@ static bool boot(void)
 	return !r;
 }
 
+static void kick_smp2p(void)
+{
+	dsb();
+	writel(KICK_SMP2P, APCS_IPC);
+}
+
+/* The hardware mutex the vendor's SMEM allocator takes; the core may add
+ * items to the partition we share. */
+static bool smem_lock(void)
+{
+	uint32_t t0 = time_ms();
+	do {
+		writel(LOCK_APPS, SMEM_ALLOC_LOCK);
+		if (readl(SMEM_ALLOC_LOCK) == LOCK_APPS)
+			return true;
+	} while (time_ms() - t0 < LOCK_MS);
+	return false;
+}
+
+static void smem_unlock(void)
+{
+	dsb();
+	writel(0, SMEM_ALLOC_LOCK);
+}
+
+/* Our smp2p item to the core, which the vendor kernel has in place long
+ * before it starts the core: version 1 with the restart ack, as the core
+ * offers, and no entries. The version goes in last, since the core takes
+ * an item without one as still being set up. An item already right is
+ * kept, with the ack in it. */
+static volatile uint32_t *outbound;
+
+static void smp2p_open(void)
+{
+	if (outbound)
+		return;
+	struct smem_loc l;
+	if (!smem_lock()) {
+		note("wcnss: smem lock held by another processor\n");
+		return;
+	}
+	int r = smem_alloc((volatile void *)(uintptr_t)chip->smem, SMEM_SIZE, SMEM_SMP2P_APPS, SMEM_HOST_WCNSS,
+			   SMP2P_ITEM_SIZE, &l);
+	smem_unlock();
+	if (r || l.base_ext || l.size < SMP2P_ITEM_SIZE) {
+		note("wcnss: no smp2p item of ours (%d, %lu bytes)\n", r, l.size);
+		return;
+	}
+	volatile uint32_t *h = (volatile uint32_t *)((volatile uint8_t *)(uintptr_t)chip->smem + l.offset);
+	bool kept = h[0] == SMP2P_MAGIC && h[1] == SMP2P_HEADER &&
+		    h[2] == ((uint32_t)SMP2P_PID_WCNSS << 16 | SMP2P_PID_APPS);
+	if (!kept) {
+		h[1] = 0;
+		dsb();
+		h[0] = SMP2P_MAGIC;
+		h[2] = (uint32_t)SMP2P_PID_WCNSS << 16 | SMP2P_PID_APPS;
+		h[3] = SMP2P_ENTRIES_MAX;
+		h[4] = 0;
+		for (unsigned i = 5; i < SMP2P_ITEM_SIZE / 4; i++)
+			h[i] = 0;
+		dsb();
+		h[1] = SMP2P_HEADER;
+	}
+	outbound = h;
+	note("wcnss: smp2p item of ours %s at %08lx\n", kept ? "kept" : "set up", l.offset);
+	kick_smp2p();
+}
+
+/* After it restarts the core flips its restart flag; the vendor answers
+ * with the same value in its ack. */
+static void ack_restart(void)
+{
+	uint32_t size = 0;
+	volatile uint32_t *h = smem_get(SMEM_SMP2P_WCNSS, SMEM_HOST_WCNSS, &size);
+	if (!outbound || !h || size < 20 || h[0] != SMP2P_MAGIC || !(h[1] >> 8 & SMP2P_SSR_ACK))
+		return;
+	bool done = h[4] & RESTART_DONE, ack = outbound[4] & RESTART_ACK;
+	if (done == ack)
+		return;
+	outbound[4] = (outbound[4] & ~RESTART_ACK) | (done ? RESTART_ACK : 0);
+	note("wcnss: smp2p restart ack %u\n", done);
+	kick_smp2p();
+}
+
 /* The core's bits in its smp2p entry to us, ~0 while it has none. */
 /* The header as the vendor's smp2p checks it: version 1, from the WCNSS
  * to us, no more valid entries than there are, and all of them in the
@@ -405,7 +499,9 @@ static bool wait_ready(uint32_t before)
 	uint32_t t0 = time_ms(), last = ~0u;
 	bool changed = before == ~0u;
 	const char *why = NULL;
+	kick_smp2p();
 	for (;;) {
+		ack_restart();
 		uint32_t bits = slave_bits();
 		if (bits != last || smp2p_why != why) {
 			note("wcnss: smp2p %08lx after %lu ms%s%s\n", bits, time_ms() - t0, smp2p_why ? ", " : "",
@@ -599,6 +695,7 @@ static void probe(bool keep)
 		note("wcnss: already started, stop it first\n");
 		return;
 	}
+	smp2p_open();
 	uint32_t size = 0, before = slave_bits();
 	note("wcnss: smem channel table %s, smp2p bits %08lx before start%s%s\n",
 	     smem_get(tables[0].alloc, SMEM_HOST_WCNSS, &size) ? "found" : "missing", before, smp2p_why ? ", " : "",
