@@ -5,6 +5,8 @@
 
 /* Brightness control on, as the vendor's on-commands have it. */
 static const struct dcs_step panel_wake[] = { { 0x53, 1, 0, { 0x20 } } };
+/* The GPU microcode is under vendor on the system partition. */
+static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
 /* The vendor's ambient mode, through the panel's command pages. */
 static const struct dcs_step idle_on[] = {
 	{ 0xfe, 1, 0, { 0x01 } },
@@ -35,6 +37,7 @@ const struct board board_swift = {
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
 	},
+	.firmware_dirs = firmware_dirs,
 	.pmic_mpm = 62,
 	.key_reset_ms = 6720,
 	/* Which of the three buttons is which is not known yet: RESIN and
