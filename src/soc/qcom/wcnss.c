@@ -83,7 +83,16 @@
 #define REPLY_MS		2000
 
 static void (*say)(const char *fmt, ...);
-static bool started, powered;
+/* What the secure world was last told: nothing, an image accepted, the
+ * core started, or a stop that failed, after which the core may still
+ * run in its memory and nothing is loaded or switched off again. */
+enum core { CORE_OFF, CORE_LOADING, CORE_RUNNING, CORE_UNKNOWN };
+static enum core core;
+/* What the probe itself switched on, to switch off again. */
+static struct {
+	bool pins, pa, rfa, rf_clock;
+	uint32_t crypto_votes;
+} ours;
 static struct smd_chan ctrl;
 static uint8_t mdt[8192] __attribute__((aligned(4096)));
 
@@ -141,15 +150,19 @@ static int rf_clock(bool on)
 
 static bool crypto_clocks(bool on)
 {
-	if (on) {
-		writel(CRYPTO_80MHZ, CRYPTO_CFG_RCGR);
-		writel(readl(CRYPTO_CMD_RCGR) | 1, CRYPTO_CMD_RCGR);
-		if (!wait_clear(CRYPTO_CMD_RCGR, 1, 1000))
-			return false;
-	}
 	uint32_t v = readl(BRANCH_ENA_VOTE);
-	writel(on ? v | CRYPTO_VOTES : v & ~CRYPTO_VOTES, BRANCH_ENA_VOTE);
-	return !on || wait_clear(CRYPTO_CBCR, CBCR_OFF, 1000);
+	if (!on) {
+		writel(v & ~ours.crypto_votes, BRANCH_ENA_VOTE);
+		ours.crypto_votes = 0;
+		return true;
+	}
+	writel(CRYPTO_80MHZ, CRYPTO_CFG_RCGR);
+	writel(readl(CRYPTO_CMD_RCGR) | 1, CRYPTO_CMD_RCGR);
+	if (!wait_clear(CRYPTO_CMD_RCGR, 1, 1000))
+		return false;
+	ours.crypto_votes |= CRYPTO_VOTES & ~v;
+	writel(v | CRYPTO_VOTES, BRANCH_ENA_VOTE);
+	return wait_clear(CRYPTO_CBCR, CBCR_OFF, 1000);
 }
 
 /* The supplies in the vendor's order, the core's then the RF chip's, and
@@ -158,13 +171,18 @@ static bool power_on(void)
 {
 	int fails = !!regulator_on(LDO_PX, 1800000);
 	fails += !!regulator_on(LDO_DIG, 1800000);
-	fails += !!regulator_on(LDO_PA, 3300000);
-	fails += !!smps_on(SMPS_RFA, 1300000);
+	int r = regulator_on(LDO_PA, 3300000);
+	ours.pa = true;
+	fails += !!r;
+	r = smps_on(SMPS_RFA, 1300000);
+	ours.rfa = true;
+	fails += !!r;
 	for (unsigned g = 40; g <= 44; g++)
 		gpio_config(g, 1, GPIO_INPUT, GPIO_PULL_UP, 6);
+	ours.pins = true;
 	bool crypto = crypto_clocks(true);
-	powered = true;
-	note("wcnss: supplies on, %d not acknowledged; crypto clock %s\n", fails, crypto ? "on" : "not on");
+	note("wcnss: supplies on, %d not acknowledged; crypto clock %s (votes %lx ours)\n", fails, crypto ? "on" : "not on",
+	     ours.crypto_votes);
 	return !fails && crypto;
 }
 
@@ -214,7 +232,11 @@ static bool xo_setup(void)
 	writel(reg | CFG_XO_CFG, PMU_CFG);
 	bool done = wait_clear(PMU_CFG, CFG_XO_CFG_STS, 100000);
 	writel(reg & ~(CFG_BUS_MUX_TOP | CFG_XO_CFG), PMU_CFG);
-	int rf = iris >> 30 == 0 && valid ? 0 : rf_clock(true);
+	int rf = 0;
+	if (!(iris >> 30 == 0 && valid)) {
+		rf = rf_clock(true);
+		ours.rf_clock = true;
+	}
 	wait_ms(20);
 	note("wcnss: RF chip id %08lx (%s), crystal %s MHz, setup %s, RF clock %s\n", iris, valid ? "known" : "unknown",
 	     iris >> 30 == 0 && valid ? "48" : "19.2", done ? "done" : "timed out", rf ? "not acknowledged" : "on");
@@ -249,20 +271,34 @@ static bool load(const struct mdt_image *img)
 
 static void shutdown(void)
 {
+	note("wcnss: shutdown...\n");
 	int r = scm_pas_shutdown(PAS_WCNSS);
-	started = false;
-	note("wcnss: shutdown %d\n", r);
+	core = r ? CORE_UNKNOWN : CORE_OFF;
+	note("wcnss: shutdown %d%s\n", r, r ? ", core state unknown: supplies kept, no new load until a reboot" : "");
 }
 
+/* Only what the probe switched on, and the pins back to the vendor's
+ * sleep setting; L5 and L7 have other users and stay. A vote the RPM
+ * did not take stays marked, for the next stop to try again. */
 static void power_off(void)
 {
-	if (!powered)
+	if (core != CORE_OFF || !(ours.pins || ours.pa || ours.rfa || ours.rf_clock || ours.crypto_votes))
 		return;
+	int fails = 0;
 	crypto_clocks(false);
-	int fails = !!rf_clock(false);
-	fails += !!regulator_off(LDO_PA);
-	powered = false;
-	note("wcnss: crypto and RF clocks and the PA supply off, %d not acknowledged\n", fails);
+	if (ours.rf_clock && !rf_clock(false))
+		ours.rf_clock = false;
+	if (ours.pa && !regulator_off(LDO_PA))
+		ours.pa = false;
+	if (ours.rfa && !rpm_regulator_enable(RPM_SMPA, SMPS_RFA, false))
+		ours.rfa = false;
+	fails = ours.rf_clock + ours.pa + ours.rfa;
+	if (ours.pins) {
+		for (unsigned g = 40; g <= 44; g++)
+			gpio_config(g, 1, GPIO_INPUT, GPIO_PULL_DOWN, 2);
+		ours.pins = false;
+	}
+	note("wcnss: crypto and RF clocks, PA and RF supplies off, %d not acknowledged\n", fails);
 }
 
 /* The secure world's part: the headers and hash table, the region, the
@@ -279,20 +315,28 @@ static bool boot(void)
 	note("wcnss: wcnss.mdt %d bytes, %u segments, %08lx + %06lx, entry %08lx\n", n, img.nsegs, img.base, img.size,
 	     img.entry);
 	dcache_clean_range(mdt, (uint32_t)n);
+	note("wcnss: init image...\n");
 	uint32_t t0 = time_ms();
 	r = scm_pas_init_image(PAS_WCNSS, dma_addr(mdt));
 	note("wcnss: init image %d in %lu ms\n", r, time_ms() - t0);
-	if (r)
+	if (r) {
+		if (scm_pas_stuck())
+			core = CORE_UNKNOWN;
 		return false;
-	started = true;
+	}
+	core = CORE_LOADING;
 	uint32_t phys = dma_addr(REGION);
+	note("wcnss: memory setup...\n");
 	r = scm_pas_mem_setup(PAS_WCNSS, phys, img.size);
 	note("wcnss: memory setup %08lx + %06lx: %d\n", phys, img.size, r);
 	if (r || !load(&img))
 		return false;
+	note("wcnss: auth and reset...\n");
 	t0 = time_ms();
 	r = scm_pas_auth_and_reset(PAS_WCNSS);
 	note("wcnss: auth and reset %d in %lu ms\n", r, time_ms() - t0);
+	if (!r)
+		core = CORE_RUNNING;
 	return !r;
 }
 
@@ -501,7 +545,11 @@ static bool versions(void)
 
 static void probe(bool keep)
 {
-	if (started) {
+	if (core == CORE_UNKNOWN || scm_pas_stuck()) {
+		note("wcnss: core state unknown after a failed call, reboot first\n");
+		return;
+	}
+	if (core != CORE_OFF) {
 		note("wcnss: already started, stop it first\n");
 		return;
 	}
@@ -512,15 +560,15 @@ static void probe(bool keep)
 	note("wcnss: probe %s\n", ok ? "done" : "stopped");
 	if (!(ok && keep))
 		close_ctrl();
-	if (started && !(ok && keep))
+	if (core != CORE_OFF && core != CORE_UNKNOWN && !(ok && keep))
 		shutdown();
-	if (!started)
-		power_off();
+	power_off();
 }
 
 static void status(void)
 {
-	note("wcnss: %s, smp2p bits %08lx, channel %d\n", started ? "started" : "not started", slave_bits(),
+	static const char *const names[] = { "off", "image accepted", "running", "state unknown" };
+	note("wcnss: %s, smp2p bits %08lx, channel %d\n", names[core], slave_bits(),
 	     find_channel("WCNSS_CTRL", NULL));
 	if (ctrl.send)
 		note("wcnss: channel states %lu/%lu, %lu bytes waiting\n", ctrl.send->state, ctrl.recv->state, smd_read_avail(&ctrl));
@@ -536,7 +584,7 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 		probe(!strcmp(args, "probe keep"));
 	} else if (!strcmp(args, "stop")) {
 		close_ctrl();
-		if (started)
+		if (core != CORE_OFF && !scm_pas_stuck())
 			shutdown();
 		power_off();
 	} else if (!strcmp(args, "status")) {
