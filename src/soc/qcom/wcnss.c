@@ -500,7 +500,10 @@ static bool send(uint32_t type)
 }
 
 /* The version, then the build: the vendor asks for the second once the
- * first has come. */
+ * first has come. Only the version counts; the build is logged if it
+ * comes. */
+#define BUILD_MAX	256
+
 static bool versions(void)
 {
 	if (!send(MSG_VERSION_REQ)) {
@@ -510,7 +513,7 @@ static bool versions(void)
 	uint32_t t0 = time_ms();
 	bool version = false;
 	while (time_ms() - t0 < REPLY_MS) {
-		uint8_t buf[128];
+		uint8_t buf[8 + BUILD_MAX + 1];
 		smd_flags_seen(&ctrl);
 		if (!ctrl_open()) {
 			note("wcnss: channel closed by the core, state %lu\n", ctrl.recv->state);
@@ -527,21 +530,29 @@ static bool versions(void)
 			wait_ms(1);
 			continue;
 		}
-		uint32_t type;
+		uint32_t type, len;
 		memcpy(&type, buf, 4);
-		if (type == MSG_VERSION_RSP && n == 12) {
+		memcpy(&len, buf + 4, 4);
+		if (len != (uint32_t)n)
+			note("wcnss: message %08lx says %lu bytes, packet has %d\n", type, len, n);
+		if (type == MSG_VERSION_RSP && n != 12) {
+			note("wcnss: version reply of %d bytes, not 12\n", n);
+		} else if (type == MSG_VERSION_RSP && !version) {
 			note("wcnss: version %u.%u.%u.%u after %lu ms\n", buf[8], buf[9], buf[10], buf[11], time_ms() - t0);
 			version = true;
-			send(MSG_BUILD_VER_REQ);
-		} else if (type == MSG_BUILD_VER_RSP) {
+			if (!send(MSG_BUILD_VER_REQ)) {
+				note("wcnss: no room for the build request\n");
+				return true;
+			}
+		} else if (type == MSG_BUILD_VER_RSP && version) {
 			buf[n] = 0;
-			note("wcnss: build %s\n", (const char *)buf + 8);
+			note("wcnss: build %s (%d bytes)\n", (const char *)buf + 8, n - 8);
 			return true;
 		} else {
-			note("wcnss: message %08lx, %d bytes\n", type, n);
+			note("wcnss: message %08lx, %d bytes, ignored\n", type, n);
 		}
 	}
-	note("wcnss: %s\n", version ? "no build version" : "no version reply");
+	note("wcnss: %s\n", version ? "no build version, which is optional" : "no version reply");
 	return version;
 }
 
