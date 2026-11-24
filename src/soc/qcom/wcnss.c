@@ -859,9 +859,14 @@ static bool nv_download(void)
 
 static struct smd_chan bt_cmd, bt_acl;
 static uint8_t bt_rx[4 + 1024];
-static uint32_t bt_dropped, smd_irqs;
+static uint32_t bt_dropped, smd_irqs, smd_empty;
+static volatile bool smd_rang;
 
-static void smd_irq(void) { smd_irqs++; }
+static void smd_irq(void)
+{
+	smd_irqs++;
+	smd_rang = true;
+}
 
 static bool remote_open(const struct smd_chan *c)
 {
@@ -889,8 +894,16 @@ static void bt_read(struct smd_chan *c, uint8_t type)
 	}
 }
 
+static bool link_idle(void);
+
+/* A ring with nothing to read is the core having read what we sent. */
 static void link_poll(void)
 {
+	if (smd_rang) {
+		smd_rang = false;
+		if (link_idle())
+			smd_empty++;
+	}
 	if (remote_open(&ctrl))
 		ctrl_poll();
 	bt_read(&bt_cmd, HCI_EVENT);
@@ -919,7 +932,13 @@ static bool link_idle(void)
 	       !(remote_open(&bt_acl) && smd_read_avail(&bt_acl));
 }
 
-static const struct hci_link link = { link_send, link_poll, link_idle };
+static void link_wakes(uint32_t *irqs, uint32_t *empty)
+{
+	*irqs = smd_irqs;
+	*empty = smd_empty;
+}
+
+static const struct hci_link link = { link_send, link_poll, link_idle, link_wakes };
 
 static bool bt_open(void)
 {
@@ -1042,8 +1061,8 @@ static void stop(void)
 static void status(void)
 {
 	static const char *const names[] = { "off", "image accepted", "running", "state unknown" };
-	note("wcnss: %s, smp2p bits %08lx, channel %d, %lu SMD interrupts\n", names[core], slave_bits(),
-	     find_channel("WCNSS_CTRL", NULL), smd_irqs);
+	note("wcnss: %s, smp2p bits %08lx, channel %d, %lu SMD interrupts, %lu with nothing to read\n", names[core],
+	     slave_bits(), find_channel("WCNSS_CTRL", NULL), smd_irqs, smd_empty);
 	if (ctrl.send) {
 		note("wcnss: channel states %lu/%lu, %lu bytes waiting\n", ctrl.send->state, ctrl.recv->state, smd_read_avail(&ctrl));
 		ctrl_poll();

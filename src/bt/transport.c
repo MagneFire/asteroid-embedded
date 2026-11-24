@@ -23,7 +23,7 @@ static struct {
 	uint16_t handle;
 	uint32_t n;
 } kinds[KINDS];
-static uint32_t kinds_other, kinds_total, rx_bytes0;
+static uint32_t kinds_other, kinds_total, rx_bytes0, irqs0, empty0;
 
 static void count(uint8_t kind, uint8_t code, uint16_t handle)
 {
@@ -45,7 +45,13 @@ void bt_transport_log(void)
 {
 	uint32_t rx, tx, err;
 	uart_stats(BT_UART, &rx, &tx, &err);
-	if (kinds_total >= 100) {
+	uint32_t irqs, empty;
+	hci_link_wakes(&irqs, &empty);
+	if (irqs - irqs0 >= 20)
+		log_printf("bt: link rang %lu times, %lu with nothing to read\n", irqs - irqs0, empty - empty0);
+	irqs0 = irqs;
+	empty0 = empty;
+	if (kinds_total >= 20) {
 		char s[160];
 		unsigned o = 0;
 		for (unsigned i = 0; i < KINDS && kinds[i].n && o < sizeof s; i++)

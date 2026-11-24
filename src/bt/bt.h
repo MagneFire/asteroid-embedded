@@ -30,10 +30,13 @@ struct hci_link {
 	void (*poll)(void);
 	/* Nothing waiting, and an interrupt wakes the watch for more. */
 	bool (*idle)(void);
+	/* Its interrupts so far, and those that brought nothing to read. */
+	void (*wakes)(uint32_t *irqs, uint32_t *empty);
 };
 void hci_set_link(const struct hci_link *l);
 bool hci_link_attached(void);
 bool hci_link_idle(void);
+void hci_link_wakes(uint32_t *irqs, uint32_t *empty);
 void hci_rx_packet(uint8_t type, const uint8_t *p, unsigned n);
 unsigned hci_bad_bytes(char *out, unsigned size);
 

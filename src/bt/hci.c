@@ -125,6 +125,13 @@ bool hci_link_attached(void) { return link != NULL; }
 
 bool hci_link_idle(void) { return link && link->idle && link->idle(); }
 
+void hci_link_wakes(uint32_t *irqs, uint32_t *empty)
+{
+	*irqs = *empty = 0;
+	if (link && link->wakes)
+		link->wakes(irqs, empty);
+}
+
 void hci_rx_packet(uint8_t t, const uint8_t *p, unsigned n)
 {
 	if (n < header_len(t) || n > sizeof pkt) {
