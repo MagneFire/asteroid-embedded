@@ -92,6 +92,7 @@
 #define LOCK_MS			100
 
 #define READY_MS		10000
+#define UNVOTE_MS		20
 #define CHANNEL_MS		3000
 #define OPEN_MS			2000
 #define REPLY_MS		2000
@@ -297,14 +298,11 @@ static void shutdown(void)
 	note("wcnss: shutdown %d%s\n", r, r ? ", core state unknown: supplies kept, no new load until a reboot" : "");
 }
 
-/* Only what the probe switched on, and the pins back to the vendor's
- * sleep setting; L5 and L7 have other users and stay. A vote the RPM
- * did not take stays marked, for the next stop to try again. */
-static void power_off(void)
+/* The votes the core takes over at its proxy unvote, as the vendor
+ * hands them over 20 ms after it. A vote the RPM did not take stays
+ * marked, for the next release to try again. */
+static int release_votes(void)
 {
-	if (core != CORE_OFF || !(ours.pins || ours.pa || ours.rfa || ours.rf_clock || ours.crypto_votes))
-		return;
-	int fails = 0;
 	crypto_clocks(false);
 	if (ours.rf_clock && !rf_clock(false))
 		ours.rf_clock = false;
@@ -312,7 +310,24 @@ static void power_off(void)
 		ours.pa = false;
 	if (ours.rfa && !rpm_regulator_enable(RPM_SMPA, SMPS_RFA, false))
 		ours.rfa = false;
-	fails = ours.rf_clock + ours.pa + ours.rfa;
+	return ours.rf_clock + ours.pa + ours.rfa;
+}
+
+static void unvote(void)
+{
+	if (!(ours.pa || ours.rfa || ours.rf_clock || ours.crypto_votes))
+		return;
+	int fails = release_votes();
+	note("wcnss: proxy unvote, crypto and RF clocks, PA and RF supplies released, %d not acknowledged\n", fails);
+}
+
+/* Only what the probe switched on, and the pins back to the vendor's
+ * sleep setting; L5 and L7 have other users and stay. */
+static void power_off(void)
+{
+	if (core != CORE_OFF || !(ours.pins || ours.pa || ours.rfa || ours.rf_clock || ours.crypto_votes))
+		return;
+	int fails = release_votes();
 	if (ours.pins) {
 		for (unsigned g = 40; g <= 44; g++)
 			gpio_config(g, 1, GPIO_INPUT, GPIO_PULL_DOWN, 2);
@@ -1070,7 +1085,13 @@ static bool probe(bool keep)
 	note("wcnss: smem channel table %s, smp2p bits %08lx before start%s%s\n",
 	     smem_get(tables[0].alloc, SMEM_HOST_WCNSS, &size) ? "found" : "missing", before, smp2p_why ? ", " : "",
 	     smp2p_why ? smp2p_why : "");
-	bool ok = power_on() && xo_setup() && boot() && wait_ready(before) && open_ctrl() && versions() && nv_download();
+	bool ok = power_on() && xo_setup() && boot() && wait_ready(before);
+	uint32_t bits = slave_bits();
+	if (ok && bits != ~0u && (bits & SLAVE_PROXY_UNVOTE)) {
+		wait_ms(UNVOTE_MS);
+		unvote();
+	}
+	ok = ok && open_ctrl() && versions() && nv_download();
 	note("wcnss: probe %s\n", ok ? "done" : "stopped");
 	if (!(ok && keep))
 		close_ctrl();
@@ -1131,7 +1152,8 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
  * "wcnss bt", with the waits for the ready bit, the NV reply and the
  * calibration done a pass at a time, so the screen keeps going. */
 static enum { START_OFF, START_READY, START_NV, START_CBC } start_step;
-static uint32_t start_t, start_before;
+static uint32_t start_t, start_before, unvote_t;
+static bool unvote_seen;
 static bool start_changed;
 static struct sched_task start_task;
 
@@ -1162,17 +1184,27 @@ static bool start_run(uint32_t now)
 {
 	if (start_step == START_READY) {
 		ack_restart();
-		int r = ready_check(slave_bits(), start_before, &start_changed);
+		uint32_t bits = slave_bits();
+		int r = ready_check(bits, start_before, &start_changed);
 		if (r < 0) {
 			reason();
 			start_abort("the ready bit");
 			return false;
 		}
-		if (!r && now - start_t <= READY_MS) {
+		if (!unvote_seen && start_changed && bits != ~0u && (bits & SLAVE_PROXY_UNVOTE)) {
+			unvote_seen = true;
+			unvote_t = now;
+		}
+		bool settling = unvote_seen && now - unvote_t < UNVOTE_MS;
+		if ((!r || settling) && now - start_t <= READY_MS) {
 			sched_after(&start_task, now, 5);
 			return false;
 		}
-		note("wcnss: smp2p %08lx after %lu ms\n", slave_bits(), now - start_t);
+		note("wcnss: smp2p %08lx after %lu ms\n", bits, now - start_t);
+		if (unvote_seen)
+			unvote();
+		else
+			note("wcnss: no proxy unvote bit, bring-up votes kept\n");
 		if (!open_ctrl() || !versions()) {
 			start_abort("the control channel");
 			return false;
@@ -1233,6 +1265,7 @@ int wcnss_bt_start(void)
 	smp2p_open();
 	start_before = slave_bits();
 	start_changed = start_before == ~0u;
+	unvote_seen = false;
 	start_t = time_ms();
 	if (!power_on() || !xo_setup() || !boot()) {
 		start_abort("the core start");
