@@ -69,9 +69,13 @@ void power_off_arm(void) {}
 static int wipe_result, wipes, flushes;
 static bool reboot_ok;
 static jmp_buf rebooted;
+static const char *const *wipe_keep;
+static unsigned wipe_keeps;
 int kv_wipe(const char *const *keep, unsigned n)
 {
 	wipes++;
+	wipe_keep = keep;
+	wipe_keeps = n;
 	return wipe_result;
 }
 void settings_flush(void) { flushes++; }
@@ -224,6 +228,14 @@ static void civil_days(void)
 	}
 }
 
+static bool wipe_keeps_key(const char *key)
+{
+	for (unsigned i = 0; i < wipe_keeps; i++)
+		if (!strcmp(wipe_keep[i], key))
+			return true;
+	return false;
+}
+
 /* The reboot comes once the wiped records are the ones in use, even if
  * their second copy failed. */
 static void reset_watch(void)
@@ -241,6 +253,12 @@ static void reset_watch(void)
 		CHECK(back == (i < 2) && wipes == 1 && flushes == 1);
 	}
 	reboot_ok = false;
+	/* What is not the wearer's stays: the watch's own values, the
+	 * history, and the mode and the rest of what the AP set. */
+	static const char *const stay[] = { "bt.addr", "haptics.cal", "events", "ap.mode", "ap.zone", "ap.take", "ap.fade" };
+	for (unsigned i = 0; i < sizeof stay / sizeof stay[0]; i++)
+		CHECK(wipe_keeps_key(stay[i]));
+	CHECK(!wipe_keeps_key("bt.bonds") && !wipe_keeps_key("steps") && !wipe_keeps_key("settings"));
 }
 
 /* The radio is off while the AP has the panel and back a while after

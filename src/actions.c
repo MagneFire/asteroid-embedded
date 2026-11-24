@@ -66,8 +66,10 @@ void action_bluetooth_lend(bool to_ap, uint32_t now)
 }
 
 #ifdef SOC_RESET_WATCH
-/* The watch's own values and its boot history. */
-static const char *const reset_keeps[] = { "bt.addr", "haptics.cal", "rtc_offset", "events" };
+/* The watch's own values, its boot history, and what the AP set: with
+ * the AP off nothing sets the mode again. */
+static const char *const reset_keeps[] = { "bt.addr", "haptics.cal", "rtc_offset", "events",
+					   "ap.mode", "ap.zone", "ap.take", "ap.fade" };
 
 /* Everything else in the store goes, and the reboot starts every service
  * from what a first boot finds. Returns only if the store could not be

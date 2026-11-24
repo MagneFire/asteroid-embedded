@@ -1897,6 +1897,25 @@ static void reboot_scenario(void)
 	wait_ms(200);
 	pin_reset_lends();
 
+	/* A reset the watch does itself puts the mode in the store first,
+	 * so it holds without anything kept in RAM: a power-on reads the
+	 * store alone. */
+	pin_reset_lends();
+	static const uint8_t m375[] = { 0x08, 0x01 };
+	ap_write(1, 375, m375, sizeof m375);
+	companion_pass();
+	run_ms(1000);
+	unsigned sets = kv_sets;
+	CHECK(kv_mode == PROTO_MODE_NORMAL && !display_lent);
+	companion_flush();
+	CHECK(kv_mode == PROTO_MODE_WRISTBAND && kv_sets == sets + 1);
+	companion_flush();
+	CHECK(kv_sets == sets + 1);
+	reset_bits = 1u << 1;
+	CHECK(!companion_boot());
+	companion_init();
+	CHECK(status_has("wristband mode") && status_has("the watch has the panel"));
+
 	/* The mode from before the reboot is stored after it. */
 	reboot_in_wristband();
 	run_ms(STORE_WAIT_MS);

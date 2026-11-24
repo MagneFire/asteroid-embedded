@@ -25,5 +25,8 @@ uint32_t companion_next_ms(void);
 uint32_t companion_store_wait_ms(void);
 /* No transfer under way, so the core may sleep deeply. */
 bool companion_resting(void);
+/* Before a reset: the mode and the zone go to the store without the
+ * wait for a quiet link. */
+void companion_flush(void);
 void companion_status(void (*say)(const char *fmt, ...));
 #endif

@@ -456,6 +456,19 @@ static uint32_t store_wait_ms(uint32_t now)
 	return wait;
 }
 
+void companion_flush(void)
+{
+	if (save_mode) {
+		uint8_t m = stored_mode();
+		save_mode = false;
+		kv_set(KV_MODE, &m, 1);
+	}
+	if (save_zone) {
+		save_zone = false;
+		kv_set(KV_ZONE, &zone_min, sizeof zone_min);
+	}
+}
+
 uint32_t companion_store_wait_ms(void) { return ready ? store_wait_ms(time_ms()) : 0; }
 
 bool companion_resting(void) { return !link_busy(); }
@@ -511,17 +524,8 @@ static void settle(uint32_t now)
 		events_note("no reset after the boot loader's ask, was wristband");
 		enter(PROTO_MODE_NORMAL, now);
 	}
-	if ((save_mode || save_zone) && store_wait_ms(now) == 0) {
-		if (save_mode) {
-			uint8_t m = stored_mode();
-			save_mode = false;
-			kv_set(KV_MODE, &m, 1);
-		}
-		if (save_zone) {
-			save_zone = false;
-			kv_set(KV_ZONE, &zone_min, sizeof zone_min);
-		}
-	}
+	if ((save_mode || save_zone) && store_wait_ms(now) == 0)
+		companion_flush();
 }
 
 void companion_pass(void)

@@ -6,6 +6,7 @@
  * wake it, which then resets. */
 #include "asteroid.h"
 #include "bt/bt.h"
+#include "companion/companion.h"
 #include "display/display.h"
 
 #define SWPOI_KEY	0x1bu
@@ -82,6 +83,7 @@ void reboot(void)
 {
 	settings_flush();
 	events_flush();
+	companion_flush();
 	reset_now();
 }
 
