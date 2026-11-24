@@ -333,8 +333,12 @@ uint32_t afe4900_rate(uint8_t *status, unsigned *n)
 
 void afe4900_status(void (*say)(const char *fmt, ...))
 {
-	if (P.pads)
-		say("hr: AFE4900 %s%s, %lu batches %lu errors %lu restarts, code %u gain %u off %d/%d, %lu bpm\n",
-		    state == OFF ? "off" : state == RUN ? "running" : "calibrating", shared ? " (AP)" : "", batches,
-		    errors, restarts, led, gain, off_led, off_rest, rate);
+	if (!P.pads)
+		return;
+	char bpm[16] = "no heart rate";
+	if (rate != HUB_NONE)
+		snprintf(bpm, sizeof bpm, "%lu bpm", rate);
+	say("hr: AFE4900 %s%s, %lu batches %lu errors %lu restarts, code %u gain %u off %d/%d, %s\n",
+	    state == OFF ? "off" : state == RUN ? "running" : "calibrating", shared ? " (AP)" : "", batches,
+	    errors, restarts, led, gain, off_led, off_rest, bpm);
 }
