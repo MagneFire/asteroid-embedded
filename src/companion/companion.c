@@ -37,7 +37,7 @@
 #define STORED_OFF	3
 #define REPLY_MAX	64
 /* The AP lets go of the panel only after it sent the 375. */
-#define TAKE_DELAY_MS	1000
+#define TAKE_DELAY_MS	300
 /* The AP's panel driver sleeps 96 ms in its own power down. */
 #define TAKE_MIN_MS	200
 #define TAKE_MAX_MS	10000

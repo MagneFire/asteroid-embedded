@@ -832,7 +832,7 @@ static void companion_scenario(void)
 	CHECK(display_lent && !kv_sets);
 
 	/* 375: no 377, as the AP lets go of the panel without waiting for
-	 * one; the panel comes back a second later, the store waits for the
+	 * one; the panel comes back 300 ms later, the store waits for the
 	 * end of the boot burst and a quiet link. */
 	ms_per_read = 1;
 	ap_write(1, 375, m375, sizeof m375);
@@ -841,7 +841,7 @@ static void companion_scenario(void)
 	CHECK(!levels[UP_INT] && rtc_writes == 1);
 	CHECK(display_lent && power_lent);
 	uint32_t left = companion_next_ms();
-	CHECK(left > 900 && left <= 1000);
+	CHECK(left > 200 && left <= 300);
 	wait_ms(left - 1);
 	CHECK(display_lent && !ap_off_ui);
 	wait_ms(1);
@@ -853,7 +853,7 @@ static void companion_scenario(void)
 	CHECK(!strstr(noted, "face shown"));
 	frames_shown++;
 	wait_ms(5);
-	CHECK(!strcmp(noted, "face shown 125 ms after the take, asked 1000 ms before it"));
+	CHECK(!strcmp(noted, "face shown 125 ms after the take, asked 300 ms before it"));
 	/* Only the AP's own key starts it now, and the UI says so. */
 	CHECK(ap_off_ui);
 	CHECK(!bt_lent);
@@ -1026,7 +1026,7 @@ static void companion_scenario(void)
 	/* The store's times for the take and the fade, and the shortest
 	 * take for one too short; text that is no number changes nothing. */
 	static const struct { const char *take, *fade; uint32_t wait, faded; } stored[] = {
-		{ "300", "0", 300, 0 }, { "5", "9999", 200, 2000 }, { "1s", "", 1000, 400 }, { "123456789", "x", 1000, 400 },
+		{ "300", "0", 300, 0 }, { "5", "9999", 200, 2000 }, { "1s", "", 300, 400 }, { "123456789", "x", 300, 400 },
 	};
 	mode_message(373, NULL, 0, &a);
 	for (unsigned i = 0; i < sizeof stored / sizeof stored[0]; i++) {
