@@ -28,9 +28,12 @@ void hci_stats(uint32_t *packets, uint32_t *errors);
 struct hci_link {
 	int (*send)(uint8_t type, const uint8_t *p, unsigned n);
 	void (*poll)(void);
+	/* Nothing waiting, and an interrupt wakes the watch for more. */
+	bool (*idle)(void);
 };
 void hci_set_link(const struct hci_link *l);
 bool hci_link_attached(void);
+bool hci_link_idle(void);
 void hci_rx_packet(uint8_t type, const uint8_t *p, unsigned n);
 unsigned hci_bad_bytes(char *out, unsigned size);
 

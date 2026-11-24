@@ -853,9 +853,15 @@ static bool nv_download(void)
 #define HCI_MS			2000
 #define SEND_MS			100
 
+/* The core rings this for every write to any of its channels, and it
+ * wakes the watch without an MPM pin, as the vendor kernel has it. */
+#define IRQ_SMD_WCNSS		(32 + 142)
+
 static struct smd_chan bt_cmd, bt_acl;
 static uint8_t bt_rx[4 + 1024];
-static uint32_t bt_dropped;
+static uint32_t bt_dropped, smd_irqs;
+
+static void smd_irq(void) { smd_irqs++; }
 
 static bool remote_open(const struct smd_chan *c)
 {
@@ -906,7 +912,14 @@ static int link_send(uint8_t type, const uint8_t *p, unsigned n)
 	return 0;
 }
 
-static const struct hci_link link = { link_send, link_poll };
+/* Nothing left to read; what we write is in the FIFO at once. */
+static bool link_idle(void)
+{
+	return !(remote_open(&ctrl) && smd_read_avail(&ctrl)) && !(remote_open(&bt_cmd) && smd_read_avail(&bt_cmd)) &&
+	       !(remote_open(&bt_acl) && smd_read_avail(&bt_acl));
+}
+
+static const struct hci_link link = { link_send, link_poll, link_idle };
 
 static bool bt_open(void)
 {
@@ -921,11 +934,14 @@ static bool bt_open(void)
 		return false;
 	}
 	hci_set_link(&link);
+	irq_set_edge(IRQ_SMD_WCNSS);
+	irq_attach(IRQ_SMD_WCNSS, smd_irq);
 	return true;
 }
 
 static void bt_close(void)
 {
+	irq_detach(IRQ_SMD_WCNSS);
 	if (hci_link_attached()) {
 		if (bt_host_running())
 			bt_host_stop();
@@ -1026,8 +1042,8 @@ static void stop(void)
 static void status(void)
 {
 	static const char *const names[] = { "off", "image accepted", "running", "state unknown" };
-	note("wcnss: %s, smp2p bits %08lx, channel %d\n", names[core], slave_bits(),
-	     find_channel("WCNSS_CTRL", NULL));
+	note("wcnss: %s, smp2p bits %08lx, channel %d, %lu SMD interrupts\n", names[core], slave_bits(),
+	     find_channel("WCNSS_CTRL", NULL), smd_irqs);
 	if (ctrl.send) {
 		note("wcnss: channel states %lu/%lu, %lu bytes waiting\n", ctrl.send->state, ctrl.recv->state, smd_read_avail(&ctrl));
 		ctrl_poll();
