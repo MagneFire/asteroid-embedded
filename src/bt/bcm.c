@@ -145,12 +145,28 @@ static void host_wake_irq(unsigned n)
 	bt_tx_activity();
 }
 
-bool bt_present(void) { return PATCH_NAME != NULL; }
+#ifdef SOC_WCNSS
+#define WCNSS		(board->bt.wcnss)
+#else
+#define WCNSS		false
+#define wcnss_bt_start()	(-1)
+#define wcnss_bt_stop()
+#define wcnss_bt_running()	false
+#endif
+
+bool bt_present(void) { return PATCH_NAME != NULL || WCNSS; }
 
 int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 {
 	uint32_t hcd_len;
 	memset(info, 0, sizeof *info);
+	/* The integrated core: its driver sets the address itself. */
+	if (WCNSS && wcnss_bt_start()) {
+		info->failed = "wcnss start";
+		return info->status = -1;
+	}
+	if (WCNSS)
+		return 0;
 	if (!PATCH_NAME)
 		return fail(info, "no Broadcom chip", -1);
 	const uint8_t *hcd = firmware_get(PATCH_NAME, &hcd_len);
@@ -247,6 +263,10 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 
 void bt_stop(void)
 {
+	if (WCNSS) {
+		wcnss_bt_stop();
+		return;
+	}
 	wake_pin(MPM_PIN_HOST_WAKE, false, HOST_WAKE_ACTIVE);
 	gpio_irq_enable(GPIO_BT_HOST_WAKE, false);
 	uart_stop(BT_UART);
@@ -257,7 +277,7 @@ void bt_stop(void)
 
 bool bt_running(void)
 {
-	return running;
+	return WCNSS ? wcnss_bt_running() : running;
 }
 
 /* The raw HOST_WAKE level, whatever the board's polarity. */

@@ -238,6 +238,9 @@ bool scm_pas_stuck(void);
 /* The WCNSS bring-up, one console command at a time. */
 #define SOC_WCNSS		1
 void wcnss_command(const char *args, void (*say)(const char *fmt, ...));
+int wcnss_bt_start(void);
+void wcnss_bt_stop(void);
+bool wcnss_bt_running(void);
 #endif
 
 #endif

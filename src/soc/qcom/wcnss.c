@@ -989,15 +989,15 @@ static void host(void)
 	note(r ? "wcnss: Bluetooth host failed (%d)\n" : "wcnss: Bluetooth host starting, bt status for more\n", r);
 }
 
-static void probe(bool keep)
+static bool probe(bool keep)
 {
 	if (core == CORE_UNKNOWN || scm_pas_stuck()) {
 		note("wcnss: core state unknown after a failed call, reboot first\n");
-		return;
+		return false;
 	}
 	if (core != CORE_OFF) {
 		note("wcnss: already started, stop it first\n");
-		return;
+		return false;
 	}
 	smp2p_open();
 	uint32_t size = 0, before = slave_bits();
@@ -1009,6 +1009,16 @@ static void probe(bool keep)
 	if (!(ok && keep))
 		close_ctrl();
 	if (core != CORE_OFF && core != CORE_UNKNOWN && !(ok && keep))
+		shutdown();
+	power_off();
+	return ok;
+}
+
+static void stop(void)
+{
+	bt_close();
+	close_ctrl();
+	if (core != CORE_OFF && !scm_pas_stuck())
 		shutdown();
 	power_off();
 }
@@ -1042,11 +1052,7 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 	} else if (!strcmp(args, "bt")) {
 		host();
 	} else if (!strcmp(args, "stop")) {
-		bt_close();
-		close_ctrl();
-		if (core != CORE_OFF && !scm_pas_stuck())
-			shutdown();
-		power_off();
+		stop();
 	} else if (!strcmp(args, "status")) {
 		status();
 	} else {
@@ -1054,3 +1060,22 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 	}
 	say = NULL;
 }
+
+/* The Bluetooth setting: the core kept running, then HCI on its
+ * channels, ready for the host. */
+int wcnss_bt_start(void)
+{
+	if (chip != &chip_8009 || !board->bt.wcnss)
+		return -1;
+	if (bt_cmd.send)
+		stop();
+	return probe(true) && hci() ? 0 : -1;
+}
+
+void wcnss_bt_stop(void)
+{
+	if (core != CORE_OFF)
+		stop();
+}
+
+bool wcnss_bt_running(void) { return bt_cmd.send != NULL; }
