@@ -847,6 +847,9 @@ static bool nv_download(void)
 #define HCI_READ_LOCAL_VERSION	0x1001
 #define HCI_READ_BD_ADDR	0x1009
 #define HCI_LE_READ_BUFFER_SIZE	0x2002
+/* Answered by a vendor event, not Command Complete, so sent without a
+ * wait; the controller takes commands in order. */
+#define HCI_NVM_ACCESS		0xfc0b
 #define HCI_MS			2000
 #define SEND_MS			100
 
@@ -948,6 +951,13 @@ static bool hci(void)
 	note("wcnss: HCI reset %d after %lu ms\n", r, time_ms() - t0);
 	if (r)
 		return false;
+	uint8_t addr[6], nvm[3 + 3 + 6] = { (uint8_t)HCI_NVM_ACCESS, HCI_NVM_ACCESS >> 8, 9, 1, 2, 6 };
+	if (!bt_addr_get(addr)) {
+		for (unsigned i = 0; i < 6; i++)
+			nvm[6 + i] = addr[5 - i];
+		if (hci_send(HCI_COMMAND, nvm, sizeof nvm))
+			note("wcnss: bd_addr write not sent\n");
+	}
 	n = sizeof rsp;
 	r = hci_cmd(HCI_READ_LOCAL_VERSION, NULL, 0, rsp, &n, HCI_MS);
 	if (!r && n >= 9)
