@@ -97,8 +97,10 @@ int bt_addr_load(uint8_t addr[6])
 
 /* The one set on the console, else the one from the factory: the first
  * twelve hex digits of the board's file, whatever separates them, as the
- * watches write it with colons, spaces or nothing in between. The file is
- * read once, as the clock asks every second until there is an address. */
+ * watches write it with colons, spaces or nothing in between, or swift's
+ * binary NV item (tag 1, length 6, the address least significant byte
+ * first). The file is read once, as the clock asks every second until
+ * there is an address. */
 int bt_addr_get(uint8_t addr[6])
 {
 	static int factory_r = 1;
@@ -109,6 +111,11 @@ int bt_addr_get(uint8_t addr[6])
 		char t[40];
 		int n = board->bt.addr_part ? storage_read_file(board->bt.addr_part, board->bt.addr_path, t, sizeof t) : -1;
 		unsigned digits = 0, ors = 0, ands = 0xff;
+		if (n == 9 && t[0] == 1 && t[1] == 1 && t[2] == 6) {
+			for (unsigned i = 0; i < 6; i++)
+				factory[i] = (uint8_t)t[8 - i];
+			digits = 12;
+		}
 		for (int i = 0; i < n && digits < 12; i++) {
 			char c = t[i];
 			unsigned d = c >= '0' && c <= '9' ? (unsigned)(c - '0') : c >= 'a' && c <= 'f' ? (unsigned)(c - 'a' + 10)
