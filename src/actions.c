@@ -19,6 +19,8 @@ void action_bluetooth_start(void)
 		log_printf("bt: %s failed (%d)\n", info.failed, info.status);
 		return;
 	}
+	if (info.host_later)
+		return;
 	int r = bt_host_start();
 	if (r)
 		log_printf("bt: host failed (%d)\n", r);

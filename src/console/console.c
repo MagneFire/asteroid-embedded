@@ -701,6 +701,10 @@ static void cmd_bt(const char *args)
 		say("bt: %s failed (%d)\n", info.failed, info.status);
 		return;
 	}
+	if (info.host_later) {
+		say("bt: starting, bt status for more\n");
+		return;
+	}
 	say("bt: up in %lu ms, patch %lu ms\n", info.total_ms, info.patch_ms);
 	say("hci %u rev %04x, lmp %u subversion %04x, manufacturer %u\n", info.hci_version, info.hci_revision,
 	    info.lmp_version, info.lmp_subversion, info.manufacturer);

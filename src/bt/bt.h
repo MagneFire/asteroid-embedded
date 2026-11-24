@@ -48,6 +48,8 @@ struct bt_info {
 	uint32_t patch_ms, total_ms;
 	const char *failed;
 	int status;
+	/* The driver starts the host itself once the chip is up. */
+	bool host_later;
 };
 
 /* Whether the watch has a chip of this driver to start. */

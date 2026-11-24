@@ -165,6 +165,7 @@ int bt_start(const uint8_t *bdaddr, struct bt_info *info)
 		info->failed = "wcnss start";
 		return info->status = -1;
 	}
+	info->host_later = WCNSS;
 	if (WCNSS)
 		return 0;
 	if (!PATCH_NAME)
@@ -325,6 +326,8 @@ bool bt_can_sleep(void)
 {
 	if (hci_link_attached())
 		return hci_link_idle();
+	if (WCNSS)
+		return !wcnss_bt_running();
 	return !running || (!dev_awake && !host_wake_asserted() && uart_idle(BT_UART));
 }
 

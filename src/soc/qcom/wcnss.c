@@ -18,6 +18,7 @@
 #include "soc/qcom/smem_find.h"
 #include "soc/qcom/wcnss_msg.h"
 #include "bt/bt.h"
+#include "sched.h"
 
 #define IO(pa)			(IO_8009_BASE + (pa))
 #define PAS_WCNSS		6
@@ -497,6 +498,15 @@ static void reason(void)
  * Without a ready bit in time, the channel is looked for anyway: that
  * wait has its own limit, and says more. Bit 2 is the vendor's proxy
  * unvote, not ready. */
+/* 1 for ready, -1 for a fatal error, 0 for neither yet. */
+static int ready_check(uint32_t bits, uint32_t before, bool *changed)
+{
+	*changed |= bits != before;
+	if (bits != ~0u && (bits & SLAVE_ERR_FATAL) && *changed)
+		return -1;
+	return bits != ~0u && (bits & SLAVE_ERR_READY) && *changed;
+}
+
 static bool wait_ready(uint32_t before)
 {
 	uint32_t t0 = time_ms(), last = ~0u;
@@ -512,13 +522,11 @@ static bool wait_ready(uint32_t before)
 			last = bits;
 			why = smp2p_why;
 		}
-		changed |= bits != before;
-		if (bits != ~0u && (bits & SLAVE_ERR_FATAL) && changed) {
+		int r = ready_check(bits, before, &changed);
+		if (r < 0)
 			reason();
-			return false;
-		}
-		if (bits != ~0u && (bits & SLAVE_ERR_READY) && changed)
-			return true;
+		if (r)
+			return r > 0;
 		if (time_ms() - t0 > READY_MS) {
 			reason();
 			note("wcnss: no %s after %u ms, looking for the channel anyway\n", changed ? "ready bit" : "new ready bit",
@@ -800,12 +808,8 @@ static bool cal_download(void)
 
 /* The NV file in fragments, read one byte past each to know the last.
  * A reply of 2 means the core calibrates first and says when done. */
-static bool nv_download(void)
+static bool nv_send(void)
 {
-	if (got.major < 1 || (got.major == 1 && got.minor < 4)) {
-		note("wcnss: no NV download for version %u.%u\n", got.major, got.minor);
-		return true;
-	}
 	got.sent = time_ms();
 	if (cal.done && got.minor >= 5 && !cal_download())
 		return false;
@@ -830,6 +834,24 @@ static bool nv_download(void)
 	}
 	note("wcnss: NV file, %lu bytes in %u fragments, sent in %lu ms\n", bytes, num + 1, time_ms() - got.sent);
 	got.sent = time_ms();
+	return true;
+}
+
+static bool nv_wanted(void)
+{
+	if (got.major < 1 || (got.major == 1 && got.minor < 4)) {
+		note("wcnss: no NV download for version %u.%u\n", got.major, got.minor);
+		return false;
+	}
+	return true;
+}
+
+static bool nv_download(void)
+{
+	if (!nv_wanted())
+		return true;
+	if (!nv_send())
+		return false;
 	if (!wait_for(&got.nv_reply, NV_MS)) {
 		note("wcnss: no NV download reply\n");
 		return false;
@@ -1096,21 +1118,131 @@ void wcnss_command(const char *args, void (*out)(const char *fmt, ...))
 	say = NULL;
 }
 
-/* The Bluetooth setting: the core kept running, then HCI on its
- * channels, ready for the host. */
+/* The Bluetooth setting: the same steps as "wcnss probe keep" and
+ * "wcnss bt", with the waits for the ready bit, the NV reply and the
+ * calibration done a pass at a time, so the screen keeps going. */
+static enum { START_OFF, START_READY, START_NV, START_CBC } start_step;
+static uint32_t start_t, start_before;
+static bool start_changed;
+static struct sched_task start_task;
+
+static void start_abort(const char *why)
+{
+	note("wcnss: Bluetooth start stopped at %s\n", why);
+	start_step = START_OFF;
+	bt_close();
+	close_ctrl();
+	if (core != CORE_OFF && core != CORE_UNKNOWN)
+		shutdown();
+	power_off();
+}
+
+static void start_done(void)
+{
+	start_step = START_OFF;
+	note("wcnss: probe done in %lu ms\n", time_ms() - start_t);
+	if (!hci()) {
+		start_abort("HCI");
+		return;
+	}
+	int r = bt_host_start();
+	note(r ? "wcnss: Bluetooth host failed (%d)\n" : "wcnss: Bluetooth host starting\n", r);
+}
+
+static bool start_run(uint32_t now)
+{
+	if (start_step == START_READY) {
+		ack_restart();
+		int r = ready_check(slave_bits(), start_before, &start_changed);
+		if (r < 0) {
+			reason();
+			start_abort("the ready bit");
+			return false;
+		}
+		if (!r && now - start_t <= READY_MS) {
+			sched_after(&start_task, now, 5);
+			return false;
+		}
+		note("wcnss: smp2p %08lx after %lu ms\n", slave_bits(), now - start_t);
+		if (!open_ctrl() || !versions()) {
+			start_abort("the control channel");
+			return false;
+		}
+		if (!nv_wanted()) {
+			start_done();
+			return false;
+		}
+		if (!nv_send()) {
+			start_abort("the NV download");
+			return false;
+		}
+		start_step = START_NV;
+	}
+	if (start_step == START_OFF)
+		return false;
+	if (!ctrl_poll()) {
+		start_abort("the control channel");
+		return false;
+	}
+	if (start_step == START_NV && got.nv_reply) {
+		if (got.nv != WCNSS_NV_DONE && got.nv != WCNSS_NV_WAIT_CBC) {
+			start_abort("the NV reply");
+			return false;
+		}
+		if (got.nv == WCNSS_NV_DONE) {
+			start_done();
+			return false;
+		}
+		start_step = START_CBC;
+	}
+	if (start_step == START_CBC && got.cbc) {
+		start_done();
+		return false;
+	}
+	if (time_ms() - got.sent > (start_step == START_NV ? NV_MS : NV_MS + CBC_MS)) {
+		start_abort(start_step == START_NV ? "the NV reply" : "the calibration");
+		return false;
+	}
+	sched_after(&start_task, now, 10);
+	return false;
+}
+
 int wcnss_bt_start(void)
 {
 	if (chip != &chip_8009 || !board->bt.wcnss)
 		return -1;
-	if (bt_cmd.send)
-		stop();
-	return probe(true) && hci() ? 0 : -1;
+	wcnss_bt_stop();
+	if (core != CORE_OFF || scm_pas_stuck()) {
+		note("wcnss: core state unknown after a failed call, reboot first\n");
+		return -1;
+	}
+	if (!start_task.run) {
+		start_task.name = "wcnss";
+		start_task.run = start_run;
+		sched_add(&start_task);
+	}
+	smp2p_open();
+	start_before = slave_bits();
+	start_changed = start_before == ~0u;
+	start_t = time_ms();
+	if (!power_on() || !xo_setup() || !boot()) {
+		start_abort("the core start");
+		return -1;
+	}
+	kick_smp2p();
+	start_step = START_READY;
+	sched_after(&start_task, time_ms(), 5);
+	return 0;
 }
 
 void wcnss_bt_stop(void)
 {
+	if (start_step) {
+		sched_cancel(&start_task);
+		start_step = START_OFF;
+	}
 	if (core != CORE_OFF)
 		stop();
 }
 
-bool wcnss_bt_running(void) { return bt_cmd.send != NULL; }
+bool wcnss_bt_running(void) { return start_step != START_OFF || bt_cmd.send != NULL; }
