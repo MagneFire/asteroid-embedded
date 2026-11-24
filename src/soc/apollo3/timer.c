@@ -3,9 +3,11 @@
  * interrupt. Its first compare gives the tick that wakes the main loop.
  * Short delays count core cycles instead, for their resolution. The wall
  * clock counts on from what was last set, like a clock that keeps no
- * time of its own: the phone sets it on connecting. A warm reset keeps
- * SRAM, so it goes on from what .kept holds: from the counter if the
- * reset left it running, else from the last time read. */
+ * time of its own: the phone sets it on connecting. Only a power-on
+ * resets the timer's four spare registers, and no SRAM comes through
+ * the boot loader, so they hold what the clock goes on from after a
+ * reset: from the counter if the reset left it running, else from the
+ * last time read. */
 #include "asteroid.h"
 #include "prof.h"
 
@@ -23,33 +25,24 @@
 #define INT_OVERFLOW	BIT(8)
 #define STCFG_MODE	(STCFG_FREEZE | STCFG_CLEAR | 0xfu)
 #define RESET_COLD	(BIT(1) | BIT(2))
-#define KEPT_MAGIC	0x52544331u	/* "RTC1" */
+#define SNVR(n)		(CTIMER_BASE + 0x1f0 + 4 * (n))
+#define NV_BASE		SNVR(0)
+#define NV_WALL		SNVR(1)
+#define NV_WRAPS	SNVR(2)
+#define NV_SUM		SNVR(3)
+#define NV_MAGIC	0x52544331u	/* "RTC1" */
 #define AP_TAG		0x41503031u	/* "AP01" */
 /* Longer than any sleep, shorter than the counter's wrap. */
 #define KEPT_GAP_S	(30u * 3600u)
 
-#ifdef HOST_TEST
-#define KEPT
-#else
-#define KEPT		__attribute__((section(".kept")))
-#endif
-
-/* wraps and wall change all the time, so the sum leaves them out; ap
- * is the base with AP_TAG while the time is the AP's, and outside the
- * sum so that a clock kept by an older build stays valid. */
-static volatile struct {
-	uint32_t magic, base, sum;
-	uint32_t wraps, wall, ap;
-} kept KEPT;
-
-static volatile uint32_t ticks;
+static volatile uint32_t ticks, wraps;
 static uint32_t period = 1;
 static const char *origin = "not set";
 
 static uint64_t cnt_now(void)
 {
 	uint32_t flags = irq_save();
-	uint32_t lo = readl(STTMR), hi = kept.wraps;
+	uint32_t lo = readl(STTMR), hi = wraps;
 	if (readl(STMINTSTAT) & INT_OVERFLOW) {
 		lo = readl(STTMR);
 		hi++;
@@ -133,7 +126,7 @@ static void stimer_irq(void)
 	uint32_t st = readl(STMINTSTAT);
 	if (st & INT_OVERFLOW) {
 		writel(INT_OVERFLOW, STMINTCLR);
-		kept.wraps++;
+		writel(++wraps, NV_WRAPS);
 	}
 }
 
@@ -151,17 +144,15 @@ void timer_resume(void) {}
 static uint32_t base;
 static bool set, from_ap;
 
-static uint32_t kept_sum(void)
-{
-	return (kept.magic ^ 0x9e3779b9u) * 2654435761u + kept.base;
-}
+/* Not 0 for a base of 0, which is how a power-on leaves the registers. */
+static uint32_t nv_sum(uint32_t b) { return b * 2654435761u + NV_MAGIC; }
 
+/* The wall time and the wraps change all the time, so the sum leaves
+ * them out; AP_TAG is in it while the time is the AP's. */
 static void keep_base(void)
 {
-	kept.base = base;
-	kept.magic = KEPT_MAGIC;
-	kept.sum = kept_sum();
-	kept.ap = from_ap ? base ^ AP_TAG : 0;
+	writel(base, NV_BASE);
+	writel(nv_sum(base) ^ (from_ap ? AP_TAG : 0), NV_SUM);
 }
 
 /* The wall clock from before a warm reset: 0 when there is none. */
@@ -169,18 +160,19 @@ static uint32_t kept_wall(void)
 {
 	origin = "not set";
 	from_ap = false;
-	if (kept.magic != KEPT_MAGIC || kept.sum != kept_sum() || (reset_status() & RESET_COLD))
+	uint32_t kept = readl(NV_BASE), tag = readl(NV_SUM) ^ nv_sum(kept);
+	if ((tag && tag != AP_TAG) || (reset_status() & RESET_COLD))
 		return 0;
-	uint32_t wall = kept.wall;
-	from_ap = kept.ap == (kept.base ^ AP_TAG);
+	uint32_t wall = readl(NV_WALL);
+	from_ap = tag == AP_TAG;
 	origin = "kept, last read";
 	if ((readl(STCFG) & STCFG_MODE) == STCFG_XTAL) {
-		uint32_t lo = readl(STTMR), hi = kept.wraps;
+		uint32_t lo = readl(STTMR), hi = readl(NV_WRAPS);
 		if (readl(STMINTSTAT) & INT_OVERFLOW) {
 			lo = readl(STTMR);
 			hi++;
 		}
-		uint32_t t = kept.base + (uint32_t)(((uint64_t)hi << 32 | lo) / SLEEP_CLK_HZ);
+		uint32_t t = kept + (uint32_t)(((uint64_t)hi << 32 | lo) / SLEEP_CLK_HZ);
 		if (t - wall < KEPT_GAP_S) {
 			wall = t;
 			origin = "kept, counter";
@@ -199,14 +191,17 @@ void timer_init(void)
 	writel(STCFG_CLEAR | STCFG_FREEZE, STCFG);
 	writel(STCFG_XTAL, STCFG);
 	writel(~0u, STMINTCLR);
-	kept.wraps = 0;
+	wraps = 0;
+	writel(0, NV_WRAPS);
 	base = wall;
 	set = wall != 0;
-	kept.wall = wall;
-	if (set)
+	writel(wall, NV_WALL);
+	if (set) {
 		keep_base();
-	else
-		kept.magic = 0;
+	} else {
+		writel(0, NV_BASE);
+		writel(0, NV_SUM);
+	}
 	writel(INT_COMPAREA | INT_OVERFLOW, STMINTEN);
 	irq_attach(IRQ_STIMER, stimer_irq);
 	irq_attach(IRQ_STIMER_CMPR(0), tick_irq);
@@ -221,7 +216,7 @@ uint32_t rtc_read(void)
 {
 	uint32_t wall = base + (uint32_t)(cnt_now() / SLEEP_CLK_HZ);
 	if (set)
-		kept.wall = wall;
+		writel(wall, NV_WALL);
 	return wall;
 }
 
@@ -231,7 +226,7 @@ void rtc_write(uint32_t secs)
 	set = true;
 	from_ap = false;
 	origin = "set";
-	kept.wall = secs;
+	writel(secs, NV_WALL);
 	keep_base();
 }
 

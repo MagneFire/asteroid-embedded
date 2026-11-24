@@ -1,6 +1,6 @@
 /* The Apollo3's wall clock across resets: timer.c against a played
  * system timer, its counter moved by hand. A reset is timer_init again,
- * with .kept as the last run left it. */
+ * with the timer's spare registers as the last run left them. */
 #include <stdio.h>
 #include <string.h>
 #include "prof.h"
@@ -13,9 +13,10 @@ static int failures;
 #define SCMPR0		(CTIMER_BASE + 0x150)
 #define STMINTSTAT	(CTIMER_BASE + 0x304)
 #define STMINTCLR	(CTIMER_BASE + 0x308)
+#define SNVR0		(CTIMER_BASE + 0x1f0)
 #define HZ		SLEEP_CLK_HZ
 
-static uint32_t stcfg, count, cmp, intstat, rst;
+static uint32_t stcfg, count, cmp, intstat, rst, snvr[4];
 static void (*overflow_irq)(void);
 
 uint32_t readl(uint32_t a)
@@ -25,6 +26,7 @@ uint32_t readl(uint32_t a)
 	case STTMR: return count;
 	case SCMPR0: return cmp;
 	case STMINTSTAT: return intstat;
+	case SNVR0: case SNVR0 + 4: case SNVR0 + 8: case SNVR0 + 12: return snvr[(a - SNVR0) / 4];
 	default: return 0;
 	}
 }
@@ -39,6 +41,8 @@ void writel(uint32_t v, uint32_t a)
 		cmp = count + v;
 	else if (a == STMINTCLR)
 		intstat &= ~v;
+	else if (a >= SNVR0 && a < SNVR0 + 16)
+		snvr[(a - SNVR0) / 4] = v;
 }
 
 void dsb(void) {}
@@ -131,6 +135,30 @@ int main(void)
 	CHECK(!rtc_valid() && !strcmp(rtc_origin(), "not set") && !rtc_from_ap());
 	reset(true, BIT(4));
 	CHECK(!rtc_valid());
+
+	/* The registers as a power-on leaves them are no time either,
+	 * whatever the status says, and neither is a base without its
+	 * sum. */
+	rtc_write(1770000000);
+	memset(snvr, 0, sizeof snvr);
+	reset(true, BIT(4));
+	CHECK(!rtc_valid() && !rtc_read());
+	rtc_write(1770000000);
+	snvr[0] ^= 1;
+	reset(true, BIT(4));
+	CHECK(!rtc_valid());
+
+	/* What Reset watch and Reboot do: a read, then the software POI,
+	 * with the counter kept or not. */
+	rtc_write_from_ap(1780000000);
+	count += 90 * HZ;
+	rtc_read();
+	reset(true, BIT(4));
+	CHECK(rtc_valid() && rtc_from_ap() && rtc_read() == 1780000090);
+	count = 40 * HZ;
+	rtc_read();
+	reset(false, BIT(4));
+	CHECK(rtc_valid() && rtc_from_ap() && rtc_read() == 1780000130);
 
 	if (!failures)
 		printf("apollo3_timer_test: ok\n");
