@@ -611,6 +611,9 @@ static bool open_channel(const char *name, struct smd_chan *c)
 		}
 		wait_ms(1);
 	}
+	/* No ring each time the core reads what we sent, as the vendor's
+	 * drivers have it once open; a sender out of room asks again. */
+	c->send->block_read_intr = 1;
 	smd_set_state(c, SMD_OPENED);
 	smd_flags_seen(c);
 	kick();
@@ -938,13 +941,19 @@ static int link_send(uint8_t type, const uint8_t *p, unsigned n)
 	if (!c || !remote_open(c))
 		return -1;
 	uint32_t t0 = time_ms();
+	int r = 0;
 	while (smd_packet_write(c, p, n)) {
-		if (time_ms() - t0 > SEND_MS)
-			return -1;
+		c->send->block_read_intr = 0;
+		if (time_ms() - t0 > SEND_MS) {
+			r = -1;
+			break;
+		}
 		delay_ms(1);
 	}
-	kick();
-	return 0;
+	c->send->block_read_intr = 1;
+	if (!r)
+		kick();
+	return r;
 }
 
 /* Nothing left to read; what we write is in the FIFO at once. */
