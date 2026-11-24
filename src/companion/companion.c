@@ -512,6 +512,7 @@ static void settle(uint32_t now)
 		face_wait = false;
 	if (face_wait && display_frames() != face_frames) {
 		face_wait = false;
+		power_fade_shown(now);
 		char what[64];
 		snprintf(what, sizeof what, "face shown %lu ms after the take, asked %lu ms before it",
 			 (unsigned long)(now - taken_t), (unsigned long)(taken_t - asked_t));

@@ -201,6 +201,7 @@ static const char *kv_take, *kv_fade;
 static uint32_t frames_shown, fade_asked;
 uint32_t display_frames(void) { return frames_shown; }
 void power_fade_in(uint32_t ms) { fade_asked = ms; }
+void power_fade_shown(uint32_t now) { (void)now; }
 int kv_get(const char *key, void *buf, unsigned size)
 {
 	if (!strcmp(key, "ap.mode") && kv_mode >= 0) {
