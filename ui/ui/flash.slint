@@ -22,8 +22,10 @@ export component FlashlightScreen {
         duration: Build.mcu ? 0ms : 100ms;
         easing: ease-in;
     }
-    property <length> radius: Face.round-screen || !self.on ? self.size / 2 : 0;
-    animate radius {
+    // Only a screen that is not round animates the corners: given its own easing on a round
+    // screen, the radius falls behind the size and the disc turns into a rounded square.
+    property <length> corner: self.on ? 0 : self.size / 2;
+    animate corner {
         duration: Build.mcu ? 0ms : 100ms;
         easing: ease-out-quint;
     }
@@ -40,7 +42,7 @@ export component FlashlightScreen {
         y: 50 * Theme.unit - self.height / 2;
         width: root.size + root.stretch * Theme.extra-width;
         height: root.size + root.stretch * Theme.extra-height;
-        border-radius: root.radius;
+        border-radius: Face.round-screen ? root.size / 2 : root.corner;
         background: root.on ? #ffffff : #44444466;
         animate background {
             duration: Build.mcu ? 0ms : 150ms;
