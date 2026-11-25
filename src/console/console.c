@@ -698,7 +698,7 @@ static void cmd_bt(const char *args)
 		if (bt_addr_save(addr))
 			say("bt: could not store the address\n");
 	} else {
-		have_addr = !bt_addr_load(addr);
+		have_addr = !bt_addr_get(addr);
 	}
 	bt_host_stop();
 	if (bt_start(have_addr ? addr : NULL, &info)) {
