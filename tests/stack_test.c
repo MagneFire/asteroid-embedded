@@ -82,6 +82,14 @@ static void open_page(int app)
 	ui_set_app(app);
 	stack_open_app();
 }
+static int depth, peek_px = -1, peek_ended = -1;
+int ui_app_depth(void) { return depth; }
+void ui_app_peek(int px) { peek_px = px; }
+void ui_app_peek_end(bool back)
+{
+	peek_ended = back;
+	peek_px = 0;
+}
 static int app_x = -1;
 static void background(int x, int y, float alpha) { app_x = x; }
 
@@ -234,6 +242,26 @@ static void test_app(void)
 	drag(10, 200, 50, 200, 4);
 	settle();
 	CHECK(app_set == 1);
+	/* A page back let go of after the pass read its time still eases
+	 * the rest of the way, rather than jumping there. */
+	depth = 1;
+	touch(UI_TOUCH_DOWN, 10, 200);
+	for (int i = 1; i <= 4; i++) {
+		stub_ms += 10;
+		touch(UI_TOUCH_MOVE, 10 + 30 * i, 200);
+	}
+	CHECK(peek_px == 120);
+	pass = stub_ms;
+	stub_ms += 2;
+	touch(UI_TOUCH_UP, 130, 200);
+	stack_update(pass);
+	CHECK(peek_px == 120 && peek_ended == -1);
+	stub_ms += 50;
+	stack_update(stub_ms);
+	CHECK(peek_px > 120 && peek_px < W);
+	settle();
+	CHECK(peek_ended == 1);
+	depth = 0;
 	/* A pop-up during a press lets go of it outside the button, and the
 	 * release does not reach the app, also once the pop-up is gone. */
 	touches[UI_PANEL_APP] = touches[UI_PANEL_OVERLAY] = 0;

@@ -519,7 +519,8 @@ void stack_update(uint32_t now_ms)
 	}
 	if (!animating)
 		return;
-	uint32_t t = now_ms - anim_t0;
+	int32_t d = (int32_t)(now_ms - anim_t0);
+	uint32_t t = d > 0 ? (uint32_t)d : 0;
 	if (peeking) {
 		float u = t >= APP_SNAP_MS ? 0.0f : 1.0f - (float)t / APP_SNAP_MS, p = 1.0f - u * u * u * u * u;
 		ui_app_peek(peek = from_off + (int)(((peek_back ? W : 0) - from_off) * p));
