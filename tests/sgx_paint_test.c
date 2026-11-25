@@ -227,8 +227,18 @@ static void triangle(const float *v0, const float *v1, const float *v2, unsigned
 	}
 	const double *a = p[o[0]], *b = p[o[1]], *c = p[o[2]];
 	const uint8_t *tex = d->kind != SGX_DRAW_FLAT ? texels(d->tex) : NULL;
-	for (int y = 0; y < SIZE; y++)
-		for (int x = 0; x < SIZE; x++) {
+	int lo[2], hi[2];
+	for (int i = 0; i < 2; i++) {
+		double mn = p[0][i], mx = p[0][i];
+		for (int j = 1; j < 3; j++) {
+			mn = p[j][i] < mn ? p[j][i] : mn;
+			mx = p[j][i] > mx ? p[j][i] : mx;
+		}
+		lo[i] = mn < 1 ? 0 : (int)mn - 1;
+		hi[i] = mx >= SIZE - 1 ? SIZE - 1 : (int)mx + 1;
+	}
+	for (int y = lo[1]; y <= hi[1]; y++)
+		for (int x = lo[0]; x <= hi[0]; x++) {
 			double px = x + 0.5, py = y + 0.5;
 			double e0 = edge(b, c, px, py), e1 = edge(c, a, px, py), e2 = edge(a, b, px, py);
 			if (e0 < 0 || e1 < 0 || e2 < 0 || (e0 == 0 && !owns(b, c)) || (e1 == 0 && !owns(c, a)) ||
