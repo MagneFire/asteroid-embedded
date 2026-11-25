@@ -247,6 +247,24 @@ static void cmd_bright(const char *args)
 	display_set_brightness((uint8_t)v);
 }
 
+/* dcs <cmd> [<byte>...]: one DCS write to the panel, in hex, to try a
+ * panel's commands without a new image. */
+static void cmd_dcs(const char *args)
+{
+	uint8_t b[24];
+	unsigned n = 0;
+	uint32_t v;
+	while (*skip_spaces(args) && n < sizeof b && parse_num(&args, 16, &v) && v <= 0xff)
+		b[n++] = (uint8_t)v;
+	if (!n || *skip_spaces(args)) {
+		say("usage: dcs <cmd> [<byte>...], in hex, at most %u bytes\n", (unsigned)sizeof b - 1);
+		return;
+	}
+	display_active();
+	int r = dsi_dcs_write(b[0], b + 1, n - 1);
+	say("dcs %02x, %u bytes: %d\n", b[0], n - 1, r);
+}
+
 /* backlight [peek | auto | <brightness> <pixel> white|red | lux [off]]:
  * the catfish backlight's last reading, a peek with it, or a fixed
  * light for every peek; lux reads the sensor, whatever the screen shows,
@@ -1796,6 +1814,7 @@ static const struct command commands[] = {
 	{ "reboot", "[bootloader]", cmd_reboot },
 	{ "dload", "on | off", cmd_dload },
 	{ "bright", "<0-255>", cmd_bright },
+	{ "dcs", "<cmd> [<byte>...]", cmd_dcs },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
 	{ "light", "[sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },
