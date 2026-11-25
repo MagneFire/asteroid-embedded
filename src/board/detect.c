@@ -24,7 +24,7 @@
 #include "lib/fdt.h"
 #include "soc/max17050.h"
 
-static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt, &board_dory };
+static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt, &board_dory, &board_lenok };
 static const struct board *const boards_8009[] = { &board_catfish, &board_swift };
 
 #define N(a) (sizeof (a) / sizeof (a)[0])
@@ -114,7 +114,10 @@ void board_detect(uint32_t machtype, const void *fdt)
 		board_detected_by = "fuel gauge";
 	} else if (fdt_valid(fdt) && (board = by_compatible(fdt, boards, N(boards))))
 		board_detected_by = "device tree";
-	else if ((board = by_panel(w, h)))
+	else if (platform == board_lenok.smem_platform) {
+		board = &board_lenok;
+		board_detected_by = "SMEM";
+	} else if ((board = by_panel(w, h)))
 		board_detected_by = "panel size";
 	else {
 		board = boards[0];

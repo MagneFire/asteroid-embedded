@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "LG G Watch R";
+	compatible = "lge,lenok", "qcom,apq8026";
+	/* The retail board, rev-10. */
+	qcom,msm-id = <199 0x20000>;
+	qcom,board-id = <132 0x0a>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};

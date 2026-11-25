@@ -194,7 +194,7 @@ struct battery_driver {
 	const char *(*status)(void);
 };
 
-extern const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231, battery_adc;
+extern const struct battery_driver battery_pmic, battery_pmic_cable, battery_max17050, battery_pmic_max17050, battery_smb231, battery_adc;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x, touch_tma525;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3, hub_lsm6dso;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm, motor_aw8624;
@@ -550,7 +550,7 @@ struct board {
 			       (ibat_safe) / 50 <= 0x3f && (ibat_max) <= (ibat_safe),                             \
 		       "charger current off the 50 mA steps")
 
-extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory, board_swift, board_beluga, board_beluga_41;
+extern const struct board board_sturgeon, board_sparrow, board_smelt, board_catfish, board_minnow, board_dory, board_lenok, board_swift, board_beluga, board_beluga_41;
 /* The watch this is, set by board_detect before anything uses it. */
 extern const struct board *board;
 extern const char *board_detected_by;

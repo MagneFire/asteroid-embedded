@@ -1,5 +1,5 @@
 /* Telling the watches apart, with the real board tables and device
- * trees: argv are smelt's, sturgeon's, dory's, catfish's and swift's
+ * trees: argv are smelt's, sturgeon's, dory's, catfish's, swift's and lenok's
  * compiled trees. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +11,7 @@ const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_
 const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3;
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
-const struct battery_driver battery_pmic, battery_max17050, battery_pmic_max17050, battery_smb231;
+const struct battery_driver battery_pmic, battery_pmic_cable, battery_max17050, battery_pmic_max17050, battery_smb231;
 const struct gauge_driver gauge_stc3117;
 const struct light_driver light_tsl2584, light_nanohub, light_al3320;
 
@@ -63,7 +63,7 @@ static void *load(const char *path)
 		printf("%s: not found\n", path);
 		exit(1);
 	}
-	static char bufs[5][4096];
+	static char bufs[6][4096];
 	static int n;
 	char *b = bufs[n++];
 	fread(b, 1, sizeof bufs[0], f);
@@ -74,7 +74,7 @@ static void *load(const char *path)
 int main(int argc, char **argv)
 {
 	void *smelt = load(argv[1]), *sturgeon = load(argv[2]), *dory = load(argv[3]);
-	void *catfish = load(argv[4]), *swift = load(argv[5]);
+	void *catfish = load(argv[4]), *swift = load(argv[5]), *lenok = load(argv[6]);
 	/* The tree names the watch. */
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon);
 	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
@@ -82,6 +82,8 @@ int main(int argc, char **argv)
 	CHECK(detect(360, 330, smelt) == &board_smelt);
 	CHECK(detect(280, 280, dory) == &board_dory);
 	CHECK(detect(0, 0, dory) == &board_dory && !board_assumed);
+	CHECK(detect(320, 320, lenok) == &board_lenok);
+	CHECK(detect(0, 0, lenok) == &board_lenok && !board_assumed);
 	/* Without one the panel does. */
 	CHECK(detect(400, 400, NULL) == &board_sturgeon && !board_assumed);
 	CHECK(detect(320, 320, NULL) == &board_sparrow);
@@ -91,6 +93,11 @@ int main(int argc, char **argv)
 	/* dory's own SMEM platform is not smelt's. */
 	platform = 131;
 	CHECK(detect(280, 280, dory) == &board_dory);
+	/* lenok's panel is sparrow's size, but its SMEM platform is its own. */
+	platform = 132;
+	CHECK(detect(320, 320, NULL) == &board_lenok && !board_assumed);
+	CHECK(detect(320, 320, lenok) == &board_lenok);
+	CHECK(detect(0, 0, NULL) == &board_lenok && !board_assumed);
 	platform = 8;
 	/* smelt's panel beats another watch's tree. */
 	CHECK(detect(360, 330, sturgeon) == &board_smelt);
@@ -145,6 +152,10 @@ int main(int argc, char **argv)
 	/* dory charges with the PMIC and measures with its gauge, and the
 	 * charger's limits are its cell's. */
 	CHECK(board_dory.battery_driver == &battery_pmic_max17050 && !board_dory.battery);
+	/* lenok only sees the cable until its gauge has a driver, and its
+	 * touch controller's I/O supply is its own LDO. */
+	CHECK(board_lenok.battery_driver == &battery_pmic_cable && !board_lenok.chg.vdd_max_mv);
+	CHECK(board_lenok.touch_pins.ldo_io == 22 && board_lenok.touch_pins.ldo == 15);
 	CHECK(board_dory.chg.vdd_max_mv == 4350 && board_dory.chg.ibat_max_ma == 400 && board_dory.chg.no_thermistor);
 	CHECK(board_dory.gauge.model && board_dory.gauge.model->design_cap == 0x0320 && !board_dory.gauge.dock);
 	for (unsigned i = 1; i < board_dory.therm_n; i++)
