@@ -78,4 +78,9 @@ const struct board board_lenok = {
 	.touch = &touch_rmi4,
 	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 3, .addr = 0x20 }, .irq = 17, .reset = 16, .mpm = 8,
 			.ldo = 15, .ldo_uv = 3300000, .ldo_io = 22, .ldo_io_uv = 1800000, .palm_width = 13 },
+	/* No hub: the MPU-6515 and the AK8963 behind it on BLSP1 QUP2, its
+	 * interrupt on gpio 35 (MPM pin 14), fed by L19. */
+	.hub = &hub_mpu6515,
+	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x68 }, .irq = 35, .mpm = 14,
+		      .ldo = 19, .ldo_uv = 3000000 },
 };

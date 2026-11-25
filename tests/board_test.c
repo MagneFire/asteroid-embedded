@@ -8,7 +8,7 @@
 #include "soc/max17050.h"
 
 const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x;
-const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3;
+const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3, hub_mpu6515;
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
 const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max17050, battery_pmic_max17050, battery_smb231;
@@ -160,6 +160,9 @@ int main(int argc, char **argv)
 		CHECK(board_lenok.therm[i].decidegrees > board_lenok.therm[i - 1].decidegrees &&
 		      board_lenok.therm[i].mv < board_lenok.therm[i - 1].mv);
 	CHECK(board_lenok.touch_pins.ldo_io == 22 && board_lenok.touch_pins.ldo == 15);
+	/* Its motion chip has no hub: it is on the bus the ADSP had, with
+	 * its interrupt a wake pin. */
+	CHECK(board_lenok.hub == &hub_mpu6515 && board_lenok.hub_pins.i2c.bus == 2 && board_lenok.hub_pins.mpm == 14);
 	CHECK(board_dory.chg.vdd_max_mv == 4350 && board_dory.chg.ibat_max_ma == 400 && board_dory.chg.no_thermistor);
 	CHECK(board_dory.gauge.model && board_dory.gauge.model->design_cap == 0x0320 && !board_dory.gauge.dock);
 	for (unsigned i = 1; i < board_dory.therm_n; i++)
