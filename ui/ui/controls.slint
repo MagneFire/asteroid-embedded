@@ -745,6 +745,8 @@ export component Page {
     }
 
     init => {
+        // Read x first: Slint only animates it from a value it was read at.
+        self.x;
         self.offset = 0;
     }
 
