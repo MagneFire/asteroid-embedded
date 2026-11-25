@@ -11,8 +11,8 @@ const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_
 const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3;
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530;
-const struct battery_driver battery_pmic, battery_pmic_cable, battery_max17050, battery_pmic_max17050, battery_smb231;
-const struct gauge_driver gauge_stc3117;
+const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max17050, battery_pmic_max17050, battery_smb231;
+const struct gauge_driver gauge_stc3117, gauge_bq27421;
 const struct light_driver light_tsl2584, light_nanohub, light_al3320;
 
 const struct qcom_chip chip_8026, chip_8009;
@@ -152,9 +152,13 @@ int main(int argc, char **argv)
 	/* dory charges with the PMIC and measures with its gauge, and the
 	 * charger's limits are its cell's. */
 	CHECK(board_dory.battery_driver == &battery_pmic_max17050 && !board_dory.battery);
-	/* lenok only sees the cable until its gauge has a driver, and its
+	/* lenok charges with the PMIC and measures with its bq27421, and its
 	 * touch controller's I/O supply is its own LDO. */
-	CHECK(board_lenok.battery_driver == &battery_pmic_cable && !board_lenok.chg.vdd_max_mv);
+	CHECK(board_lenok.battery_driver == &battery_pmic_gauge && board_lenok.fuel_gauge == &gauge_bq27421);
+	CHECK(board_lenok.chg.vdd_max_mv == 4350 && board_lenok.chg.step_down_mv == 4215 && board_lenok.chg.no_thermistor);
+	for (unsigned i = 1; i < board_lenok.therm_n; i++)
+		CHECK(board_lenok.therm[i].decidegrees > board_lenok.therm[i - 1].decidegrees &&
+		      board_lenok.therm[i].mv < board_lenok.therm[i - 1].mv);
 	CHECK(board_lenok.touch_pins.ldo_io == 22 && board_lenok.touch_pins.ldo == 15);
 	CHECK(board_dory.chg.vdd_max_mv == 4350 && board_dory.chg.ibat_max_ma == 400 && board_dory.chg.no_thermistor);
 	CHECK(board_dory.gauge.model && board_dory.gauge.model->design_cap == 0x0320 && !board_dory.gauge.dock);

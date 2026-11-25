@@ -916,15 +916,3 @@ int32_t pmic_battery_avg_ua(void)
 	last_ms = now;
 	return first || !ms ? 0 : (int32_t)(uas * 1000 / ms);
 }
-
-/* For a watch whose gauge has no driver yet: the cable and the cell's
- * voltage from the PMIC, with the bootloader's charger setup left as it
- * is. */
-const struct battery_driver battery_pmic_cable = {
-	.charging = pmic_charging,
-	.cable = vbus_present,
-	.cable_irq_init = vbus_irq_init,
-	.cable_irq = vbus_irq,
-	.mv = pmic_battery_mv,
-	.status = pmic_charger_status,
-};

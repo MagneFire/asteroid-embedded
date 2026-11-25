@@ -1,6 +1,8 @@
-/* LG G Watch R (lenok), the retail rev-10 board. */
+/* LG G Watch R (lenok), the retail rev-10 board. The PM8226 charges the
+ * cell but its battery monitor is unused: a bq27421 measures it. */
 #include "asteroid.h"
 #include "display/display.h"
+#include "soc/bq27421.h"
 
 /* On BLSP1 QUP2, where the ADSP ran them: the MPU-6515 comes out of
  * reset running, so it is put to sleep. */
@@ -8,6 +10,16 @@ static const struct board_chip_off chips_off[] = {
 	{ 0x68, 0x6b, 0x00, 0x40, 0, 0xff },
 	{ 0 },
 };
+
+/* The vendor's battery thermistor table. */
+static const struct board_therm therm[] = {
+	{ -300, 1627 }, { -200, 1507 }, { -100, 1345 }, { 0, 1159 }, { 100, 972 }, { 200, 807 }, { 250, 737 },
+	{ 300, 675 }, { 400, 578 }, { 500, 509 }, { 600, 461 }, { 700, 427 }, { 790, 407 },
+};
+
+/* 410 mAh: 4.35 V, 400 mA (the vendor's 410 is off the charger's steps),
+ * 30 mA termination. */
+BOARD_CHG_CHECK(4350, 4350, 4450, 400, 450);
 
 /* The Bluetooth patch and the GPU microcode are under vendor. */
 static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
@@ -34,8 +46,15 @@ const struct board board_lenok = {
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},
 	.pmic_mpm = 62,
-	/* The bq27421 gauge has no driver yet. */
-	.battery_driver = &battery_pmic_cable,
+	.chg = { .vdd_max_mv = 4350, .vdd_safe_mv = 4350, .vin_min_mv = 4450,
+		 .ibat_max_ma = 400, .ibat_safe_ma = 450, .iterm_ma = 30, .no_thermistor = true, .step_down_mv = 4215 },
+	.rsense_uohm = 10000,
+	/* bq27421 on BLSP1 QUP1. */
+	.battery_driver = &battery_pmic_gauge,
+	.fuel_gauge = &gauge_bq27421,
+	.therm = therm,
+	.therm_n = sizeof therm / sizeof therm[0],
+	.gauge = { .i2c = { .bus = 1, .sda = 2, .scl = 3, .func = 3, .addr = BQ27421_ADDR } },
 	.usb_phy_init = { 0x44, 0x68, 0x24, 0x13 },
 	/* Synaptics RMI4 on BLSP1 QUP5 as on dory, fed by L15 and L22. */
 	.touch = &touch_rmi4,

@@ -1,12 +1,14 @@
-/* dory's battery: the PM8226 charges the cell over USB and a MAX17050
- * measures it. The gauge is set to take the cell's temperature from the
- * host, which the vendor reads at the PMIC's thermistor input and writes
- * in, so each look writes it too. The charger's own hot and cold limits
- * are off on this watch; the vendor's thermal table charges at 4.1 V and
- * 200 mA from 45 C, stops from 55 C and below -10 C, and goes back to
- * normal under 43 C and from -5 C. Its charger also takes 200 mA off
- * above 4.25 V, until the cell is under 4.05 V again. With no reading of
- * the thermistor, charging is held off. */
+/* The battery of dory and lenok: the PM8226 charges the cell over USB
+ * and a fuel gauge measures it, a MAX17050 on dory and the board's gauge
+ * driver on lenok. dory's MAX17050 is set to take the cell's temperature
+ * from the host, which the vendor reads at the PMIC's thermistor input
+ * and writes in, so each look writes it too. The charger's own hot and
+ * cold limits are off on these watches; LG's thermal table charges at
+ * 4.1 V and 200 mA from 45 C, stops from 55 C and below -10 C, and goes
+ * back to normal under 43 C and from -5 C. Its charger also takes 200 mA
+ * off above the board's step-down voltage (4.25 V if not set), until the
+ * cell is under 4.05 V again. With no reading of the thermistor,
+ * charging is held off. */
 #include "asteroid.h"
 #include "soc/max17050.h"
 #include "soc/charge_policy.h"
@@ -19,17 +21,54 @@
 #define COLD_RESUME	(-50)
 #define WARM_MV		4100
 #define WARM_MA		200
-#define STEP_DOWN_MV	4250
+#define STEP_DOWN_MV	(board->chg.step_down_mv ? board->chg.step_down_mv : 4250)
 #define STEP_UP_MV	4050
 #define STEP_DOWN_MA	200
 
+/* What the policy needs from a gauge. */
+struct cell_gauge {
+	bool (*probe)(void);
+	void (*update)(void);
+	uint32_t (*soc)(void);
+	uint32_t (*mv)(void);
+	void (*host_temp)(int decidegrees);
+};
+
+static const struct cell_gauge max17050 = { max17050_probe, max17050_update, max17050_soc, max17050_cell_mv, max17050_host_temp };
+
+static struct hub_gauge reading;
+static bool have_reading;
+
+static void fg_update(void)
+{
+	board->fuel_gauge->poll(true);
+	have_reading = board->fuel_gauge->read(&reading);
+}
+
+static bool fg_probe(void)
+{
+	bool found = board->fuel_gauge->init();
+	fg_update();
+	return found;
+}
+
+/* Without a reading the PMIC's voltage, at a level that neither stops
+ * nor finishes charging. */
+static uint32_t fg_soc(void) { return have_reading ? reading.percent : 50; }
+static uint32_t fg_mv(void) { return have_reading ? reading.mv : pmic_battery_mv(); }
+static int32_t fg_ua(void) { return have_reading ? reading.ua : 0; }
+static uint32_t fg_ua_age_ms(void) { return have_reading ? time_ms() - reading.t_ms : UINT32_MAX; }
+
+static const struct cell_gauge fuel_gauge = { fg_probe, fg_update, fg_soc, fg_mv, NULL };
+
+static const struct cell_gauge *gauge = &max17050;
 static bool too_hot, too_cold, warm, stepped, unread, cable;
 static uint32_t poll_t;
 
 static void limits(void)
 {
 	uint16_t ma = board->chg.ibat_max_ma;
-	uint32_t mv = max17050_cell_mv();
+	uint32_t mv = gauge->mv();
 	stepped = stepped ? mv >= STEP_UP_MV : mv >= STEP_DOWN_MV;
 	if (stepped)
 		ma = (uint16_t)(ma - STEP_DOWN_MA);
@@ -49,7 +88,8 @@ static void temperature(void)
 		return;
 	}
 	unread = false;
-	max17050_host_temp(t);
+	if (gauge->host_temp)
+		gauge->host_temp(t);
 	bool hot = too_hot ? t >= HOT_RESUME : t >= HOT_STOP;
 	bool cold = too_cold ? t < COLD_RESUME : t <= COLD_STOP;
 	bool w = warm ? t >= HOT_RESUME : t >= WARM;
@@ -72,13 +112,19 @@ static void pg_init(void)
 {
 	pmic_charger_inhibit(true);
 	pmic_charger_configure();
-	bool found = max17050_probe();
+	bool found = gauge->probe();
 	temperature();
 	poll_t = time_ms();
-	uint16_t st = max17050_last_status();
-	if (found)
+	uint16_t st = gauge == &max17050 ? max17050_last_status() : 0;
+	if (found && gauge == &max17050)
 		log_printf("battery: max17050, %lu%%, status %04x%s\n", max17050_soc(), st,
 			   max17050_lost_model(st) ? ", lost its cell model" : "");
+}
+
+static void fg_init(void)
+{
+	gauge = &fuel_gauge;
+	pg_init();
 }
 
 /* The vendor scales the gauge's 99 % to full, so the charger resumes
@@ -93,9 +139,9 @@ static void pg_poll(void)
 	if (now - poll_t >= POLL_MS) {
 		poll_t = now;
 		temperature();
-		max17050_update();
+		gauge->update();
 	}
-	uint32_t soc = max17050_soc() * 100 / 99;
+	uint32_t soc = gauge->soc() * 100 / 99;
 	pmic_charger_poll(soc > 100 ? 100 : soc);
 }
 
@@ -136,4 +182,34 @@ const struct battery_driver battery_pmic_max17050 = {
 	.ua = max17050_cell_ua,
 	.avg_ua = max17050_cell_avg_ua,
 	.status = pg_status,
+};
+
+static const char *fg_status(void)
+{
+	static char s[160];
+	int t = 0;
+	bool read = pmic_battery_temp(&t);
+	char g[40] = "no gauge reading";
+	if (have_reading)
+		snprintf(g, sizeof g, "gauge %lu%% %lu mV", reading.percent, reading.mv);
+	if (!read)
+		snprintf(s, sizeof s, "%s; %s, no temperature", pmic_charger_status(), g);
+	else
+		snprintf(s, sizeof s, "%s; %s, %d.%d C", pmic_charger_status(), g, t / 10, (t < 0 ? -t : t) % 10);
+	return s;
+}
+
+const struct battery_driver battery_pmic_gauge = {
+	.init = fg_init,
+	.poll = pg_poll,
+	.next_ms = pg_next_ms,
+	.percent = fg_soc,
+	.charging = pmic_charging,
+	.cable = vbus_present,
+	.cable_irq_init = vbus_irq_init,
+	.cable_irq = vbus_irq,
+	.mv = fg_mv,
+	.ua = fg_ua,
+	.ua_age_ms = fg_ua_age_ms,
+	.status = fg_status,
 };

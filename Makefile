@@ -63,7 +63,7 @@ SRCS_qcom := $(SRCS_ap) $(addprefix src/soc/qcom/,init.c chip.c mmu.c gic.c time
         src/board/detect.c src/board/sturgeon.c src/board/sparrow.c src/board/smelt.c src/board/catfish.c src/board/dory.c src/board/lenok.c src/board/swift.c \
         src/sensors/hub.c src/sensors/hub_em7184.c src/sensors/hub_lis3dsh.c src/sensors/hub_lsm6ds3.c src/sensors/hub_nanohub.c src/sensors/hr_accept.c src/sensors/nanohub_proto.c src/sensors/light_tsl2584.c src/sensors/light_al3320.c \
         src/input/touch.c src/input/touch_it7260.c src/input/fts.c src/input/touch_fts.c src/input/hx852x.c src/input/touch_hx852x.c src/input/haptics_drv2605.c src/input/haptics_pmic.c src/input/haptics_gp.c src/display/backlight_lm3530.c src/soc/qcom/battery_pmic_gauge.c \
-        src/display/display.c src/display/mdp3.c src/display/dsi.c src/soc/charger_smb231.c src/soc/stc3117.c src/soc/gauge_stc3117.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c src/gpu/soft.c src/gpu/qcom_compose.c \
+        src/display/display.c src/display/mdp3.c src/display/dsi.c src/soc/charger_smb231.c src/soc/stc3117.c src/soc/gauge_stc3117.c src/soc/bq27421.c src/soc/gauge_bq27421.c src/gpu/a3xx.c src/gpu/draw.c src/gpu/paint.c src/gpu/soft.c src/gpu/qcom_compose.c \
         src/bt/bcm.c src/usb/dcd_ci_hs_msm.c src/usb/port_ci_hs_msm.c src/storage/emmc_msm.c
 CPU_qcom  := cortex-a7
 # Only the minnow build sets glyph_bins.
@@ -351,6 +351,10 @@ $(BUILD)/test/stc3117_test: tests/stc3117_test.c src/soc/stc3117.c $(wildcard te
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/soc/stc3117.c -o $@
 
+$(BUILD)/test/bq27421_test: tests/bq27421_test.c src/soc/bq27421.c $(wildcard tests/*.h src/*.h src/*/*.h)
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< src/soc/bq27421.c -o $@
+
 $(BUILD)/test/smem_test: tests/smem_test.c src/soc/qcom/smem_find.c $(wildcard tests/*.h src/*.h src/*/*.h src/soc/qcom/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/soc/qcom/smem_find.c -o $@
@@ -541,7 +545,7 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 
 # Run alongside each other; each test's output is shown whole once it is done.
 TESTS := console clockapps calc game agenda orient rotation actions power \
-	   sched events steps fitness workout hrlog hr_accept gauge stc3117 backlight \
+	   sched events steps fitness workout hrlog hr_accept gauge stc3117 bq27421 backlight \
 	   mxt fts hx852x smem mdt smd wcnss_msg m4 nanohub tsl2584 al3320 tsl258x \
 	   auto_brightness ramoops soft sgx_compose qcom_compose emmc squashfs \
 	   sgx_image sgx_draw sgx sgx_stack sgx_paint swd bleif companion \
