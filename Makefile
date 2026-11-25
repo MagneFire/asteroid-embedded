@@ -284,7 +284,7 @@ disasm: $(BUILD)/asteroid.elf
 	$(OBJDUMP) -d $< > $(BUILD)/asteroid.dis
 
 HOSTCC      ?= cc
-HOST_CFLAGS := -std=gnu11 -g -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
+HOST_CFLAGS := -std=gnu11 -g -O1 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
                -U_FORTIFY_SOURCE -I src -I src/soc/qcom -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/agenda.c src/sensors/orient.c src/ui/rotation.c
