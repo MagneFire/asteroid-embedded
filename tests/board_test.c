@@ -163,6 +163,9 @@ int main(int argc, char **argv)
 	/* Its motion chip has no hub: it is on the bus the ADSP had, with
 	 * its interrupt a wake pin. */
 	CHECK(board_lenok.hub == &hub_mpu6515 && board_lenok.hub_pins.i2c.bus == 2 && board_lenok.hub_pins.mpm == 14);
+	/* Its motor takes GP0, where dory's takes GP1, and switches its own supply. */
+	CHECK(board_lenok.motor == &motor_gp_pwm && board_lenok.motor_pins.pwm_gp0 && board_lenok.motor_pins.ldo == 28);
+	CHECK(board_dory.motor == &motor_gp_pwm && !board_dory.motor_pins.pwm_gp0 && !board_dory.motor_pins.ldo);
 	CHECK(board_dory.chg.vdd_max_mv == 4350 && board_dory.chg.ibat_max_ma == 400 && board_dory.chg.no_thermistor);
 	CHECK(board_dory.gauge.model && board_dory.gauge.model->design_cap == 0x0320 && !board_dory.gauge.dock);
 	for (unsigned i = 1; i < board_dory.therm_n; i++)

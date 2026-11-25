@@ -525,8 +525,10 @@ struct board {
 		uint8_t ldo;
 		uint32_t ldo_uv;
 		/* A motor driven by a general purpose clock's duty cycle: its
-		 * pin and function, the clock's N and the drive in percent. */
+		 * pin and function, the clock's N and the drive in percent,
+		 * from GP0 instead of GP1. */
 		uint8_t pwm_gpio, pwm_func, pwm_n, pwm_percent;
+		bool pwm_gp0;
 	} motor_pins;
 
 	/* The speaker amplifier, addr 0 if there is none. */

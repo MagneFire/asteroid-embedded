@@ -83,6 +83,11 @@ const struct board board_lenok = {
 	.hub = &hub_mpu6515,
 	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x68 }, .irq = 35, .mpm = 14,
 		      .ldo = 19, .ldo_uv = 3000000 },
+	/* The motor driver takes GP0's duty cycle on gpio 33 (function 3) and
+	 * its enable on gpio 62; its supply is L28, switched with it. */
+	.motor = &motor_gp_pwm,
+	.motor_pins = { .enable = 62, .pwm_gpio = 33, .pwm_func = 3, .pwm_n = 127, .pwm_percent = 80, .pwm_gp0 = true,
+			.ldo = 28, .ldo_uv = 3000000 },
 	/* PAH8001 on the same bus: gpio 64 high to use it, gpio 65 high
 	 * powers it down. */
 	.hr_pins = { .addr = 0x33, .power = 64, .pd = 65 },
