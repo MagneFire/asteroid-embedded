@@ -2,6 +2,13 @@
 #include "asteroid.h"
 #include "display/display.h"
 
+/* On BLSP1 QUP2, where the ADSP ran them: the MPU-6515 comes out of
+ * reset running, so it is put to sleep. */
+static const struct board_chip_off chips_off[] = {
+	{ 0x68, 0x6b, 0x00, 0x40, 0, 0xff },
+	{ 0 },
+};
+
 /* The Bluetooth patch and the GPU microcode are under vendor. */
 static const char *const firmware_dirs[] = { "/vendor/firmware/", NULL };
 
@@ -9,6 +16,7 @@ const struct board board_lenok = {
 	.name = "lenok",
 	.compatible = "lge,lenok",
 	.smem_platform = 132,
+	.chips_off = { { .bus = 2, .sda = 6, .scl = 7, .func = 3 }, chips_off },
 	.heart_rate = false,
 	/* LG4237 320x320 command-mode OLED, set up by the bootloader: 328
 	 * lines with the porches at 60 Hz, TE on gpio 24. */

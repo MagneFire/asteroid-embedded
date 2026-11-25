@@ -22,13 +22,15 @@ bool board_chips_off(void)
 		return false;
 	for (const struct board_chip_off *c = board->chips_off.regs; c->addr; c++) {
 		uint8_t w[2] = { c->reg, c->set }, v = 0;
-		if (c->clear != 0xff) {
-			if (i2c_xfer(b->bus, c->addr, w, 1, &v, 1))
-				continue;
+		int r = 0;
+		if (c->clear != 0xff && !(r = i2c_xfer(b->bus, c->addr, w, 1, &v, 1)))
 			w[1] = (uint8_t)((v & ~c->clear) | c->set);
-		}
-		if (i2c_xfer(b->bus, c->addr, w, 2, NULL, 0))
+		if (!r)
+			r = i2c_xfer(b->bus, c->addr, w, 2, NULL, 0);
+		if (r) {
+			log_printf("board: chip %02x does not answer (%d)\n", c->addr, r);
 			continue;
+		}
 		log_printf("board: chip %02x off, reg %02x %02x -> %02x\n", c->addr, c->reg, v, w[1]);
 		if (c->wait_ms)
 			delay_ms(c->wait_ms);

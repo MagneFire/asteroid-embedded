@@ -33,4 +33,5 @@ void soc_board_init(void)
 	log_printf("spmi arbiter %08lx, %s, scm %d\n", spmi_version(), boot_reason(), scm);
 	if (board->crash_to_fastboot)
 		reboot_reason_fastboot();
+	board_chips_off();
 }
