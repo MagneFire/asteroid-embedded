@@ -20,6 +20,14 @@ static const struct dcs_step idle_off[] = {
 	{ 0x51, 2, 0, { 0x0a, 0x00 } },
 };
 
+/* What the vendor's panel recovery sends again around sleep out: the
+ * mirroring, brightness control and the tearing signal. */
+static const struct dcs_step wake[] = {
+	{ 0x36, 1, 0, { 0x40 } },
+	{ 0x53, 1, 0, { 0x20 } },
+	{ 0x35, 0, 0, { 0 } },
+};
+
 /* On BLSP1 QUP2, where the ADSP ran them: the MPU-6515 comes out of
  * reset running, so it is put to sleep. */
 static const struct board_chip_off chips_off[] = {
@@ -53,6 +61,7 @@ const struct board board_lenok = {
 		.lines = 328, .hz = 60, .te_gpio = 24, .flip_ud = true, .round = true, .brightness_wide = true,
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
+		.wake = wake, .wake_n = sizeof wake / sizeof wake[0],
 	},
 	.firmware_dirs = firmware_dirs,
 	/* BCM4343A0 on BLSP1 UART4 as on dory, without its reset line. */
