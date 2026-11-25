@@ -33,5 +33,9 @@ void soc_board_init(void)
 	log_printf("spmi arbiter %08lx, %s, scm %d\n", spmi_version(), boot_reason(), scm);
 	if (board->crash_to_fastboot)
 		reboot_reason_fastboot();
+	for (unsigned i = 0; i < sizeof board->gpios_low && board->gpios_low[i]; i++) {
+		gpio_set(board->gpios_low[i], 0);
+		gpio_config(board->gpios_low[i], 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+	}
 	board_chips_off();
 }

@@ -366,6 +366,8 @@ struct board {
 	bool usb_rails_off;
 	/* LDOs the bootloader leaves on that nothing here uses, 0 ends. */
 	uint8_t unused_ldos[4];
+	/* Lines driven low at boot to keep unused chips off or in reset, 0 ended. */
+	uint8_t gpios_low[4];
 	const struct board_battery *battery;
 	const struct battery_driver *battery_driver;
 	/* The cell's thermistor at the PMIC's ADC, in tenths of a degree

@@ -63,6 +63,9 @@ const struct board board_lenok = {
 		.patch = "4343A0.hcd",
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},
+	/* The WLAN half of the BCM43430 off (WL_REG_ON) and the unused WCD9302
+	 * audio codec in reset. */
+	.gpios_low = { 46, 72 },
 	.pmic_mpm = 62,
 	.chg = { .vdd_max_mv = 4350, .vdd_safe_mv = 4350, .vin_min_mv = 4450,
 		 .ibat_max_ma = 400, .ibat_safe_ma = 450, .iterm_ma = 30, .no_thermistor = true, .step_down_mv = 4215 },
