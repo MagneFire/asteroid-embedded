@@ -7,12 +7,14 @@
  * FIFO for STREAM_MS, drained by the main loop into the wrist raise
  * detector, longer while the jolts go on. INT is latched until
  * INT_STATUS is read. The compass runs the accelerometer and gyroscope
- * at 50 Hz and the AK8963 at 100 Hz, sampled by the main loop. */
+ * at 50 Hz and the AK8963 at 100 Hz, sampled by the main loop. The
+ * PAH8001 heart rate sensor on the same bus is run from here too. */
 #include "asteroid.h"
 #include "sensors/hub.h"
 #include "sensors/raise.h"
 #include "sensors/compass.h"
 #include "sensors/fusion.h"
+#include "sensors/pah8001.h"
 
 #define BUS		(board->hub_pins.i2c.bus)
 #define ADDR		(board->hub_pins.i2c.addr)
@@ -289,6 +291,7 @@ static bool mpu_init(void)
 		return false;
 	}
 	ak_ready = ak_probe();
+	pah8001_init();
 	raise_init(&raise);
 	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_LEVEL_HIGH, pin_irq);
 	ready = true;
@@ -368,6 +371,7 @@ static void mpu_poll(void)
 {
 	if (!ready)
 		return;
+	pah8001_poll();
 	uint32_t now = time_ms();
 	if (pending) {
 		pending = false;
@@ -388,7 +392,7 @@ static void mpu_poll(void)
 		sample_compass(now);
 }
 
-static bool mpu_can_sleep(void) { return !pending && mode != M_STREAM; }
+static bool mpu_can_sleep(void) { return !pending && mode != M_STREAM && pah8001_can_sleep(); }
 
 static bool mpu_tilted(void)
 {
@@ -464,6 +468,7 @@ static void mpu_status(void (*say)(const char *fmt, ...))
 	    samples, raises, errors);
 	if (have_latest)
 		say("motion: accel %d %d %d mg, int %u\n", latest[0], latest[1], latest[2], gpio_get(GPIO_IRQ));
+	pah8001_status(say);
 }
 
 const struct hub_driver hub_mpu6515 = {
@@ -477,4 +482,6 @@ const struct hub_driver hub_mpu6515 = {
 	.compass_on = mpu_compass_on,
 	.heading = mpu_heading,
 	.status = mpu_status,
+	.heart_rate_on = pah8001_on,
+	.heart_rate = pah8001_rate,
 };

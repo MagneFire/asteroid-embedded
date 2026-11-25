@@ -486,6 +486,9 @@ struct board {
 		const struct board_mcu_pad *pads;
 		uint8_t spi_bus, spi_cs, power, reset, irq;
 		uint32_t spi_hz;
+		/* One on the hub's I2C bus instead: its address and the line
+		 * that powers it down while high. */
+		uint8_t addr, pd;
 	} hr_pins;
 
 	const struct backlight_driver *backlight;

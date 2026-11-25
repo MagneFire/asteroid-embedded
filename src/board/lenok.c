@@ -45,7 +45,7 @@ const struct board board_lenok = {
 	.compatible = "lge,lenok",
 	.smem_platform = 132,
 	.chips_off = { { .bus = 2, .sda = 6, .scl = 7, .func = 3 }, chips_off },
-	.heart_rate = false,
+	.heart_rate = true,
 	/* LG4237 320x320 command-mode OLED, set up by the bootloader: 328
 	 * lines with the porches at 60 Hz, TE on gpio 24. */
 	.panel = {
@@ -83,4 +83,7 @@ const struct board board_lenok = {
 	.hub = &hub_mpu6515,
 	.hub_pins = { .i2c = { .bus = 2, .sda = 6, .scl = 7, .func = 3, .addr = 0x68 }, .irq = 35, .mpm = 14,
 		      .ldo = 19, .ldo_uv = 3000000 },
+	/* PAH8001 on the same bus: gpio 64 high to use it, gpio 65 high
+	 * powers it down. */
+	.hr_pins = { .addr = 0x33, .power = 64, .pd = 65 },
 };
