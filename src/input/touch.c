@@ -45,8 +45,8 @@ static int wr(uint8_t reg, uint8_t val)
 }
 
 /* Power: analog supply from PM8226 LDO19 or the board's LDO, the I2C
- * pull-ups from LVS1, both enabled through the RPM, then a reset pulse
- * on gpio 16. */
+ * pull-ups from LVS1 or the board's I/O LDO, both enabled through the
+ * RPM, then a reset pulse on gpio 16. */
 #define REG_L19		0x015200
 #define REG_LVS1	0x018000
 #define REG_STATUS1	0x08
@@ -60,7 +60,10 @@ static void power_on(void)
 		regulator_on(board->touch_pins.ldo, board->touch_pins.ldo_uv);
 	else
 		rpm_regulator_enable(RPM_LDOA, 19, true);
-	rpm_regulator_enable(RPM_VSA, 1, true);
+	if (board->touch_pins.ldo_io)
+		regulator_on(board->touch_pins.ldo_io, board->touch_pins.ldo_io_uv);
+	else
+		rpm_regulator_enable(RPM_VSA, 1, true);
 	gpio_set(GPIO_RESET, 0);
 	gpio_config(GPIO_RESET, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
 	for (int i = 0; i < 16; i++) {
