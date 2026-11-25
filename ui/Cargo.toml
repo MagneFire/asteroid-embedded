@@ -42,6 +42,12 @@ panic = "abort"
 debug = "line-tables-only"
 incremental = false
 
+# make UI_FAST=1: a quicker build for trying out UI changes.
+[profile.fast]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
 # The Cortex-M build: the size of the generated UI code matters more than its speed.
 [profile.mcu]
 inherits = "release"

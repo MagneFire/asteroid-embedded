@@ -2,6 +2,8 @@
 # make            build/asteroid.img for the APQ8026 watches and
 #                 build/omap3/asteroid.img for the OMAP3630 one, side by side
 # make SOC=qcom   only the APQ8026 image (SOC=omap3 only minnow's)
+# make UI_FAST=1  a UI built in half the time (thin LTO), larger and slower:
+#                 not for measuring speed or power
 # make JOBS=1     one job at a time (default: one per CPU; Make 3.81 ignores
 #                 a -j given on the command line)
 # make run        boot it over fastboot, wait for the reboot, show the log
@@ -135,7 +137,7 @@ LIBS    := -lgcc
 # its fused multiply-add.
 CARGO   ?= $(or $(shell command -v cargo 2>/dev/null),/opt/homebrew/opt/rustup/bin/cargo)
 UI_TARGET := ui/target$(if $(filter qcom,$(SOC)),,-$(SOC))
-UI_PROFILE := $(or $(UI_PROFILE_$(SOC)),release)
+UI_PROFILE := $(or $(UI_PROFILE_$(SOC)),$(if $(UI_FAST),fast,release))
 UI_LIB  := $(UI_TARGET)/$(RUST_TARGET)/$(UI_PROFILE)/libasteroid_ui.a
 UI_SRCS := ui/Cargo.toml ui/Cargo.lock ui/build.rs ui/.cargo/config.toml \
            $(shell find ui/src ui/ui ui/build ui/fonts ui/icons third_party/slint third_party/asteroid-icons-ion/src 2>/dev/null) \
@@ -162,6 +164,13 @@ $(BUILD)/config.h: FORCE
 	@echo '$(if $(TEST),#define TEST_$(shell echo $(TEST) | tr a-z A-Z) 1,)' > $@.tmp
 	@echo '$(if $(ASLEEP_STATS),#define ASLEEP_STATS 1,)' >> $@.tmp
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+# Which UI the image has, so that switching UI_FAST links it again. The
+# image goes too, as make 3.81 cannot tell apart files of the same second.
+$(BUILD)/ui-lib: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(UI_LIB)' > $@.tmp
+	@cmp -s $@.tmp $@ || { mv $@.tmp $@; rm -f $(BUILD)/asteroid.elf; }
 	@rm -f $@.tmp
 $(BUILD)/ui-parts: FORCE
 	@mkdir -p $(BUILD)
@@ -197,7 +206,7 @@ $(BUILD)/asteroid.ld: $(LDS) src/soc/$(SOC)/memmap.h
 	@mkdir -p $(BUILD)
 	$(CC) -E -P -x c -DLINKER_SCRIPT -Isrc/soc/$(SOC) $< -o $@
 
-$(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/asteroid.ld
+$(BUILD)/asteroid.elf: $(OBJS) $(UI_LIB) $(BUILD)/ui-lib $(BUILD)/asteroid.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_$(SOC)) $(OBJS) $(LIBS) $(UI_LIB) $(LIBS) -o $@
 	$(SIZE) $@
 
