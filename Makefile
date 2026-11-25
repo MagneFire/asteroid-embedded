@@ -538,71 +538,24 @@ $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
 
-test: $(BUILD)/test/console_test $(BUILD)/test/adb_test $(BUILD)/test/clockapps_test $(BUILD)/test/stack_test $(BUILD)/test/parser_test $(BUILD)/test/calc_test $(BUILD)/test/game_test $(BUILD)/test/agenda_test $(BUILD)/test/orient_test $(BUILD)/test/rotation_test $(BUILD)/test/actions_test $(BUILD)/test/power_test $(BUILD)/test/sched_test $(BUILD)/test/events_test $(BUILD)/test/steps_test $(BUILD)/test/fitness_test $(BUILD)/test/workout_test $(BUILD)/test/hrlog_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2 $(BUILD)/test/board_test $(BUILD)/qcdt.img $(BUILD)/test/gauge_test $(BUILD)/test/backlight_test $(BUILD)/test/mxt_test $(BUILD)/test/fts_test $(BUILD)/test/m4_test $(BUILD)/test/nanohub_test $(BUILD)/test/tsl2584_test $(BUILD)/test/tsl258x_test $(BUILD)/test/auto_brightness_test $(BUILD)/test/soft_test $(BUILD)/test/qcom_compose_test $(BUILD)/test/sgx_compose_test $(BUILD)/test/emmc_test $(BUILD)/test/squashfs_test $(BUILD)/test/sgx_image_test $(BUILD)/test/sgx_draw_test $(BUILD)/test/sgx_test $(BUILD)/test/sgx_stack_test $(BUILD)/test/sgx_paint_test $(BUILD)/test/swd_test $(BUILD)/test/bleif_test $(BUILD)/test/companion_test $(BUILD)/test/apollo3_timer_test $(BUILD)/test/swdwake_test $(BUILD)/test/hr_test $(BUILD)/test/raise_test $(BUILD)/test/compass_test $(BUILD)/test/fusion_test $(BUILD)/test/compass_app_test $(BUILD)/test/sensor_power_test $(BUILD)/test/flatmesh_mcu_test $(BUILD)/test/rm69090_test $(BUILD)/test/beluga_detect_test $(BUILD)/test/tma525_test $(BUILD)/test/hr_accept_test $(BUILD)/test/stc3117_test $(BUILD)/test/hx852x_test $(BUILD)/test/al3320_test $(BUILD)/test/ramoops_test $(BUILD)/test/smem_test $(BUILD)/test/mdt_test $(BUILD)/test/smd_test $(BUILD)/test/wcnss_msg_test
-	$(BUILD)/test/console_test
-	$(BUILD)/test/clockapps_test
-	$(BUILD)/test/calc_test
-	$(BUILD)/test/game_test
-	$(BUILD)/test/agenda_test
-	$(BUILD)/test/orient_test
-	$(BUILD)/test/rotation_test
-	$(BUILD)/test/actions_test
-	$(BUILD)/test/power_test
-	$(BUILD)/test/sched_test
-	$(BUILD)/test/events_test
-	$(BUILD)/test/steps_test
-	$(BUILD)/test/fitness_test
-	$(BUILD)/test/workout_test
-	$(BUILD)/test/hrlog_test
-	$(BUILD)/test/hr_accept_test
-	$(BUILD)/test/gauge_test
-	$(BUILD)/test/stc3117_test
-	$(BUILD)/test/backlight_test
-	$(BUILD)/test/mxt_test
-	$(BUILD)/test/fts_test
-	$(BUILD)/test/hx852x_test
-	$(BUILD)/test/smem_test
-	$(BUILD)/test/mdt_test
-	$(BUILD)/test/smd_test
-	$(BUILD)/test/wcnss_msg_test
-	$(BUILD)/test/m4_test
-	$(BUILD)/test/nanohub_test
-	$(BUILD)/test/tsl2584_test
-	$(BUILD)/test/al3320_test
-	$(BUILD)/test/tsl258x_test
-	$(BUILD)/test/auto_brightness_test
-	$(BUILD)/test/ramoops_test
-	$(BUILD)/test/soft_test
-	$(BUILD)/test/sgx_compose_test
-	$(BUILD)/test/qcom_compose_test
-	$(BUILD)/test/emmc_test
-	$(BUILD)/test/squashfs_test
-	$(BUILD)/test/sgx_image_test
-	$(BUILD)/test/sgx_draw_test
-	$(BUILD)/test/sgx_test
-	$(BUILD)/test/sgx_stack_test
-	$(BUILD)/test/sgx_paint_test
-	$(BUILD)/test/swd_test
-	$(BUILD)/test/bleif_test
-	$(BUILD)/test/companion_test
-	$(BUILD)/test/apollo3_timer_test
-	$(BUILD)/test/swdwake_test
-	$(BUILD)/test/hr_test
-	$(BUILD)/test/raise_test
-	$(BUILD)/test/compass_test
-	$(BUILD)/test/fusion_test
-	$(BUILD)/test/compass_app_test
-	$(BUILD)/test/sensor_power_test
-	$(BUILD)/test/flatmesh_mcu_test
-	$(BUILD)/test/rm69090_test
-	$(BUILD)/test/beluga_display_test
-	$(BUILD)/test/beluga_detect_test
-	$(BUILD)/test/tma525_test
-	$(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb $(BUILD)/dory.dtb $(BUILD)/catfish.dtb $(BUILD)/swift.dtb
-	$(PYTHON) tests/boot_test.py $(BUILD)/qcdt.img
-	$(BUILD)/test/stack_test
-	$(BUILD)/test/adb_test
-	$(BUILD)/test/parser_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2
+# Run alongside each other; each test's output is shown whole once it is done.
+TESTS := console clockapps calc game agenda orient rotation actions power \
+	   sched events steps fitness workout hrlog hr_accept gauge stc3117 backlight \
+	   mxt fts hx852x smem mdt smd wcnss_msg m4 nanohub tsl2584 al3320 tsl258x \
+	   auto_brightness ramoops soft sgx_compose qcom_compose emmc squashfs \
+	   sgx_image sgx_draw sgx sgx_stack sgx_paint swd bleif companion \
+	   apollo3_timer swdwake hr raise compass fusion compass_app sensor_power \
+	   flatmesh_mcu rm69090 beluga_display beluga_detect tma525 stack adb
+test: $(addprefix test-,$(TESTS)) test-board test-boot test-parser
+$(addprefix test-,$(TESTS)): test-%: $(BUILD)/test/%_test
+	@$< > $<.log 2>&1; s=$$?; cat $<.log; exit $$s
+test-board: $(BUILD)/test/board_test $(BUILD)/smelt.dtb $(BUILD)/sturgeon.dtb $(BUILD)/dory.dtb $(BUILD)/catfish.dtb $(BUILD)/swift.dtb
+	@$^ > $<.log 2>&1; s=$$?; cat $<.log; exit $$s
+test-boot: $(BUILD)/qcdt.img
+	@$(PYTHON) tests/boot_test.py $< > $(BUILD)/boot_test.log 2>&1; s=$$?; cat $(BUILD)/boot_test.log; exit $$s
+test-parser: $(BUILD)/test/parser_test $(BUILD)/test/small.ext4 $(BUILD)/test/small.ext2
+	@$^ > $<.log 2>&1; s=$$?; cat $<.log; exit $$s
+.PHONY: $(addprefix test-,$(TESTS)) test-board test-boot test-parser
 
 # The tool for the OPPO Watch's coprocessor runs on the watch's Linux, so
 # it takes a compiler for that: the one in a beluga build's sysroot.
