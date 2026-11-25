@@ -257,6 +257,8 @@ struct board {
 		bool flip_ud, round;
 		/* An LCD needs no burn-in protection. */
 		bool lcd;
+		/* The brightness command takes a second byte, sent as 0. */
+		bool brightness_wide;
 		/* Sleep, wake, display on and idle commands in low power mode,
 		 * as the vendor sends them. */
 		bool lp_commands;

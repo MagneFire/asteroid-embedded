@@ -521,7 +521,8 @@ void display_set_brightness(uint8_t level)
 	}
 	display_active();
 	pp_wait();
-	dsi_dcs_write(0x51, &level, 1);
+	uint8_t p[2] = { level, 0 };
+	dsi_dcs_write(0x51, p, board->panel.brightness_wide ? 2 : 1);
 }
 
 /* A raw code in place of the level, until the next

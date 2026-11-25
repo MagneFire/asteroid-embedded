@@ -4,6 +4,22 @@
 #include "display/display.h"
 #include "soc/bq27421.h"
 
+/* LG4237: the vendor's ambient mode of its Nougat build, about 40 nit at
+ * 30 Hz, set by the luminance in the DB step. */
+static const struct dcs_step idle_on[] = {
+	{ 0x51, 2, 0, { 0x00, 0x00 } },
+	{ 0xb0, 1, 0, { 0xac } },
+	{ 0xdb, 23, 0, { 0x01, 0xa9, 0x80, 0x93, 0xff, 0x11, 0x1c, 0x34, 0x43, 0x2f, 0x84, 0x85, 0x40, 0x67, 0x27, 0x28,
+			 0x12, 0x12, 0x12, 0x00, 0x00, 0x29, 0x10 } },
+	{ 0x39, 0, 128, { 0 } },
+	{ 0x29, 0, 64, { 0 } },
+};
+static const struct dcs_step idle_off[] = {
+	{ 0x38, 0, 0, { 0 } },
+	{ 0x51, 2, 0, { 0x00, 0x00 } },
+	{ 0x51, 2, 0, { 0x0a, 0x00 } },
+};
+
 /* On BLSP1 QUP2, where the ADSP ran them: the MPU-6515 comes out of
  * reset running, so it is put to sleep. */
 static const struct board_chip_off chips_off[] = {
@@ -34,7 +50,9 @@ const struct board board_lenok = {
 	 * lines with the porches at 60 Hz, TE on gpio 24. */
 	.panel = {
 		.width = 320, .height = 320,
-		.lines = 328, .hz = 60, .te_gpio = 24, .flip_ud = true, .round = true,
+		.lines = 328, .hz = 60, .te_gpio = 24, .flip_ud = true, .round = true, .brightness_wide = true,
+		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
+		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
 	},
 	.firmware_dirs = firmware_dirs,
 	/* BCM4343A0 on BLSP1 UART4 as on dory, without its reset line. */

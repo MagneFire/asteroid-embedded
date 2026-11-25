@@ -77,6 +77,6 @@ const float (*flatmesh_round_edge(void))[2];
 /* One DCS write of a panel command sequence, then a pause. */
 struct dcs_step {
 	uint8_t cmd, n, delay_ms;
-	uint8_t data[12];
+	uint8_t data[23];
 };
 #endif
