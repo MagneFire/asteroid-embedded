@@ -1,4 +1,4 @@
-/* Read-only SquashFS 4.0 with zlib compression, enough for an Android
+/* Read-only SquashFS 4.0 with zlib or LZ4 compression, enough for an Android
  * system partition. Everything lives in two kinds of block: metadata
  * blocks (up to 8 KiB uncompressed behind a 16-bit header whose top bit
  * means "stored") holding the inode, directory and fragment tables, and
@@ -20,10 +20,12 @@
 #include "emmc.h"
 #include "squashfs.h"
 #include "lib/inflate.h"
+#include "lib/lz4.h"
 
 #define SB_SIZE			96u
 #define SQUASHFS_MAGIC		0x73717368u
 #define COMP_ZLIB		1u
+#define COMP_LZ4		5u
 #define NO_FRAGMENT		0xffffffffu
 #define FRAGS_PER_BLOCK		512u
 #define UNCOMPRESSED_BLOCK	(1u << 24)
@@ -49,7 +51,7 @@ const char *squashfs_strerror(int err)
 	case SQE_RANGE: return "outside the volume";
 	case SQE_MAGIC: return "no squashfs superblock";
 	case SQE_VERSION: return "unsupported squashfs version";
-	case SQE_COMPRESSOR: return "compression is not zlib";
+	case SQE_COMPRESSOR: return "compression is not zlib or LZ4";
 	case SQE_BLOCKSIZE: return "unsupported block size";
 	case SQE_META: return "corrupt metadata block";
 	case SQE_INODE: return "corrupt inode";
@@ -88,6 +90,13 @@ static int raw(struct squashfs *fs, uint64_t off, uint32_t len, const uint8_t **
 	return 0;
 }
 
+static int decompress(const struct squashfs *fs, const uint8_t *in, size_t n, uint8_t *out, size_t cap, size_t *len)
+{
+	if (fs->compressor == COMP_LZ4)
+		return lz4_block_decode(in, n, out, cap, len);
+	return zlib_inflate(in, n, out, cap, len);
+}
+
 static int meta_load(struct squashfs *fs, struct squashfs_mcache *c, uint64_t addr)
 {
 	if (c->valid && c->addr == addr)
@@ -110,7 +119,7 @@ static int meta_load(struct squashfs *fs, struct squashfs_mcache *c, uint64_t ad
 	if (hdr & 0x8000) {
 		memcpy(c->data, p + 2, size);
 		len = size;
-	} else if (zlib_inflate(p + 2, size, c->data, SQUASHFS_META_SIZE, &len)) {
+	} else if (decompress(fs, p + 2, size, c->data, SQUASHFS_META_SIZE, &len)) {
 		return SQE_META;
 	}
 	if (!len)
@@ -448,7 +457,7 @@ static int decode_block(struct squashfs *fs, uint64_t disk, uint32_t word, uint8
 		return 0;
 	}
 	size_t len;
-	if (zlib_inflate(p, csize, dst, cap, &len))
+	if (decompress(fs, p, csize, dst, cap, &len))
 		return SQE_INFLATE;
 	*outlen = (uint32_t)len;
 	return 0;
@@ -581,6 +590,7 @@ int squashfs_open_lba(struct squashfs *fs, const char *name, uint32_t first_lba,
 	fs->sectors = sectors;
 	fs->bytes = fs->bytes_used = (uint64_t)sectors * EMMC_BLOCK;
 	fs->ic.valid = fs->dc.valid = fs->fc.valid = fs->blk_valid = false;
+	fs->compressor = 0;
 	int r = raw(fs, 0, SB_SIZE, &sb);
 	if (r)
 		return r;
@@ -588,7 +598,8 @@ int squashfs_open_lba(struct squashfs *fs, const char *name, uint32_t first_lba,
 		return SQE_MAGIC;
 	if (le16(sb + 28) != 4 || le16(sb + 30) != 0)
 		return SQE_VERSION;
-	if (le16(sb + 20) != COMP_ZLIB)
+	fs->compressor = le16(sb + 20);
+	if (fs->compressor != COMP_ZLIB && fs->compressor != COMP_LZ4)
 		return SQE_COMPRESSOR;
 	uint32_t bs = le32(sb + 12), log = le16(sb + 22);
 	if (bs < 4096 || bs > SQUASHFS_MAX_BLOCK || (bs & (bs - 1)) || log > 20 || bs != 1u << log)

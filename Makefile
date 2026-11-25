@@ -54,7 +54,7 @@ SRCS_ap := src/start.S src/soc/cache.S src/frame.c src/soc/mmu.c src/soc/excepti
         src/sensors/hub_m4.c src/sensors/m4_proto.c src/input/mxt.c src/input/touch_mxt.c src/input/haptics_ldo.c \
         src/display/backlight_lm3535.c src/display/fbcon.c src/display/flatmesh.c \
         src/bt/hci.c src/lib/inflate.c src/usb/usb.c src/usb/adb.c src/usb/ramfs.c src/screenshot/screenshot.c src/screenshot/jpeg.c \
-        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/squashfs.c src/storage/store.c \
+        src/storage/emmc.c src/storage/ext4.c src/storage/rootfs.c src/storage/firmware.c src/storage/squashfs.c src/lib/lz4.c src/storage/store.c \
         $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c \
         $(TUSB)/class/cdc/cdc_device.c
 
@@ -402,9 +402,9 @@ $(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/lib/fmt.c src/
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/storage/emmc.c src/lib/fmt.c src/lib/crc32.c -o $@
 
-$(BUILD)/test/squashfs_test: tests/squashfs_test.c src/storage/squashfs.c src/lib/inflate.c $(wildcard tests/*.h src/*.h src/*/*.h)
+$(BUILD)/test/squashfs_test: tests/squashfs_test.c src/storage/squashfs.c src/lib/inflate.c src/lib/lz4.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/storage/squashfs.c src/lib/inflate.c -o $@
+	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/storage/squashfs.c src/lib/inflate.c src/lib/lz4.c -o $@
 
 $(BUILD)/test/soft_test: tests/soft_test.c src/gpu/soft.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)

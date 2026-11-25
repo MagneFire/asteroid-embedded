@@ -28,6 +28,7 @@ struct squashfs {
 	uint32_t first_lba, sectors;
 	uint64_t bytes, bytes_used, root, inode_table, dir_table, frag_table;
 	uint32_t bs, inodes, fragments;
+	uint16_t compressor;
 	struct squashfs_mcache ic, dc, fc;
 	uint64_t blk_addr;
 	uint32_t blk_len;

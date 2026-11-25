@@ -31,8 +31,11 @@ static int open_system(void)
 	    (r = emmc_part_find(part, &first, &count)))
 		return r;
 	if ((r = ext4_open_lba(&fs, part, first, count))) {
-		if ((r = squashfs_open_lba(&squash, part, first, count)))
+		int e = r;
+		if ((r = squashfs_open_lba(&squash, part, first, count))) {
+			log_printf("firmware: %s: not ext4 (%d), squashfs %d, compressor %u\n", part, e, r, squash.compressor);
 			return r;
+		}
 		squashed = true;
 	}
 	opened = true;
