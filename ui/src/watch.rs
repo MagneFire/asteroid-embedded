@@ -516,7 +516,6 @@ pub extern "C" fn ui_set_tilt_light(on: bool) {
     each(|face| face.set_has_tilt_light(on));
 }
 
-#[cfg(feature = "mcu")]
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_magnetometer(on: bool) {
     each(|face| face.set_has_compass(on));
@@ -544,7 +543,6 @@ pub extern "C" fn ui_set_heart_rate(bpm: u32) {
     each(|face| face.set_heart_rate(bpm as i32));
 }
 
-#[cfg(feature = "mcu")]
 #[unsafe(no_mangle)]
 pub extern "C" fn ui_set_heading(degrees: u32, state: u32) {
     each(|face| {
@@ -1030,7 +1028,7 @@ pub extern "C" fn ui_set_app(app: i32) {
 pub unsafe extern "C" fn ui_page(i: u32, sideways: *mut bool) -> i32 {
     let (heart, compass) = with_ui(|ui| {
         let face = ui.screen(APP).global::<Face>();
-        (face.get_has_heart_rate(), cfg!(feature = "mcu") && face.get_has_compass())
+        (face.get_has_heart_rate(), face.get_has_compass())
     })
     .unwrap_or((false, false));
     let page = PAGES

@@ -14,7 +14,9 @@ import { App, BuiltApps } from "apps_built.slint";
 export { App }
 
 export global Apps {
-    out property <[App]> list: Face.has-heart-rate ? BuiltApps.all : BuiltApps.without-heart-rate;
+    out property <[App]> list: Face.has-heart-rate
+        ? (Face.has-compass ? BuiltApps.all : BuiltApps.without-compass)
+        : (Face.has-compass ? BuiltApps.without-heart-rate : BuiltApps.without-sensors);
     // The layouts the build has, as the Launcher setting numbers them: Horizontal, Vertical, Three
     // icons, Two columns, Turbo list, Three by three, Speed dial.
     out property <[int]> layouts: BuiltApps.layouts;

@@ -193,7 +193,7 @@ const PARTS: &[&str] = &[
 ];
 
 /// The parts the Cortex-A build leaves out: those for sensors none of its watches has.
-const AP_LEAVE_OUT: &[&str] = &["compass"];
+const AP_LEAVE_OUT: &[&str] = &[];
 
 /// The parts the Cortex-M build leaves out unless UI_LEAVE_OUT names others (comma separated,
 /// empty for none): what does not fit its flash after the watchface, the notifications, the
@@ -297,17 +297,22 @@ const SETTINGS_ROWS: &[(&str, &str, &str, u32)] = &[
 ];
 
 /// apps_built.slint: a `BuiltApps` global with the apps the build has, the same without the
-/// Heart Rate app for a watch without the sensor, the launcher layouts the build has, and the
-/// rows of Settings' list it has.
+/// Heart Rate or the Compass app for a watch without the sensor, the launcher layouts the build
+/// has, and the rows of Settings' list it has.
 fn apps(out: &std::path::Path, leave_out: &[String]) {
     let mut slint = String::from(
         "export struct App {\n    id: int,\n    name: string,\n    icon: string,\n    center: color,\n    outer: color,\n}\n\n\
          export struct SettingsRow {\n    icon: string,\n    title: string,\n    page: int,\n}\n\nexport global BuiltApps {\n",
     );
-    for (list, heart) in [("all", true), ("without-heart-rate", false)] {
+    for (list, heart, compass) in [
+        ("all", true, true),
+        ("without-heart-rate", false, true),
+        ("without-compass", true, false),
+        ("without-sensors", false, false),
+    ] {
         writeln!(slint, "    out property <[App]> {list}: [").unwrap();
         for (part, id, name, icon, center, outer) in APPS {
-            if (heart || *part != "heart") && !leave_out.iter().any(|p| p == part) {
+            if (heart || *part != "heart") && (compass || *part != "compass") && !leave_out.iter().any(|p| p == part) {
                 writeln!(slint, "        {{ id: {id}, name: \"{name}\", icon: \"{icon}\", center: {center}, outer: {outer} }},").unwrap();
             }
         }
