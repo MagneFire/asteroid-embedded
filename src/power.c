@@ -166,6 +166,7 @@ static bool fading_in, fade_held, fade_shown, light_seen;
 static uint32_t held_t, shown_t;
 
 void power_fade_in(uint32_t ms) { fade_in_ms = ms; }
+void power_ambient_redraw(void) { ambient_minute = UINT32_MAX; }
 
 void power_fade_shown(uint32_t now)
 {

@@ -87,6 +87,7 @@ void power_request(bool sleep) { stub_asleep = sleep; }
 bool stub_keep_awake;
 void power_keep_awake(bool on) { stub_keep_awake = on; }
 void power_peek(const char *cause, bool light) {}
+void power_ambient_redraw(void) {}
 int32_t power_backlight_seen(struct backlight *b) { *b = (struct backlight){ 0 }; return -1; }
 void power_backlight_fix(const struct backlight *b) {}
 void light_start(void) {}

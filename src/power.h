@@ -47,6 +47,8 @@ void power_lend_display(bool lent);
 /* The next wake from a dark panel starts at no brightness and reaches
  * the set one over ms; 0 for none. */
 void power_fade_in(uint32_t ms);
+/* The always-on face drawn again on the next pass, as at a new minute. */
+void power_ambient_redraw(void);
 /* The picture to fade in is on the panel. */
 void power_fade_shown(uint32_t now);
 bool power_display_lent(void);

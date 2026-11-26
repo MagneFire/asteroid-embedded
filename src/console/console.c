@@ -394,8 +394,10 @@ static void cmd_aod(const char *args)
 		setting_set(SETTING_AOD, !strcmp(args, "on"));
 		settings_flush();
 		settings_changed();
+	} else if (!strcmp(args, "draw")) {
+		power_ambient_redraw();
 	} else if (*args)
-		say("usage: aod [on|off]\n");
+		say("usage: aod [on|off|draw]\n");
 	say("aod %s\n", setting_get(SETTING_AOD) ? "on" : "off");
 }
 
@@ -1834,7 +1836,7 @@ static const struct command commands[] = {
 	{ "awake", "on|off", cmd_awake },
 	{ "idle", "wfi|core|gdhs|cluster", cmd_idle },
 	{ "rotate", "[0|90|180|270|auto]", cmd_rotate },
-	{ "aod", "[on|off]", cmd_aod },
+	{ "aod", "[on|off|draw]", cmd_aod },
 	{ "set", "[name [value]]", cmd_set },
 	{ "rtc", "[seconds]", cmd_rtc },
 	{ "mem", "<hex addr> [words]", cmd_mem },
