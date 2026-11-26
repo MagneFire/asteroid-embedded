@@ -28,6 +28,14 @@ uint32_t max17050_percent(uint16_t repsoc)
 	return p > 100 ? 100 : p;
 }
 
+uint32_t max17050_scaled(uint16_t repsoc, uint8_t full, uint8_t empty)
+{
+	if (full <= empty)
+		return max17050_percent(repsoc);
+	int p = ((int)(repsoc >> 5) - empty * 8) * 100 / ((full - empty) * 8);
+	return p < 0 ? 0 : p > 100 ? 100 : (uint32_t)p;
+}
+
 uint32_t max17050_mv(uint16_t vcell)
 {
 	return (uint32_t)vcell * 625 / 8 / 1000;

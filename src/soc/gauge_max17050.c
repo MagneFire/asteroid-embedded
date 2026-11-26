@@ -99,6 +99,8 @@ static bool model_load(void)
 		r |= wr(MAX17050_MISCCFG, m->misc_cfg);
 	if (m->v_empty)
 		r |= wr(MAX17050_VEMPTY, m->v_empty);
+	if (m->iavg_empty)
+		r |= wr(MAX17050_IAVG_EMPTY, m->iavg_empty);
 	wait_ms(500);
 	r |= wr(MAX17050_CONFIG, m->config) | wr(MAX17050_LEARNCFG, m->learn_cfg) | wr(MAX17050_FILTERCFG, m->filter_cfg) |
 	     wr(MAX17050_RELAXCFG, m->relax_cfg) | wr(MAX17050_FULLSOCTHR, m->full_soc_thresh);
@@ -276,10 +278,10 @@ static void charge_check(void)
 	}
 }
 
-static bool probe(void)
+static bool probe_at(uint32_t hz)
 {
 	uint16_t id = 0;
-	int r = i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, BUS_HZ);
+	int r = i2c_init(BUS, board->gauge.i2c.sda, board->gauge.i2c.scl, board->gauge.i2c.func, hz);
 	if (!r)
 		r = rd(MAX17050_DEVNAME, &id);
 	if (r || id != MAX17050_DEVNAME_ID) {
@@ -292,6 +294,8 @@ static bool probe(void)
 	poll_t = time_ms();
 	return true;
 }
+
+static bool probe(void) { return probe_at(BUS_HZ); }
 
 static void gauge_init(void)
 {
@@ -497,3 +501,69 @@ int32_t max17050_cell_ua(void) { return gauge_ua(); }
 int32_t max17050_cell_avg_ua(void) { return gauge_avg_ua(); }
 uint16_t max17050_last_status(void) { return last_status; }
 unsigned max17050_errors(void) { return errors; }
+
+/* As the fuel gauge of a charger of its own. A gauge set to take the
+ * temperature from the host reports the one it was last given, as the
+ * vendor does, not its register run through the thermistor table above. */
+#define READ_MIN_MS	1000
+/* The charger's bus, at the speed the vendor runs it. */
+#define FUEL_BUS_HZ	100000
+
+static struct hub_gauge reading;
+static bool have_reading;
+static int host_decidegrees = 250;
+
+static void take(void)
+{
+	uint16_t rep, v, c;
+	model_check();
+	refresh();
+	if (rd(MAX17050_REPSOC, &rep) || rd(MAX17050_VCELL, &v) || rd(MAX17050_CURRENT, &c))
+		return;
+	uint16_t t = 0;
+	int temp = board->gauge.host_temp || rd(MAX17050_TEMP, &t) ? host_decidegrees : max17050_decidegrees(t);
+	reading = (struct hub_gauge){ max17050_mv(v), max17050_scaled(rep, board->gauge.soc_full, board->gauge.soc_empty),
+				      max17050_ua(c, board->rsense_uohm), temp, time_ms() };
+	have_reading = true;
+}
+
+static bool fuel_init(void)
+{
+	if (!probe_at(FUEL_BUS_HZ))
+		return false;
+	take();
+	log_printf("gauge: max17050, %lu%%, status %04x%s\n", reading.percent, last_status,
+		   max17050_lost_model(last_status) ? ", lost its cell model" : "");
+	return true;
+}
+
+static void fuel_poll(bool now)
+{
+	if (!ready) {
+		probe_at(FUEL_BUS_HZ);
+		return;
+	}
+	if (now || !have_reading || time_ms() - reading.t_ms >= READ_MIN_MS)
+		take();
+}
+
+static bool fuel_read(struct hub_gauge *g)
+{
+	if (!have_reading)
+		return false;
+	*g = reading;
+	return true;
+}
+
+static void fuel_host_temp(int decidegrees)
+{
+	host_decidegrees = decidegrees;
+	max17050_host_temp(decidegrees);
+}
+
+const struct gauge_driver gauge_max17050 = {
+	.init = fuel_init,
+	.poll = fuel_poll,
+	.read = fuel_read,
+	.host_temp = fuel_host_temp,
+};

@@ -139,6 +139,8 @@ struct gauge_driver {
 	void (*asleep)(bool asleep);
 	/* Before a reboot or power off. */
 	void (*power_off)(void);
+	/* The cell's temperature, for a gauge that takes it from the host. */
+	void (*host_temp)(int decidegrees);
 };
 
 struct motor_driver {
@@ -221,7 +223,7 @@ extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_l
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm, motor_aw8624;
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530, backlight_lm36272;
 extern const struct light_driver light_tsl2584, light_tsl258x, light_m4, light_nanohub, light_al3320;
-extern const struct gauge_driver gauge_stc3117, gauge_bq27421;
+extern const struct gauge_driver gauge_stc3117, gauge_bq27421, gauge_max17050;
 extern const struct hands_driver hands_sop716;
 extern const struct crown_driver crown_paj9124;
 
@@ -434,6 +436,10 @@ struct board {
 		/* USB power reaches the gauge's side of the cell, so what
 		 * it learned with USB in is thrown away when USB goes. */
 		bool usb_disturbs;
+		/* The gauge's percentages shown as full and empty, 0 for its
+		 * own, and a gauge that takes the temperature from the host. */
+		uint8_t soc_full, soc_empty;
+		bool host_temp;
 	} gauge;
 
 	/* Other keys, low while pressed, that do what the power key does,

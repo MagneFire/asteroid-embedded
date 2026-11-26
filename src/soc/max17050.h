@@ -42,6 +42,7 @@
 #define MAX17050_MLOCK2		0x63
 #define MAX17050_MISCCFG	0x2b
 #define MAX17050_VEMPTY		0x3a
+#define MAX17050_IAVG_EMPTY	0x36
 #define MAX17050_MODEL		0x80
 #define MAX17050_VFSOC		0xff
 
@@ -64,7 +65,7 @@ struct max17050_model {
 	uint16_t rcomp0, tempco, qrtbl[4], tgain, toff, version;
 	/* Written with the configuration where the vendor sets them, 0 to
 	 * leave the gauge's own. */
-	uint16_t misc_cfg, v_empty;
+	uint16_t misc_cfg, v_empty, iavg_empty;
 	uint16_t cell[MAX17050_MODEL_WORDS];
 };
 
@@ -74,6 +75,10 @@ uint16_t max17050_remcap(uint16_t vfsoc, uint16_t fullcapnom);
 uint16_t max17050_dqacc(uint16_t fullcap);
 
 uint32_t max17050_percent(uint16_t repsoc);
+/* The percentage stretched so that empty reads 0 and full 100, as a
+ * vendor that never shows the ends of the gauge's range does; with full
+ * not above empty, the gauge's own. */
+uint32_t max17050_scaled(uint16_t repsoc, uint8_t full, uint8_t empty);
 uint32_t max17050_mv(uint16_t vcell);
 /* Positive while discharging, as the battery driver table has it. */
 int32_t max17050_ua(uint16_t current, uint32_t rsense_uohm);

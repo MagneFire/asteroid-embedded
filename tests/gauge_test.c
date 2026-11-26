@@ -13,6 +13,13 @@ int main(void)
 	CHECK(max17050_percent(0x6400) == 100);
 	/* A gauge that overshoots stays at 100. */
 	CHECK(max17050_percent(0x6600) == 100);
+	/* narwhal's vendor: 1 % shows as empty and 95 % as full. */
+	CHECK(max17050_scaled(0x0100, 95, 1) == 0);
+	CHECK(max17050_scaled(0x0000, 95, 1) == 0);
+	CHECK(max17050_scaled(0x5f00, 95, 1) == 100);
+	CHECK(max17050_scaled(0x6400, 95, 1) == 100);
+	CHECK(max17050_scaled(0x3000, 95, 1) == 50);
+	CHECK(max17050_scaled(0x32ff, 0, 0) == 50);
 
 	CHECK(max17050_mv(0) == 0);
 	CHECK(max17050_mv(51200) == 4000);
