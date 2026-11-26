@@ -1,6 +1,6 @@
 /* Telling the watches apart, with the real board tables and device
- * trees: argv are smelt's, sturgeon's, dory's, catfish's, swift's and lenok's
- * compiled trees. */
+ * trees: argv are smelt's, sturgeon's, dory's, catfish's, swift's, lenok's
+ * and narwhal's compiled trees. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +68,7 @@ static void *load(const char *path)
 		printf("%s: not found\n", path);
 		exit(1);
 	}
-	static char bufs[6][4096];
+	static char bufs[7][4096];
 	static int n;
 	char *b = bufs[n++];
 	fread(b, 1, sizeof bufs[0], f);
@@ -80,6 +80,7 @@ int main(int argc, char **argv)
 {
 	void *smelt = load(argv[1]), *sturgeon = load(argv[2]), *dory = load(argv[3]);
 	void *catfish = load(argv[4]), *swift = load(argv[5]), *lenok = load(argv[6]);
+	void *narwhal = load(argv[7]);
 	/* The tree names the watch. */
 	CHECK(detect(400, 400, sturgeon) == &board_sturgeon);
 	CHECK(detect(0, 0, sturgeon) == &board_sturgeon);
@@ -129,11 +130,12 @@ int main(int argc, char **argv)
 	splash_reads = 0;
 	CHECK(detect(400, 400, catfish) == &board_catfish && !board_assumed && splash_reads == 0);
 	CHECK(detect(400, 400, swift) == &board_swift && !board_assumed && splash_reads == 0);
+	CHECK(detect(360, 360, narwhal) == &board_narwhal && !board_assumed && splash_reads == 0);
 	subtype = 5;
 	CHECK(detect(400, 400, swift) == &board_swift && !board_assumed);
 	CHECK(detect(0, 0, catfish) == &board_catfish && !board_assumed);
 	const struct board *bare = detect(400, 400, NULL);
-	CHECK(bare != &board_catfish && bare != &board_swift && board_assumed);
+	CHECK(bare != &board_catfish && bare != &board_swift && bare != &board_narwhal && board_assumed);
 	CHECK(detect(400, 400, sturgeon) == bare && board_assumed);
 	CHECK(bare->panel.width == 400 && bare->panel.reset_gpio == board_catfish.panel.reset_gpio &&
 	      bare->usb_phy_init[0] == board_catfish.usb_phy_init[0]);

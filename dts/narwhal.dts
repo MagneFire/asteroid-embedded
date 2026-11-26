@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "LG Watch W7";
+	compatible = "lge,narwhal", "qcom,apq8009";
+	qcom,msm-id = <301 0>;
+	qcom,board-id = <0x899 0>, <0x699 0>, <0x499 0>;
+
+	chosen { };
+	aliases { };
+
+	memory {
+		device_type = "memory";
+		reg = <0 0 0 0>;
+	};
+};

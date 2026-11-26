@@ -14,8 +14,8 @@
  * splash the first table is a guess, and board_assumed keeps its charger
  * setup from running.
  *
- * On the APQ8009W only the tree names catfish or swift: swift reads
- * subtype 5 like catfish, and both have a 400x400 panel. Without one the
+ * On the APQ8009W only the tree names catfish, swift or narwhal: swift
+ * reads subtype 5 like catfish, and both have a 400x400 panel. Without one the
  * watch gets catfish's display and USB and none of its other parts,
  * whose pins could be another watch's touch reset or charger bus. */
 #include <string.h>
@@ -25,7 +25,7 @@
 #include "soc/max17050.h"
 
 static const struct board *const boards[] = { &board_sturgeon, &board_sparrow, &board_smelt, &board_dory, &board_lenok };
-static const struct board *const boards_8009[] = { &board_catfish, &board_swift };
+static const struct board *const boards_8009[] = { &board_catfish, &board_swift, &board_narwhal };
 
 #define N(a) (sizeof (a) / sizeof (a)[0])
 
