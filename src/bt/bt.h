@@ -114,6 +114,9 @@ struct bt_kv {
 const char *bt_kv_name(void);
 int bt_addr_load(uint8_t addr[6]);
 int bt_addr_get(uint8_t addr[6]);
+/* The factory address as text from the bootloader's tree, for a board
+ * with bt.addr_chosen; NULL for none. */
+void bt_addr_from_tree(const char *s, unsigned n);
 int bt_addr_save(const uint8_t addr[6]);
 
 struct ble_npl_eventq;

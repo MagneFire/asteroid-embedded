@@ -79,6 +79,15 @@ const struct board board_narwhal = {
 	},
 	.firmware_dirs = firmware_dirs,
 	.firmware_part = "vendor",
+	/* BCM43430A1 on BLSP1 UART2 as on catfish, REG_ON on gpio 44, host
+	 * wake on gpio 48 (MPM 51), device wake on gpio 47, both active low.
+	 * LG's bootloader puts the factory address in the tree it passes. */
+	.bt = {
+		.uart = 2, .gpio = 20, .func = 3, .dev_wake = 47, .host_wake = 48, .reg_on = 44, .mpm = 51,
+		.dev_wake_active = false, .host_wake_active = false, .addr_chosen = true,
+		.patch = "BCM43430A1.hcd",
+		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
+	},
 	.pmic_mpm = 62,
 	.crash_to_fastboot = true,
 	/* The top button is gpio 90 and the bottom one gpio 91. */

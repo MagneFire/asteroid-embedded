@@ -201,6 +201,10 @@ int main(int argc, char **argv)
 	 * from its STC3117. */
 	CHECK(board_swift.battery_driver == &battery_smb231 && board_swift.fuel_gauge == &gauge_stc3117 &&
 	      board_swift.gauge.cell && board_swift.gauge.i2c.bus == board_swift.charger.i2c.bus);
+	/* narwhal's Bluetooth is catfish's UART with its own patch, and its
+	 * address comes from the bootloader. */
+	CHECK(board_narwhal.bt.uart == board_catfish.bt.uart && board_narwhal.bt.gpio == board_catfish.bt.gpio &&
+	      board_narwhal.bt.addr_chosen && !board_narwhal.bt.addr_part && board_narwhal.bt.patch);
 	/* narwhal's FAN54511 shares its bus with the MAX17050, which takes the
 	 * temperature from the host and its cell model from the board. */
 	CHECK(board_narwhal.battery_driver == &battery_fan54511 && board_narwhal.fuel_gauge == &gauge_max17050 &&

@@ -353,6 +353,9 @@ struct board {
 		/* Where the factory wrote the address, as xx:xx:xx:xx:xx:xx
 		 * text, if anywhere. */
 		const char *addr_part, *addr_path;
+		/* Or in the tree the bootloader passes, as linux,bt-dev-address
+		 * under /chosen. */
+		bool addr_chosen;
 		const char *patch;
 		uint8_t sleep_mode[12];	/* the 0xfc27 parameters */
 		/* The SoC's own WCNSS core instead of a chip. */

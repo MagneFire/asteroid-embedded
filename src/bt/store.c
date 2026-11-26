@@ -95,6 +95,17 @@ int bt_addr_load(uint8_t addr[6])
 	return backend()->load(KEY_ADDR, addr, 6) == 6 ? 0 : -1;
 }
 
+/* The text the bootloader put in its tree, kept from the start. */
+static char tree_addr[18];
+static unsigned tree_n;
+
+void bt_addr_from_tree(const char *s, unsigned n)
+{
+	tree_n = s ? (n < sizeof tree_addr ? n : sizeof tree_addr) : 0;
+	if (tree_n)
+		memcpy(tree_addr, s, tree_n);
+}
+
 /* The one set on the console, else the one from the factory: the first
  * twelve hex digits of the board's file, whatever separates them, as the
  * watches write it with colons, spaces or nothing in between, or swift's
@@ -109,7 +120,10 @@ int bt_addr_get(uint8_t addr[6])
 		return 0;
 	if (factory_r > 0) {
 		char t[40];
-		int n = board->bt.addr_part ? storage_read_file(board->bt.addr_part, board->bt.addr_path, t, sizeof t) : -1;
+		int n = tree_n ? (int)tree_n
+			: board->bt.addr_part ? storage_read_file(board->bt.addr_part, board->bt.addr_path, t, sizeof t) : -1;
+		if (tree_n)
+			memcpy(t, tree_addr, tree_n);
 		unsigned digits = 0, ors = 0, ands = 0xff;
 		if (n == 9 && t[0] == 1 && t[1] == 1 && t[2] == 6) {
 			for (unsigned i = 0; i < 6; i++)
@@ -130,7 +144,9 @@ int bt_addr_get(uint8_t addr[6])
 			ands &= factory[i];
 		}
 		factory_r = digits == 12 && ors && ands != 0xff ? 0 : -1;
-		if (factory_r && board->bt.addr_part)
+		if (factory_r && board->bt.addr_chosen)
+			log_printf("bt: no factory address in the bootloader's tree\n");
+		else if (factory_r && board->bt.addr_part)
 			log_printf("bt: no factory address in %s/%s (%d)\n", board->bt.addr_part, board->bt.addr_path, n);
 	}
 	if (!factory_r)

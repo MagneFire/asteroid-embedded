@@ -11,6 +11,7 @@
 #include "ui/stack.h"
 #include "ui/rotation.h"
 #include "bt/bt.h"
+#include "lib/fdt.h"
 #include "sensors/hub.h"
 #include "weather/weather.h"
 #include "screenshot/screenshot.h"
@@ -120,6 +121,12 @@ void main(uint32_t machtype, const void *fdt)
 	log_printf("asteroid-embedded %s up, timer %lu Hz\n", build_id, timer_hz());
 	cpu_clock_log();
 	board_detect(machtype, fdt);
+	if (board->bt.addr_chosen) {
+		uint32_t n = 0;
+		const char *a = fdt_valid(fdt) ? fdt_prop(fdt, "/chosen", "linux,bt-dev-address", &n) : NULL;
+		bt_addr_from_tree(a, n);
+		log_printf("bt: %s in the bootloader's tree\n", a ? "address" : "no address");
+	}
 	soc_board_init();
 	bool have_display = display_init();
 	if (have_display)

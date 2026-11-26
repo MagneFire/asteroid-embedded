@@ -133,6 +133,7 @@ void bt_host_get_params(struct bt_params *p) { memset(p, 0, sizeof *p); }
 void bt_host_status(struct bt_status *s) { memset(s, 0, sizeof *s); s->kv = "none"; s->next_ms = UINT32_MAX; }
 int bt_addr_load(uint8_t addr[6]) { return -1; }
 int bt_addr_get(uint8_t addr[6]) { return -1; }
+void bt_addr_from_tree(const char *s, unsigned n) {}
 int bt_addr_save(const uint8_t addr[6]) { return -1; }
 
 struct fb fb;
