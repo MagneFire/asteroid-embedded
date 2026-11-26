@@ -1,11 +1,11 @@
-/* Atmel maXTouch on smelt. The chip keeps its configuration in its own
+/* Atmel maXTouch on smelt and narwhal. The chip keeps its configuration in its own
  * memory, so nothing is written to it: the object table says where the
  * messages are, and the line going low says one is waiting. Each one is
  * read in interrupt context, the first finger's touches queued, and the
  * line unmasked again, so a line still low starts the next read at once.
  * After a failed read the line stays masked until mxt_poll retries it.
- * The controller's range comes from its T9 object and is scaled to the
- * panel. */
+ * The controller's range comes from its T9 or T100 object and is scaled
+ * to the panel. */
 #include <string.h>
 #include "asteroid.h"
 #include "display/display.h"
@@ -158,8 +158,23 @@ static bool mxt_init(void)
 		log_printf("touch: no touch object among %u\n", objects);
 		return false;
 	}
+	uint8_t cfg1 = 0;
+	if (map.t100_ids) {
+		if (map.t100_size > MXT_T100_YRANGE + 1 && !rd((uint16_t)(map.t100_addr + MXT_T100_XRANGE), range, 2) &&
+		    !rd((uint16_t)(map.t100_addr + MXT_T100_YRANGE), range + 2, 2) &&
+		    !rd((uint16_t)(map.t100_addr + MXT_T100_CFG1), &cfg1, 1)) {
+			max_x = (unsigned)(range[0] | range[1] << 8);
+			max_y = (unsigned)(range[2] | range[3] << 8);
+			if (cfg1 & MXT_T100_SWITCHXY) {
+				unsigned m = max_x;
+				max_x = max_y;
+				max_y = m;
+			}
+		}
+		if (!max_x || !max_y)
+			max_x = max_y = 1023;
 	/* Before the 21st byte of T9 there is no range and 10 bits. */
-	if (map.t9_size > T9_RANGE + 3 && !rd((uint16_t)(map.t9_addr + T9_RANGE), range, 4)) {
+	} else if (map.t9_size > T9_RANGE + 3 && !rd((uint16_t)(map.t9_addr + T9_RANGE), range, 4)) {
 		wide_x = mxt_wide(range[1]);
 		wide_y = mxt_wide(range[3]);
 		max_x = (unsigned)(range[0] | range[1] << 8);
@@ -167,8 +182,9 @@ static bool mxt_init(void)
 	}
 	msg_ptr[0] = (uint8_t)map.msg_addr;
 	msg_ptr[1] = (uint8_t)(map.msg_addr >> 8);
-	log_printf("touch: mxt family %02x variant %02x version %02x build %02x, %u objects, range %u x %u, ids %u+%u\n", info[0],
-		   info[1], info[2], info[3], objects, max_x, max_y, map.t9_first_id, map.t9_ids);
+	log_printf("touch: mxt family %02x variant %02x version %02x build %02x, %u objects, %s range %u x %u, ids %u+%u\n",
+		   info[0], info[1], info[2], info[3], objects, map.t100_ids ? "t100" : "t9", max_x, max_y,
+		   map.t100_ids ? map.t100_first_id : map.t9_first_id, map.t100_ids ? map.t100_ids : map.t9_ids);
 	if (board->touch_pins.own_settings) {
 		for (unsigned i = 0; i < MXT_POWER_WRITES; i++) {
 			uint16_t addr;

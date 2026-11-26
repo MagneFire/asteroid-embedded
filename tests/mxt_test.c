@@ -91,6 +91,34 @@ int main(void)
 
 	CHECK(mxt_wide(0x04) && mxt_wide(0x0f) && !mxt_wide(0x03));
 
+	/* A T100 chip: T6 has id 1, T100's screen status ids 2 and 3, its
+	 * fingers 4 and 5. */
+	uint8_t t100_table[] = {
+		5, 0x00, 0x01, 8, 0, 0,
+		6, 0x10, 0x01, 5, 0, 1,
+		7, 0x18, 0x01, 3, 0, 0,
+		100, 0x20, 0x01, 59, 0, 4,
+		46, 0x60, 0x01, 9, 0, 1,
+	};
+	CHECK(mxt_parse(t100_table, 5, &m));
+	CHECK(!m.t9_ids && m.t100_addr == 0x120 && m.t100_size == 60 && m.t100_first_id == 4 && m.t100_ids == 2);
+	uint8_t t100_down[] = { 4, 0x94, 0x67, 0x01, 0x2c, 0x00, 0, 0 };
+	CHECK(mxt_decode(&m, t100_down, false, false, &t) && t.finger == 0 && t.down && !t.tap && t.x == 359 && t.y == 44);
+	uint8_t t100_move[] = { 5, 0x91, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, t100_move, false, false, &t) && t.finger == 1 && t.down);
+	uint8_t t100_up[] = { 4, 0x15, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, t100_up, false, false, &t) && !t.down);
+	uint8_t t100_suppressed[] = { 4, 0x93, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_decode(&m, t100_suppressed, false, false, &t) && !t.down);
+	uint8_t t100_status[] = { 2, 0x80, 0, 0, 0, 0, 0, 0 };
+	CHECK(!mxt_decode(&m, t100_status, false, false, &t));
+	/* A palm is a T100 touch of its own type. */
+	uint8_t t100_palm[] = { 4, 0xe1, 0, 0, 0, 0, 0, 0 };
+	CHECK(mxt_palm(&m, t100_palm) && !mxt_palm(&m, t100_down));
+	/* Of smelt's settings only the power object's apply. */
+	CHECK(mxt_power_write(&m, 0, true, &addr, &val) && addr == 0x118 && val == 100);
+	CHECK(!mxt_power_write(&m, 5, true, &addr, &val));
+
 	puts(failures ? "mxt_test: FAILED" : "mxt_test: ok");
 	return failures != 0;
 }

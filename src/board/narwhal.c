@@ -41,6 +41,11 @@ const struct board board_narwhal = {
 	/* The top button is gpio 90 and the bottom one gpio 91. */
 	.keys = { { .gpio = 90, .mpm = 30 }, { .gpio = 91, .mpm = 32 } },
 	.usb_phy_init = { 0x44, 0x6f, 0x38, 0x33 },
+	/* maXTouch with a T100 on BLSP1 QUP5, its core fed by L10 at 3.3 V.
+	 * It keeps its own settings for awake. */
+	.touch = &touch_mxt,
+	.touch_pins = { .i2c = { .bus = 5, .sda = 18, .scl = 19, .func = 2, .addr = 0x4a }, .irq = 13, .reset = 12, .mpm = 10,
+			.ldo = 10, .ldo_uv = 3300000, .own_settings = true },
 	/* LM36272 on BLSP1 QUP4. */
 	.backlight = &backlight_lm36272,
 	.backlight_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x11 }, .map = backlight_map },

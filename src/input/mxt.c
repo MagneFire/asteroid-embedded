@@ -3,7 +3,8 @@
  * through the objects in address order, which is not always table order.
  * A T9 message is report id, status, x and y high bytes, their low
  * nibbles, area and amplitude; a finger is down while detected, unless
- * released or suppressed. */
+ * released or suppressed. A T100 message is report id, status (detect,
+ * type and event), then x and y as 16 bits, low byte first. */
 #include <string.h>
 #include "mxt.h"
 
@@ -12,6 +13,12 @@
 #define T9_RELEASE	0x20
 #define T9_SUPPRESS	0x02
 #define T9_WIDE_MIN	0x04
+#define T100_DETECT	0x80
+#define T100_TYPE	0x70
+#define T100_PALM	0x60
+#define T100_EVENT	0x0f
+#define T100_SUPPRESS	3
+#define T100_RELEASE	5
 
 static unsigned address(const uint8_t *o)
 {
@@ -42,6 +49,11 @@ bool mxt_parse(uint8_t *table, unsigned n, struct mxt_map *m)
 			m->t9_size = (uint8_t)(o[3] + 1);
 			m->t9_first_id = (uint8_t)id;
 			m->t9_ids = (uint8_t)ids;
+		} else if (o[0] == MXT_T100_TOUCH && ids > 2) {
+			m->t100_addr = (uint16_t)address(o);
+			m->t100_size = (uint8_t)(o[3] + 1);
+			m->t100_first_id = (uint8_t)(id + 2);
+			m->t100_ids = (uint8_t)(ids - 2);
 		} else if (o[0] == MXT_T42_SUPPRESS) {
 			m->t42_addr = (uint16_t)address(o);
 			m->t42_id = ids ? (uint8_t)id : 0;
@@ -56,7 +68,7 @@ bool mxt_parse(uint8_t *table, unsigned n, struct mxt_map *m)
 		if (id > 255)
 			return false;
 	}
-	return m->msg_size >= 7 && m->t9_ids;
+	return m->msg_size >= 7 && (m->t9_ids || m->t100_ids);
 }
 
 /* From the vendor's atmxt-r3_large.tdat, its enter and exit records. */
@@ -85,15 +97,22 @@ bool mxt_power_write(const struct mxt_map *m, unsigned i, bool asleep, uint16_t 
 	case MXT_T46_CTE: base = m->t46_addr; break;
 	case MXT_T62_NOISE: base = m->t62_addr; break;
 	}
-	if (!base)
+	if (!base || (m->t100_ids && power_writes[i].object != MXT_T7_POWER))
 		return false;
 	*addr = (uint16_t)(base + power_writes[i].offset);
 	*val = asleep ? power_writes[i].asleep : power_writes[i].awake;
 	return true;
 }
 
+static bool t100_finger(const struct mxt_map *m, uint8_t id)
+{
+	return m->t100_ids && id >= m->t100_first_id && id < m->t100_first_id + m->t100_ids;
+}
+
 bool mxt_palm(const struct mxt_map *m, const uint8_t *msg)
 {
+	if (t100_finger(m, msg[0]))
+		return (msg[1] & (T100_DETECT | T100_TYPE)) == (T100_DETECT | T100_PALM);
 	return m->t42_id && msg[0] == m->t42_id && msg[1] & 1;
 }
 
@@ -104,7 +123,16 @@ bool mxt_wide(uint8_t range_hi)
 
 bool mxt_decode(const struct mxt_map *m, const uint8_t *msg, bool wide_x, bool wide_y, struct mxt_touch *t)
 {
-	if (msg[0] < m->t9_first_id || msg[0] >= m->t9_first_id + m->t9_ids)
+	if (t100_finger(m, msg[0])) {
+		unsigned event = msg[1] & T100_EVENT;
+		t->finger = (uint8_t)(msg[0] - m->t100_first_id);
+		t->down = (msg[1] & T100_DETECT) && event != T100_RELEASE && event != T100_SUPPRESS;
+		t->tap = false;
+		t->x = (uint16_t)(msg[2] | msg[3] << 8);
+		t->y = (uint16_t)(msg[4] | msg[5] << 8);
+		return true;
+	}
+	if (!m->t9_ids || msg[0] < m->t9_first_id || msg[0] >= m->t9_first_id + m->t9_ids)
 		return false;
 	t->finger = (uint8_t)(msg[0] - m->t9_first_id);
 	t->down = (msg[1] & T9_DETECT) && !(msg[1] & (T9_RELEASE | T9_SUPPRESS));

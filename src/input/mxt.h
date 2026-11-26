@@ -13,6 +13,13 @@
 #define MXT_T42_SUPPRESS	42
 #define MXT_T46_CTE		46
 #define MXT_T62_NOISE		62
+#define MXT_T100_TOUCH		100
+/* T100: its configuration byte, whose bit 5 swaps x and y, and the
+ * x and y ranges. */
+#define MXT_T100_CFG1		1
+#define MXT_T100_SWITCHXY	0x20
+#define MXT_T100_XRANGE		13
+#define MXT_T100_YRANGE		24
 
 struct mxt_map {
 	uint16_t msg_addr;	/* T5, where messages are read */
@@ -21,6 +28,10 @@ struct mxt_map {
 	uint8_t t9_size;
 	uint8_t t9_first_id;	/* report id of the first finger */
 	uint8_t t9_ids;
+	/* A T100 instead of a T9: its first two report ids are the
+	 * screen's, the fingers' follow. */
+	uint16_t t100_addr;
+	uint8_t t100_size, t100_first_id, t100_ids;
 	uint8_t t42_id;		/* 0 without touch suppression */
 	uint16_t t7_addr, t42_addr, t46_addr, t62_addr;
 };
@@ -31,19 +42,23 @@ struct mxt_touch {
 	uint16_t x, y;
 };
 
-/* Fills in the map from n object table entries, false without T5 or T9;
+/* Fills in the map from n object table entries, false without T5 or a
+ * T9 or T100;
  * the entries get sorted by address. */
 bool mxt_parse(uint8_t *table, unsigned n, struct mxt_map *m);
 /* Whether the x (or y) range bytes of T9 ask for 12 bits. */
 bool mxt_wide(uint8_t range_hi);
 /* Decodes a message, false if it is not a touch. x and y are in the
- * chip's range, 12 or 10 bits as wide_x and wide_y say. */
+ * chip's range: for T9 12 or 10 bits as wide_x and wide_y say, for T100
+ * 16 bits. */
 bool mxt_decode(const struct mxt_map *m, const uint8_t *msg, bool wide_x, bool wide_y, struct mxt_touch *t);
-/* Whether a message says touch suppression, a palm, has just started. */
+/* Whether a message says touch suppression, a palm, has just started,
+ * or a T100 finger turned out to be one. */
 bool mxt_palm(const struct mxt_map *m, const uint8_t *msg);
 /* The vendor's settings for asleep and awake: entry i of
  * MXT_POWER_WRITES, as the register and its value; false if that object
- * is not on this chip. */
+ * is not on this chip. They are smelt's, so a T100 chip only gets the
+ * power object's. */
 #define MXT_POWER_WRITES	12
 bool mxt_power_write(const struct mxt_map *m, unsigned i, bool asleep, uint16_t *addr, uint8_t *val);
 #endif
