@@ -112,7 +112,7 @@
 enum mode { M_OFF, M_WOM, M_STREAM, M_ACCEL, M_COMPASS, M_STEPS, M_UNSURE };
 
 static bool ready, ak_ready, tilt_wanted, accel_wanted, compass_wanted, tilt, armed;
-static bool steps_wanted = true, steps_lp = true, stepping, pedo_fresh;
+static bool steps_wanted = true, steps_lp, stepping, pedo_fresh;
 static volatile bool pending;
 static enum mode mode = M_UNSURE;
 static struct raise raise;
