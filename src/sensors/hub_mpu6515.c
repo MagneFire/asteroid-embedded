@@ -9,8 +9,8 @@
  * INT_STATUS is read. The same samples count steps. A burst that lasts
  * STREAM_CAP_MS, or a jolt with tilt off, starts a walk: the FIFO fills
  * with INT off, in the low power cycle or (steps_lp off) normal mode at
- * 12.5 Hz, and is drained every STEPS_DRAIN_MS, also for raises, until
- * STILL_DRAINS drains without movement. The compass runs the
+ * 12.5 Hz, and is drained every STEPS_DRAIN_MS, or RAISE_DRAIN_MS with
+ * tilt on, until STILL_MS without movement. The compass runs the
  * accelerometer and gyroscope at 50 Hz and the AK8963 at 100 Hz,
  * sampled by the main loop. The PAH8001 heart rate sensor on the same
  * bus is run from here too. */
@@ -98,7 +98,9 @@
 #define STREAM_CAP_MS	5000
 #define DRAIN_MAX	32
 #define STEPS_DRAIN_MS	4000
-#define STILL_DRAINS	2
+/* A raise while walking lights the screen this late at most. */
+#define RAISE_DRAIN_MS	500
+#define STILL_MS	8000
 #define FRAME		6
 /* Past this the FIFO may have wrapped, mid-frame. */
 #define FIFO_FULL	504
@@ -129,7 +131,7 @@ static uint32_t irqs, jolts, samples, raises, errors;
 static struct pedometer pedo;
 static struct resample resampler;
 static struct sched_task drain_task;
-static unsigned still_drains;
+static uint32_t still_t;
 static uint32_t stream_start, drain_t, pedo_t, steps_period_us;
 static uint32_t batches, empty_batches, overflows, pedo_samples, walks;
 
@@ -287,12 +289,14 @@ static bool set_mode(enum mode m)
 
 static bool fifo_mode(enum mode m) { return m == M_STREAM || m == M_STEPS; }
 
+static uint32_t drain_ms(void) { return tilt_wanted ? RAISE_DRAIN_MS : STEPS_DRAIN_MS; }
+
 static void walk_start(void)
 {
 	if (!stepping)
 		walks++;
 	stepping = true;
-	still_drains = 0;
+	still_t = time_ms();
 }
 
 static bool drain(uint32_t now, unsigned max, uint32_t period_us, bool to_raise);
@@ -323,7 +327,7 @@ static void apply(uint32_t now)
 	set_mode(m);
 	if (mode == M_STEPS && before != M_STEPS) {
 		drain_t = now;
-		sched_after(&drain_task, now, STEPS_DRAIN_MS);
+		sched_after(&drain_task, now, drain_ms());
 	} else if (mode != M_STEPS) {
 		sched_cancel(&drain_task);
 	}
@@ -479,13 +483,13 @@ static void steps_drain(uint32_t now)
 {
 	uint32_t before = pedo_samples, steps = pedo.steps;
 	drain_t = now;
-	sched_after(&drain_task, now, STEPS_DRAIN_MS);
+	sched_after(&drain_task, now, drain_ms());
 	bool moved = drain(now, UINT32_MAX, steps_period_us, tilt_wanted);
 	batches++;
 	empty_batches += pedo_samples == before;
 	if (moved || pedo.steps != steps || pedo.counting)
-		still_drains = 0;
-	else if (++still_drains >= STILL_DRAINS)
+		still_t = now;
+	else if (now - still_t >= STILL_MS)
 		stepping = false;
 }
 
@@ -549,7 +553,7 @@ static void mpu_poll(void)
 	}
 	if (mode == M_STREAM)
 		drain(now, DRAIN_MAX, STREAM_US, true);
-	else if (mode == M_STEPS && (int32_t)(now - drain_t) >= STEPS_DRAIN_MS)
+	else if (mode == M_STEPS && (int32_t)(now - drain_t) >= (int32_t)drain_ms())
 		steps_drain(now);
 	apply(now);
 	if (mode == M_COMPASS)
@@ -574,6 +578,8 @@ static bool mpu_tilt_on(bool on)
 	tilt_wanted = on;
 	if (!on)
 		stream_until = time_ms();
+	if (mode == M_STEPS)
+		sched_after(&drain_task, drain_t, drain_ms());
 	apply(time_ms());
 	return mode != M_UNSURE;
 }
