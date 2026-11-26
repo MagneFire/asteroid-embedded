@@ -258,7 +258,7 @@ static void cmd_dcs(const char *args)
 		bool on = !strcmp(args + 3, "on");
 		display_active();
 		dsi_low_power(on);
-		say("dcs: commands in %s\n", on ? "low power mode" : "high speed mode");
+		say("dcs: commands in %s\n", on || board->panel.lp_all ? "low power mode" : "high speed mode");
 		return;
 	}
 	while (*skip_spaces(args) && n < sizeof b && parse_num(&args, 16, &v) && v <= 0xff)

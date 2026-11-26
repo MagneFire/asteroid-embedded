@@ -14,6 +14,7 @@ static uint8_t packet[64] __attribute__((aligned(8)));
 
 void dsi_low_power(bool on)
 {
+	on |= board->panel.lp_all;
 	uint32_t v = readl(DSI_CMD_MODE_DMA_CTRL);
 	writel(on ? v | DMA_CTRL_LP : v & ~DMA_CTRL_LP, DSI_CMD_MODE_DMA_CTRL);
 }
@@ -21,6 +22,8 @@ void dsi_low_power(bool on)
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n)
 {
 	uint32_t len;
+	if (board->panel.lp_all)
+		dsi_low_power(true);
 	if (n == 0) {
 		packet[0] = cmd; packet[1] = 0; packet[2] = 0x05; packet[3] = 0x80;
 		len = 4;

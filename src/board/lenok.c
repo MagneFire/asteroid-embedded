@@ -59,6 +59,7 @@ const struct board board_lenok = {
 	.panel = {
 		.width = 320, .height = 320,
 		.lines = 328, .hz = 60, .te_gpio = 24, .flip_ud = true, .round = true, .brightness_wide = true,
+		.lp_all = true,
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
 		.wake = wake, .wake_n = sizeof wake / sizeof wake[0],
