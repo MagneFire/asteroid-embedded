@@ -200,7 +200,7 @@ extern const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x, touch_tma525;
 extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3, hub_lsm6dso, hub_mpu6515;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm, motor_aw8624;
-extern const struct backlight_driver backlight_lm3535, backlight_lm3530;
+extern const struct backlight_driver backlight_lm3535, backlight_lm3530, backlight_lm36272;
 extern const struct light_driver light_tsl2584, light_tsl258x, light_m4, light_nanohub, light_al3320;
 extern const struct gauge_driver gauge_stc3117, gauge_bq27421;
 
@@ -504,6 +504,9 @@ struct board {
 	struct {
 		struct board_i2c i2c;
 		uint8_t enable;
+		/* The chip's current code for each level, where the vendor
+		 * maps them. */
+		const uint16_t *map;
 	} backlight_pins;
 	/* The backlight code for the always-on face, 0 for the usual
 	 * percentage. */
