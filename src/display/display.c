@@ -213,7 +213,7 @@ bool display_init(void)
 	if (!(chip->mdp3 ? mdp3_init() : mdp5_init()))
 		return false;
 	if (panel_switched()) {
-		if (regulator_on(board->panel.io_ldo, board->panel.io_uv))
+		if (board->panel.io_ldo && regulator_on(board->panel.io_ldo, board->panel.io_uv))
 			log_printf("display: l%u on not acknowledged\n", board->panel.io_ldo);
 		gpio_set(board->panel.reset_gpio, 1);
 		gpio_config(board->panel.reset_gpio, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
@@ -559,20 +559,30 @@ static void dcs_sequence(const struct dcs_step *steps, unsigned n)
 
 static uint32_t sleep_in_t;
 
+static void bias(bool on)
+{
+	if (board->backlight && board->backlight->bias)
+		board->backlight->bias(on);
+}
+
 static void panel_power(bool on)
 {
 	if (board->panel.power) {
 		board->panel.power(on);
 	} else if (!on) {
 		delay_ms(PANEL_SLEEP_MS);
+		bias(false);
 		gpio_set(board->panel.reset_gpio, 0);
 		gpio_set(board->panel.bias_gpio, 0);
 		delay_ms(2);
-		regulator_off(board->panel.io_ldo);
+		if (board->panel.io_ldo)
+			regulator_off(board->panel.io_ldo);
 	} else {
-		regulator_on(board->panel.io_ldo, board->panel.io_uv);
+		if (board->panel.io_ldo)
+			regulator_on(board->panel.io_ldo, board->panel.io_uv);
 		delay_ms(1);
 		gpio_set(board->panel.bias_gpio, 1);
+		bias(true);
 		delay_ms(PANEL_BIAS_MS);
 		gpio_set(board->panel.reset_gpio, 1);
 		delay_ms(PANEL_RESET_MS);
@@ -607,6 +617,7 @@ void display_sleep(void)
 	display_active();
 	pp_wait();
 	lp_commands(true);
+	dcs_sequence(board->panel.sleep, board->panel.sleep_n);
 	dsi_dcs_write(0x28, NULL, 0);
 	dsi_dcs_write(0x10, NULL, 0);
 	lp_commands(false);

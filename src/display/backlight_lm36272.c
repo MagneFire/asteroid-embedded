@@ -1,6 +1,8 @@
-/* LM36272 backlight and LCD bias, on I2C with no enable line. Only the
- * backlight is driven here: the bias outputs stay as the bootloader set
- * them up for its splash. As the vendor does, levels of 0 to 255 go
+/* LM36272 backlight and LCD bias, on I2C with no enable line. The bias
+ * outputs stay as the bootloader set them up for its splash until the
+ * panel is switched off; they come back as the vendor sets them, at
+ * +-5.5 V, with the positive line before the negative one. As the vendor
+ * does, levels of 0 to 255 go
  * through the board's map to the chip's 11-bit current code, the
  * overvoltage limit is set to 29 V before the LEDs go on, and the code
  * goes in before the LEDs are switched on. */
@@ -17,6 +19,15 @@
 #define BL_OVP_29V	0x60
 #define ENABLE_BL	0x13
 #define CODE_MAX	0x7ff
+#define REG_BIAS_CONFIG	0x09
+#define REG_BIAS_LCM	0x0c
+#define REG_BIAS_VPOS	0x0d
+#define REG_BIAS_VNEG	0x0e
+#define BIAS_PRE_US	1000
+#define BIAS_P_US	2000
+#define BIAS_N_US	1000
+#define BIAS_N_OFF_US	500
+#define BIAS_P_OFF_US	2000
 
 static bool lit;
 
@@ -63,6 +74,14 @@ static bool lm36272_init(void)
 		return false;
 	}
 	lit = en & ENABLE_BL;
+	/* Driven at the level the bootloader left, so they hold. */
+	for (unsigned i = 0; i < 2; i++) {
+		uint8_t g = i ? board->backlight_pins.bias_n : board->backlight_pins.bias_p;
+		if (g) {
+			gpio_set(g, gpio_get(g));
+			gpio_config(g, 0, GPIO_OUTPUT, GPIO_PULL_NONE, 2);
+		}
+	}
 	log_printf("backlight: lm36272, code %u, enable %02x from the bootloader\n", msb << 3 | (lsb & 7), en);
 	return true;
 }
@@ -72,4 +91,23 @@ static void lm36272_set(uint8_t level)
 	set_code(level ? board->backlight_pins.map[level] : 0);
 }
 
-const struct backlight_driver backlight_lm36272 = { .init = lm36272_init, .set = lm36272_set };
+static void lm36272_bias(bool on)
+{
+	uint8_t p = board->backlight_pins.bias_p, n = board->backlight_pins.bias_n;
+	if (!on) {
+		gpio_set(n, 0);
+		delay_us(BIAS_N_OFF_US);
+		gpio_set(p, 0);
+		delay_us(BIAS_P_OFF_US);
+		return;
+	}
+	if (wr(REG_BIAS_CONFIG, 0x99) | wr(REG_BIAS_LCM, 0x28) | wr(REG_BIAS_VPOS, 0x1e) | wr(REG_BIAS_VNEG, 0x1e))
+		log_printf("backlight: lm36272 bias not set\n");
+	delay_us(BIAS_PRE_US);
+	gpio_set(p, 1);
+	delay_us(BIAS_P_US);
+	gpio_set(n, 1);
+	delay_us(BIAS_N_US);
+}
+
+const struct backlight_driver backlight_lm36272 = { .init = lm36272_init, .set = lm36272_set, .bias = lm36272_bias };

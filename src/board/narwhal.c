@@ -69,13 +69,33 @@ static const struct board_therm therm[] = {
 	{ 550, 482 }, { 600, 461 }, { 650, 442 }, { 700, 427 }, { 750, 415 }, { 790, 407 },
 };
 
+/* The vendor's on-commands up to sleep out, after each reset: page
+ * registers, then TE on. */
+static const struct dcs_step panel_on[] = {
+	{ 0xff, 1, 0, { 0x10 } }, { 0xb3, 1, 0, { 0x00 } }, { 0xbb, 1, 0, { 0x10 } },
+	{ 0xff, 1, 0, { 0x24 } }, { 0xfb, 1, 0, { 0x01 } }, { 0x66, 1, 0, { 0xd5 } }, { 0x6e, 1, 0, { 0x00 } },
+	{ 0x99, 1, 0, { 0xd8 } }, { 0xff, 1, 0, { 0xe0 } }, { 0xfb, 1, 0, { 0x01 } }, { 0x01, 1, 0, { 0xaa } },
+	{ 0xff, 1, 0, { 0x10 } }, { 0x35, 1, 0, { 0x00 } }, { 0x11, 0, 100, { 0 } },
+};
+/* The vendor's off-commands before display off. */
+static const struct dcs_step panel_off[] = {
+	{ 0xff, 1, 0, { 0x20 } }, { 0xfb, 1, 0, { 0x01 } }, { 0x61, 1, 0, { 0x00 } }, { 0x62, 1, 0, { 0x00 } },
+	{ 0xff, 1, 0, { 0x10 } },
+};
+
 const struct board board_narwhal = {
 	.name = "narwhal",
 	.compatible = "lge,narwhal",
 	/* Sharp NT35350 360x360 command-mode LCD, TE into the MDP. */
 	.panel = {
 		.width = 360, .height = 360,
-		.hz = 60, .te_gpio = 24, .round = true, .lcd = true, .reset_gpio = 25,
+		.hz = 60, .te_gpio = 24, .round = true, .lcd = true, .lp_commands = true,
+		/* Switched off with the screen as the vendor does: its enable
+		 * line on gpio 49, the LM36272's bias, then reset. Its I/O
+		 * supply is L4 or L6 by board revision and stays on. */
+		.on = panel_on, .on_n = sizeof panel_on / sizeof panel_on[0],
+		.sleep = panel_off, .sleep_n = sizeof panel_off / sizeof panel_off[0],
+		.reset_gpio = 25, .bias_gpio = 49,
 	},
 	.firmware_dirs = firmware_dirs,
 	.firmware_part = "vendor",
@@ -100,7 +120,8 @@ const struct board board_narwhal = {
 			.ldo = 10, .ldo_uv = 3300000, .own_settings = true },
 	/* LM36272 on BLSP1 QUP4. */
 	.backlight = &backlight_lm36272,
-	.backlight_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x11 }, .map = backlight_map },
+	.backlight_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x11 }, .map = backlight_map,
+			    .bias_p = 95, .bias_n = 83 },
 	/* SOP716 on BLSP1 QUP4 too, reset on gpio 33. */
 	.hands = &hands_sop716,
 	.hands_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x48 }, .reset = 33, .bslen = 16,

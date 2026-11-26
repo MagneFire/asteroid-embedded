@@ -159,6 +159,8 @@ struct backlight_driver {
 	bool (*init)(void);
 	void (*set)(uint8_t level);
 	void (*set_code)(uint8_t code);
+	/* The panel's bias supply, for a chip that also makes it. */
+	void (*bias)(bool on);
 };
 
 /* Mechanical hands over the screen, driven by a controller that keeps
@@ -301,9 +303,14 @@ struct board {
 		 * sleep out, as it can lose them asleep. */
 		const struct dcs_step *wake;
 		uint8_t wake_n;
+		/* Commands before display off, as the vendor sends them. */
+		const struct dcs_step *sleep;
+		uint8_t sleep_n;
 		/* A panel switched off with the screen: its commands from
 		 * reset to out of sleep, its reset line, the line that
-		 * enables its bias supply and the LDO for its logic. */
+		 * enables its bias supply and the LDO for its logic, 0 for
+		 * one that stays on. A backlight chip with a bias of its own
+		 * switches it after the line. */
 		const struct dcs_step *on;
 		uint8_t on_n, reset_gpio, bias_gpio, io_ldo;
 		uint32_t io_uv;
@@ -537,6 +544,8 @@ struct board {
 		/* The chip's current code for each level, where the vendor
 		 * maps them. */
 		const uint16_t *map;
+		/* The lines that switch its positive and negative bias. */
+		uint8_t bias_p, bias_n;
 	} backlight_pins;
 	/* The backlight code for the always-on face, 0 for the usual
 	 * percentage. */
