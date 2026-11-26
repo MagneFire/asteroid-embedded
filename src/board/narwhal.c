@@ -110,6 +110,11 @@ const struct board board_narwhal = {
 	.crown = &crown_paj9124,
 	.crown_pins = { .spi = 6, .mosi = 8, .miso = 9, .clk = 11, .func = 1, .cs = 10, .irq = 39, .mpm = 27,
 			.vdd_ldo = 16, .vdd_uv = 1800000, .vld_ldo = 17, .vld_uv = 3300000 },
+	/* No hub: an ICM-40604 on BLSP1 QUP3 as SPI (gpio 0-3, function 1, chip
+	 * select gpio 2) as on swift, INT1 on gpio 96, from the vendor's sensor
+	 * registry. */
+	.hub = &hub_icm40604,
+	.hub_pins = { .spi = 3, .gpio = 0, .func = 1, .cs = 2, .irq = 96, .mpm = 36 },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2900 },
 	/* FAN54511 and MAX17050 on BLSP1 QUP4, the charger's interrupt on

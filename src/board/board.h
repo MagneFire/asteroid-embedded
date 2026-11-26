@@ -219,7 +219,7 @@ struct battery_driver {
 
 extern const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max17050, battery_pmic_max17050, battery_smb231, battery_fan54511, battery_adc;
 extern const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_hx852x, touch_tma525;
-extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3, hub_lsm6dso, hub_mpu6515;
+extern const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3, hub_lsm6dso, hub_mpu6515, hub_icm40604;
 extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_gp_pwm, motor_aw8624;
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530, backlight_lm36272;
 extern const struct light_driver light_tsl2584, light_tsl258x, light_m4, light_nanohub, light_al3320;
