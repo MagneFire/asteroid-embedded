@@ -75,6 +75,7 @@ const struct board board_lenok = {
 	/* The WLAN half of the BCM43430 off (WL_REG_ON) and the unused WCD9302
 	 * audio codec in reset. */
 	.gpios_low = { 46, 72 },
+	.unused_ldos = { 21 },
 	.pmic_mpm = 62,
 	.chg = { .vdd_max_mv = 4350, .vdd_safe_mv = 4350, .vin_min_mv = 4450,
 		 .ibat_max_ma = 400, .ibat_safe_ma = 450, .iterm_ma = 30, .no_thermistor = true, .step_down_mv = 4215 },
