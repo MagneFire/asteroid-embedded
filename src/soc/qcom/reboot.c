@@ -70,6 +70,8 @@ void reboot(void)
 {
 	settings_flush();
 	events_flush();
+	if (board->fuel_gauge && board->fuel_gauge->power_off)
+		board->fuel_gauge->power_off();
 	reset_now();
 }
 

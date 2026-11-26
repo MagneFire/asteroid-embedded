@@ -137,6 +137,8 @@ struct gauge_driver {
 	void (*poll)(bool now);
 	bool (*read)(struct hub_gauge *g);
 	void (*asleep)(bool asleep);
+	/* Before a reboot or power off. */
+	void (*power_off)(void);
 };
 
 struct motor_driver {

@@ -4,7 +4,8 @@
  * a pause between commands. A gauge that did not answer is tried again
  * on the next ask, and after FAILS_STALE failed readings in a row the
  * last one is not given out. The vendor takes 0 % above 3.7 V as a fault
- * of the gauge and shows 50 % instead. */
+ * of the gauge and shows 50 % instead. As the vendor does, the gauge is
+ * sealed at start and set up for being off before the watch goes off. */
 #include "asteroid.h"
 #include "soc/bq27421.h"
 
@@ -45,7 +46,15 @@ static int io_write(uint8_t reg, const uint8_t *buf, unsigned n)
 	return r;
 }
 
-static const struct bq27421_io io = { io_read, io_write };
+static void io_wait(unsigned ms)
+{
+	for (; ms; ms--) {
+		wdt_feed();
+		delay_ms(1);
+	}
+}
+
+static const struct bq27421_io io = { io_read, io_write, io_wait };
 
 static void take(void)
 {
@@ -80,6 +89,8 @@ static bool start(void)
 	ready = true;
 	log_printf("gauge: bq27421, control status %04x%s%s\n", status, status & BQ27421_STATUS_SS ? ", sealed" : "",
 		   status & BQ27421_STATUS_INITCOMP ? "" : ", not initialised");
+	if (!(status & BQ27421_STATUS_SS) && bq27421_seal(&io))
+		log_printf("gauge: could not seal\n");
 	take();
 	return true;
 }
@@ -109,8 +120,17 @@ static bool bq27421_get(struct hub_gauge *g)
 	return true;
 }
 
+static void bq27421_power_off(void)
+{
+	if (!ready)
+		return;
+	int r = bq27421_power_off_data(&io);
+	log_printf("gauge: set up for power off%s (%d)\n", r ? " failed" : "", r);
+}
+
 const struct gauge_driver gauge_bq27421 = {
 	.init = bq27421_init,
 	.poll = bq27421_poll,
 	.read = bq27421_get,
+	.power_off = bq27421_power_off,
 };
