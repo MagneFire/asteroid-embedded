@@ -219,6 +219,7 @@ void main(uint32_t machtype, const void *fdt)
 		enum power_change change = power_update(&now);
 		lag_mark(LAG_UPDATE);
 		app_power_changed(change);
+		app_hands(now);
 		lag_mark(LAG_CHANGED);
 		present_clock(now);
 		lag_mark(LAG_CLOCK);

@@ -22,6 +22,7 @@ void app_ui_events(uint32_t now);
 void app_after_events(uint32_t now);
 void app_console_settings(void);
 void app_power_changed(enum power_change change);
+void app_hands(uint32_t now);
 uint32_t app_next_ms(const char **why);
 uint32_t app_awake_next_ms(void);
 #endif

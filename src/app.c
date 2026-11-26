@@ -39,8 +39,13 @@
 /* A sensor that gives no second reading lets the screen go off after
  * this, rather than holding it and the sensor on. */
 #define HR_HOLD_MS 60000
+/* How long anything but the watchface stays on show before the hands
+ * move aside, so a swipe past it leaves them be. */
+#define HANDS_SETTLE_MS 500
 
 static const char wake_by_touch[] = "touch";
+static bool hands_off_face, hands_want;
+static uint32_t hands_since;
 
 static struct app_caps caps;
 #define have_display caps.display
@@ -671,6 +676,31 @@ void app_power_changed(enum power_change change)
 	}
 }
 
+/* Hands over the screen show the time on the watchface and asleep, and
+ * move aside for everything else. */
+void app_hands(uint32_t now)
+{
+	if (!board->hands)
+		return;
+	bool want = have_ui && power_awake() && (stack_panel() != UI_PANEL_FACE || ui_modal());
+	if (want != hands_want) {
+		hands_want = want;
+		hands_since = now;
+	}
+	if (want == hands_off_face || (want && now - hands_since < HANDS_SETTLE_MS))
+		return;
+	hands_aside(want);
+	hands_off_face = want;
+}
+
+static uint32_t hands_next_ms(uint32_t now)
+{
+	if (hands_want == hands_off_face)
+		return UINT32_MAX;
+	uint32_t gone = now - hands_since;
+	return gone < HANDS_SETTLE_MS ? HANDS_SETTLE_MS - gone : 0;
+}
+
 /* The battery driver is polled from the charger task, which only runs
  * on a wake once its 500 ms are up. A driver deadline before that would
  * wake the watch again and again with nothing polling it. */
@@ -729,6 +759,7 @@ uint32_t app_awake_next_ms(void)
 		have_haptics ? haptics_next_ms() : UINT32_MAX,
 		game_next_ms(now),
 		turning ? ACCEL_POLL_MS : UINT32_MAX,
+		hands_next_ms(now),
 	}, min = UINT32_MAX;
 	for (unsigned i = 0; i < ARRAY_SIZE(next); i++)
 		if (next[i] < min)
