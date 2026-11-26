@@ -137,7 +137,7 @@ static void test_short_walk(void)
 	seed = 10;
 	double t = 0;
 	unsigned n = run(&p, &still, 5, 40000, &t);
-	n += run(&p, &walk, 6 / walk.step_hz, 40000, &t);
+	n += run(&p, &walk, (PEDOMETER_START - 2) / walk.step_hz, 40000, &t);
 	n += run(&p, &still, 5, 40000, &t);
 	CHECK(n == 0);
 	CHECK(p.rejected > 0 && p.rejected < PEDOMETER_START);

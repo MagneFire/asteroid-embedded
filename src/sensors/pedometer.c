@@ -50,8 +50,8 @@ static void tick(struct pedometer *p, uint32_t n)
 		end_walk(p);
 }
 
-/* Until the walk counts, each step comes within a half of the time the
- * one before it took; one that does not starts the walk over. */
+/* Until the walk counts, each step takes between half and twice the
+ * time the one before it took; one that does not starts the walk over. */
 static unsigned step(struct pedometer *p)
 {
 	uint16_t i = p->since;
@@ -62,7 +62,7 @@ static unsigned step(struct pedometer *p)
 		p->steps++;
 		return 1;
 	}
-	if (p->pending > 1 && (3 * i < 2 * p->interval || 2 * i > 3 * p->interval)) {
+	if (p->pending > 1 && (2 * i < p->interval || i > 2 * p->interval)) {
 		p->rejected += p->pending;
 		p->pending = 0;
 	}

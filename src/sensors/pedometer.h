@@ -2,8 +2,8 @@
  * none itself. The shape is that of Espruino's open pedometer
  * (libs/misc/stepcount.c): the magnitude at 12.5 Hz, its slow part
  * taken off, low-passed, and a step at each rise past a threshold
- * that comes at a walking pace. As LG's pedometer has it, counting
- * starts after PEDOMETER_START such steps and a walk ends after 1.5 s
+ * that comes at a walking pace. Counting starts after PEDOMETER_START
+ * such steps, tuned on recorded wrist walks, and a walk ends after 1.5 s
  * without one. Samples go in at 25 Hz, in mg; the resampler brings
  * another rate to that. */
 #ifndef PEDOMETER_H
@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define PEDOMETER_PERIOD_MS	40
-#define PEDOMETER_START		9
+#define PEDOMETER_START		5
 #define PEDOMETER_THRESHOLD_MG	50
 #define PEDOMETER_TAPS		5
 
