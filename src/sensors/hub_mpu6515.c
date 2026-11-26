@@ -123,14 +123,14 @@ static int wr(uint8_t addr, uint8_t reg, uint8_t v)
 
 static int16_t be16(const uint8_t *p) { return (int16_t)(p[0] << 8 | p[1]); }
 
-/* The watch's axes from the chip's, as the vendor's registry maps them:
- * x is chip y, y is minus chip x. */
+/* The watch's axes from the chip's: the vendor's registry map, then its
+ * sensor HAL's swap of x and y and negated z. */
 static void axes(const uint8_t *raw, int16_t v[3])
 {
 	int16_t cx = be16(raw), cy = be16(raw + 2), cz = be16(raw + 4);
-	v[0] = (int16_t)(cy * MG_PER_8G);
-	v[1] = (int16_t)(-cx * MG_PER_8G);
-	v[2] = (int16_t)(cz * MG_PER_8G);
+	v[0] = (int16_t)(-cx * MG_PER_8G);
+	v[1] = (int16_t)(cy * MG_PER_8G);
+	v[2] = (int16_t)(-cz * MG_PER_8G);
 }
 
 static void pin_irq(unsigned pin)
@@ -347,7 +347,7 @@ static void sample_compass(uint32_t now)
 		latest[i] = a[i];
 	have_latest = true;
 	int16_t gx = be16(ag + 8), gy = be16(ag + 10), gz = be16(ag + 12);
-	float rate[3] = { gy * GYRO_TO_RADS, -gx * GYRO_TO_RADS, gz * GYRO_TO_RADS };
+	float rate[3] = { -gx * GYRO_TO_RADS, gy * GYRO_TO_RADS, -gz * GYRO_TO_RADS };
 	float dt = (float)(now - compass_t) / 1000;
 	compass_t = now;
 	bool fresh = false;
@@ -356,9 +356,8 @@ static void sample_compass(uint32_t now)
 		if (m[7] & AK_ST2_HOFL) {
 			field_accuracy = compass_overflow(&compass);
 		} else {
-			/* The vendor's map for the magnetometer: x is minus chip y, y is chip x. */
-			float raw[3] = { -hy * asa[1] * AK_UT_PER_COUNT, hx * asa[0] * AK_UT_PER_COUNT,
-					 hz * asa[2] * AK_UT_PER_COUNT };
+			float raw[3] = { hx * asa[0] * AK_UT_PER_COUNT, -hy * asa[1] * AK_UT_PER_COUNT,
+					 -hz * asa[2] * AK_UT_PER_COUNT };
 			field_accuracy = compass_feed(&compass, raw, rate, (float)(now - field_t) / 1000, field);
 			field_t = now;
 			fresh = true;
