@@ -4,8 +4,8 @@
  * sleeps until something wants it. With the screen off, wrist tilt is
  * the chip's wake-on-motion in its low power cycle: a jolt raises INT,
  * an MPM wake pin, and the accelerometer then runs at 25 Hz into the
- * FIFO for STREAM_MS, drained by the main loop into the wrist raise
- * detector, longer while the jolts go on. INT is latched until
+ * FIFO for STREAM_MS, each sample raising INT too, drained by the main
+ * loop into the wrist raise detector, longer while the jolts go on. INT is latched until
  * INT_STATUS is read. The compass runs the accelerometer and gyroscope
  * at 50 Hz and the AK8963 at 100 Hz, sampled by the main loop. The
  * PAH8001 heart rate sensor on the same bus is run from here too. */
@@ -52,6 +52,7 @@
 /* Active high, latched until any read, bypass to the AK8963 on. */
 #define PIN_CFG		0x32
 #define INT_WOM		0x40
+#define INT_RAW_RDY	0x01
 #define WOM_COMPARE	0xc0
 #define FIFO_ACCEL	0x08
 #define USER_FIFO_EN	0x40
@@ -204,7 +205,7 @@ static bool set_mode(enum mode m)
 			e |= wr(a, FIFO_EN, FIFO_ACCEL);
 			e |= wr(a, USER_CTRL, USER_FIFO_RST);
 			e |= wr(a, USER_CTRL, USER_FIFO_EN);
-			e |= wr(a, INT_ENABLE, INT_WOM);
+			e |= wr(a, INT_ENABLE, INT_WOM | INT_RAW_RDY);
 		} else {
 			e |= wr(a, FIFO_EN, 0);
 			e |= wr(a, USER_CTRL, 0);
@@ -386,10 +387,10 @@ static void mpu_poll(void)
 			gpio_irq_enable(GPIO_IRQ, true);
 		}
 	}
-	apply(now);
 	if (mode == M_STREAM)
 		drain(now);
-	else if (mode == M_COMPASS)
+	apply(now);
+	if (mode == M_COMPASS)
 		sample_compass(now);
 }
 
