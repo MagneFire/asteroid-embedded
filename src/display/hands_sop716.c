@@ -13,7 +13,7 @@
 
 #define BUS		(board->hands_pins.i2c.bus)
 #define ADDR		(board->hands_pins.i2c.addr)
-#define BUS_HZ		400000
+#define BUS_HZ		100000
 
 enum {
 	CMD_SET_TIME = 0,

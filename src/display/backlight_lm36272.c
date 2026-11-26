@@ -8,7 +8,7 @@
 
 #define BUS		(board->backlight_pins.i2c.bus)
 #define ADDR		(board->backlight_pins.i2c.addr)
-#define BUS_HZ		400000
+#define BUS_HZ		100000
 
 #define REG_BL_CONFIG	0x02
 #define REG_BRT_LSB	0x04
