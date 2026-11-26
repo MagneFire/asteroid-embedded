@@ -249,6 +249,8 @@ bool ui_modal(void);
  * the screen under it, for the display to shade the mesh by 80 %. */
 bool ui_popup(void);
 void ui_touch(uint32_t panel, int kind, int x, int y);
+/* A scroll by dy pixels at (x, y) on a panel, as a mouse wheel gives one. */
+void ui_scroll(uint32_t panel, int x, int y, int dy);
 /* When the touch handed to ui_touch next was reported, in ms. */
 void ui_set_touch_ms(uint32_t ms);
 void ui_tick(void);

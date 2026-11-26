@@ -22,6 +22,15 @@ static struct gpu_rect face_parts[32];
 static unsigned face_n;
 static int face_x, face_y;
 
+static unsigned scrolls_n;
+static int scroll_panel = -1, scroll_dy;
+void ui_scroll(uint32_t panel, int x, int y, int dy)
+{
+	scrolls_n++;
+	scroll_panel = (int)panel;
+	scroll_dy = dy;
+}
+
 void ui_touch(uint32_t panel, int kind, int x, int y)
 {
 	touches[panel]++;
@@ -417,6 +426,28 @@ static void test_pages(void)
 	stack_set_pages(open_page);
 }
 
+/* The crown scrolls the notifications, not the watchface, and nothing
+ * while a pop-up is up or the stack slides. */
+static void test_crown(void)
+{
+	stack_init(W, H, layers[0], W * H);
+	settle();
+	scrolls_n = 0;
+	stack_scroll(8);
+	CHECK(scrolls_n == 0);
+	drag(50, 200, 250, 200, 4);
+	stack_scroll(8);
+	CHECK(scrolls_n == 0);
+	settle();
+	stack_scroll(-8);
+	CHECK(scrolls_n == 1 && scroll_panel == UI_PANEL_LEFT && scroll_dy == -8);
+	modal = true;
+	stack_scroll(8);
+	CHECK(scrolls_n == 1);
+	modal = false;
+	stack_home();
+}
+
 static void test_damage(void)
 {
 	uint32_t *face = layers[UI_PANEL_FACE];
@@ -504,6 +535,7 @@ int main(void)
 	test_no_launcher();
 	test_pages();
 	test_app_round();
+	test_crown();
 	test_damage();
 	test_chin();
 	printf("stack_test: %s\n", stub_failures ? "FAILED" : "ok");

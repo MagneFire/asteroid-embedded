@@ -137,6 +137,7 @@ int bt_addr_save(const uint8_t addr[6]) { return -1; }
 
 struct fb fb;
 __attribute__((weak)) void ui_touch(uint32_t panel, int kind, int x, int y) {}
+__attribute__((weak)) void ui_scroll(uint32_t panel, int x, int y, int dy) {}
 __attribute__((weak)) bool ui_modal(void) { return false; }
 __attribute__((weak)) void ui_app_peek(int px) {}
 __attribute__((weak)) void ui_app_peek_end(bool back) {}

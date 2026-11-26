@@ -1143,6 +1143,26 @@ pub extern "C" fn ui_touch(panel: u32, kind: i32, x: i32, y: i32) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_scroll(panel: u32, x: i32, y: i32, dy: i32) {
+    with_ui(|ui| {
+        #[cfg(feature = "mcu")]
+        show(ui, panel as usize);
+        #[cfg(feature = "mcu")]
+        let panel = 0;
+        let Some(panel) = ui.panels.get(panel as usize) else { return };
+        let window = panel.window.window();
+        let scale = window.scale_factor();
+        let position = PhysicalPosition::new(x, y).to_logical(scale);
+        let _ = window.dispatch_event_with_result(WindowEvent::PointerScrolled {
+            position,
+            delta_x: 0.0,
+            delta_y: dy as f32 / scale,
+        });
+        let _ = window.dispatch_event_with_result(WindowEvent::PointerExited);
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_tick() {
     if with_ui(|_| ()).is_none() {
         return;

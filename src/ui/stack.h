@@ -44,6 +44,9 @@ void stack_home(void);
 void stack_sleep(uint32_t now_ms);
 void stack_wake(uint32_t now_ms);
 void stack_open_app(void);
+/* Scrolls what is on show by dy pixels, as a mouse wheel would, where it
+ * scrolls and nothing is moving or popped up. */
+void stack_scroll(int dy);
 void stack_set_launcher(unsigned layout);
 void stack_indicators(void);
 void stack_pending(bool on);
