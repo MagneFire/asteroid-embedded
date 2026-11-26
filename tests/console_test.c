@@ -201,6 +201,13 @@ int main(void)
 	console_poll();
 	CHECK(!strcmp(out, "kept\n") && done_ctx == &out_len);
 
+	CHECK(strstr(run("hub steps normal"), "normal mode: set") && !strcmp(stub_hub_option, "steps_lp") && !stub_hub_option_v);
+	CHECK(strstr(run("hub steps lp"), "low power mode: set") && stub_hub_option_v == 1);
+	CHECK(strstr(run("hub steps threshold 80"), "80 mg: set") && !strcmp(stub_hub_option, "steps_threshold") &&
+	      stub_hub_option_v == 80);
+	CHECK(strstr(run("hub steps threshold 5"), "usage: hub steps") && stub_hub_option_v == 80);
+	CHECK(strstr(run("hub steps fast"), "usage: hub steps"));
+
 	printf("console_test: %s\n", stub_failures ? "FAILED" : "ok");
 	return stub_failures != 0;
 }

@@ -1189,6 +1189,26 @@ static void cmd_hub(const char *args)
 		say("hub: turnaround %lu us: %s\n", us, hub_option("turnaround", us) ? "not on this watch" : "set");
 		return;
 	}
+	if (!strncmp(args, "steps ", 6)) {
+		const char *p = args + 6;
+		uint32_t mg = 0;
+		if (!strcmp(p, "lp") || !strcmp(p, "normal")) {
+			bool lp = !strcmp(p, "lp");
+			say("hub: steps in %s mode: %s\n", lp ? "low power" : "normal",
+			    hub_option("steps_lp", lp) ? "not on this watch" : "set");
+			return;
+		}
+		if (!strncmp(p, "threshold ", 10)) {
+			p += 10;
+			if (parse_num(&p, 10, &mg) && mg >= 10 && mg <= 1000) {
+				say("hub: steps threshold %lu mg: %s\n", mg,
+				    hub_option("steps_threshold", mg) ? "not on this watch" : "set");
+				return;
+			}
+		}
+		say("usage: hub steps lp|normal|threshold <10-1000 mg>\n");
+		return;
+	}
 	if (!strncmp(args, "mask ", 5)) {
 		bool on = !strcmp(args + 5, "on");
 		if (!on && strcmp(args + 5, "off")) {
@@ -1874,7 +1894,7 @@ static const struct command commands[] = {
 	{ "btinfo", "", cmd_btinfo },
 	{ "amp", "", cmd_amp },
 	{ "buzz", "[ms]", cmd_buzz },
-	{ "hub", "[send <hex bytes> | mode 1|2|3 | timepiece | mask on|off | turnaround <us>]", cmd_hub },
+	{ "hub", "[send <hex bytes> | mode 1|2|3 | timepiece | mask on|off | turnaround <us> | steps lp|normal|threshold <mg>]", cmd_hub },
 	{ "m4", "rd <bank> <offset> <n> | wr <bank> <offset> <bytes> | pm 0|1", cmd_m4 },
 	{ "touch", "tap <x> <y> | swipe <x0> <y0> <x1> <y1> [ms]", cmd_touch },
 	{ "prof", "[samples]", cmd_prof },
