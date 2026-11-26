@@ -13,6 +13,7 @@ const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530, backlight_lm36272;
 const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max17050, battery_pmic_max17050, battery_smb231;
 const struct gauge_driver gauge_stc3117, gauge_bq27421;
+const struct hands_driver hands_sop716;
 const struct light_driver light_tsl2584, light_nanohub, light_al3320;
 
 const struct qcom_chip chip_8026, chip_8009;

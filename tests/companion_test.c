@@ -260,6 +260,7 @@ void rtc_write(uint32_t secs)
 }
 void battery_from_ap(unsigned percent) {}
 void hub_set_time(void) {}
+void hands_set_time(void) {}
 void display_lend(bool to_ap) { display_lent = to_ap; }
 void display_start_lent(void) { display_lent = true; }
 void touch_lend(bool to_ap) { touch_lent = to_ap; }

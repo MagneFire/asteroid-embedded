@@ -44,6 +44,10 @@ const struct board board_narwhal = {
 	/* LM36272 on BLSP1 QUP4. */
 	.backlight = &backlight_lm36272,
 	.backlight_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x11 }, .map = backlight_map },
+	/* SOP716 on BLSP1 QUP4 too, reset on gpio 33. */
+	.hands = &hands_sop716,
+	.hands_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x48 }, .reset = 33, .bslen = 16,
+			.temp = 22 },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2900 },
 };

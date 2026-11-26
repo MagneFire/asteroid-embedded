@@ -1,4 +1,4 @@
-/* The battery, touch, sensor hub and light sensor calls, passed to the watch's driver;
+/* The battery, touch, sensor hub, light sensor and hands calls, passed to the watch's driver;
  * a watch without the part answers as if the chip were absent, so the
  * main loop skips it. Without a battery driver nothing touches the
  * charger, and the percentage is the gauge's own "not known yet". */
@@ -296,4 +296,27 @@ void hub_status(void (*say)(const char *fmt, ...))
 		board->hub->status(say);
 	else
 		say("hub: no driver on this watch\n");
+}
+
+#define HANDS(fn) (board->hands && board->hands->fn)
+bool hands_init(void) { return HANDS(init) && board->hands->init(); }
+void hands_set_time(void)
+{
+	if (HANDS(set_time))
+		board->hands->set_time();
+}
+void hands_aside(bool on)
+{
+	if (HANDS(aside))
+		board->hands->aside(on);
+}
+void hands_status(void (*say)(const char *fmt, ...))
+{
+	if (HANDS(status))
+		board->hands->status(say);
+}
+void hands_move(uint8_t minute, uint8_t hour)
+{
+	if (HANDS(move))
+		board->hands->move(minute, hour);
 }

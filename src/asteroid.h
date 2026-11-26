@@ -239,6 +239,12 @@ int32_t light_finish(void);
 /* The console's light command, by default what went into the last
  * reading. */
 void light_command(const char *args, void (*say)(const char *fmt, ...));
+/* The watch's hands (board->hands), on a watch that has them. */
+bool hands_init(void);
+void hands_set_time(void);
+void hands_aside(bool on);
+void hands_status(void (*say)(const char *fmt, ...));
+void hands_move(uint8_t minute, uint8_t hour);
 /* A supply by the number the PMIC gives it. */
 int regulator_on(uint32_t id, uint32_t uv);
 int regulator_off(uint32_t id);

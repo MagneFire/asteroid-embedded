@@ -178,6 +178,7 @@ void action_set_clock(int kind, int v)
 	}
 	rtc_write(epoch_from_civil(&c));
 	hub_set_time();
+	hands_set_time();
 	log_printf("clock set to %04lu-%02lu-%02lu %02lu:%02lu\n", c.year, c.month, c.day, c.hour, c.minute);
 }
 

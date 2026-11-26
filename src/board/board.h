@@ -159,6 +159,17 @@ struct backlight_driver {
 	void (*set_code)(uint8_t code);
 };
 
+/* Mechanical hands over the screen, driven by a controller that keeps
+ * the time for them: its start, the time to show after the clock was
+ * set, the hands moved aside or back to the time, a line for the
+ * console, and the hands moved to two positions of 0 to 179 there. */
+struct hands_driver {
+	bool (*init)(void);
+	void (*set_time)(void);
+	void (*aside)(bool on);
+	void (*status)(void (*say)(const char *fmt, ...));
+	void (*move)(uint8_t minute, uint8_t hour);
+};
 /* A light sensor read in two steps, so the integration can run while
  * something else does: start, then finish, which gives the lux or -1
  * without a reading. keep holds it powered between readings, so that a
@@ -203,6 +214,7 @@ extern const struct motor_driver motor_drv2605, motor_pm8226, motor_ldo, motor_g
 extern const struct backlight_driver backlight_lm3535, backlight_lm3530, backlight_lm36272;
 extern const struct light_driver light_tsl2584, light_tsl258x, light_m4, light_nanohub, light_al3320;
 extern const struct gauge_driver gauge_stc3117, gauge_bq27421;
+extern const struct hands_driver hands_sop716;
 
 /* A register write: the bits of mask set to value, or with a mask of 0
  * the whole register. */
@@ -558,6 +570,13 @@ struct board {
 	} ap_link;
 	/* Low while the BLE radio is on, high otherwise: 0 for none. */
 	uint8_t ble_gpio;
+	const struct hands_driver *hands;
+	/* The hands' controller: its bus, its reset (high holds it), the
+	 * line that starts its bootloader and another it keeps low. */
+	struct {
+		struct board_i2c i2c;
+		uint8_t reset, bslen, temp;
+	} hands_pins;
 };
 
 /* The charger limits have to land on a register step: 10 mV from 3.24 V

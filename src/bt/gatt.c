@@ -75,6 +75,7 @@ static int set_time(const uint8_t *p, unsigned n)
 	uint32_t secs = epoch_from_civil(&c);
 	rtc_write(secs);
 	hub_set_time();
+	hands_set_time();
 	log_printf("bt: time set to %04lu-%02lu-%02lu %02lu:%02lu:%02lu (rtc %lu)\n", c.year, c.month, c.day, c.hour,
 		   c.minute, c.second, secs);
 	return 0;

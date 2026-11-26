@@ -88,6 +88,7 @@ void reboot(void)
 uint32_t rtc_read(void) { return rtc; }
 void rtc_write(uint32_t t) { rtc = t; }
 void hub_set_time(void) {}
+void hands_set_time(void) {}
 void hub_screen(bool on) {}
 void power_timepiece(void) { abort(); }
 void log_printf(const char *fmt, ...) {}

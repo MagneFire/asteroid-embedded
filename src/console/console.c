@@ -315,6 +315,21 @@ static void cmd_backlight(const char *args)
 }
 
 static void cmd_light(const char *args) { light_command(args, say); }
+
+static void cmd_hands(const char *args)
+{
+	uint32_t minute, hour;
+	if (!strncmp(args, "aside", 5))
+		hands_aside(true);
+	else if (!strncmp(args, "time", 4))
+		hands_aside(false);
+	else if (*args && (!parse_num(&args, 10, &minute) || !parse_num(&args, 10, &hour) || minute > 179 || hour > 179)) {
+		say("usage: hands [aside | time | <minute> <hour>]\n");
+		return;
+	} else if (*args)
+		hands_move((uint8_t)minute, (uint8_t)hour);
+	hands_status(say);
+}
 static void cmd_sleep(const char *args) { power_request(true); }
 static void cmd_wake(const char *args) { power_request(false); }
 
@@ -411,6 +426,7 @@ static void cmd_rtc(const char *args)
 		}
 		rtc_write(v);
 		hub_set_time();
+		hands_set_time();
 	}
 	say("rtc %lu\n", rtc_read());
 }
@@ -1850,6 +1866,7 @@ static const struct command commands[] = {
 	{ "bright", "<0-255>", cmd_bright },
 	{ "dcs", "<cmd> [<byte>...] | lp on|off | keep on|off", cmd_dcs },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
+	{ "hands", "[aside | time | <minute 0-179> <hour 0-179>]", cmd_hands },
 	{ "light", "[sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
