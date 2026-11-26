@@ -291,6 +291,7 @@ static bool mpu_init(void)
 		return false;
 	}
 	ak_ready = ak_probe();
+	compass_init(&compass);
 	pah8001_init();
 	raise_init(&raise);
 	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_LEVEL_HIGH, pin_irq);
@@ -443,7 +444,7 @@ static void mpu_compass_on(bool on)
 		return;
 	compass_wanted = on;
 	if (on) {
-		compass_init(&compass);
+		compass_restart(&compass);
 		fusion_init(&fusion);
 		field_accuracy = -1;
 		compass_due = compass_t = field_t = time_ms();
@@ -466,6 +467,9 @@ static void mpu_status(void (*say)(const char *fmt, ...))
 	say("motion: mpu6515 %s, %s, ak8963 %s, tilt %s; %lu irqs, %lu jolts, %lu samples, %lu raises, %lu errors\n",
 	    ready ? "ready" : "absent", names[mode], ak_ready ? "ready" : "absent", tilt_wanted ? "on" : "off", irqs, jolts,
 	    samples, raises, errors);
+	if (ak_ready)
+		say("motion: compass accuracy %d, %u bins, %lu jumps, %lu turn resets\n", field_accuracy, compass_bins(&compass),
+		    compass.jumps, compass.turn_resets);
 	if (have_latest)
 		say("motion: accel %d %d %d mg, int %u\n", latest[0], latest[1], latest[2], gpio_get(GPIO_IRQ));
 	pah8001_status(say);
