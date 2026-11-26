@@ -475,6 +475,10 @@ $(BUILD)/test/raise_test: tests/raise_test.c src/sensors/raise.c src/sensors/rai
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/raise.c -o $@
 
+$(BUILD)/test/pedometer_test: tests/pedometer_test.c src/sensors/pedometer.c src/sensors/pedometer.h
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/pedometer.c -lm -o $@
+
 $(BUILD)/test/compass_test: tests/compass_test.c src/sensors/compass.c src/sensors/compass.h
 	@mkdir -p $(dir $@)
 	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/compass.c -lm -o $@
@@ -550,7 +554,7 @@ TESTS := console clockapps calc game agenda orient rotation actions power \
 	   mxt fts hx852x smem mdt smd wcnss_msg m4 nanohub tsl2584 al3320 tsl258x \
 	   auto_brightness ramoops soft sgx_compose qcom_compose emmc squashfs \
 	   sgx_image sgx_draw sgx sgx_stack sgx_paint swd bleif companion \
-	   apollo3_timer swdwake hr raise compass fusion compass_app sensor_power \
+	   apollo3_timer swdwake hr raise pedometer compass fusion compass_app sensor_power \
 	   flatmesh_mcu rm69090 beluga_display beluga_detect tma525 stack adb
 test: $(addprefix test-,$(TESTS)) test-board test-boot test-parser
 $(addprefix test-,$(TESTS)): test-%: $(BUILD)/test/%_test
