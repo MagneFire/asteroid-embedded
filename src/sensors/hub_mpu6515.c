@@ -116,6 +116,7 @@ static bool steps_wanted = true, steps_lp = true, stepping, pedo_fresh;
 static volatile bool pending;
 static enum mode mode = M_UNSURE;
 static struct raise raise;
+static float held[3];
 static struct compass compass;
 static struct fusion fusion;
 static float asa[3] = { 1, 1, 1 }, field[3];
@@ -384,8 +385,17 @@ static bool mpu_init(void)
 	return true;
 }
 
-/* The first sample after a gap stands for the time it lasted, as the
- * raise detector wants a steady rate. */
+static void feed_one(const float a[3])
+{
+	if (raise_feed(&raise, a, false) == RAISE_UP) {
+		raises++;
+		tilt = true;
+	}
+}
+
+/* The detector wants a steady rate, and the start of a lift: the burst
+ * only begins well into it. Without a jolt the watch held still, so the
+ * last sample before a gap stands for the time it lasted. */
 static void feed(const int16_t v[3], uint32_t now)
 {
 	float a[3];
@@ -395,11 +405,29 @@ static void feed(const int16_t v[3], uint32_t now)
 	restarted = false;
 	fed_t = now;
 	samples++;
-	while (n--)
-		if (raise_feed(&raise, a, false) == RAISE_UP) {
-			raises++;
-			tilt = true;
-		}
+	while (n-- > 1)
+		feed_one(held);
+	feed_one(a);
+	memcpy(held, a, sizeof held);
+}
+
+/* With the screen going off, the pose it was in fills the history. */
+static void hold_pose(void)
+{
+	uint8_t raw[6];
+	int16_t v[3];
+	if (mode != M_WOM && mode != M_ACCEL && mode != M_STEPS)
+		return;
+	if (rd(ADDR, ACCEL_XOUT_H, raw, 6))
+		return;
+	axes(raw, v);
+	for (int i = 0; i < 3; i++)
+		held[i] = v[i] * (9.8f / 1000);
+	raise_init(&raise);
+	for (int k = 0; k < RAISE_RING; k++)
+		raise_feed(&raise, held, false);
+	fed_t = time_ms();
+	samples++;
 }
 
 static void take(const int16_t v[3], uint32_t period_us, uint32_t now, bool to_raise)
@@ -541,6 +569,8 @@ static bool mpu_tilt_on(bool on)
 {
 	if (!ready)
 		return false;
+	if (on && !tilt_wanted)
+		hold_pose();
 	tilt_wanted = on;
 	if (!on)
 		stream_until = time_ms();
