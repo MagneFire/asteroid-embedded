@@ -52,6 +52,8 @@ int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n);
 /* Commands go out in low power mode while on, as a panel fresh from reset
  * needs them; the bootloader's high speed mode otherwise. */
 void dsi_low_power(bool on);
+/* The panel keeps its power while the screen is off, for trying out. */
+extern bool display_panel_kept;
 
 void fbcon_init(void);
 void fbcon_draw(uint32_t *buf);

@@ -108,9 +108,11 @@ static bool main_panel(void)
 }
 
 /* A panel that loses its power with the screen off. */
+bool display_panel_kept;
+
 static bool panel_switched(void)
 {
-	return board->panel.on_n && main_panel();
+	return board->panel.on_n && main_panel() && !display_panel_kept;
 }
 
 void display_fb_setup(uint32_t width, uint32_t panel_height)

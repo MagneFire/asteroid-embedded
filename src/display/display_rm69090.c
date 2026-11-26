@@ -104,6 +104,7 @@ int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n)
 }
 
 void dsi_low_power(bool on) {}
+bool display_panel_kept;
 
 static void run(const struct dcs_step *s, unsigned n)
 {

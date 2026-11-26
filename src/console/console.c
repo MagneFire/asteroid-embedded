@@ -261,6 +261,11 @@ static void cmd_dcs(const char *args)
 		say("dcs: commands in %s\n", on || board->panel.lp_all ? "low power mode" : "high speed mode");
 		return;
 	}
+	if (!strncmp(args, "keep ", 5) && (!strcmp(args + 5, "on") || !strcmp(args + 5, "off"))) {
+		display_panel_kept = !strcmp(args + 5, "on");
+		say("dcs: panel %s while the screen is off\n", display_panel_kept ? "kept on" : "switched off");
+		return;
+	}
 	while (*skip_spaces(args) && n < sizeof b && parse_num(&args, 16, &v) && v <= 0xff)
 		b[n++] = (uint8_t)v;
 	if (!n || *skip_spaces(args)) {
@@ -1821,7 +1826,7 @@ static const struct command commands[] = {
 	{ "reboot", "[bootloader]", cmd_reboot },
 	{ "dload", "on | off", cmd_dload },
 	{ "bright", "<0-255>", cmd_bright },
-	{ "dcs", "<cmd> [<byte>...] | lp on|off", cmd_dcs },
+	{ "dcs", "<cmd> [<byte>...] | lp on|off | keep on|off", cmd_dcs },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
 	{ "light", "[sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },

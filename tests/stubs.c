@@ -33,6 +33,7 @@ void display_set_brightness(uint8_t level) { stub_brightness = level; }
 void display_active(void) {}
 int dsi_dcs_write(uint8_t cmd, const uint8_t *params, unsigned n) { return 0; }
 void dsi_low_power(bool on) {}
+bool display_panel_kept;
 void display_sleep(void) { stub_asleep = true; }
 void display_wake(void) { stub_asleep = false; }
 uint32_t batt_mv(void) { return 3900; }
