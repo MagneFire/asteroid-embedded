@@ -117,19 +117,21 @@ void log_record(const char *text)
 }
 
 /* The end of the console ring into the region's console zone, and the
- * fault record, if there is one, into its first dump zone. */
+ * fault record, if there is one, into its first dump zone, or after the
+ * console where there are none. */
 void log_export(volatile uint8_t *region, const struct ramoops_layout *l)
 {
-	uint32_t console = ramoops_console_offset(l);
-	if (!console)
+	int32_t console = ramoops_console_offset(l);
+	if (console < 0)
 		return;
-	volatile struct zone *z = CONSOLE;
+	volatile struct zone *z = CONSOLE, *r = RECORD;
 	uint32_t size = z->size, base = (z->start + CONSOLE_CAP - size) % CONSOLE_CAP;
 	uint32_t an = base + size > CONSOLE_CAP ? CONSOLE_CAP - base : size;
-	ramoops_zone_fill(region + console, l->console_size, z->data + base, an, z->data, size - an);
-	volatile struct zone *r = RECORD;
-	if (r->sig == SIG && r->size && r->size <= RECORD_CAP)
-		ramoops_zone_fill(region, l->record_size, r->data, r->size, NULL, 0);
+	bool fault = r->sig == SIG && r->size && r->size <= RECORD_CAP;
+	struct ramoops_piece p[3] = { { z->data + base, an }, { z->data, size - an }, { r->data, fault ? r->size : 0 } };
+	ramoops_zone_fill(region + console, l->console_size, p, l->record_size ? 2 : 3);
+	if (fault && l->record_size)
+		ramoops_zone_fill(region, l->record_size, &p[2], 1);
 }
 
 uint32_t log_end(void)

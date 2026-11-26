@@ -15,18 +15,34 @@ int main(void)
 	struct ramoops_layout swift = { 0x8fe00000, 0x200000, 0x10000, 0x10000, 0x1000 };
 	CHECK(ramoops_console_offset(&swift) == 30 * 0x10000);
 	struct ramoops_layout none = { 0, 0x10000, 0x10000, 0x10000, 0 };
-	CHECK(ramoops_console_offset(&none) == 0);
+	CHECK(ramoops_console_offset(&none) == -1);
+	/* lenok: 1 MiB, no dump records, 256 KiB console at the start. */
+	struct ramoops_layout lenok = { 0x1ff00000, 0x100000, 0, 0x40000, 0 };
+	CHECK(ramoops_console_offset(&lenok) == 0);
+	struct ramoops_layout no_console = { 0, 0x10000, 0x1000, 0, 0 };
+	CHECK(ramoops_console_offset(&no_console) == -1);
 
 	uint8_t zone[12 + 8];
 	memset(zone, 0xaa, sizeof zone);
-	ramoops_zone_fill(zone, sizeof zone, (const uint8_t *)"abc", 3, (const uint8_t *)"de", 2);
+	struct ramoops_piece p[3] = { { (const uint8_t *)"abc", 3 }, { (const uint8_t *)"de", 2 } };
+	ramoops_zone_fill(zone, sizeof zone, p, 2);
 	CHECK(get32(zone) == RAMOOPS_SIG && get32(zone + 4) == 0 && get32(zone + 8) == 5);
 	CHECK(!memcmp(zone + 12, "abcde", 5));
 	/* Too long: the end of b, after what is left of a. */
-	ramoops_zone_fill(zone, sizeof zone, (const uint8_t *)"0123456", 7, (const uint8_t *)"789", 3);
+	p[0] = (struct ramoops_piece){ (const uint8_t *)"0123456", 7 };
+	p[1] = (struct ramoops_piece){ (const uint8_t *)"789", 3 };
+	ramoops_zone_fill(zone, sizeof zone, p, 2);
 	CHECK(get32(zone + 8) == 8 && !memcmp(zone + 12, "23456789", 8));
-	ramoops_zone_fill(zone, sizeof zone, (const uint8_t *)"01", 2, (const uint8_t *)"abcdefghij", 10);
+	p[0] = (struct ramoops_piece){ (const uint8_t *)"01", 2 };
+	p[1] = (struct ramoops_piece){ (const uint8_t *)"abcdefghij", 10 };
+	ramoops_zone_fill(zone, sizeof zone, p, 2);
 	CHECK(get32(zone + 8) == 8 && !memcmp(zone + 12, "cdefghij", 8));
+	/* A fault record after the console: the end of the console, then all of it. */
+	p[0] = (struct ramoops_piece){ (const uint8_t *)"0123", 4 };
+	p[1] = (struct ramoops_piece){ (const uint8_t *)"4567", 4 };
+	p[2] = (struct ramoops_piece){ (const uint8_t *)"FAULT", 5 };
+	ramoops_zone_fill(zone, sizeof zone, p, 3);
+	CHECK(get32(zone + 8) == 8 && !memcmp(zone + 12, "567FAULT", 8));
 
 	if (failures)
 		printf("%d failures\n", failures);

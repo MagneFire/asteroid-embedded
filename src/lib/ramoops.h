@@ -12,12 +12,17 @@ struct ramoops_layout {
 	uint32_t phys, size, record_size, console_size, ftrace_size;
 };
 
+struct ramoops_piece {
+	const volatile uint8_t *data;
+	uint32_t n;
+};
+
 /* Where the console zone starts in the region: after as many dump
  * records as fit before the console and ftrace zones, as the kernel lays
- * them out; 0 if none fit. */
-uint32_t ramoops_console_offset(const struct ramoops_layout *l);
-/* Fill a zone with a then b, keeping their end if both do not fit, as
- * one the kernel reads in order. */
-void ramoops_zone_fill(volatile uint8_t *zone, uint32_t zone_size, const volatile uint8_t *a, uint32_t an,
-		       const volatile uint8_t *b, uint32_t bn);
+ * them out, at the start without dump records; -1 if the kernel would
+ * have no console. */
+int32_t ramoops_console_offset(const struct ramoops_layout *l);
+/* Fill a zone with the pieces in order, keeping their end if they do not
+ * all fit, as one the kernel reads in order. */
+void ramoops_zone_fill(volatile uint8_t *zone, uint32_t zone_size, const struct ramoops_piece *p, unsigned np);
 #endif

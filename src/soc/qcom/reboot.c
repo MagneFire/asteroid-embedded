@@ -51,9 +51,12 @@ static void __attribute__((noreturn)) reset_now(void)
 	if (chip->pon_restart_reason)
 		pmic_write(PON_SOFT_RB_SPARE, (pmic_read(PON_SOFT_RB_SPARE) & 3) | (reboot_to_bootloader ? PON_RESTART_FASTBOOT : 0));
 	scm_wdog_debug_disable();
+	/* Only where the firmware keeps nothing: above its own log on the
+	 * APQ8026, between the hole and its log on the APQ8009W. */
 	const struct ramoops_layout *aos = &board->aos_ramoops;
-	if (phys_offset && aos->size && aos->phys >= phys_offset + HOLE_8009_END &&
-	    aos->phys + aos->size <= RAMOOPS_8009_PHYS)
+	uint32_t lo = phys_offset ? phys_offset + HOLE_8009_END : RAMOOPS_BASE + RAMOOPS_SIZE;
+	uint32_t hi = phys_offset ? RAMOOPS_8009_PHYS : DRAM_END;
+	if (aos->size && aos->phys >= lo && aos->phys + aos->size <= hi)
 		log_export((volatile uint8_t *)(uintptr_t)(aos->phys - phys_offset), aos);
 	dcache_clean_invalidate_all();
 	writel(0, MPM2_PS_HOLD);
