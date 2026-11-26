@@ -170,6 +170,7 @@ void main(uint32_t machtype, const void *fdt)
 	bool have_haptics = haptics_init();
 	bool have_hub = hub_init();
 	hands_init();
+	crown_init();
 	power_init(have_display, have_ui, have_hub);
 	console_init();
 	static char serialno[24];
@@ -206,6 +207,7 @@ void main(uint32_t machtype, const void *fdt)
 		if (have_haptics)
 			haptics_poll();
 		app_touch(now);
+		app_crown(now);
 		bool key_irq = power_key_irq();
 		app_cable(now);
 		events_poll(now);

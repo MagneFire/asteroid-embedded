@@ -170,6 +170,14 @@ struct hands_driver {
 	void (*status)(void (*say)(const char *fmt, ...));
 	void (*move)(uint8_t minute, uint8_t hour);
 };
+/* A crown that turns: its start, the counts turned since the last poll,
+ * low power with the screen off, and its interrupts and errors. */
+struct crown_driver {
+	bool (*init)(void);
+	int32_t (*poll)(void);
+	void (*sleep)(bool on);
+	void (*stats)(uint32_t *irqs, uint32_t *errors);
+};
 /* A light sensor read in two steps, so the integration can run while
  * something else does: start, then finish, which gives the lux or -1
  * without a reading. keep holds it powered between readings, so that a
@@ -215,6 +223,7 @@ extern const struct backlight_driver backlight_lm3535, backlight_lm3530, backlig
 extern const struct light_driver light_tsl2584, light_tsl258x, light_m4, light_nanohub, light_al3320;
 extern const struct gauge_driver gauge_stc3117, gauge_bq27421;
 extern const struct hands_driver hands_sop716;
+extern const struct crown_driver crown_paj9124;
 
 /* A register write: the bits of mask set to value, or with a mask of 0
  * the whole register. */
@@ -577,6 +586,13 @@ struct board {
 		struct board_i2c i2c;
 		uint8_t reset, bslen, temp;
 	} hands_pins;
+	const struct crown_driver *crown;
+	/* An SPI crown sensor: its QUP, pins and their function, chip
+	 * select, motion line, and its logic and LED supplies. */
+	struct {
+		uint8_t spi, mosi, miso, clk, func, cs, irq, mpm, vdd_ldo, vld_ldo;
+		uint32_t vdd_uv, vld_uv;
+	} crown_pins;
 };
 
 /* The charger limits have to land on a register step: 10 mV from 3.24 V

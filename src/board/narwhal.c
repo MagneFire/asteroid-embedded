@@ -53,6 +53,11 @@ const struct board board_narwhal = {
 	.hands = &hands_sop716,
 	.hands_pins = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x48 }, .reset = 33, .bslen = 16,
 			.temp = 22 },
+	/* PAJ9124U1 on BLSP1 QUP6 (gpio 8, 9, 11, function 1), chip select
+	 * gpio 10, motion line gpio 39; its logic on L16, its LED on L17. */
+	.crown = &crown_paj9124,
+	.crown_pins = { .spi = 6, .mosi = 8, .miso = 9, .clk = 11, .func = 1, .cs = 10, .irq = 39, .mpm = 27,
+			.vdd_ldo = 16, .vdd_uv = 1800000, .vld_ldo = 17, .vld_uv = 3300000 },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2900 },
 };

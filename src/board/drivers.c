@@ -1,4 +1,4 @@
-/* The battery, touch, sensor hub, light sensor and hands calls, passed to the watch's driver;
+/* The battery, touch, sensor hub, light sensor, hands and crown calls, passed to the watch's driver;
  * a watch without the part answers as if the chip were absent, so the
  * main loop skips it. Without a battery driver nothing touches the
  * charger, and the percentage is the gauge's own "not known yet". */
@@ -319,4 +319,19 @@ void hands_move(uint8_t minute, uint8_t hour)
 {
 	if (HANDS(move))
 		board->hands->move(minute, hour);
+}
+
+#define CROWN(fn) (board->crown && board->crown->fn)
+bool crown_init(void) { return CROWN(init) && board->crown->init(); }
+int32_t crown_poll(void) { return CROWN(poll) ? board->crown->poll() : 0; }
+void crown_sleep(bool on)
+{
+	if (CROWN(sleep))
+		board->crown->sleep(on);
+}
+void crown_stats(uint32_t *irqs, uint32_t *errors)
+{
+	*irqs = *errors = 0;
+	if (CROWN(stats))
+		board->crown->stats(irqs, errors);
 }

@@ -245,6 +245,12 @@ void hands_set_time(void);
 void hands_aside(bool on);
 void hands_status(void (*say)(const char *fmt, ...));
 void hands_move(uint8_t minute, uint8_t hour);
+/* The watch's crown (board->crown): crown_poll gives the counts turned
+ * since the last call, positive one way and negative the other. */
+bool crown_init(void);
+int32_t crown_poll(void);
+void crown_sleep(bool on);
+void crown_stats(uint32_t *irqs, uint32_t *errors);
 /* A supply by the number the PMIC gives it. */
 int regulator_on(uint32_t id, uint32_t uv);
 int regulator_off(uint32_t id);

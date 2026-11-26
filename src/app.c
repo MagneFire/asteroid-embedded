@@ -42,6 +42,8 @@
 /* How long anything but the watchface stays on show before the hands
  * move aside, so a swipe past it leaves them be. */
 #define HANDS_SETTLE_MS 500
+/* How far one count of the crown scrolls. */
+#define CROWN_PX 4
 
 static const char wake_by_touch[] = "touch";
 static bool hands_off_face, hands_want;
@@ -657,12 +659,14 @@ void app_power_changed(enum power_change change)
 		game_save();
 		if (have_touch)
 			touch_sleep(true, setting_get(SETTING_TAP));
+		crown_sleep(true);
 		frame_sleep();
 		break;
 	case POWER_WOKE:
 		stats_woke(time_ms());
 		if (have_touch)
 			touch_sleep(false, true);
+		crown_sleep(false);
 		frame_wake();
 		present_clock_soon();
 		/* The panel wakes at the brightness it slept with, and the app
@@ -674,6 +678,16 @@ void app_power_changed(enum power_change change)
 	case POWER_NONE:
 		break;
 	}
+}
+
+/* A turn of the crown scrolls what is on show and keeps the screen on. */
+void app_crown(uint32_t now)
+{
+	int32_t counts = crown_poll();
+	if (!counts || !have_ui || !power_awake())
+		return;
+	stack_scroll(-counts * CROWN_PX);
+	power_activity(now);
 }
 
 /* Hands over the screen show the time on the watchface and asleep, and
