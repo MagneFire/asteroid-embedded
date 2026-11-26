@@ -3,9 +3,10 @@
  * whenever the charger asks and at most once a second. The gauge needs
  * a pause between commands. A gauge that did not answer is tried again
  * on the next ask, and after FAILS_STALE failed readings in a row the
- * last one is not given out. The vendor takes 0 % above 3.7 V as a fault
- * of the gauge and shows 50 % instead. As the vendor does, the gauge is
- * sealed at start and set up for being off before the watch goes off. */
+ * last one is not given out. As the vendor does, 0 % at start with the
+ * PMIC reading above 3.7 V is a fault of the gauge, shown as 50 % until
+ * it gives more than 0 %; the gauge is sealed at start, and set up for
+ * being off before the watch goes off. */
 #include "asteroid.h"
 #include "soc/bq27421.h"
 
@@ -19,7 +20,7 @@
 #define FAULT_SOC	50
 
 static struct hub_gauge last;
-static bool ready, have, faulty;
+static bool ready, have, faulty, checked;
 static uint32_t read_t, errors, fails;
 static uint16_t last_flags = 0xffff;
 
@@ -70,11 +71,17 @@ static void take(void)
 			   r.flags & BQ27421_FLAG_ITPOR ? " (lost its cell data)" : "", r.soc, r.mv, r.avg_ma,
 			   r.decidegrees / 10, (r.decidegrees < 0 ? -r.decidegrees : r.decidegrees) % 10, errors);
 	last_flags = r.flags;
-	bool fault = !r.soc && r.mv > FAULT_MV;
-	if (fault != faulty)
-		log_printf("gauge: %u %% at %u mV, %s\n", r.soc, r.mv, fault ? "taken as a fault" : "no longer a fault");
-	faulty = fault;
-	last = (struct hub_gauge){ r.mv, fault ? FAULT_SOC : r.soc, -r.avg_ma * 1000, r.decidegrees, read_t };
+	if (!checked) {
+		checked = true;
+		uint32_t pmic_mv = pmic_battery_mv();
+		faulty = !r.soc && pmic_mv > FAULT_MV;
+		if (faulty)
+			log_printf("gauge: 0 %% at %lu mV, taken as a fault\n", pmic_mv);
+	} else if (faulty && r.soc) {
+		faulty = false;
+		log_printf("gauge: %u %%, no longer a fault\n", r.soc);
+	}
+	last = (struct hub_gauge){ r.mv, faulty ? FAULT_SOC : r.soc, -r.avg_ma * 1000, r.decidegrees, read_t };
 	have = true;
 }
 
