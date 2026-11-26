@@ -254,6 +254,13 @@ static void cmd_dcs(const char *args)
 	uint8_t b[24];
 	unsigned n = 0;
 	uint32_t v;
+	if (!strncmp(args, "lp ", 3) && (!strcmp(args + 3, "on") || !strcmp(args + 3, "off"))) {
+		bool on = !strcmp(args + 3, "on");
+		display_active();
+		dsi_low_power(on);
+		say("dcs: commands in %s\n", on ? "low power mode" : "high speed mode");
+		return;
+	}
 	while (*skip_spaces(args) && n < sizeof b && parse_num(&args, 16, &v) && v <= 0xff)
 		b[n++] = (uint8_t)v;
 	if (!n || *skip_spaces(args)) {
@@ -1814,7 +1821,7 @@ static const struct command commands[] = {
 	{ "reboot", "[bootloader]", cmd_reboot },
 	{ "dload", "on | off", cmd_dload },
 	{ "bright", "<0-255>", cmd_bright },
-	{ "dcs", "<cmd> [<byte>...]", cmd_dcs },
+	{ "dcs", "<cmd> [<byte>...] | lp on|off", cmd_dcs },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
 	{ "light", "[sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },
