@@ -7,7 +7,7 @@
  * 4.1 V and 200 mA from 45 C, stops from 55 C and below -10 C, and goes
  * back to normal under 43 C and from -5 C. Its charger also takes 200 mA
  * off above the board's step-down voltage (4.25 V if not set), until the
- * cell is under 4.05 V again. With no reading of the thermistor,
+ * cell is 200 mV under it again. With no reading of the thermistor,
  * charging is held off. */
 #include "asteroid.h"
 #include "soc/max17050.h"
@@ -22,7 +22,7 @@
 #define WARM_MV		4100
 #define WARM_MA		200
 #define STEP_DOWN_MV	(board->chg.step_down_mv ? board->chg.step_down_mv : 4250)
-#define STEP_UP_MV	4050
+#define STEP_UP_MV	(STEP_DOWN_MV - 200u)
 #define STEP_DOWN_MA	200
 
 /* What the policy needs from a gauge. */
