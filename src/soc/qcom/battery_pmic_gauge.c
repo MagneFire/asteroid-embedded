@@ -127,8 +127,8 @@ static void fg_init(void)
 	pg_init();
 }
 
-/* The vendor scales the gauge's 99 % to full, so the charger resumes
- * below that rather than at the first dip under 100 %. */
+/* The vendor's MAX17050 driver scales the gauge's 99 % to full, so the
+ * charger resumes below that rather than at the first dip under 100 %. */
 static void pg_poll(void)
 {
 	uint32_t now = time_ms();
@@ -141,7 +141,7 @@ static void pg_poll(void)
 		temperature();
 		gauge->update();
 	}
-	uint32_t soc = gauge->soc() * 100 / 99;
+	uint32_t soc = gauge == &max17050 ? gauge->soc() * 100 / 99 : gauge->soc();
 	pmic_charger_poll(soc > 100 ? 100 : soc);
 }
 
