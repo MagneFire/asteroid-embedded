@@ -148,6 +148,9 @@ int main(void)
 	CHECK(charge_empty_wait_ms(3, -200000, 415) == 600000);
 	CHECK(charge_empty_wait_ms(2, 0, 415) == 60000);
 	CHECK(charge_empty_wait_ms(0, -100000, 415) == 60000);
+	CHECK(charge_percent_from_mv(3300) == 0);
+	CHECK(charge_percent_from_mv(3650) == 8);
+	CHECK(charge_percent_from_mv(4400) == 100);
 
 	puts(failures ? "gauge_test: FAILED" : "gauge_test: ok");
 	return failures != 0;

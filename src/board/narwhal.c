@@ -2,6 +2,7 @@
  * rev-a boards. Two mechanical hands sit over the LCD. */
 #include "asteroid.h"
 #include "display/display.h"
+#include "soc/max17050.h"
 
 /* The GPU microcode is on the vendor partition. */
 static const char *const firmware_dirs[] = { "/firmware/", NULL };
@@ -24,6 +25,48 @@ static const uint16_t backlight_map[256] = {
 	1604, 1609, 1614, 1620, 1625, 1630, 1636, 1641, 1646, 1652, 1657, 1662, 1668, 1673, 1678, 1684,
 	1689, 1694, 1700, 1705, 1710, 1716, 1721, 1726, 1732, 1737, 1742, 1748, 1753, 1758, 1764, 1769,
 	1774, 1780, 1785, 1790, 1796, 1801, 1806, 1812, 1817, 1822, 1828, 1833, 1838, 1844, 1849, 1885,
+};
+
+/* FAN54511 as the vendor's tree sets it, apart from the float voltage,
+ * USB input current and charge enable, which the driver keeps: charging
+ * starts at 3.0 V, 200 mA, 50 mA pre-charge, the termination current at
+ * its highest for the vendor's own end of charge, the battery divider off,
+ * 6.5 V over- and 4.56 V under-voltage on both inputs, no fast charge
+ * timer, no battery detection or top-off time limit, termination and
+ * top-off on. The wireless input is not fitted but set as the vendor does. */
+static const struct board_reg charger_setup[] = {
+	{ 0x0c, 0x07, (3000 - 2700) / 100 },
+	{ 0x12, 0, (200 - 200) / 50 },
+	{ 0x13, 0, 15 << 4 | (50 - 50) / 50 },
+	{ 0x16, 0, (325 - 325) / 25 },
+	{ 0x30, 1 << 5, 0 },
+	{ 0x15, 0, 0 << 4 | 4 },
+	{ 0x17, 0, 0 << 4 | 4 },
+	{ 0x19, 0x07, 0 },
+	{ 0x1b, 0x0f, 0x08 },
+	{ 0x0e, 1 << 3 | 1 << 2, 1 << 3 | 1 << 2 },
+};
+
+/* The vendor's cell model for the 240 mAh cell, from its tree. The gauge
+ * takes its temperature from the host. */
+static const struct max17050_model cell_model = {
+	.config = 0x2104, .learn_cfg = 0x2603, .filter_cfg = 0x87a4, .relax_cfg = 0x506b, .full_soc_thresh = 0x5f00,
+	.design_cap = 0x01d3, .fullcap = 0x01d3, .fullcapnom = 0x01d3, .ichgt_term = 0x00a0,
+	.rcomp0 = 0x0037, .tempco = 0x2d3a, .qrtbl = { 0x2a00, 0x1483, 0x0a00, 0x0780 },
+	.tgain = 0xe932, .toff = 0x2381, .version = 0x0004, .v_empty = 0xa05f, .iavg_empty = 0x0175,
+	.cell = {
+		0x94a0, 0xae60, 0xb740, 0xb850, 0xbac0, 0xbbd0, 0xbd20, 0xbe00, 0xc010, 0xc150, 0xc450, 0xc7e0,
+		0xcb00, 0xce40, 0xd330, 0xd970, 0x0050, 0x0220, 0x1780, 0x0e40, 0x1130, 0x0d00, 0x2660, 0x0f10,
+		0x1340, 0x0af0, 0x0770, 0x0830, 0x06f0, 0x07e0, 0x06c0, 0x06c0, 0x0100, 0x0100, 0x0100, 0x0100,
+		0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100, 0x0100,
+	},
+};
+
+/* The vendor's battery thermistor table, every 5 C of its 1 C steps. */
+static const struct board_therm therm[] = {
+	{ -300, 1627 }, { -200, 1507 }, { -100, 1345 }, { 0, 1159 }, { 50, 1064 }, { 100, 972 }, { 150, 885 },
+	{ 200, 807 }, { 250, 737 }, { 300, 675 }, { 350, 623 }, { 400, 578 }, { 450, 540 }, { 500, 509 },
+	{ 550, 482 }, { 600, 461 }, { 650, 442 }, { 700, 427 }, { 750, 415 }, { 790, 407 },
 };
 
 const struct board board_narwhal = {
@@ -60,4 +103,17 @@ const struct board board_narwhal = {
 			.vdd_ldo = 16, .vdd_uv = 1800000, .vld_ldo = 17, .vld_uv = 3300000 },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2900 },
+	/* FAN54511 and MAX17050 on BLSP1 QUP4, the charger's interrupt on
+	 * gpio 92 (MPM 33) and its disable line on gpio 84. The PM8916's own
+	 * charger is off in the vendor's tree; its USB input is suspended. */
+	.battery_driver = &battery_fan54511,
+	.charger = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x6b }, .irq = 92, .mpm = 33,
+		     .setup = charger_setup, .setup_n = sizeof charger_setup / sizeof charger_setup[0],
+		     .cell_mah = 240, .hold_low = 84, .pmic_charger_off = true },
+	.fuel_gauge = &gauge_max17050,
+	.gauge = { .i2c = { .bus = 4, .sda = 14, .scl = 15, .func = 2, .addr = 0x36 }, .model = &cell_model,
+		   .soc_full = 95, .soc_empty = 1, .host_temp = true },
+	.rsense_uohm = 10000,
+	.therm = therm,
+	.therm_n = sizeof therm / sizeof therm[0],
 };

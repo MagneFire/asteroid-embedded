@@ -32,4 +32,7 @@ bool charge_temp_plausible(int temp);
  * the next look at it: from the charge left at the current drawn or a
  * higher one, never under 10 minutes, and each minute at 2 % or less. */
 uint32_t charge_empty_wait_ms(uint32_t percent, int32_t ua, uint32_t cell_mah);
+/* Until a gauge has reported, the charge from the cell voltage the PMIC
+ * measures. */
+uint32_t charge_percent_from_mv(uint32_t mv);
 #endif

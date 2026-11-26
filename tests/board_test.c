@@ -11,8 +11,8 @@ const struct touch_driver touch_rmi4, touch_it7260, touch_mxt, touch_fts, touch_
 const struct hub_driver hub_stm32, hub_em7184, hub_m4, hub_nanohub, hub_lis3dsh, hub_lsm6ds3, hub_mpu6515;
 const struct motor_driver motor_drv2605, motor_pm8226, motor_gp_pwm;
 const struct backlight_driver backlight_lm3535, backlight_lm3530, backlight_lm36272;
-const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max17050, battery_pmic_max17050, battery_smb231;
-const struct gauge_driver gauge_stc3117, gauge_bq27421;
+const struct battery_driver battery_pmic, battery_pmic_gauge, battery_max17050, battery_pmic_max17050, battery_smb231, battery_fan54511;
+const struct gauge_driver gauge_stc3117, gauge_bq27421, gauge_max17050;
 const struct hands_driver hands_sop716;
 const struct crown_driver crown_paj9124;
 const struct light_driver light_tsl2584, light_nanohub, light_al3320;
@@ -201,6 +201,11 @@ int main(int argc, char **argv)
 	 * from its STC3117. */
 	CHECK(board_swift.battery_driver == &battery_smb231 && board_swift.fuel_gauge == &gauge_stc3117 &&
 	      board_swift.gauge.cell && board_swift.gauge.i2c.bus == board_swift.charger.i2c.bus);
+	/* narwhal's FAN54511 shares its bus with the MAX17050, which takes the
+	 * temperature from the host and its cell model from the board. */
+	CHECK(board_narwhal.battery_driver == &battery_fan54511 && board_narwhal.fuel_gauge == &gauge_max17050 &&
+	      board_narwhal.gauge.model && board_narwhal.gauge.host_temp && board_narwhal.therm_n &&
+	      board_narwhal.gauge.i2c.bus == board_narwhal.charger.i2c.bus && board_narwhal.charger.mpm == 33);
 	static const uint8_t live[] = { 0xc4, 0x30, 0x01, 0x17, 0x12, 0x0d, 0x23, 0x08, 0x61 };
 	uint8_t chip[9];
 	memcpy(chip, live, sizeof chip);

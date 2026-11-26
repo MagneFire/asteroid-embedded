@@ -215,7 +215,6 @@ static uint32_t poll_ms(void) { return (cable_now && !keeps_settings) || !config
 
 static bool gauge(struct hub_gauge *g);
 static bool reading_new(void);
-static uint32_t percent_from_mv(uint32_t mv);
 
 /* The gauge is asked at most every GAUGE_ASK_MS, and on a cable change.
  * A hub that sent nothing over two of those is not believed: the PMIC's
@@ -262,7 +261,7 @@ static void smb231_poll(void)
 	} else if (due && stale) {
 		uint32_t mv = pmic_battery_mv();
 		if (mv)
-			check_empty(percent_from_mv(mv), mv, true);
+			check_empty(charge_percent_from_mv(mv), mv, true);
 	}
 }
 
@@ -302,32 +301,10 @@ static bool reading_new(void)
 	return gauge(&g) && (!have_seen || g.t_ms != seen.t_ms);
 }
 
-/* Until the gauge has reported, a few seconds after boot, the charge
- * comes from the cell voltage the PMIC measures: a rough curve for a
- * 4.4 V cell, reading high while it charges. */
-static const struct {
-	uint16_t mv;
-	uint8_t percent;
-} curve[] = {
-	{ 3400, 0 }, { 3600, 5 }, { 3700, 12 }, { 3780, 25 }, { 3850, 40 },
-	{ 3950, 55 }, { 4100, 75 }, { 4250, 90 }, { 4380, 100 },
-};
-
-static uint32_t percent_from_mv(uint32_t mv)
-{
-	if (mv <= curve[0].mv)
-		return 0;
-	for (unsigned i = 1; i < ARRAY_SIZE(curve); i++)
-		if (mv < curve[i].mv)
-			return curve[i - 1].percent + (mv - curve[i - 1].mv) * (uint32_t)(curve[i].percent - curve[i - 1].percent) /
-							      (uint32_t)(curve[i].mv - curve[i - 1].mv);
-	return 100;
-}
-
 static uint32_t smb231_percent(void)
 {
 	struct hub_gauge g;
-	return gauge(&g) ? g.percent : percent_from_mv(pmic_battery_mv());
+	return gauge(&g) ? g.percent : charge_percent_from_mv(pmic_battery_mv());
 }
 
 static bool charge_done(void)

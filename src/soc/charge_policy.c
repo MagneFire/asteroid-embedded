@@ -85,3 +85,23 @@ bool charge_policy_step(struct charge_policy *p, const struct charge_input *in)
 	p->stopped = held || p->complete;
 	return p->stopped;
 }
+
+/* A rough curve for a 4.4 V cell, reading high while it charges. */
+static const struct {
+	uint16_t mv;
+	uint8_t percent;
+} curve[] = {
+	{ 3400, 0 }, { 3600, 5 }, { 3700, 12 }, { 3780, 25 }, { 3850, 40 },
+	{ 3950, 55 }, { 4100, 75 }, { 4250, 90 }, { 4380, 100 },
+};
+
+uint32_t charge_percent_from_mv(uint32_t mv)
+{
+	if (mv <= curve[0].mv)
+		return 0;
+	for (unsigned i = 1; i < sizeof curve / sizeof curve[0]; i++)
+		if (mv < curve[i].mv)
+			return curve[i - 1].percent + (mv - curve[i - 1].mv) * (uint32_t)(curve[i].percent - curve[i - 1].percent) /
+							      (uint32_t)(curve[i].mv - curve[i - 1].mv);
+	return 100;
+}
