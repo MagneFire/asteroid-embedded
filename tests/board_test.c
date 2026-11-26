@@ -43,6 +43,11 @@ void display_splash_size(uint32_t *w, uint32_t *h)
 	*h = splash_h;
 }
 void log_printf(const char *fmt, ...) {}
+int regulator_on(uint32_t id, uint32_t uv) { return 0; }
+int regulator_off(uint32_t id) { return 0; }
+uint32_t time_ms(void) { return 0; }
+void delay_ms(uint32_t ms) {}
+void gpio_set(unsigned n, unsigned v) {}
 
 static int failures;
 #define CHECK(x) do { if (!(x)) { printf("%s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)

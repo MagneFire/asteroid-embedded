@@ -252,7 +252,7 @@ uint32_t *display_backbuffer(void) { return fb.buf[fb.back]; }
 static const uint32_t mdp_clocks[] = { MDSS_AXI_CBCR, MDSS_MDP_CBCR, MDSS_MDP_LUT_CBCR, MDSS_VSYNC_CBCR };
 static const uint32_t dsi_clocks[] = { MDSS_ESC0_CBCR, MDSS_BYTE0_CBCR, MDSS_PCLK0_CBCR };
 static bool resting, panel_asleep;
-static uint8_t backlight_level = 255, backlight_code;
+static uint8_t backlight_level = 255, backlight_code, panel_level = 255;
 
 /* The registers the MDSS power domain loses when it collapses, in the
  * order they are written back: VBIF, MDP top (interface select, the
@@ -519,6 +519,9 @@ void display_set_brightness(uint8_t level)
 			board->backlight->set(level);
 		return;
 	}
+	panel_level = level;
+	if (panel_asleep && board->panel.power)
+		return;
 	display_active();
 	pp_wait();
 	uint8_t p[2] = { level, 0 };
@@ -556,26 +559,35 @@ static uint32_t sleep_in_t;
 
 static void panel_power(bool on)
 {
-	if (!on) {
+	if (board->panel.power) {
+		board->panel.power(on);
+	} else if (!on) {
 		delay_ms(PANEL_SLEEP_MS);
 		gpio_set(board->panel.reset_gpio, 0);
 		gpio_set(board->panel.bias_gpio, 0);
 		delay_ms(2);
 		regulator_off(board->panel.io_ldo);
-		return;
+	} else {
+		regulator_on(board->panel.io_ldo, board->panel.io_uv);
+		delay_ms(1);
+		gpio_set(board->panel.bias_gpio, 1);
+		delay_ms(PANEL_BIAS_MS);
+		gpio_set(board->panel.reset_gpio, 1);
+		delay_ms(PANEL_RESET_MS);
+		gpio_set(board->panel.reset_gpio, 0);
+		delay_ms(1);
+		gpio_set(board->panel.reset_gpio, 1);
+		delay_ms(PANEL_RESET_MS);
 	}
-	regulator_on(board->panel.io_ldo, board->panel.io_uv);
-	delay_ms(1);
-	gpio_set(board->panel.bias_gpio, 1);
-	delay_ms(PANEL_BIAS_MS);
-	gpio_set(board->panel.reset_gpio, 1);
-	delay_ms(PANEL_RESET_MS);
-	gpio_set(board->panel.reset_gpio, 0);
-	delay_ms(1);
-	gpio_set(board->panel.reset_gpio, 1);
-	delay_ms(PANEL_RESET_MS);
+	if (!on)
+		return;
 	dsi_low_power(true);
 	dcs_sequence(board->panel.on, board->panel.on_n);
+	/* The level set while it was off did not reach it. */
+	if (board->panel.power) {
+		uint8_t p[2] = { panel_level, 0 };
+		dsi_dcs_write(0x51, p, board->panel.brightness_wide ? 2 : 1);
+	}
 	dsi_low_power(false);
 }
 

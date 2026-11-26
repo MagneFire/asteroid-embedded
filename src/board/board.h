@@ -284,6 +284,9 @@ struct board {
 		const struct dcs_step *on;
 		uint8_t on_n, reset_gpio, bias_gpio, io_ldo;
 		uint32_t io_uv;
+		/* The vendor's own order and waits for those lines and the
+		 * LDO, in place of the default ones. */
+		void (*power)(bool on);
 		/* A panel behind a bridge chip: the bridge's reset line, the
 		 * lines that switch its core supply, its I/O supply (low is
 		 * on, and the pad of that line) and its memory. */

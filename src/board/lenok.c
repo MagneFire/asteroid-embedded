@@ -28,6 +28,62 @@ static const struct dcs_step wake[] = {
 	{ 0x35, 0, 0, { 0 } },
 };
 
+/* The vendor's start-up commands after reset, up to the tearing signal:
+ * display on is left for when there is a picture. */
+static const struct dcs_step panel_on[] = {
+	{ 0x11, 0, 128, { 0 } },
+	{ 0x36, 1, 0, { 0x40 } },
+	{ 0x53, 1, 0, { 0x20 } },
+	{ 0xb0, 1, 0, { 0xac } },
+	{ 0xc2, 3, 0, { 0x08, 0x80, 0x01 } },
+	{ 0x5c, 1, 0, { 0x24 } },
+	{ 0x5e, 1, 0, { 0x0b } },
+	{ 0x5f, 48, 0, { 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+			 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d, 0x8d,
+			 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f,
+			 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
+	{ 0xe1, 16, 0, { 0x32, 0x3c, 0x46, 0x48, 0x4e, 0x46, 0x40, 0x30, 0x00, 0xfb, 0xf1, 0xee, 0xe2, 0xf6, 0x08, 0x40 } },
+	{ 0xe2, 16, 0, { 0x32, 0x3c, 0x46, 0x48, 0x4e, 0x46, 0x40, 0x30, 0x00, 0xfb, 0xf1, 0xee, 0xe2, 0xf6, 0x08, 0x40 } },
+	{ 0xe3, 16, 0, { 0x32, 0x3c, 0x46, 0x48, 0x4e, 0x46, 0x40, 0x30, 0x00, 0xfb, 0xf1, 0xee, 0xe2, 0xf6, 0x08, 0x40 } },
+	{ 0x35, 0, 0, { 0 } },
+};
+
+#define PANEL_RESET	25
+#define PANEL_ENABLE	108
+#define PANEL_VDD	18
+#define PANEL_VDD_UV	3000000
+#define SLEEP_IN_MS	112
+#define OFF_RESET_MS	20
+#define VDD_OFF_MS	200
+#define VDD_ON_MS	20
+#define RESET_MS	50
+
+static uint32_t vdd_off_t;
+
+/* As the vendor's panel driver: gpio 108 switches the panel's own
+ * supply. The VDD discharge wait is taken before the next power on. */
+static void panel_power(bool on)
+{
+	if (!on) {
+		delay_ms(SLEEP_IN_MS);
+		gpio_set(PANEL_ENABLE, 0);
+		delay_ms(OFF_RESET_MS);
+		gpio_set(PANEL_RESET, 0);
+		delay_ms(OFF_RESET_MS);
+		regulator_off(PANEL_VDD);
+		vdd_off_t = time_ms();
+		return;
+	}
+	uint32_t gone = time_ms() - vdd_off_t;
+	if (gone < VDD_OFF_MS)
+		delay_ms(VDD_OFF_MS - gone);
+	delay_ms(VDD_ON_MS);
+	regulator_on(PANEL_VDD, PANEL_VDD_UV);
+	gpio_set(PANEL_ENABLE, 1);
+	gpio_set(PANEL_RESET, 1);
+	delay_ms(RESET_MS);
+}
+
 /* On BLSP1 QUP2, where the ADSP ran them: the MPU-6515 comes out of
  * reset running, so it is put to sleep. */
 static const struct board_chip_off chips_off[] = {
@@ -63,6 +119,9 @@ const struct board board_lenok = {
 		.idle_on = idle_on, .idle_on_n = sizeof idle_on / sizeof idle_on[0],
 		.idle_off = idle_off, .idle_off_n = sizeof idle_off / sizeof idle_off[0],
 		.wake = wake, .wake_n = sizeof wake / sizeof wake[0],
+		.on = panel_on, .on_n = sizeof panel_on / sizeof panel_on[0],
+		.reset_gpio = PANEL_RESET, .bias_gpio = PANEL_ENABLE, .io_ldo = PANEL_VDD, .io_uv = PANEL_VDD_UV,
+		.power = panel_power,
 	},
 	.firmware_dirs = firmware_dirs,
 	/* BCM4343A0 on BLSP1 UART4 as on dory, without its reset line. */
