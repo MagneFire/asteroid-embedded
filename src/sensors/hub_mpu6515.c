@@ -6,11 +6,19 @@
  * an MPM wake pin, and the accelerometer then runs at 25 Hz into the
  * FIFO for STREAM_MS, each sample raising INT too, drained by the main
  * loop into the wrist raise detector, longer while the jolts go on. INT is latched until
- * INT_STATUS is read. The compass runs the accelerometer and gyroscope
- * at 50 Hz and the AK8963 at 100 Hz, sampled by the main loop. The
- * PAH8001 heart rate sensor on the same bus is run from here too. */
+ * INT_STATUS is read. The same samples count steps. A burst that lasts
+ * STREAM_CAP_MS, or a jolt with tilt off, starts a walk: the FIFO fills
+ * with INT off, in the low power cycle or (steps_lp off) normal mode at
+ * 12.5 Hz, and is drained every STEPS_DRAIN_MS, also for raises, until
+ * STILL_DRAINS drains without movement. The compass runs the
+ * accelerometer and gyroscope at 50 Hz and the AK8963 at 100 Hz,
+ * sampled by the main loop. The PAH8001 heart rate sensor on the same
+ * bus is run from here too. */
+#include <string.h>
 #include "asteroid.h"
+#include "sched.h"
 #include "sensors/hub.h"
+#include "sensors/pedometer.h"
 #include "sensors/raise.h"
 #include "sensors/compass.h"
 #include "sensors/fusion.h"
@@ -61,6 +69,7 @@
 #define GYRO_2000DPS	0x18
 #define DLPF_41HZ	0x03
 #define DLPF_20HZ	0x04
+#define DLPF_5HZ	0x06
 /* For wake-on-motion: the 1 kHz path, 184 Hz bandwidth. */
 #define ACCEL_LP_DLPF	0x09
 /* 15.63 Hz in the low power cycle. */
@@ -68,6 +77,7 @@
 /* In 4 mg. */
 #define WOM_LSB		20
 #define DIV_25HZ	39
+#define DIV_12HZ	79
 #define DIV_50HZ	19
 #define MG_PER_8G	(1000.0f / 4096)
 #define GYRO_TO_RADS	(3.14159265f / 180 / 16.4f)
@@ -85,14 +95,24 @@
 #define AK_UT_PER_COUNT	0.15f
 
 #define STREAM_MS	2500
+#define STREAM_CAP_MS	5000
 #define DRAIN_MAX	32
+#define STEPS_DRAIN_MS	4000
+#define STILL_DRAINS	2
+#define FRAME		6
+/* Past this the FIFO may have wrapped, mid-frame. */
+#define FIFO_FULL	504
+#define STREAM_US	40000
+#define LP_US		64000
+#define NORMAL_US	80000
 #define COMPASS_MS	20
 #define FIELD_STALE_MS	500
 #define ACCEL_MS	40
 
-enum mode { M_OFF, M_WOM, M_STREAM, M_ACCEL, M_COMPASS, M_UNSURE };
+enum mode { M_OFF, M_WOM, M_STREAM, M_ACCEL, M_COMPASS, M_STEPS, M_UNSURE };
 
 static bool ready, ak_ready, tilt_wanted, accel_wanted, compass_wanted, tilt, armed;
+static bool steps_wanted = true, steps_lp = true, stepping, pedo_fresh;
 static volatile bool pending;
 static enum mode mode = M_UNSURE;
 static struct raise raise;
@@ -105,6 +125,12 @@ static bool have_latest, restarted;
 static uint8_t was;
 static uint32_t stream_until, fed_t, compass_due, compass_t, field_t, accel_t;
 static uint32_t irqs, jolts, samples, raises, errors;
+static struct pedometer pedo;
+static struct resample resampler;
+static struct sched_task drain_task;
+static unsigned still_drains;
+static uint32_t stream_start, drain_t, pedo_t, steps_period_us;
+static uint32_t batches, empty_batches, overflows, pedo_samples, walks;
 
 static int rd(uint8_t addr, uint8_t reg, uint8_t *v, unsigned n)
 {
@@ -226,6 +252,27 @@ static bool set_mode(enum mode m)
 		if (ak_ready)
 			e |= ak_mode(AK_16BIT_100HZ);
 		break;
+	case M_STEPS:
+		e |= wr(a, PWR_MGMT_1, steps_lp ? 0 : CLK_PLL);
+		e |= wr(a, PWR_MGMT_2, GYRO_OFF);
+		e |= wr(a, INT_ENABLE, 0);
+		e |= wr(a, ACCEL_CONFIG, ACCEL_8G);
+		if (steps_lp) {
+			e |= wr(a, ACCEL_CONFIG2, ACCEL_LP_DLPF);
+			e |= wr(a, LP_ACCEL_ODR, LP_ODR_16HZ);
+		} else {
+			e |= wr(a, CONFIG, DLPF_5HZ);
+			e |= wr(a, SMPLRT_DIV, DIV_12HZ);
+			e |= wr(a, ACCEL_CONFIG2, DLPF_5HZ);
+		}
+		e |= wr(a, USER_CTRL, USER_FIFO_RST);
+		e |= wr(a, USER_CTRL, USER_FIFO_EN);
+		e |= wr(a, FIFO_EN, FIFO_ACCEL);
+		/* Into the cycle last: the vendor leaves it to touch the FIFO. */
+		if (steps_lp)
+			e |= wr(a, PWR_MGMT_1, CYCLE);
+		steps_period_us = steps_lp ? LP_US : NORMAL_US;
+		break;
 	case M_UNSURE:
 		break;
 	}
@@ -237,20 +284,48 @@ static bool set_mode(enum mode m)
 	return !e;
 }
 
+static bool fifo_mode(enum mode m) { return m == M_STREAM || m == M_STEPS; }
+
+static void walk_start(void)
+{
+	if (!stepping)
+		walks++;
+	stepping = true;
+	still_drains = 0;
+}
+
+static bool drain(uint32_t now, unsigned max, uint32_t period_us, bool to_raise);
+
 /* Screen off, tilt runs on wake-on-motion between bursts; screen on, the
- * accelerometer or the compass. */
+ * accelerometer or the compass. Walks run on either. */
 static void apply(uint32_t now)
 {
+	bool streaming = tilt_wanted && (int32_t)(stream_until - now) > 0;
+	if (streaming && steps_wanted && (int32_t)(now - stream_start) >= STREAM_CAP_MS) {
+		streaming = false;
+		stream_until = now;
+		walk_start();
+	}
 	enum mode m = compass_wanted ? M_COMPASS
-		      : tilt_wanted && (int32_t)(stream_until - now) > 0 ? M_STREAM
+		      : streaming ? M_STREAM
 		      : accel_wanted ? M_ACCEL
-		      : tilt_wanted ? M_WOM
+		      : steps_wanted && stepping ? M_STEPS
+		      : tilt_wanted || steps_wanted ? M_WOM
 		      : M_OFF;
-	if (m == M_STREAM && mode != M_STREAM)
-		restarted = true;
-	if (m != M_STREAM && m != M_ACCEL && m != M_COMPASS)
+	if (mode == M_STEPS && m != M_STEPS)
+		drain(now, UINT32_MAX, steps_period_us, tilt_wanted);
+	if (fifo_mode(m) && !fifo_mode(mode))
+		restarted = pedo_fresh = true;
+	if (m != M_STREAM && m != M_ACCEL && m != M_COMPASS && m != M_STEPS)
 		have_latest = false;
+	enum mode before = mode;
 	set_mode(m);
+	if (mode == M_STEPS && before != M_STEPS) {
+		drain_t = now;
+		sched_after(&drain_task, now, STEPS_DRAIN_MS);
+	} else if (mode != M_STEPS) {
+		sched_cancel(&drain_task);
+	}
 	irq_on(mode == M_WOM || mode == M_STREAM);
 }
 
@@ -268,6 +343,9 @@ static bool ak_probe(void)
 	log_printf("motion: ak8963, asa %02x %02x %02x\n", fuse[0], fuse[1], fuse[2]);
 	return true;
 }
+
+/* Only for the wake: the drain is in the poll after it. */
+static bool drain_run(uint32_t now) { return false; }
 
 static bool mpu_init(void)
 {
@@ -295,6 +373,10 @@ static bool mpu_init(void)
 	compass_init(&compass);
 	pah8001_init();
 	raise_init(&raise);
+	pedometer_init(&pedo);
+	drain_task.name = "motion steps";
+	drain_task.run = drain_run;
+	sched_add(&drain_task);
 	gpio_irq_config(GPIO_IRQ, GPIO_IRQ_LEVEL_HIGH, pin_irq);
 	ready = true;
 	set_mode(M_OFF);
@@ -320,17 +402,63 @@ static void feed(const int16_t v[3], uint32_t now)
 		}
 }
 
-static void drain(uint32_t now)
+static void take(const int16_t v[3], uint32_t period_us, uint32_t now, bool to_raise)
 {
-	uint8_t c[2], s[6];
-	if (rd(ADDR, FIFO_COUNTH, c, 2))
-		return;
-	unsigned n = (unsigned)((c[0] & 0x1f) << 8 | c[1]) / 6;
-	for (unsigned k = 0; k < n && k < DRAIN_MAX && !rd(ADDR, FIFO_R_W, s, 6); k++) {
-		axes(s, latest);
-		have_latest = true;
-		feed(latest, now);
+	int16_t out[RESAMPLE_MAX][3];
+	if (pedo_fresh) {
+		pedometer_gap(&pedo, now - pedo_t);
+		resample_reset(&resampler);
+		pedo_fresh = false;
 	}
+	pedo_t = now;
+	pedo_samples++;
+	unsigned n = resample_feed(&resampler, v, period_us, out);
+	for (unsigned k = 0; k < n; k++) {
+		pedometer_feed(&pedo, out[k]);
+		if (to_raise)
+			feed(out[k], now);
+	}
+}
+
+/* True if a sample moved from the one before it by as much as
+ * wake-on-motion takes for a jolt. */
+static bool drain(uint32_t now, unsigned max, uint32_t period_us, bool to_raise)
+{
+	uint8_t c[2], s[FRAME];
+	if (rd(ADDR, FIFO_COUNTH, c, 2))
+		return false;
+	unsigned bytes = (unsigned)((c[0] & 0x1f) << 8 | c[1]);
+	if (bytes > FIFO_FULL) {
+		overflows++;
+		mode = M_UNSURE;
+		pedo_fresh = true;
+		return true;
+	}
+	bool moved = false;
+	for (unsigned k = 0; k < bytes / FRAME && k < max && !rd(ADDR, FIFO_R_W, s, FRAME); k++) {
+		int16_t v[3];
+		axes(s, v);
+		for (int i = 0; have_latest && i < 3; i++)
+			moved |= v[i] - latest[i] > WOM_LSB * 4 || latest[i] - v[i] > WOM_LSB * 4;
+		memcpy(latest, v, sizeof latest);
+		have_latest = true;
+		take(v, period_us, now, to_raise);
+	}
+	return moved;
+}
+
+static void steps_drain(uint32_t now)
+{
+	uint32_t before = pedo_samples, steps = pedo.steps;
+	drain_t = now;
+	sched_after(&drain_task, now, STEPS_DRAIN_MS);
+	bool moved = drain(now, UINT32_MAX, steps_period_us, tilt_wanted);
+	batches++;
+	empty_batches += pedo_samples == before;
+	if (moved || pedo.steps != steps || pedo.counting)
+		still_drains = 0;
+	else if (++still_drains >= STILL_DRAINS)
+		stepping = false;
 }
 
 static void sample_compass(uint32_t now)
@@ -379,7 +507,12 @@ static void mpu_poll(void)
 		uint8_t st = 0;
 		if (!rd(ADDR, INT_STATUS, &st, 1) && (st & INT_WOM) && tilt_wanted) {
 			jolts++;
+			if ((int32_t)(stream_until - now) <= 0)
+				stream_start = now;
 			stream_until = now + STREAM_MS;
+		} else if ((st & INT_WOM) && steps_wanted) {
+			jolts++;
+			walk_start();
 		}
 		if (armed) {
 			gpio_irq_ack(GPIO_IRQ);
@@ -387,7 +520,9 @@ static void mpu_poll(void)
 		}
 	}
 	if (mode == M_STREAM)
-		drain(now);
+		drain(now, DRAIN_MAX, STREAM_US, true);
+	else if (mode == M_STEPS && (int32_t)(now - drain_t) >= STEPS_DRAIN_MS)
+		steps_drain(now);
 	apply(now);
 	if (mode == M_COMPASS)
 		sample_compass(now);
@@ -461,12 +596,50 @@ static int mpu_heading(float *degrees)
 	return field_accuracy;
 }
 
+static uint32_t mpu_steps(void) { return ready ? pedo.steps : HUB_NONE; }
+
+static void mpu_power_down(bool down)
+{
+	if (!ready)
+		return;
+	steps_wanted = !down;
+	if (down)
+		stepping = false;
+	apply(time_ms());
+}
+
+/* steps_lp 0 fills the FIFO in normal mode, for a chip that does not in
+ * the low power cycle; steps_threshold is the pedometer's, in mg. */
+static int mpu_option(const char *name, uint32_t v)
+{
+	if (!strcmp(name, "steps_lp")) {
+		steps_lp = v;
+		if (ready && mode == M_STEPS) {
+			drain(time_ms(), UINT32_MAX, steps_period_us, tilt_wanted);
+			mode = M_UNSURE;
+			apply(time_ms());
+		}
+		return 0;
+	}
+	if (!strcmp(name, "steps_threshold")) {
+		pedo.threshold_mg = (uint16_t)v;
+		return 0;
+	}
+	return -1;
+}
+
 static void mpu_status(void (*say)(const char *fmt, ...))
 {
-	static const char *const names[] = { "off", "wake-on-motion", "streaming", "accelerometer", "compass", "unsure" };
+	static const char *const names[] = { "off", "wake-on-motion", "streaming", "accelerometer", "compass", "walking",
+					     "unsure" };
 	say("motion: mpu6515 %s, %s, ak8963 %s, tilt %s; %lu irqs, %lu jolts, %lu samples, %lu raises, %lu errors\n",
 	    ready ? "ready" : "absent", names[mode], ak_ready ? "ready" : "absent", tilt_wanted ? "on" : "off", irqs, jolts,
 	    samples, raises, errors);
+	say("motion: steps %s, %s, fifo in %s; %lu walks, %lu batches (%lu empty, %lu overflows), %lu samples, %lu steps, "
+	    "%lu rejected, threshold %u mg\n",
+	    steps_wanted ? "on" : "off", stepping ? "walking" : pedo.counting ? "counting" : "still",
+	    steps_lp ? "low power cycle" : "normal mode", walks, batches, empty_batches, overflows, pedo_samples, pedo.steps,
+	    pedo.rejected, pedo.threshold_mg);
 	if (ak_ready)
 		say("motion: compass accuracy %d, %u bins, %lu jumps, %lu turn resets\n", field_accuracy, compass_bins(&compass),
 		    compass.jumps, compass.turn_resets);
@@ -478,6 +651,7 @@ static void mpu_status(void (*say)(const char *fmt, ...))
 const struct hub_driver hub_mpu6515 = {
 	.init = mpu_init,
 	.poll = mpu_poll,
+	.steps = mpu_steps,
 	.tilted = mpu_tilted,
 	.tilt_on = mpu_tilt_on,
 	.can_sleep = mpu_can_sleep,
@@ -486,6 +660,8 @@ const struct hub_driver hub_mpu6515 = {
 	.compass_on = mpu_compass_on,
 	.heading = mpu_heading,
 	.status = mpu_status,
+	.option = mpu_option,
+	.power_down = mpu_power_down,
 	.heart_rate_on = pah8001_on,
 	.heart_rate = pah8001_rate,
 };
