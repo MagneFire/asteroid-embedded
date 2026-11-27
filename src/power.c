@@ -815,8 +815,10 @@ void power_idle(uint32_t app_next_ms, const char *why)
 	 * collapse, where its bark cannot wake the core, so a wake that
 	 * comes late would end in a bite with no record. As the vendor
 	 * kernel does for suspend, it is off across a long or cluster sleep,
-	 * and a wake later than planned is logged instead. */
-	bool long_sleep = !policy.awake && (next > 1000 || cluster || lux != UINT32_MAX || hub != UINT32_MAX);
+	 * and a wake later than planned is logged instead. A busy hub's short
+	 * wake sets the timer too, or the next is the second's tick. */
+	bool hub_busy = have_hub && !hub_can_sleep();
+	bool long_sleep = !policy.awake && (next > 1000 || cluster || lux != UINT32_MAX || hub != UINT32_MAX || hub_busy);
 	if (long_sleep) {
 		timer_set_period(next);
 		timer_next(next);
