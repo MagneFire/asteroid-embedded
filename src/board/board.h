@@ -525,6 +525,8 @@ struct board {
 		 * their strobe and the hub's request for them. */
 		uint8_t spi, cs, mode_irq, mode_mpm, strobe, mode[4];
 	} hub_pins;
+	/* The AK09918 magnetometer's bus where it is not on chips_off's. */
+	struct board_i2c mag_i2c;
 	/* Which of the M4 hub's firmwares the watch has. */
 	const struct m4_variant *hub_variant;
 	/* A heart rate front end on SPI beside the hub: the bus, chip

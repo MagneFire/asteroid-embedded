@@ -136,6 +136,7 @@ const struct board board_narwhal = {
 	 * registry. */
 	.hub = &hub_icm40604,
 	.hub_pins = { .spi = 3, .gpio = 0, .func = 1, .cs = 2, .irq = 96, .mpm = 36 },
+	.mag_i2c = { .bus = 1, .sda = 6, .scl = 7, .func = 3, .addr = 0x0c },
 	.motor = &motor_pm8226,
 	.motor_pins = { .vib_mv = 2900 },
 	/* FAN54511 and MAX17050 on BLSP1 QUP4, the charger's interrupt on

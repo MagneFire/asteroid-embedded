@@ -1,5 +1,5 @@
-/* The AK09918 magnetometer on beluga's IOM0, with the touch controller,
- * for the AP only. */
+/* The AK09918 magnetometer: on beluga's IOM0, with the touch controller,
+ * and on narwhal's I2C1. */
 #ifndef AK09918_H
 #define AK09918_H
 #include <stdbool.h>

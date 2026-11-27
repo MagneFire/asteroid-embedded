@@ -433,7 +433,10 @@ int compass_overflow(struct compass *c)
 int compass_feed(struct compass *c, const float raw[3], const float gyro[3], float dt, float out[3])
 {
 	float m[3];
-	compass_correct(raw, m);
+	if (c->uncorrected)
+		memcpy(m, raw, sizeof m);
+	else
+		compass_correct(raw, m);
 	bool jump = false;
 	for (int i = 0; i < 3 && c->have_ref; i++)
 		jump |= fm_abs(m[i] - c->ref[i]) >= JUMP_UT;

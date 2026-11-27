@@ -9,11 +9,19 @@
  * screen facing up. Screen on, the interrupt is off and the output
  * registers give the accelerometer for the nightstand turn.
  *
+ * The Compass app gets the AK09918 magnetometer on I2C1 with the
+ * accelerometer, through the compass calibration and the orientation,
+ * without the gyroscope.
+ *
  * The registers are InvenSense's driver for the part in Android's sensor
  * hub; low power mode is the ICM-42600 family's, which that driver does
  * not use. */
+#include <string.h>
 #include "asteroid.h"
 #include "sensors/hub.h"
+#include "sensors/ak09918.h"
+#include "sensors/compass.h"
+#include "sensors/fusion.h"
 
 #define PINS		(board->hub_pins)
 #define SPI_HZ		4000000
@@ -63,7 +71,23 @@
 #define TILT_SAMPLES	3
 #define TILT_UP		8028	/* 0.49 g at 16384 per g */
 
+#define COMPASS_MS	20
+/* Device axes from the AK09918's, as measured on the watch with each
+ * hour pointing north: x is minus chip Y, y minus chip X, z minus chip
+ * Z. The vendor's registry has x and y inverted, after its own driver. */
+static const struct {
+	uint8_t from;
+	int8_t sign;
+} mag_axes[3] = { { 1, -1 }, { 0, -1 }, { 2, -1 } };
+
 static bool ready, tilt_enabled, tilted, accel_wanted, watching;
+static bool compass_wanted, mag_set, compass_ready;
+static struct compass compass;
+static struct fusion fusion;
+static float field[3];
+static int field_accuracy = -1;
+static uint32_t compass_t, field_t;
+static int16_t mag_raw[3];
 static volatile bool pending;
 static unsigned up_samples;
 static uint32_t watch_t, sample_t, up_t, tilts, dropped, wakes, irqs, errors, accel_t;
@@ -175,6 +199,38 @@ static void rearm(void)
 	gpio_irq_enable(PINS.irq, true);
 }
 
+/* The field into the calibration every COMPASS_MS, and with the
+ * accelerometer into the orientation; a field out of range is left
+ * out. */
+static void compass_poll(uint32_t now)
+{
+	if (!compass_wanted)
+		return;
+	if (!mag_set)
+		mag_set = ak09918_on(COMPASS_MS);
+	if (now - compass_t < COMPASS_MS)
+		return;
+	float dt = (float)(now - compass_t) / 1000;
+	compass_t = now;
+	int16_t c[3], v[3];
+	int got = ak09918_read(c);
+	if (got == AK09918_OK) {
+		memcpy(mag_raw, c, sizeof c);
+		float raw[3];
+		for (int i = 0; i < 3; i++)
+			raw[i] = (float)(mag_axes[i].sign * c[mag_axes[i].from]) * AK09918_UT_PER_COUNT;
+		field_accuracy = compass_feed(&compass, raw, NULL, (float)(now - field_t) / 1000, field);
+		field_t = now;
+	} else if (got == AK09918_OVERFLOW) {
+		field_accuracy = compass_overflow(&compass);
+	}
+	if (sample(v)) {
+		float a[3] = { v[0], v[1], v[2] };
+		bool fresh = got == AK09918_OK;
+		fusion_update(&fusion, a, NULL, fresh ? field : NULL, fresh ? field_accuracy : 0, dt);
+	}
+}
+
 /* A motion starts a look at the next samples, with the pin masked; a
  * latch that cannot be read is tried again next pass. */
 static void icm40604_poll(void)
@@ -182,6 +238,7 @@ static void icm40604_poll(void)
 	if (!ready)
 		return;
 	uint32_t now = time_ms();
+	compass_poll(now);
 	if (pending) {
 		uint8_t st;
 		if (rd(INT_STATUS2, &st, 1))
@@ -216,6 +273,39 @@ static void icm40604_poll(void)
 		watching = false;
 		rearm();
 	}
+}
+
+static void icm40604_compass_on(bool on)
+{
+	if (on == compass_wanted || !ready)
+		return;
+	compass_wanted = on;
+	if (on) {
+		/* The calibration is kept from one use to the next. */
+		if (!compass_ready) {
+			compass_init(&compass);
+			compass.uncorrected = true;
+			compass_ready = true;
+		} else {
+			compass_restart(&compass);
+		}
+		fusion_init(&fusion);
+		field_accuracy = -1;
+		compass_t = field_t = time_ms();
+		mag_set = ak09918_on(COMPASS_MS);
+	} else {
+		mag_set = false;
+		ak09918_on(0);
+	}
+}
+
+static int icm40604_heading(float *degrees)
+{
+	float out[3];
+	if (!compass_wanted || field_accuracy < 0 || !fusion_angles(&fusion, out))
+		return -1;
+	*degrees = out[0];
+	return field_accuracy;
 }
 
 static bool icm40604_can_sleep(void) { return !pending && !watching; }
@@ -276,6 +366,14 @@ static void icm40604_status(void (*say)(const char *fmt, ...))
 	if (got)
 		say("motion: accel %d %d %d (16384 per g), pwr_mgmt0 %02x, int1 %u\n", v[0], v[1], v[2], pwr,
 		    gpio_get(PINS.irq));
+	ak09918_status(say);
+	float a[3] = { -1, 0, 0 };
+	if (compass_wanted) {
+		fusion_angles(&fusion, a);
+		say("compass: heading %d, pitch %d, roll %d, accuracy %d, %u bins, chip %d %d %d, field %d %d %d uT\n",
+		    (int)a[0], (int)a[1], (int)a[2], field_accuracy, compass_bins(&compass), mag_raw[0], mag_raw[1], mag_raw[2],
+		    (int)field[0], (int)field[1], (int)field[2]);
+	}
 }
 
 const struct hub_driver hub_icm40604 = {
@@ -287,4 +385,6 @@ const struct hub_driver hub_icm40604 = {
 	.accel_on = icm40604_accel_on,
 	.accel = icm40604_accel,
 	.status = icm40604_status,
+	.compass_on = icm40604_compass_on,
+	.heading = icm40604_heading,
 };

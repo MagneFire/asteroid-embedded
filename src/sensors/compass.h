@@ -42,6 +42,8 @@ struct compass {
 	unsigned quiet, updates, off_field;
 	struct compass_turns turns;
 	uint32_t jumps, turn_resets;
+	/* Set after compass_init on a watch the fixed correction is not for. */
+	bool uncorrected;
 };
 
 void compass_init(struct compass *c);

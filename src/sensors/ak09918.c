@@ -8,8 +8,11 @@
 #include "asteroid.h"
 #include "sensors/ak09918.h"
 
-#define BUS		(board->chips_off.i2c.bus)
+#define MAG		(board->mag_i2c.addr ? &board->mag_i2c : &board->chips_off.i2c)
+#define BUS		(MAG->bus)
 #define ADDR		0x0c
+/* narwhal's bus runs at 100 kHz in the vendor's tree. */
+#define BUS_HZ		(board->mag_i2c.addr ? 100000 : 400000)
 
 #define WIA1		0x00
 #define ST1		0x10
@@ -53,9 +56,9 @@ static bool set_mode(uint8_t m)
 
 static bool probe(void)
 {
-	const struct board_i2c *b = &board->chips_off.i2c;
+	const struct board_i2c *b = MAG;
 	uint8_t reg = WIA1, id[2] = { 0 };
-	int r = i2c_init(b->bus, b->sda, b->scl, b->func, 400000);
+	int r = i2c_init(b->bus, b->sda, b->scl, b->func, BUS_HZ);
 	if (!r)
 		r = i2c_xfer(BUS, ADDR, &reg, 1, id, 2);
 	if (r) {
