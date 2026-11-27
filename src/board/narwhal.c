@@ -109,6 +109,7 @@ const struct board board_narwhal = {
 		.sleep_mode = { 1, 0x18, 0x18, 0, 0, 1, 1, 0, 0, 0, 0, 0 },
 	},
 	.pmic_mpm = 62,
+	.key_reset_ms = 6720,
 	.crash_to_fastboot = true,
 	/* The top button is gpio 90 and the bottom one gpio 91. */
 	.keys = { { .gpio = 90, .mpm = 30 }, { .gpio = 91, .mpm = 32 } },
