@@ -6,7 +6,8 @@
 // and 30 minutes and 1 and 3 hours, Dismiss all and Dismiss. Without notifications a mail icon
 // says so.
 // notes-edges tells the screen stack which edges lead somewhere and, in bit 4, that the newest
-// page is on screen, where a swipe left goes back to the watchface.
+// page is on screen, where a swipe left goes back to the watchface, and in bit 5 that the page is
+// at its bottom.
 import { Face, Note } from "face.slint";
 import { Pill, PageHeader, Page } from "controls.slint";
 import { Icons } from "icons.slint";
@@ -208,6 +209,9 @@ component SnoozeTimes {
 // than 10 px per event, sliding over 100 ms; up and down ones scroll the page on screen when it is
 // longer than the screen, or, from its top, pull its actions down over it the same way. Up there
 // only a drag up goes back. Only the buttons take presses themselves.
+// The crown scrolls the page on screen as a wheel, and its steps (Face.crown-steps), which come
+// once it has turned on past the page's end, turn the pages: to an older one at its top, to a
+// newer one at its bottom. The actions leave it alone.
 export component NoteList {
     property <int> count: Face.notes.length;
     property <int> page;
@@ -238,7 +242,11 @@ export component NoteList {
     }
     // The note on screen, an index into Face.notes.
     property <int> current: self.count - 1 - self.page;
-    property <int> edges: self.count == 0 ? 2 + 16 : self.actions ? 8 : 2 + (self.page > 0 ? 1 : 0) + (self.offset == 0 ? 4 : 0) + (self.page >= self.count - 1 ? 16 : 0);
+    property <length> offset-min: Math.min(0, self.screen-height - self.page-height);
+    property <int> edges: self.count == 0 ? 2 + 16 : self.actions ? 8 : 2 + (self.page > 0 ? 1 : 0) + (self.offset == 0 ? 4 : 0) + (self.page >= self.count - 1 ? 16 : 0) + (self.offset <= self.offset-min ? 32 : 0);
+    // The page the crown turned back to, which comes on at its bottom, or -1.
+    property <int> land: -1;
+    property <int> turn: Face.crown-turn;
 
     width: 100%;
     height: 100%;
@@ -248,13 +256,23 @@ export component NoteList {
         Face.notes-edges = self.edges;
     }
     changed count => {
+        self.land = -1;
         self.page = Math.max(0, self.count - 1);
         self.offset = 0;
         self.actions = false;
         self.snoozing = false;
     }
     changed page => {
-        self.offset = 0;
+        if self.land != self.page {
+            self.offset = 0;
+        }
+    }
+    changed turn => {
+        if Face.crown-steps != 0 && !self.actions && self.axis == 0 {
+            let to = Math.clamp(self.page + (Face.crown-steps > 0 ? 1 : -1), 0, Math.max(0, self.count - 1));
+            self.land = to < self.page ? to : -1;
+            self.page = to;
+        }
     }
     changed edges => {
         Face.notes-edges = self.edges;
@@ -285,6 +303,12 @@ export component NoteList {
 
     TouchArea {
         enabled: !root.snoozing;
+        scroll-event(e) => {
+            if !root.actions && root.axis == 0 {
+                root.offset = Math.clamp(root.offset + e.delta-y, root.offset-min, 0);
+            }
+            accept
+        }
         moved => {
             let dx = self.mouse-x - self.pressed-x;
             let dy = self.mouse-y - self.pressed-y;
@@ -317,9 +341,10 @@ export component NoteList {
                 let live = self.mouse-x > -250 * Theme.unit;
                 if root.axis == 1 && live {
                     let n = root.drag < -50 * Theme.unit || (root.vx < -10 && root.drag < 0) ? 1 : root.drag > 50 * Theme.unit || (root.vx > 10 && root.drag > 0) ? -1 : 0;
+                    root.land = -1;
                     root.page = Math.clamp(root.page + n, 0, Math.max(0, root.count - 1));
                 } else if root.axis == 2 && live {
-                    root.offset = Math.clamp(root.offset + root.vdrag, Math.min(0, root.screen-height - root.page-height), 0);
+                    root.offset = Math.clamp(root.offset + root.vdrag, root.offset-min, 0);
                 } else if root.axis == 3 && live {
                     root.actions = root.actions ? !(root.vdrag < -50 * Theme.unit || (root.vy < -10 && root.vdrag < 0)) : root.vdrag > 50 * Theme.unit || (root.vy > 10 && root.vdrag > 0);
                 }
@@ -348,6 +373,9 @@ export component NoteList {
             changed shown => {
                 if self.shown {
                     root.page-height = self.content-height;
+                    if root.land == root.page {
+                        root.offset = Math.min(0, root.screen-height - self.content-height);
+                    }
                 }
             }
         }

@@ -48,6 +48,7 @@ static const char wake_by_touch[] = "touch";
 static bool hands_cal_wanted;
 static struct handpose_state hands;
 static struct crown_steps crown;
+static struct crown_page crown_notes;
 
 static struct app_caps caps;
 #define have_display caps.display
@@ -682,14 +683,24 @@ void app_power_changed(enum power_change change)
 
 /* A turn of the crown scrolls what is on show, or steps the value it
  * has there, and keeps the screen on. Counts that scroll a list toward
- * its end are negative, and those step a value up. */
+ * its end are negative, and those step a value up. On the notifications
+ * the steps are pages instead, toward the older ones if positive. */
 void app_crown(uint32_t now)
 {
 	int32_t counts = crown_poll();
 	if (!counts || !have_ui || !power_awake())
 		return;
 	power_activity(now);
-	stack_scroll(counts * CROWN_PX, -crown_steps(&crown, counts, now));
+	int steps;
+	if (stack_panel() == UI_PANEL_LEFT) {
+		unsigned at_end = ui_notes_edges() & (counts < 0 ? UI_NOTES_BOTTOM : UI_NOTES_TOP);
+		steps = -crown_page(&crown_notes, counts, at_end, now);
+		if (crown_page_locked(&crown_notes, now) && !steps)
+			return;
+	} else {
+		steps = -crown_steps(&crown, counts, now);
+	}
+	stack_scroll(counts * CROWN_PX, steps);
 }
 
 /* Settings' hands page: both hands at 12 while it is on show awake, to

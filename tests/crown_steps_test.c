@@ -44,6 +44,34 @@ int main(void)
 	t += CROWN_IDLE_MS + 1;
 	CHECK(crown_steps(&s, CROWN_STEP_COUNTS, t) == 0);
 
+	/* Pages: nothing while what the crown scrolls has not reached its
+	 * end, then one page for a turn on past it, however fast. */
+	struct crown_page p = { 0 };
+	t += 1000;
+	CHECK(crown_page(&p, -100, false, t) == 0 && !crown_page_locked(&p, t));
+	CHECK(crown_page(&p, -(CROWN_PAGE_COUNTS - 1), true, t + 10) == 0);
+	CHECK(crown_page(&p, -3 * CROWN_PAGE_COUNTS, true, t + 20) == -1);
+
+	/* The rest of the spin is dropped, and so are its counts. */
+	t += 20;
+	CHECK(crown_page_locked(&p, t + CROWN_PAGE_LOCK_MS - 1));
+	CHECK(crown_page(&p, -3 * CROWN_PAGE_COUNTS, true, t + CROWN_PAGE_LOCK_MS - 1) == 0);
+	CHECK(!crown_page_locked(&p, t + CROWN_PAGE_LOCK_MS));
+	CHECK(crown_page(&p, -(CROWN_PAGE_COUNTS - 1), true, t + CROWN_PAGE_LOCK_MS) == 0);
+	CHECK(crown_page(&p, -1, true, t + CROWN_PAGE_LOCK_MS + 10) == -1);
+
+	/* A pause, a turn back or leaving the end starts over. */
+	t += 5000;
+	CHECK(crown_page(&p, CROWN_PAGE_COUNTS - 1, true, t) == 0);
+	CHECK(crown_page(&p, 1, true, t + CROWN_IDLE_MS + 1) == 0);
+	t += 1000;
+	CHECK(crown_page(&p, CROWN_PAGE_COUNTS - 1, true, t) == 0);
+	CHECK(crown_page(&p, -2, true, t + 10) == 0 && crown_page(&p, 2, true, t + 20) == 0);
+	CHECK(crown_page(&p, 1, true, t + 30) == 1);
+	t += 1000;
+	CHECK(crown_page(&p, CROWN_PAGE_COUNTS - 1, true, t) == 0);
+	CHECK(crown_page(&p, 1, false, t + 10) == 0 && crown_page(&p, 1, true, t + 20) == 0);
+
 	if (failures)
 		return 1;
 	printf("crown_steps_test: ok\n");

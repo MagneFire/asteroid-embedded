@@ -229,6 +229,10 @@ bool ui_launcher_colors(struct ui_colors *out);
 void ui_set_launcher(int layout);
 unsigned ui_launcher_edges(void);
 unsigned ui_notes_edges(void);
+/* In ui_notes_edges: the notification on screen is at its top, where a
+ * pull down brings its actions, and, in bit 5, at its bottom. */
+#define UI_NOTES_TOP	4
+#define UI_NOTES_BOTTOM	32
 bool ui_app_colors(int app, struct ui_colors *out);
 void ui_set_settings(const struct ui_settings *s);
 void ui_set_build(const char *build);
