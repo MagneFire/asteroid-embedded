@@ -54,16 +54,19 @@
 #define RESET_MS	100
 #define POWER_US	200
 #define ACCEL_MS	100
-/* As often as the power loop looks at a busy hub: six make 300 ms. */
+/* The power loop wakes for a busy hub every 50 ms, but a pass on the slow
+ * clock asleep can take longer, so the 300 ms are timed, over at least
+ * three samples. */
 #define SAMPLE_MS	50
 #define TILT_WINDOW_MS	1500
-#define TILT_SAMPLES	6
+#define TILT_HOLD_MS	300
+#define TILT_SAMPLES	3
 #define TILT_UP		8028	/* 0.49 g at 16384 per g */
 
 static bool ready, tilt_enabled, tilted, accel_wanted, watching;
 static volatile bool pending;
 static unsigned up_samples;
-static uint32_t watch_t, sample_t, tilts, dropped, wakes, irqs, errors, accel_t;
+static uint32_t watch_t, sample_t, up_t, tilts, dropped, wakes, irqs, errors, accel_t;
 
 static int xfer(const uint8_t *tx, uint8_t *rx, unsigned n)
 {
@@ -93,15 +96,18 @@ static int wr(uint8_t reg, uint8_t v)
 	return xfer(tx, NULL, 2);
 }
 
-/* Device axes from the chip's as the vendor's sensor registry gives them:
- * the same. Not checked on the watch. */
+/* Device axes from the chip's, as measured on the watch: x is chip Y, y is
+ * chip X, z is minus chip Z. The vendor's registry has them as is, after
+ * its own driver, which we do not have. */
 static bool sample(int16_t v[3])
 {
 	uint8_t b[6];
 	if (rd(ACCEL_DATA_X1, b, 6))
 		return false;
-	for (unsigned i = 0; i < 3; i++)
-		v[i] = (int16_t)(b[2 * i] << 8 | b[2 * i + 1]);
+	int16_t cx = (int16_t)(b[0] << 8 | b[1]), cy = (int16_t)(b[2] << 8 | b[3]), cz = (int16_t)(b[4] << 8 | b[5]);
+	v[0] = cy;
+	v[1] = cx;
+	v[2] = (int16_t)(cz == INT16_MIN ? INT16_MAX : -cz);
 	return true;
 }
 
@@ -196,9 +202,11 @@ static void icm40604_poll(void)
 	if (sample(v)) {
 		bool up = v[1] >= TILT_UP;
 		up_samples = up && v[2] >= 0 ? up_samples + 1 : 0;
+		if (up_samples == 1)
+			up_t = now;
 		if (up && v[2] < 0)
 			dropped++;
-		if (up_samples >= TILT_SAMPLES) {
+		if (up_samples >= TILT_SAMPLES && now - up_t >= TILT_HOLD_MS) {
 			tilts++;
 			tilted = true;
 			log_printf("motion: tilt, %d %d %d\n", v[0], v[1], v[2]);
