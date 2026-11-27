@@ -2,8 +2,9 @@
  * keeps the local time for them, also with the rest of the watch off.
  * A command is written as its size, then its id and that many bytes
  * less one; a read names the id and gets the size back first. Reads less
- * than 100 ms apart fail, as the vendor found. Motor 1 is the minute
- * hand, motor 2 the hour hand, each 180 steps to a turn.
+ * than 100 ms apart fail, as the vendor found, and for a millisecond or
+ * two after any command it does not answer its address at all. Motor 1
+ * is the minute hand, motor 2 the hour hand, each 180 steps to a turn.
  *
  * In watch mode the hands follow the controller's own clock. Moving
  * them leaves it until a time or the watch mode command brings them
@@ -34,6 +35,7 @@ static const uint8_t needs_rev[] = { [CMD_READ_POSITION] = 16, [CMD_READ_MODE] =
 #define OPT_NO_HANDS_MOVE	0x08
 #define MODE_WATCH		5
 #define READ_GAP_MS		100
+#define CMD_GAP_MS		5
 #define RESET_MS		10
 /* The vendor waits this long for each step of a hand turned. */
 #define STEP_MS			17
@@ -51,7 +53,7 @@ static const uint8_t needs_rev[] = { [CMD_READ_POSITION] = 16, [CMD_READ_MODE] =
 static bool present, aside;
 static void set_aside(bool on);
 static uint8_t fw_ver, fw_rev;
-static uint32_t read_t;
+static uint32_t read_t, cmd_t;
 
 static void hw_reset(void)
 {
@@ -61,16 +63,26 @@ static void hw_reset(void)
 	delay_ms(BOOT_MS);
 }
 
+static int xfer(const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn)
+{
+	uint32_t gone = time_ms() - cmd_t;
+	if (gone < CMD_GAP_MS)
+		delay_ms(CMD_GAP_MS - gone);
+	int ret = i2c_xfer(BUS, ADDR, w, wn, r, rn);
+	cmd_t = time_ms();
+	return ret;
+}
+
 static int write_cmd(uint8_t cmd, const uint8_t *params)
 {
 	uint8_t b[9] = { size[cmd], cmd };
 	for (unsigned i = 1; i < size[cmd]; i++)
 		b[1 + i] = params[i - 1];
-	int r = i2c_xfer(BUS, ADDR, b, 1u + size[cmd], NULL, 0);
+	int r = xfer(b, 1u + size[cmd], NULL, 0);
 	if (r) {
 		log_printf("hands: command %u failed (%d), resetting\n", cmd, r);
 		hw_reset();
-		r = i2c_xfer(BUS, ADDR, b, 1u + size[cmd], NULL, 0);
+		r = xfer(b, 1u + size[cmd], NULL, 0);
 	}
 	return r;
 }
@@ -86,7 +98,7 @@ static int read_cmd(uint8_t cmd, uint8_t *out)
 		uint32_t gone = time_ms() - read_t;
 		if (gone < READ_GAP_MS)
 			delay_ms(READ_GAP_MS - gone);
-		r = i2c_xfer(BUS, ADDR, &cmd, 1, b, 1u + size[cmd]);
+		r = xfer(&cmd, 1, b, 1u + size[cmd]);
 		read_t = time_ms();
 		if (!r && b[0] != size[cmd])
 			r = -2;
