@@ -222,6 +222,19 @@ export component Scroller inherits SwipeGestureHandler {
         moves.release(false);
     }
 
+    // SwipeGestureHandler passes a wheel on to its children and takes none itself, so the crown's
+    // turns land here, behind the content.
+    TouchArea {
+        scroll-event(event) => {
+            let to = Math.clamp(root.scroll - event.delta-y, 0, moves.max);
+            if root.horizontal || root.swiping || to == root.scroll {
+                return reject;
+            }
+            moves.scroll-to(to, 0ms);
+            accept
+        }
+    }
+
     Rectangle {
         clip: true;
 
