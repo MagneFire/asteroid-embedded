@@ -316,6 +316,21 @@ static void cmd_backlight(const char *args)
 
 static void cmd_light(const char *args) { light_command(args, say); }
 
+/* The compass without its app, and its heading. */
+static void cmd_compass(const char *args)
+{
+	if (!hub_has_compass()) {
+		say("compass: none on this watch\n");
+		return;
+	}
+	if (!strncmp(args, "on", 2) || !strncmp(args, "off", 3))
+		hub_compass_on(args[1] == 'n');
+	float deg = 0;
+	int acc = hub_heading(&deg);
+	say("compass: heading %d, accuracy %d\n", acc < 0 ? -1 : (int)deg, acc);
+	hub_status(say);
+}
+
 static void cmd_hands(const char *args)
 {
 	uint32_t minute, hour, steps = 1;
@@ -1885,6 +1900,7 @@ static const struct command commands[] = {
 	{ "dcs", "<cmd> [<byte>...] | lp on|off | keep on|off", cmd_dcs },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
 	{ "hands", "[aside | time | <minute 0-179> <hour 0-179> | cal minute|hour cw|ccw [steps]]", cmd_hands },
+	{ "compass", "[on | off]", cmd_compass },
 	{ "light", "[sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },
