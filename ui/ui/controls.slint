@@ -249,11 +249,79 @@ export component Scroller inherits SwipeGestureHandler {
     }
 }
 
+// What a control that the crown steps shares: it has the crown from when it is pressed, or, if
+// first, from when its page comes on show (live), until another takes it, and turned gives the
+// steps of each turn while it has it. level dims a live one without it to 60 %, as the
+// spinners show the values beside the middle one, while another is turned and for a second
+// after.
+component Crowned {
+    in property <bool> live: true;
+    in property <bool> first;
+    in property <bool> pressed;
+    out property <bool> has: Face.has-crown && self.live && Face.crown-focus == self.id;
+    out property <float> level: Face.has-crown && self.live && Face.crown-dimming && Face.crown-focus != self.id ? 0.6 : 1;
+    animate level {
+        duration: 200ms;
+    }
+    callback turned(int);
+    property <int> id;
+    property <int> turn: Face.crown-turn;
+
+    width: 0;
+    height: 0;
+
+    public function take() {
+        Face.crown-focus = self.id;
+    }
+
+    init => {
+        Face.crown-ids += 1;
+        self.id = Face.crown-ids;
+        if self.first && self.live {
+            self.take();
+        }
+    }
+    changed live => {
+        if self.first && self.live {
+            self.take();
+        }
+    }
+    changed pressed => {
+        if self.pressed {
+            self.take();
+        }
+    }
+    lit := Timer {
+        interval: 1s;
+        running: false;
+        triggered => {
+            self.running = false;
+            Face.crown-dimming = false;
+        }
+    }
+
+    changed turn => {
+        if self.has {
+            Face.crown-dimming = true;
+            lit.running = false;
+            lit.running = true;
+            Face.crown-taken = Face.crown-turn;
+            if Face.crown-steps != 0 {
+                self.turned(Face.crown-steps);
+            }
+        }
+    }
+}
+
 // CircularSpinner (wrap) or Spinner with its SpinnerDelegate: count two-digit values or labels,
 // one every 48 px, the one in the middle 39 px and opaque, the others 22 px at 60 %, and the top
 // and bottom fifth fading out. twelve shows 0 as 12, first is added to the numbers shown, and
-// plain shows them without a leading zero. show(v, d) turns it to v from outside over d.
+// plain shows them without a leading zero. show(v, d) turns it to v from outside over d. On a
+// watch with a crown a step of the crown turns the one that has it (crown while its page is on
+// show, crown-first to start with it) one value, the others dimmed meanwhile.
 export component Spinner {
+    in property <bool> crown: true;
+    in property <bool> crown-first;
     in property <int> count;
     in property <[string]> labels;
     in property <bool> twelve;
@@ -300,7 +368,7 @@ export component Spinner {
         text: root.labels.length > 0 ? root.labels[self.v] : root.twelve && self.v == 0 ? "12" : root.plain ? (self.v + root.first) + "" : Face.two-digits(self.v + root.first);
         color: white;
         font-size: Math.round(22 + 17 * self.near) * (0.25 * Theme.unit);
-        opacity: (0.6 + 0.4 * self.near) * self.fade;
+        opacity: (0.6 + 0.4 * self.near) * self.fade * crowned.level;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -312,6 +380,17 @@ export component Spinner {
         item: root.step;
         count: root.count;
     }
+
+    crowned := Crowned {
+        live: root.crown && root.interactive;
+        first: root.crown-first;
+        pressed: pager.pressed;
+        turned(steps) => {
+            root.shown = 100ms;
+            pager.index = root.wrap ? pager.index + steps : Math.clamp(pager.index + steps, 0, root.count - 1);
+        }
+    }
+
 }
 
 // A 100 px dark disc with an icon at (200, 148), tappable, and a title line (bigger, as the
@@ -579,8 +658,12 @@ export component LabeledSwitch {
 // IntSelector: a 100 px row with a pill from x = 67 to 333, its fill showing value between min
 // and max, "-" and "+" buttons at its ends, dimmed at the limits, and the value with its unit
 // in the middle. Dragged sideways, or held for 800 ms, the pill sets the value from where the
-// finger is, in steps of step, with a darker fill and a larger number meanwhile.
+// finger is, in steps of step, with a darker fill and a larger number meanwhile. With crown, on
+// a watch with one, it can have the crown as a Spinner does, dimmed while another is turned, and
+// a step of the crown is one step of the value.
 export component IntSelector {
+    in property <bool> crown;
+    in property <bool> crown-first;
     in property <int> value;
     in property <int> min;
     in property <int> max: 100;
@@ -603,6 +686,7 @@ export component IntSelector {
 
     width: 100 * Theme.unit;
     height: 25 * Theme.unit;
+    opacity: crowned.level;
 
     Rectangle {
         x: 16.75 * Theme.unit;
@@ -673,6 +757,7 @@ export component IntSelector {
         icon: "ios-remove";
         opacity: root.value <= root.min ? 0.3 : 1;
         clicked => {
+            crowned.take();
             root.down();
         }
     }
@@ -683,7 +768,20 @@ export component IntSelector {
         icon: "ios-add";
         opacity: root.value >= root.max ? 0.3 : 1;
         clicked => {
+            crowned.take();
             root.up();
+        }
+    }
+
+    crowned := Crowned {
+        live: root.crown;
+        first: root.crown-first;
+        pressed: drag.pressed;
+        turned(steps) => {
+            let v = Math.clamp(root.value + steps * root.step, root.min, root.max);
+            if v != root.value {
+                root.set(v);
+            }
         }
     }
 }

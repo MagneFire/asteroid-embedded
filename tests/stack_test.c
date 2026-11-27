@@ -23,12 +23,13 @@ static unsigned face_n;
 static int face_x, face_y;
 
 static unsigned scrolls_n;
-static int scroll_panel = -1, scroll_dy;
-void ui_scroll(uint32_t panel, int x, int y, int dy)
+static int scroll_panel = -1, scroll_dy, scroll_steps;
+void ui_scroll(uint32_t panel, int x, int y, int dy, int steps)
 {
 	scrolls_n++;
 	scroll_panel = (int)panel;
 	scroll_dy = dy;
+	scroll_steps = steps;
 }
 
 void ui_touch(uint32_t panel, int kind, int x, int y)
@@ -433,16 +434,16 @@ static void test_crown(void)
 	stack_init(W, H, layers[0], W * H);
 	settle();
 	scrolls_n = 0;
-	stack_scroll(8);
+	stack_scroll(8, 0);
 	CHECK(scrolls_n == 0);
 	drag(50, 200, 250, 200, 4);
-	stack_scroll(8);
+	stack_scroll(8, 0);
 	CHECK(scrolls_n == 0);
 	settle();
-	stack_scroll(-8);
-	CHECK(scrolls_n == 1 && scroll_panel == UI_PANEL_LEFT && scroll_dy == -8);
+	stack_scroll(-8, 1);
+	CHECK(scrolls_n == 1 && scroll_panel == UI_PANEL_LEFT && scroll_dy == -8 && scroll_steps == 1);
 	modal = true;
-	stack_scroll(8);
+	stack_scroll(8, 0);
 	CHECK(scrolls_n == 1);
 	modal = false;
 	stack_home();

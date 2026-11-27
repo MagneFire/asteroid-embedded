@@ -218,11 +218,11 @@ static float app_alpha(void)
 
 unsigned stack_screen(void) { return screen; }
 unsigned stack_panel(void) { return app_open ? UI_PANEL_APP : screen; }
-void stack_scroll(int dy)
+void stack_scroll(int dy, int steps)
 {
 	unsigned p = stack_panel();
 	if (!ui_modal() && scrolls[p] && !stack_moving() && gesture == IDLE)
-		ui_scroll(p, W / 2, H / 2, dy);
+		ui_scroll(p, W / 2, H / 2, dy, steps);
 }
 unsigned stack_page(unsigned *count, int *next)
 {

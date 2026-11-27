@@ -100,10 +100,14 @@ component Shadowed {
 component TimeRow {
     in property <int> initial;
     in property <bool> separators;
+    // Its page is on show: under another, its spinners leave the crown alone.
+    in property <bool> crown: true;
     out property <int> minutes: (hours.value + (Face.clock12 ? ampm.value * 12 : 0)) * 60 + mins.value;
     property <length> w: Face.clock12 ? self.width / 3 : self.width / 2;
 
     hours := Spinner {
+        crown: root.crown;
+        crown-first: true;
         x: 0;
         width: root.w;
         height: root.height;
@@ -121,6 +125,7 @@ component TimeRow {
     }
 
     mins := Spinner {
+        crown: root.crown;
         x: root.w;
         width: root.w;
         height: root.height;
@@ -137,6 +142,7 @@ component TimeRow {
     }
 
     ampm := Spinner {
+        crown: root.crown;
         x: 2 * root.w;
         width: root.w;
         height: root.height;
@@ -590,6 +596,7 @@ export component AgendaApp {
             width: Face.round-screen ? 80 * Theme.unit : 100 * Theme.unit;
             height: 38 * Theme.unit;
             initial: root.start;
+            crown: root.page == 1;
         }
 
         Rectangle {
@@ -650,6 +657,7 @@ export component AgendaApp {
             width: 90 * Theme.unit;
             height: 60 * Theme.unit;
             initial: root.end;
+            crown: root.page == 2;
         }
 
         IconButton {
@@ -672,6 +680,7 @@ export component AgendaApp {
         top: true;
 
         date-day := Spinner {
+            crown-first: true;
             x: 5 * Theme.unit;
             y: 20 * Theme.unit;
             width: 30 * Theme.unit;
@@ -742,6 +751,7 @@ export component AgendaApp {
         top: true;
 
         pick-month := Spinner {
+            crown-first: true;
             x: Face.round-screen ? 10 * Theme.unit : 0;
             y: 20 * Theme.unit;
             width: Face.round-screen ? 40 * Theme.unit : 50 * Theme.unit;

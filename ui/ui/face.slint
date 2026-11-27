@@ -190,6 +190,17 @@ export global Face {
     in property <bool> has-timepiece;
     in property <bool> has-tilt-light;
     in property <bool> has-hands;
+    // The watch has a crown. crown-turn counts its turns and crown-steps is how far the last one
+    // steps a value, up if positive. The spinner or selector with crown-focus (an id from
+    // crown-ids) takes the turn and says so in crown-taken; a turn nothing took scrolls.
+    // crown-dimming is set while a control is being turned, which dims the others.
+    in property <bool> has-crown;
+    in-out property <int> crown-turn;
+    in-out property <int> crown-steps;
+    in-out property <int> crown-taken;
+    in-out property <int> crown-focus;
+    in-out property <int> crown-ids;
+    in-out property <bool> crown-dimming;
     // The application processor next to the watch's own is off, and only its power key starts it.
     in property <bool> ap-off;
     // The lines at the bottom the panel cuts off, AsteroidOS's flat tire.

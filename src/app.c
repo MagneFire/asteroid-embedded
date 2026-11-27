@@ -32,6 +32,7 @@
 #include "actions.h"
 #include "app.h"
 #include "handpose.h"
+#include "input/crown_steps.h"
 #include "config.h"
 
 #define BT_START_MS 2000
@@ -46,6 +47,7 @@
 static const char wake_by_touch[] = "touch";
 static bool hands_cal_wanted;
 static struct handpose_state hands;
+static struct crown_steps crown;
 
 static struct app_caps caps;
 #define have_display caps.display
@@ -678,14 +680,16 @@ void app_power_changed(enum power_change change)
 	}
 }
 
-/* A turn of the crown scrolls what is on show and keeps the screen on. */
+/* A turn of the crown scrolls what is on show, or steps the value it
+ * has there, and keeps the screen on. Counts that scroll a list toward
+ * its end are negative, and those step a value up. */
 void app_crown(uint32_t now)
 {
 	int32_t counts = crown_poll();
 	if (!counts || !have_ui || !power_awake())
 		return;
-	stack_scroll(counts * CROWN_PX);
 	power_activity(now);
+	stack_scroll(counts * CROWN_PX, -crown_steps(&crown, counts, now));
 }
 
 /* Settings' hands page: both hands at 12 while it is on show awake, to

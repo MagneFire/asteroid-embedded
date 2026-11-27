@@ -40,7 +40,7 @@ DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
 # host, with no assumption about the processor or the storage.
 SRCS := src/main.c src/version.c src/prof.c src/settings.c src/alarm.c src/clockapps.c src/calc.c src/game.c src/agenda.c src/fitness.c src/workout.c src/hrlog.c \
         src/power.c src/power_policy.c src/sched.c src/stats.c src/app.c src/actions.c src/events.c src/present.c \
-        src/handpose.c \
+        src/handpose.c src/input/crown_steps.c \
         src/civil.c src/log.c src/lib/ramoops.c src/board/drivers.c \
         src/sensors/steps.c src/sensors/auto_brightness.c src/sensors/orient.c src/sensors/tsl2584.c src/input/haptics.c \
         src/soc/charge_policy.c src/audio/speaker.c \
@@ -291,7 +291,7 @@ HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -O1 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
                -U_FORTIFY_SOURCE -I src -I src/soc/qcom -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
-HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/agenda.c src/sensors/orient.c src/ui/rotation.c src/handpose.c
+HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/agenda.c src/sensors/orient.c src/ui/rotation.c src/handpose.c src/input/crown_steps.c
 PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c
 
 $(BUILD)/test/parser_test: tests/parser_test.c $(PARSER_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
@@ -557,7 +557,7 @@ TESTS := console clockapps calc game agenda orient rotation actions power \
 	   auto_brightness ramoops soft sgx_compose qcom_compose emmc squashfs \
 	   sgx_image sgx_draw sgx sgx_stack sgx_paint swd bleif companion \
 	   apollo3_timer swdwake hr raise pedometer compass fusion compass_app sensor_power \
-	   flatmesh_mcu rm69090 beluga_display beluga_detect tma525 stack adb handpose
+	   flatmesh_mcu rm69090 beluga_display beluga_detect tma525 stack adb handpose crown_steps
 test: $(addprefix test-,$(TESTS)) test-board test-boot test-parser
 $(addprefix test-,$(TESTS)): test-%: $(BUILD)/test/%_test
 	@$< > $<.log 2>&1; s=$$?; cat $<.log; exit $$s

@@ -201,6 +201,17 @@ fn rgb(c: slint::Color) -> UiRgb {
     UiRgb { r: c.red(), g: c.green(), b: c.blue() }
 }
 
+/// A turn of the crown not yet scrolled: its steps so far and the crown-turn they went out as.
+#[derive(Clone, Copy)]
+struct Turn {
+    panel: u32,
+    x: i32,
+    y: i32,
+    dy: i32,
+    steps: i32,
+    turn: i32,
+}
+
 struct Ui {
     screens: Vec<Screen>,
     panels: Vec<Panel>,
@@ -217,6 +228,7 @@ struct Ui {
     today: Rc<VecModel<AgendaItem>>,
     opened: Queue,
     events: Events,
+    turn: Option<Turn>,
     #[cfg(not(feature = "mcu"))]
     stride: usize,
     #[cfg(not(feature = "mcu"))]
@@ -444,7 +456,7 @@ pub unsafe extern "C" fn ui_init(
         panels.push(panel);
     }
     #[cfg(not(feature = "mcu"))]
-    let ui = Ui { screens, panels, notes, forecast, alarms, tiles, agenda, today, opened, events, stride, width, height };
+    let ui = Ui { screens, panels, notes, forecast, alarms, tiles, agenda, today, opened, events, turn: None, stride, width, height };
     #[cfg(feature = "mcu")]
     let ui = Ui {
         screens,
@@ -459,6 +471,7 @@ pub unsafe extern "C" fn ui_init(
         today,
         opened,
         events,
+        turn: None,
     };
     unsafe { *UI.0.get() = Some(ui) };
     true
@@ -1148,8 +1161,35 @@ pub extern "C" fn ui_touch(panel: u32, kind: i32, x: i32, y: i32) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ui_scroll(panel: u32, x: i32, y: i32, dy: i32) {
+pub extern "C" fn ui_set_crown(on: bool) {
+    each(|face| face.set_has_crown(on));
+}
+
+/// A turn of the crown. Whether a spinner or selector takes it only shows once the change
+/// handlers have run, so the scroll it is otherwise waits for ui_tick.
+#[unsafe(no_mangle)]
+pub extern "C" fn ui_scroll(panel: u32, x: i32, y: i32, dy: i32, steps: i32) {
     with_ui(|ui| {
+        let face = ui.screen(panel as usize).global::<Face>();
+        let turn = face.get_crown_turn().wrapping_add(1);
+        // Turns since the last ui_tick go out as one, unless a change handler has run since.
+        let (dy, steps) = match ui.turn.filter(|t| t.panel == panel && face.get_crown_taken() != t.turn) {
+            Some(t) => (dy + t.dy, steps + t.steps),
+            None => (dy, steps),
+        };
+        face.set_crown_steps(steps);
+        face.set_crown_turn(turn);
+        ui.turn = Some(Turn { panel, x, y, dy, steps, turn });
+    });
+}
+
+/// The scroll of a turn no spinner or selector took.
+fn scroll_turn() {
+    with_ui(|ui| {
+        let Some(Turn { panel, x, y, dy, turn, .. }) = ui.turn.take() else { return };
+        if ui.screen(panel as usize).global::<Face>().get_crown_taken() == turn {
+            return;
+        }
         #[cfg(feature = "mcu")]
         show(ui, panel as usize);
         #[cfg(feature = "mcu")]
@@ -1187,6 +1227,7 @@ pub extern "C" fn ui_tick() {
         ui_hide_notification();
     }
     slint::platform::update_timers_and_animations();
+    scroll_turn();
 }
 
 #[unsafe(no_mangle)]

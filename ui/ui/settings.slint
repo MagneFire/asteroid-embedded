@@ -130,6 +130,8 @@ export component SettingsApp {
                 }
 
                 IntSelector {
+                    crown: true;
+                    crown-first: true;
                     value: Face.brightness;
                     min: 10;
                     max: 100;
@@ -250,6 +252,8 @@ export component SettingsApp {
                     }
 
                     IntSelector {
+                        crown: true;
+                        crown-first: true;
                         value: Face.nightstand-brightness;
                         min: 10;
                         max: 100;
@@ -269,6 +273,7 @@ export component SettingsApp {
                     }
 
                     IntSelector {
+                        crown: true;
                         value: Face.nightstand-delay;
                         min: 0;
                         max: 30;
@@ -474,6 +479,7 @@ export component SettingsApp {
         property <length> w: Face.clock12 ? 30 * Theme.unit : 45 * Theme.unit;
 
         time-hours := Spinner {
+            crown-first: true;
             x: 5 * Theme.unit;
             y: 20 * Theme.unit;
             width: parent.w;
@@ -539,6 +545,7 @@ export component SettingsApp {
     // DatePage: day, month and year on circular spinners from today, set with the check button.
     if root.page == 9: Page {
         date-day := Spinner {
+            crown-first: true;
             x: 5 * Theme.unit;
             y: 20 * Theme.unit;
             width: 30 * Theme.unit;

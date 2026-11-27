@@ -178,7 +178,8 @@ void main(uint32_t machtype, const void *fdt)
 	bool have_hub = hub_init();
 	if (hands_init() && have_ui)
 		ui_set_hands(true);
-	crown_init();
+	if (crown_init() && have_ui)
+		ui_set_crown(true);
 	power_init(have_display, have_ui, have_hub);
 	console_init();
 	static char serialno[24];

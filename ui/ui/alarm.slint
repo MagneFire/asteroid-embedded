@@ -293,6 +293,7 @@ export component AlarmApp {
         property <length> w: Face.clock12 ? 30 * Theme.unit : 45 * Theme.unit;
 
         hours := Spinner {
+            crown-first: true;
             x: 5 * Theme.unit;
             y: 20 * Theme.unit;
             width: parent.w;
