@@ -1,5 +1,5 @@
-/* SPI master on a BLSP QUP block, polled. The core is reset and put in
- * SPI mini-core mode (8-bit words) before each chunk, in FIFO mode with
+/* SPI master on a BLSP QUP block, polled. The core is put in its reset
+ * state and in SPI mini-core mode (8-bit words) before each chunk, in FIFO mode with
  * the FIFO counts and no packing: one FIFO word per byte, sent from its
  * top byte and received in its low byte. Every transfer is full duplex.
  * A chunk is what fits the FIFO: it is filled in PAUSE,
@@ -104,10 +104,14 @@ static int set_state(struct spi *s, uint32_t state)
 	return poll_state(s, state, false);
 }
 
-static int reset(struct spi *s)
+/* A software reset also sets the clock's idle level back to low, which a
+ * mode 3 chip with its chip select already low takes as a clock edge, so
+ * only the first set-up and a failure use it. */
+static int reset(struct spi *s, bool hard)
 {
-	writel(1, s->base + QUP_SW_RESET);
-	if (poll_state(s, STATE_RESET, false))
+	if (hard)
+		writel(1, s->base + QUP_SW_RESET);
+	if (hard ? poll_state(s, STATE_RESET, false) : set_state(s, STATE_RESET))
 		return -1;
 	writel(0, s->base + QUP_CONFIG);
 	writel(OP_RESET, s->base + QUP_OPERATIONAL);
@@ -171,7 +175,7 @@ int spi_init(unsigned qup, const uint8_t pins[3], unsigned func, unsigned mode, 
 	s->chunk = (out < in ? out : in) / 4;
 	if (s->chunk < MIN_CHUNK)
 		s->chunk = MIN_CHUNK;
-	int r = reset(s);
+	int r = reset(s, true);
 	log_printf("spi: qup%u io_mode %08lx chunk %u bytes, %lu Hz, reset %d\n", qup, io, s->chunk, s->hz, r);
 	if (r)
 		s->base = 0;
@@ -183,13 +187,13 @@ static int fail(struct spi *s, const char *what)
 	log_printf("spi: %s: state %08lx op %08lx err %08lx spi_err %08lx\n", what, readl(s->base + QUP_STATE),
 		   readl(s->base + QUP_OPERATIONAL), readl(s->base + QUP_ERROR_FLAGS),
 		   readl(s->base + SPI_ERROR_FLAGS));
-	reset(s);
+	reset(s, true);
 	return -1;
 }
 
 static int chunk(struct spi *s, const uint8_t *tx, uint8_t *rx, unsigned n)
 {
-	if (reset(s))
+	if (reset(s, false))
 		return fail(s, "not ready");
 	writel(SPI_MINI_CORE | SPI_N_VAL, s->base + QUP_CONFIG);
 	writel(0, s->base + QUP_IO_MODE);
