@@ -686,7 +686,7 @@ void app_crown(uint32_t now)
 	int32_t counts = crown_poll();
 	if (!counts || !have_ui || !power_awake())
 		return;
-	stack_scroll(-counts * CROWN_PX);
+	stack_scroll(counts * CROWN_PX);
 	power_activity(now);
 }
 
