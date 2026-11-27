@@ -62,7 +62,14 @@ enum ui_action {
 	UI_PAIR_ACCEPT,
 	UI_TIMEPIECE,
 	UI_RESET_WATCH,
-	UI_LAUNCHER_FIRST = 48
+	UI_LAUNCHER_FIRST = 48,
+	/* Settings' hands page shown and left, and a hand turned a step. */
+	UI_HANDS_OPEN = 60,
+	UI_HANDS_CLOSE,
+	UI_HANDS_MINUTE_CW,
+	UI_HANDS_MINUTE_CCW,
+	UI_HANDS_HOUR_CW,
+	UI_HANDS_HOUR_CCW,
 };
 
 enum ui_media_action {

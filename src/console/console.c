@@ -318,13 +318,31 @@ static void cmd_light(const char *args) { light_command(args, say); }
 
 static void cmd_hands(const char *args)
 {
-	uint32_t minute, hour;
-	if (!strncmp(args, "aside", 5))
+	uint32_t minute, hour, steps = 1;
+	if (!strncmp(args, "cal ", 4)) {
+		args += 4;
+		bool hr = *args == 'h';
+		while (*args && *args != ' ')
+			args++;
+		while (*args == ' ')
+			args++;
+		bool ccw = !strncmp(args, "ccw", 3);
+		if (!ccw && strncmp(args, "cw", 2)) {
+			say("usage: hands cal minute|hour cw|ccw [steps]\n");
+			return;
+		}
+		args += ccw ? 3 : 2;
+		if (*args && (!parse_num(&args, 10, &steps) || steps < 1 || steps > 179)) {
+			say("hands: 1 to 179 steps\n");
+			return;
+		}
+		hands_calibrate(hr, ccw, (uint8_t)steps);
+	} else if (!strncmp(args, "aside", 5))
 		hands_aside(true);
 	else if (!strncmp(args, "time", 4))
 		hands_aside(false);
 	else if (*args && (!parse_num(&args, 10, &minute) || !parse_num(&args, 10, &hour) || minute > 179 || hour > 179)) {
-		say("usage: hands [aside | time | <minute> <hour>]\n");
+		say("usage: hands [aside | time | <minute> <hour> | cal minute|hour cw|ccw [steps]]\n");
 		return;
 	} else if (*args)
 		hands_move((uint8_t)minute, (uint8_t)hour);
@@ -1866,7 +1884,7 @@ static const struct command commands[] = {
 	{ "bright", "<0-255>", cmd_bright },
 	{ "dcs", "<cmd> [<byte>...] | lp on|off | keep on|off", cmd_dcs },
 	{ "backlight", "[peek | auto | <brightness> <pixel> white|red | lux [off]]", cmd_backlight },
-	{ "hands", "[aside | time | <minute 0-179> <hour 0-179>]", cmd_hands },
+	{ "hands", "[aside | time | <minute 0-179> <hour 0-179> | cal minute|hour cw|ccw [steps]]", cmd_hands },
 	{ "light", "[sweep [black|white|crop|grid [columns rows [x y w h]]] | screen <percent>]", cmd_light },
 	{ "sleep", "", cmd_sleep },
 	{ "wake", "", cmd_wake },

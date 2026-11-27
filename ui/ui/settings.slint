@@ -42,10 +42,14 @@ component Check {
 
 export component SettingsApp {
     // 0 the list, then 1 Display, 2 Nightstand, 3 Watchface, 4 Launcher, 5 Units, 6 Bluetooth,
-    // 7 About, 8 Time, 9 Date, 10 Power.
+    // 7 About, 8 Time, 9 Date, 10 Power, 11 Profile, 12 Hands.
     in-out property <int> page;
     property <int> back: Face.back-count;
+    property <bool> hands-page: self.page == 12;
 
+    changed hands-page => {
+        Face.setting-toggled(self.hands-page ? Codes.ui-hands-open : Codes.ui-hands-close);
+    }
     changed page => {
         Face.app-depth = self.page > 0 ? 1 : 0;
         self.flip = false;
@@ -97,11 +101,14 @@ export component SettingsApp {
                 padding-top: 6 * Theme.unit;
                 padding-bottom: 6 * Theme.unit;
 
-                for item[i] in BuiltApps.settings-rows: ListItem {
-                    icon: item.icon;
-                    title: item.title;
-                    clicked => {
-                        root.page = item.page;
+                // Hands only on a watch with them.
+                for item[i] in BuiltApps.settings-rows: VerticalLayout {
+                    if item.page != 12 || Face.has-hands: ListItem {
+                        icon: item.icon;
+                        title: item.title;
+                        clicked => {
+                            root.page = item.page;
+                        }
                     }
                 }
             }
@@ -633,6 +640,58 @@ export component SettingsApp {
         }
 
         remorse := Remorse { }
+    }
+
+    // HandsCalibrationPage: both hands at 12, each turned a step at a time until it points there.
+    if root.page == 12: Page {
+        for row[i] in [
+            { title: "Minute hand", cw: Codes.ui-hands-minute-cw, ccw: Codes.ui-hands-minute-ccw },
+            { title: "Hour hand", cw: Codes.ui-hands-hour-cw, ccw: Codes.ui-hands-hour-ccw },
+        ]: Rectangle {
+            y: i == 0 ? 32 * Theme.unit : 57 * Theme.unit;
+            height: 18 * Theme.unit;
+
+            IconButton {
+                x: 12 * Theme.unit;
+                size: 18 * Theme.unit;
+                icon: "ios-arrow-dropleft";
+                clicked => {
+                    Face.setting-toggled(row.ccw);
+                }
+            }
+
+            Text {
+                text: row.title;
+                color: white;
+                font-size: 7 * Theme.unit;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            IconButton {
+                x: parent.width - 30 * Theme.unit;
+                size: 18 * Theme.unit;
+                icon: "ios-arrow-dropright";
+                clicked => {
+                    Face.setting-toggled(row.cw);
+                }
+            }
+        }
+
+        Text {
+            y: 77 * Theme.unit;
+            width: 60 * Theme.unit;
+            text: "Point both hands at 12";
+            color: white;
+            opacity: 0.8;
+            font-size: 5 * Theme.unit;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        PageHeader {
+            text: "Calibrate hands";
+        }
     }
 
     if root.page == 7: Page {

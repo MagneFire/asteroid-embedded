@@ -18,6 +18,7 @@
 enum {
 	CMD_SET_TIME = 0,
 	CMD_MOVE_ALL = 2,
+	CMD_MOTOR_INIT = 3,
 	CMD_READ_TIME = 4,
 	CMD_READ_VERSION = 5,
 	CMD_CHECK_INTERVAL = 7,
@@ -34,6 +35,8 @@ static const uint8_t needs_rev[] = { [CMD_READ_POSITION] = 16, [CMD_READ_MODE] =
 #define MODE_WATCH		5
 #define READ_GAP_MS		100
 #define RESET_MS		10
+/* The vendor waits this long for each step of a hand turned. */
+#define STEP_MS			17
 /* The vendor's tree: time after a reset, its battery check every 30 s
  * and the cell levels below which the hands stop. */
 #define BOOT_MS			1000
@@ -186,6 +189,20 @@ static void move(uint8_t minute, uint8_t hour)
 		aside = true;
 }
 
+static void calibrate(uint8_t hand, bool ccw, uint8_t steps)
+{
+	uint8_t p[] = { hand, ccw, steps };
+	if (!present || hand > 1 || steps >= 180)
+		return;
+	if (write_cmd(CMD_MOTOR_INIT, p)) {
+		log_printf("hands: %s hand not turned\n", hand ? "hour" : "minute");
+		return;
+	}
+	aside = true;
+	delay_ms(STEP_MS * steps);
+}
+
 const struct hands_driver hands_sop716 = {
 	.init = sop716_init, .set_time = set_time, .aside = set_aside, .status = status, .move = move,
+	.calibrate = calibrate,
 };

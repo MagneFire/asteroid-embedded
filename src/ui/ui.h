@@ -169,6 +169,8 @@ void ui_set_clock(uint32_t hour, uint32_t minute, uint32_t second, uint32_t week
  * watch off. */
 void ui_set_timepiece(bool on);
 void ui_set_tilt_light(bool on);
+/* Mechanical hands: Settings offers to calibrate them. */
+void ui_set_hands(bool on);
 /* The application processor is off and the watch runs without it: only
  * its own power key starts it, so Reboot says so instead. */
 void ui_set_ap_off(bool off);

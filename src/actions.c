@@ -116,6 +116,10 @@ void action_setting_toggled(int s)
 		} else {
 			setting_set(SETTING_AOD, setting_get(SETTING_CINEMA_AOD));
 		}
+	} else if (s == UI_HANDS_OPEN || s == UI_HANDS_CLOSE) {
+		app_hands_calibrate(s == UI_HANDS_OPEN);
+	} else if (s >= UI_HANDS_MINUTE_CW && s <= UI_HANDS_HOUR_CCW) {
+		hands_calibrate(s >= UI_HANDS_HOUR_CW, (s - UI_HANDS_MINUTE_CW) & 1, 1);
 	} else if (s == UI_TIMEPIECE) {
 		log_printf("timepiece\n");
 		power_timepiece();

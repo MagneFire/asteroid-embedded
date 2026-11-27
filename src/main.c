@@ -176,7 +176,8 @@ void main(uint32_t machtype, const void *fdt)
 	bool have_touch = touch_init();
 	bool have_haptics = haptics_init();
 	bool have_hub = hub_init();
-	hands_init();
+	if (hands_init() && have_ui)
+		ui_set_hands(true);
 	crown_init();
 	power_init(have_display, have_ui, have_hub);
 	console_init();

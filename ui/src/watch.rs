@@ -512,6 +512,11 @@ pub extern "C" fn ui_set_ap_off(off: bool) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ui_set_hands(on: bool) {
+    each(|face| face.set_has_hands(on));
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ui_set_tilt_light(on: bool) {
     each(|face| face.set_has_tilt_light(on));
 }

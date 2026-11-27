@@ -89,6 +89,14 @@ uint32_t rtc_read(void) { return rtc; }
 void rtc_write(uint32_t t) { rtc = t; }
 void hub_set_time(void) {}
 void hands_set_time(void) {}
+static int cal_on = -1, cal_hand = -1, cal_ccw = -1, cal_steps;
+void app_hands_calibrate(bool on) { cal_on = on; }
+void hands_calibrate(uint8_t hand, bool ccw, uint8_t steps)
+{
+	cal_hand = hand;
+	cal_ccw = ccw;
+	cal_steps += steps;
+}
 void hub_screen(bool on) {}
 void power_timepiece(void) { abort(); }
 void log_printf(const char *fmt, ...) {}
@@ -300,6 +308,23 @@ static void lend(void)
 	CHECK(task_at == 13000);
 }
 
+/* Each arrow turns its own hand one step its own way. */
+static void hands_calibration(void)
+{
+	action_setting_toggled(UI_HANDS_OPEN);
+	CHECK(cal_on == 1);
+	const struct { int code, hand, ccw; } turns[] = {
+		{ UI_HANDS_MINUTE_CW, 0, 0 }, { UI_HANDS_MINUTE_CCW, 0, 1 },
+		{ UI_HANDS_HOUR_CW, 1, 0 }, { UI_HANDS_HOUR_CCW, 1, 1 },
+	};
+	for (unsigned i = 0; i < 4; i++) {
+		action_setting_toggled(turns[i].code);
+		CHECK(cal_hand == turns[i].hand && cal_ccw == turns[i].ccw && cal_steps == (int)i + 1);
+	}
+	action_setting_toggled(UI_HANDS_CLOSE);
+	CHECK(cal_on == 0);
+}
+
 int main(void)
 {
 	reset_watch();
@@ -310,6 +335,7 @@ int main(void)
 	clock_set();
 	civil_days();
 	lend();
+	hands_calibration();
 	if (failures)
 		return 1;
 	puts("actions_test: ok");

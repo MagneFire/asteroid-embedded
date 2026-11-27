@@ -284,6 +284,7 @@ const LAYOUTS: &[&str] = &["launcher", "launcher", "three-icons", "two-columns",
 /// Settings' list: the part a row needs, if any, its icon, title and page.
 const SETTINGS_ROWS: &[(&str, &str, &str, u32)] = &[
     ("", "ios-display-outline", "Display", 1),
+    ("", "ios-time", "Hands", 12),
     ("", "ios-moon-outline", "Nightstand", 2),
     ("classic", "ios-watchface-outline", "Watchface", 3),
     ("launcher", "ios-launcher-outline", "Launcher", 4),

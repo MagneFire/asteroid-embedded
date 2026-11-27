@@ -166,13 +166,15 @@ struct backlight_driver {
 /* Mechanical hands over the screen, driven by a controller that keeps
  * the time for them: its start, the time to show after the clock was
  * set, the hands moved aside or back to the time, a line for the
- * console, and the hands moved to two positions of 0 to 179 there. */
+ * console, the hands moved to two positions of 0 to 179 there, and a
+ * hand (0 minute, 1 hour) turned by steps, that spot then its 12. */
 struct hands_driver {
 	bool (*init)(void);
 	void (*set_time)(void);
 	void (*aside)(bool on);
 	void (*status)(void (*say)(const char *fmt, ...));
 	void (*move)(uint8_t minute, uint8_t hour);
+	void (*calibrate)(uint8_t hand, bool ccw, uint8_t steps);
 };
 /* A crown that turns: its start, the counts turned since the last poll,
  * low power with the screen off, and its interrupts and errors. */

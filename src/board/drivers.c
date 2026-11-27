@@ -320,6 +320,11 @@ void hands_move(uint8_t minute, uint8_t hour)
 	if (HANDS(move))
 		board->hands->move(minute, hour);
 }
+void hands_calibrate(uint8_t hand, bool ccw, uint8_t steps)
+{
+	if (HANDS(calibrate))
+		board->hands->calibrate(hand, ccw, steps);
+}
 
 #define CROWN(fn) (board->crown && board->crown->fn)
 bool crown_init(void) { return CROWN(init) && board->crown->init(); }

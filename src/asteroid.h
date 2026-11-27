@@ -245,6 +245,7 @@ void hands_set_time(void);
 void hands_aside(bool on);
 void hands_status(void (*say)(const char *fmt, ...));
 void hands_move(uint8_t minute, uint8_t hour);
+void hands_calibrate(uint8_t hand, bool ccw, uint8_t steps);
 /* The watch's crown (board->crown): crown_poll gives the counts turned
  * since the last call, positive one way and negative the other. */
 bool crown_init(void);

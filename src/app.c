@@ -46,7 +46,7 @@
 #define CROWN_PX 4
 
 static const char wake_by_touch[] = "touch";
-static bool hands_off_face, hands_want;
+static bool hands_off_face, hands_want, hands_cal_wanted, hands_cal;
 static uint32_t hands_since;
 
 static struct app_caps caps;
@@ -690,13 +690,30 @@ void app_crown(uint32_t now)
 	power_activity(now);
 }
 
+/* Settings' hands page: both hands at 12 while it is on show awake, to
+ * be turned there. */
+void app_hands_calibrate(bool on) { hands_cal_wanted = on; }
+
 /* Hands over the screen show the time on the watchface and asleep, and
  * move aside for everything else. */
 void app_hands(uint32_t now)
 {
 	if (!board->hands)
 		return;
+	bool cal = hands_cal_wanted && have_ui && power_awake();
 	bool want = have_ui && power_awake() && (stack_panel() != UI_PANEL_FACE || ui_modal());
+	if (cal != hands_cal) {
+		hands_cal = cal;
+		if (cal) {
+			hands_move(0, 0);
+		} else {
+			hands_aside(want);
+			hands_off_face = want;
+		}
+		hands_want = hands_off_face;
+	}
+	if (cal)
+		return;
 	if (want != hands_want) {
 		hands_want = want;
 		hands_since = now;
