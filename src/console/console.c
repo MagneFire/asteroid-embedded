@@ -586,7 +586,7 @@ static bool has_max17050(void)
 	if (board->battery_driver == &battery_pmic_max17050)
 		return true;
 #endif
-	return board->battery_driver == &battery_max17050;
+	return board->battery_driver == &battery_max17050 || board->fuel_gauge == &gauge_max17050;
 }
 
 static void cmd_gauge(const char *args)

@@ -44,6 +44,7 @@ uint8_t pmic_read(uint32_t addr) { return 0; }
 void pmic_write(uint32_t addr, uint8_t val) {}
 int pmic_vadc_raw(uint8_t chan, uint8_t settle) { return 0; }
 const struct battery_driver battery_max17050, battery_pmic_max17050;
+const struct gauge_driver gauge_max17050;
 bool gauge_model_load(void) { return false; }
 int i2c_init(unsigned bus, unsigned sda, unsigned scl, unsigned func, uint32_t bus_hz) { return -1; }
 int i2c_xfer(unsigned bus, uint8_t addr, const uint8_t *w, unsigned wn, uint8_t *r, unsigned rn) { return -1; }

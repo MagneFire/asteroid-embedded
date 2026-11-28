@@ -37,6 +37,7 @@ bool gpu_init(void) { return false; }
 bool gpu_selftest(void) { return false; }
 
 const struct battery_driver battery_max17050;
+const struct gauge_driver gauge_max17050;
 bool gauge_model_load(void) { return false; }
 
 const void *firmware_get(const char *name, uint32_t *size) { return NULL; }
