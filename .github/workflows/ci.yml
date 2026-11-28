@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PYTHON: python3
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y device-tree-compiler
+      - run: make test
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-logs
+          path: |
+            build/test/*.log
+            build/boot_test.log
+          retention-days: 14
+
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - soc: qcom
+            rust-target: armv7a-none-eabihf
+            ui-target: target
+            out: build
+            image: asteroid.img
+          - soc: omap3
+            rust-target: armv7a-none-eabihf
+            ui-target: target-omap3
+            out: build/omap3
+            image: asteroid.img
+          - soc: apollo3
+            rust-target: thumbv7em-none-eabihf
+            ui-target: target-apollo3
+            out: build/apollo3
+            image: asteroid.bin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - run: sudo apt-get update && sudo apt-get install -y device-tree-compiler
+      # The same compiler as on the development machine: src/ builds with -Werror.
+      - uses: carlosperate/arm-none-eabi-gcc-action@v1.14.1
+        with:
+          release: 15.3.Rel2
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+          targets: ${{ matrix.rust-target }}
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: ui -> ${{ matrix.ui-target }}
+          key: ${{ matrix.soc }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fetch --locked --manifest-path ui/Cargo.toml
+      - run: make SOC=${{ matrix.soc }}
+      - name: Size
+        run: |
+          {
+            echo "### ${{ matrix.soc }}"
+            echo '```'
+            arm-none-eabi-size -A ${{ matrix.out }}/asteroid.elf
+            echo "${{ matrix.image }}: $(stat -c %s ${{ matrix.out }}/${{ matrix.image }}) bytes"
+            if [ ${{ matrix.soc }} = apollo3 ]; then python3 tools/ui-mcu/size.py build/apollo3/asteroid.map; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ matrix.soc }}
+          path: |
+            ${{ matrix.out }}/${{ matrix.image }}
+            ${{ matrix.out }}/asteroid.elf
+            ${{ matrix.out }}/asteroid.map
+          if-no-files-found: error
+          retention-days: 14
