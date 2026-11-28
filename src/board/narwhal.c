@@ -153,4 +153,6 @@ const struct board board_narwhal = {
 	.rsense_uohm = 10000,
 	.therm = therm,
 	.therm_n = sizeof therm / sizeof therm[0],
+	/* The hands show the time. */
+	.aod_off = true,
 };

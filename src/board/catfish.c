@@ -68,4 +68,6 @@ const struct board board_catfish = {
 	.motor = &motor_drv2605,
 	.motor_pins = { .i2c = { .bus = 6, .sda = 10, .scl = 11, .func = 2, .addr = 0x5a }, .enable = 26,
 			.rated = 0x4b, .clamp = 0x54 },
+	/* The hub's LCD shows the time while the panel is off. */
+	.aod_off = true,
 };

@@ -556,6 +556,8 @@ struct board {
 	uint8_t backlight_aod_code;
 	/* The brightness setting until one is chosen, 0 for 100 per cent. */
 	uint8_t brightness_init;
+	/* The always-on face is off until chosen. */
+	bool aod_off;
 
 	const struct light_driver *light;
 	struct {

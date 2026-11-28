@@ -49,12 +49,21 @@ const char *setting_name(enum setting s)
 	return table[s].key;
 }
 
+static uint8_t setting_init(enum setting s)
+{
+	if (s == SETTING_BRIGHTNESS && board->brightness_init)
+		return board->brightness_init;
+	if (s == SETTING_AOD && board->aod_off)
+		return 0;
+	return table[s].init;
+}
+
 int setting_get(enum setting s)
 {
 	if (!loaded) {
 		for (unsigned i = 0; i < SETTINGS; i++)
 			if (kv_get(table[i].key, &values[i], 1) != 1)
-				values[i] = i == SETTING_BRIGHTNESS && board->brightness_init ? board->brightness_init : table[i].init;
+				values[i] = setting_init(i);
 		loaded = true;
 	}
 	return values[s];
