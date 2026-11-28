@@ -229,6 +229,7 @@ int32_t max17050_cell_ua(void);
 int32_t max17050_cell_avg_ua(void);
 uint16_t max17050_last_status(void);
 unsigned max17050_errors(void);
+void max17050_charge_log(bool asleep);
 /* The watch's light sensor (board->light): light_finish gives the lux
  * since light_start, or -1 without a reading. */
 void light_init(void);

@@ -475,6 +475,7 @@ const struct battery_driver battery_max17050 = {
 	.mv = gauge_mv,
 	.ua = gauge_ua,
 	.avg_ua = gauge_avg_ua,
+	.asleep = max17050_charge_log,
 	.status = gauge_status,
 };
 
@@ -512,6 +513,22 @@ unsigned max17050_errors(void) { return errors; }
 static struct hub_gauge reading;
 static bool have_reading;
 static int host_decidegrees = 250;
+
+/* A current read at a wake says little about the hours asleep; the
+ * difference in the charge counter between two of these does. */
+void max17050_charge_log(bool asleep)
+{
+	uint16_t qh, rep, full, soc, t = 0;
+	if (!ready || rd(MAX17050_QH, &qh) || rd(MAX17050_REPCAP, &rep) || rd(MAX17050_FULLCAP, &full) ||
+	    rd(MAX17050_REPSOC, &soc))
+		return;
+	int c = board->gauge.host_temp || rd(MAX17050_TEMP, &t) ? host_decidegrees : max17050_decidegrees(t);
+	int32_t q = max17050_uah(qh, board->rsense_uohm) / 100;
+	log_printf("gauge: %s, counter %s%ld.%ld mAh, %ld of %ld mAh, %lu.%lu%%, %d.%d C, status %04x\n",
+		   asleep ? "asleep" : "awake", q < 0 ? "-" : "", (q < 0 ? -q : q) / 10, (q < 0 ? -q : q) % 10,
+		   max17050_uah(rep, board->rsense_uohm) / 1000, max17050_uah(full, board->rsense_uohm) / 1000,
+		   (uint32_t)soc * 10 / 256 / 10, (uint32_t)soc * 10 / 256 % 10, c / 10, (c < 0 ? -c : c) % 10, last_status);
+}
 
 static void take(void)
 {
@@ -565,5 +582,6 @@ const struct gauge_driver gauge_max17050 = {
 	.init = fuel_init,
 	.poll = fuel_poll,
 	.read = fuel_read,
+	.asleep = max17050_charge_log,
 	.host_temp = fuel_host_temp,
 };

@@ -82,6 +82,8 @@ uint32_t max17050_scaled(uint16_t repsoc, uint8_t full, uint8_t empty);
 uint32_t max17050_mv(uint16_t vcell);
 /* Positive while discharging, as the battery driver table has it. */
 int32_t max17050_ua(uint16_t current, uint32_t rsense_uohm);
+/* A capacity or the charge counter in uAh, signed. */
+int32_t max17050_uah(uint16_t cap, uint32_t rsense_uohm);
 /* The cell's temperature in tenths of a degree. */
 int max17050_decidegrees(uint16_t temp);
 /* The status register says the gauge lost power and its cell model, or

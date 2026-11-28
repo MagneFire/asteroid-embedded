@@ -181,6 +181,7 @@ const struct battery_driver battery_pmic_max17050 = {
 	.mv = max17050_cell_mv,
 	.ua = max17050_cell_ua,
 	.avg_ua = max17050_cell_avg_ua,
+	.asleep = max17050_charge_log,
 	.status = pg_status,
 };
 

@@ -8,6 +8,10 @@ static int failures;
 
 int main(void)
 {
+	CHECK(max17050_uah(1, 10000) == 500);
+	CHECK(max17050_uah(0x01d3, 10000) == 233500);
+	CHECK(max17050_uah(0xffff, 10000) == -500);
+	CHECK(max17050_uah(1, 20000) == 250);
 	CHECK(max17050_percent(0x0000) == 0);
 	CHECK(max17050_percent(0x32ff) == 50);
 	CHECK(max17050_percent(0x6400) == 100);

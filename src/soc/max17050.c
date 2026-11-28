@@ -46,6 +46,11 @@ int32_t max17050_ua(uint16_t current, uint32_t rsense_uohm)
 	return (int32_t)(-(int64_t)(int16_t)current * 1562500 / (int64_t)rsense_uohm);
 }
 
+int32_t max17050_uah(uint16_t cap, uint32_t rsense_uohm)
+{
+	return (int32_t)((int64_t)(int16_t)cap * 5000000 / (int64_t)rsense_uohm);
+}
+
 int max17050_decidegrees(uint16_t temp)
 {
 	int t = (int16_t)temp * 10 / 256;

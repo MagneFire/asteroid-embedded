@@ -399,6 +399,12 @@ static const char *fan_status(void)
 	return s;
 }
 
+static void fan_asleep(bool asleep)
+{
+	if (board->fuel_gauge && board->fuel_gauge->asleep)
+		board->fuel_gauge->asleep(asleep);
+}
+
 const struct battery_driver battery_fan54511 = {
 	.init = fan_init,
 	.poll = fan_poll,
@@ -412,5 +418,6 @@ const struct battery_driver battery_fan54511 = {
 	.mv = fan_mv,
 	.ua = fan_ua,
 	.ua_age_ms = fan_ua_age_ms,
+	.asleep = fan_asleep,
 	.status = fan_status,
 };
