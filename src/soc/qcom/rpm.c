@@ -283,6 +283,17 @@ int regulator_on(uint32_t id, uint32_t uv)
 	return r ? r : rpm_regulator_sleep_enable(RPM_LDOA, id, true);
 }
 
+/* A load vote in both sets, with the mode the vendor kernel picks for it
+ * from the rail's threshold. */
+#define RPM_KEY_MA		0x0000616du
+
+int rpm_regulator_load(uint32_t id, uint32_t ma, bool high)
+{
+	uint32_t kvp[6] = { RPM_KEY_LSMD, 4, high, RPM_KEY_MA, 4, ma };
+	int r = request(RPM_SET_ACTIVE, RPM_LDOA, id, kvp, 2);
+	return r ? r : request(RPM_SET_SLEEP, RPM_LDOA, id, kvp, 2);
+}
+
 void rpm_unused_rails_off(void)
 {
 	for (unsigned i = 0; i < sizeof board->unused_ldos && board->unused_ldos[i]; i++)

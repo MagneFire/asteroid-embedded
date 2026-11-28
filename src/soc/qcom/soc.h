@@ -220,6 +220,7 @@ int rpm_request(uint32_t type, uint32_t id, const uint32_t *kvp, unsigned nkvp);
 int rpm_regulator_enable(uint32_t type, uint32_t id, bool on);
 int rpm_regulator_voltage(uint32_t type, uint32_t id, uint32_t uv);
 int rpm_regulator_sleep_enable(uint32_t type, uint32_t id, bool on);
+int rpm_regulator_load(uint32_t id, uint32_t ma, bool high);
 int rpm_clock_rate(uint32_t type, uint32_t id, uint32_t khz);
 void rpm_sleep_votes(void);
 void rpm_unused_rails_off(void);
