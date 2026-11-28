@@ -132,7 +132,14 @@ void screenshot_to_file(int layer) {}
 uint32_t stub_repaints;
 void ui_repaint(uint32_t panel, bool gpu) { stub_repaints++; }
 char stub_notify[1024];
-void notify_feed(const uint8_t *p, unsigned n) { snprintf(stub_notify, sizeof stub_notify, "%.*s", (int)n, (const char *)p); }
+/* Not snprintf: the firmware's, which the tests link, has no %.*s. */
+void notify_feed(const uint8_t *p, unsigned n)
+{
+	if (n >= sizeof stub_notify)
+		n = sizeof stub_notify - 1;
+	memcpy(stub_notify, p, n);
+	stub_notify[n] = 0;
+}
 void media_write(uint16_t chr, const uint8_t *p, unsigned n) {}
 void bt_host_params(const struct bt_params *p) { (void)p; }
 void bt_host_get_params(struct bt_params *p) { memset(p, 0, sizeof *p); }

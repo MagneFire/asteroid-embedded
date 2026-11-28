@@ -4,12 +4,15 @@
 #define writel fw_writel
 #define dsb fw_dsb
 #define dmb fw_dmb
+#define wfi fw_wfi
 #include "asteroid.h"
 #undef readl
 #undef writel
 #undef dsb
 #undef dmb
+#undef wfi
 uint32_t readl(uint32_t a);
 void writel(uint32_t v, uint32_t a);
 void dsb(void);
 void dmb(void);
+static inline void wfi(void) {}

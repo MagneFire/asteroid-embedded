@@ -291,6 +291,8 @@ HOSTCC      ?= cc
 HOST_CFLAGS := -std=gnu11 -g -O1 -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -Wno-format -fno-builtin \
                -U_FORTIFY_SOURCE -I src -I src/soc/qcom -I tests -DHOST_TEST -include tests/host.h \
                -fsanitize=address,undefined -fno-sanitize-recover=all
+# glibc marks memcpy and memcmp nonnull even for a length of 0, which the firmware and its tests pass.
+HOST_CFLAGS += -fno-sanitize=nonnull-attribute
 HOST_SRCS   := tests/stubs.c src/console/console.c src/usb/adb.c src/usb/ramfs.c src/lib/fmt.c src/clockapps.c src/alarm.c src/ui/stack.c src/calc.c src/game.c src/agenda.c src/sensors/orient.c src/ui/rotation.c src/handpose.c src/input/crown_steps.c
 PARSER_SRCS := src/notify/notify.c src/weather/weather.c src/media/media.c src/storage/kv.c src/storage/ext4.c
 
@@ -412,7 +414,7 @@ $(BUILD)/test/emmc_test: tests/emmc_test.c src/storage/emmc.c src/lib/fmt.c src/
 
 $(BUILD)/test/squashfs_test: tests/squashfs_test.c src/storage/squashfs.c src/lib/inflate.c src/lib/lz4.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) $< src/storage/squashfs.c src/lib/inflate.c src/lib/lz4.c -o $@
+	$(HOSTCC) $(filter-out -fno-builtin,$(HOST_CFLAGS)) -D_GNU_SOURCE $< src/storage/squashfs.c src/lib/inflate.c src/lib/lz4.c -o $@
 
 $(BUILD)/test/soft_test: tests/soft_test.c src/gpu/soft.c $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
@@ -471,11 +473,11 @@ $(BUILD)/test/bleif_test: tests/bleif_test.c src/bt/bleif_proto.c src/bt/apollo3
 COMPANION := src/companion/wire.c src/companion/proto.c src/companion/link.c src/companion/companion.c src/companion/sensors.c src/sensors/compass.c src/sensors/fusion.c
 $(BUILD)/test/hr_test: tests/hr_test.c src/sensors/hr.c src/sensors/hr.h
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/hr.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/hr.c -lm -o $@
 
 $(BUILD)/test/raise_test: tests/raise_test.c src/sensors/raise.c src/sensors/raise.h
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/raise.c -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< src/sensors/raise.c -lm -o $@
 
 $(BUILD)/test/pedometer_test: tests/pedometer_test.c src/sensors/pedometer.c src/sensors/pedometer.h
 	@mkdir -p $(dir $@)
@@ -505,7 +507,7 @@ $(BUILD)/test/compass_app_test: tests/compass_app_test.c $(COMPASS_APP_TEST) $(w
 COMPANION_TEST := $(COMPANION) src/input/haptics.c src/input/haptics_aw8624.c
 $(BUILD)/test/companion_test: tests/companion_test.c $(COMPANION_TEST) $(wildcard src/companion/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(subst -I src/soc/qcom,-I src/soc/apollo3,$(HOST_CFLAGS)) $< $(COMPANION_TEST) -o $@
+	$(HOSTCC) $(subst -I src/soc/qcom,-I src/soc/apollo3,$(HOST_CFLAGS)) $< $(COMPANION_TEST) -lm -o $@
 
 $(BUILD)/test/apollo3_timer_test: tests/apollo3_timer_test.c src/soc/apollo3/timer.c $(wildcard tests/*.h src/*.h src/soc/apollo3/*.h)
 	@mkdir -p $(dir $@)
@@ -548,7 +550,7 @@ $(BUILD)/test/small.ext2: tests/data/small.ext2.gz
 
 $(BUILD)/test/%: tests/%.c $(HOST_SRCS) $(wildcard tests/*.h src/*.h src/*/*.h)
 	@mkdir -p $(dir $@)
-	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -o $@
+	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_SRCS) -lm -o $@
 
 # Run alongside each other; each test's output is shown whole once it is done.
 TESTS := console clockapps calc game agenda orient rotation actions power \
