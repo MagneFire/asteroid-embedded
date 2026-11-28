@@ -122,7 +122,7 @@ void present_settings(void)
 		.vibration = setting_get(SETTING_VIBRATION),
 		.aod = setting_get(SETTING_AOD),
 		.clock12 = setting_get(SETTING_CLOCK12),
-		.tilt = tilt == TILT_LIGHT && !hub_has_screen() ? TILT_FACE : tilt,
+		.tilt = tilt == TILT_LIGHT && !power_has_tilt_light() ? TILT_FACE : tilt,
 		.tap = setting_get(SETTING_TAP),
 		.fahrenheit = setting_get(SETTING_FAHRENHEIT),
 		.nightstand_aod = setting_get(SETTING_NIGHTSTAND_AOD),

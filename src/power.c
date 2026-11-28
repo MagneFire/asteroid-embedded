@@ -98,15 +98,15 @@ void power_wake_cancel(const char *cause)
 	}
 }
 
-/* The white screen lights the hub's own display from behind, so it is
- * the always-on face where there is none. */
+/* The white screen lights the hub's own display or the hands from
+ * behind, so it is the always-on face where there is neither. */
 void power_peek(const char *cause, bool light)
 {
 	if (policy.awake)
 		return;
 	if (!policy.peeking)
 		log_printf("peek: %s\n", cause);
-	power_policy_peek(&policy, time_ms(), light && have_hub && hub_has_screen());
+	power_policy_peek(&policy, time_ms(), light && have_hub && power_has_tilt_light());
 }
 
 void power_activity(uint32_t now)
@@ -406,7 +406,8 @@ static void hub_follow(bool want, uint32_t now)
  * which was off, so the two show together. */
 static bool lit_waits(enum screen_state want, uint32_t now)
 {
-	return want == SCREEN_LIT && screen == SCREEN_AMBIENT && (int32_t)(now - hub_ambient_t) < HUB_SCREEN_MS;
+	return want == SCREEN_LIT && screen == SCREEN_AMBIENT && hub_has_screen() &&
+	       (int32_t)(now - hub_ambient_t) < HUB_SCREEN_MS;
 }
 
 /* The panel is on, the face goes up at its own brightness. */
@@ -441,6 +442,12 @@ static bool backlight_ready(uint32_t now)
 {
 	if (lux_state == LUX_DONE)
 		return true;
+	if (!board->light) {
+		lux_t = now;
+		backlight_pick(-1, now);
+		lux_state = LUX_DONE;
+		return true;
+	}
 	if (lux_state == LUX_IDLE) {
 		lux_state = LUX_READING;
 		lux_t = now;
@@ -850,6 +857,8 @@ void power_idle(uint32_t app_next_ms, const char *why)
 		cpu_clock_slow(false);
 	}
 }
+
+bool power_has_tilt_light(void) { return hub_has_screen() || board->hands; }
 
 int32_t power_backlight_seen(struct backlight *b)
 {

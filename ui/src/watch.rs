@@ -143,7 +143,8 @@ pub struct UiColors {
 
 /// The settings as the firmware keeps them: brightnesses in per cent, the nightstand delay in
 /// seconds, burn_in 0 off, 1 high, 2 medium, 3 low, tilt 0 off, 1 wakes the screen, 2 shows the
-/// always-on face, 3 lights the hub's own display; backlight_color 0 auto, 1 white, 2 red.
+/// always-on face, 3 lights the screen behind the hub's display or the hands; backlight_color 0
+/// auto, 1 white, 2 red.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct UiSettings {

@@ -183,7 +183,7 @@ export component SettingsApp {
 
                 RowSeparator { }
 
-                // OptionCycler: Off, Screen, Always-on face, and Backlight with a second display.
+                // OptionCycler: Off, Screen, Always-on face, and Backlight with a second display or hands.
                 LabeledSwitch {
                     text: "Tilt-to-wake";
                     value: ["Off", "Screen", "Always on", "Backlight"][Face.tilt];
@@ -195,12 +195,12 @@ export component SettingsApp {
                 if Face.has-tilt-light && Face.tilt == 3: VerticalLayout {
                     RowSeparator { }
 
-                    // OptionCycler: Auto (red in the dark), White, Red.
+                    // OptionCycler: Auto (red in the dark, needs a light sensor), White, Red.
                     LabeledSwitch {
                         text: "Backlight Color";
-                        value: ["Auto", "White", "Red"][Face.backlight-color];
+                        value: Face.has-light-sensor ? ["Auto", "White", "Red"][Face.backlight-color] : Face.backlight-color == 2 ? "Red" : "White";
                         clicked => {
-                            Face.setting-set(Codes.setting-backlight-color, Math.mod(Face.backlight-color + 1, 3));
+                            Face.setting-set(Codes.setting-backlight-color, Face.has-light-sensor ? Math.mod(Face.backlight-color + 1, 3) : Face.backlight-color == 2 ? 1 : 2);
                         }
                     }
                 }

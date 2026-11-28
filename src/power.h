@@ -52,4 +52,7 @@ void power_ambient_redraw(void);
 /* The picture to fade in is on the panel. */
 void power_fade_shown(uint32_t now);
 bool power_display_lent(void);
+/* A tilt can light the screen behind something else that shows the
+ * time: the hub's display or the hands. */
+bool power_has_tilt_light(void);
 #endif

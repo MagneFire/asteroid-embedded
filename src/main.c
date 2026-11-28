@@ -151,7 +151,7 @@ void main(uint32_t machtype, const void *fdt)
 		ui_set_board(board->name, strlen(board->name), board->heart_rate, board->panel.round, board->light, !board->panel.lcd,
 			     hub_measures_activity(), board->heart_rate && hub_has_passive());
 		ui_set_timepiece(hub_has_timepiece());
-		ui_set_tilt_light(hub_has_screen());
+		ui_set_tilt_light(power_has_tilt_light());
 #ifdef HAVE_COMPASS
 		ui_set_magnetometer(hub_has_compass());
 #endif

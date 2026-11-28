@@ -285,14 +285,17 @@ static void cmd_backlight(const char *args)
 {
 	struct backlight b;
 	uint32_t dbv, pixel;
-	if (!hub_has_screen()) {
-		say("backlight: only behind a hub's display\n");
+	if (!power_has_tilt_light()) {
+		say("backlight: only behind a hub's display or hands\n");
 		return;
 	}
 	if (!strcmp(args, "peek")) {
 		power_peek("console", true);
 	} else if (!strcmp(args, "auto")) {
 		power_backlight_fix(NULL);
+	} else if (!strncmp(args, "lux", 3) && !board->light) {
+		say("backlight: no light sensor\n");
+		return;
 	} else if (!strcmp(args, "lux")) {
 		light_keep(true);
 		light_start();

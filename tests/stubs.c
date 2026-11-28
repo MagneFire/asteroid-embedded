@@ -91,6 +91,7 @@ void power_peek(const char *cause, bool light) {}
 void power_ambient_redraw(void) {}
 int32_t power_backlight_seen(struct backlight *b) { *b = (struct backlight){ 0 }; return -1; }
 void power_backlight_fix(const struct backlight *b) {}
+bool power_has_tilt_light(void) { return false; }
 void light_start(void) {}
 void light_keep(bool on) {}
 int32_t light_finish(void) { return -1; }
