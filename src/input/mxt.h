@@ -8,12 +8,21 @@
 #define MXT_OBJECT_SIZE		6
 #define MXT_MAX_OBJECTS		40
 #define MXT_T5_MESSAGE		5
+#define MXT_T6_COMMAND		6
 #define MXT_T9_TOUCH		9
 #define MXT_T7_POWER		7
+#define MXT_T8_ACQUIRE		8
 #define MXT_T42_SUPPRESS	42
 #define MXT_T46_CTE		46
 #define MXT_T62_NOISE		62
+#define MXT_T72_NOISE		72
 #define MXT_T100_TOUCH		100
+#define MXT_T104_AUXTOUCH	104
+#define MXT_T111_SELFCAP	111
+/* T6: writing 1 here calibrates; its messages' status byte. */
+#define MXT_T6_CALIBRATE	2
+#define MXT_T6_RESET		0x80
+#define MXT_T6_CAL		0x10
 /* T100: its configuration byte, whose bit 5 swaps x and y, and the
  * x and y ranges. */
 #define MXT_T100_CFG1		1
@@ -34,6 +43,8 @@ struct mxt_map {
 	uint8_t t100_size, t100_first_id, t100_ids;
 	uint8_t t42_id;		/* 0 without touch suppression */
 	uint16_t t7_addr, t42_addr, t46_addr, t62_addr;
+	uint16_t t6_addr, t8_addr, t72_addr, t104_addr, t111_addr;
+	uint8_t t6_id;
 };
 
 struct mxt_touch {
@@ -61,4 +72,9 @@ bool mxt_palm(const struct mxt_map *m, const uint8_t *msg);
  * power object's. */
 #define MXT_POWER_WRITES	12
 bool mxt_power_write(const struct mxt_map *m, unsigned i, bool asleep, uint16_t *addr, uint8_t *val);
+/* LG's idle settings for narwhal's T100 chip and their awake values:
+ * entry i of MXT_IDLE_WRITES, false if that object is not on this chip.
+ * Calibration (T6) comes before them going idle and after them waking. */
+#define MXT_IDLE_WRITES		11
+bool mxt_idle_write(const struct mxt_map *m, unsigned i, bool idle, uint16_t *addr, uint8_t *val);
 #endif

@@ -118,6 +118,13 @@ int main(void)
 	/* Of smelt's settings only the power object's apply. */
 	CHECK(mxt_power_write(&m, 0, true, &addr, &val) && addr == 0x118 && val == 100);
 	CHECK(!mxt_power_write(&m, 5, true, &addr, &val));
+	/* LG's idle settings: the idle interval to 64 ms and back to 16, and
+	 * none for an object the chip lacks. */
+	CHECK(m.t6_addr == 0x110 && m.t6_id == 1);
+	CHECK(mxt_idle_write(&m, 0, true, &addr, &val) && addr == 0x118 && val == 64);
+	CHECK(mxt_idle_write(&m, 0, false, &addr, &val) && addr == 0x118 && val == 16);
+	CHECK(mxt_idle_write(&m, 8, true, &addr, &val) && addr == 0x13e && val == 32);
+	CHECK(!mxt_idle_write(&m, 2, true, &addr, &val));
 
 	puts(failures ? "mxt_test: FAILED" : "mxt_test: ok");
 	return failures != 0;

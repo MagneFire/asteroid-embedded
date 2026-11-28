@@ -27,6 +27,10 @@
 #define BOOT_WAIT_MS	500
 #define RETRY_MIN_MS	50
 #define RETRY_MAX_MS	2000
+#define START_MS	200
+#define CAL_DELAY_MS	200
+/* L10's load awake, above its 10 mA high power threshold. */
+#define LOAD_MA		15
 
 #define QUEUE_LEN	16
 static struct touch queue[QUEUE_LEN];
@@ -41,6 +45,9 @@ static volatile bool configuring, retry;
 static uint8_t awake[MXT_POWER_WRITES];
 static bool kept[MXT_POWER_WRITES];
 static uint32_t retry_t, retry_ms;
+static bool idle, stopped, starting;
+static volatile bool cal_wanted, cal_due;
+static uint32_t start_t, cal_t;
 
 static int rd(uint16_t addr, uint8_t *buf, unsigned n)
 {
@@ -60,7 +67,7 @@ static void push(const struct touch *t)
 
 static void rearm(void)
 {
-	if (configuring)
+	if (configuring || stopped || starting)
 		return;
 	gpio_irq_ack(GPIO_IRQ);
 	gpio_irq_enable(GPIO_IRQ, true);
@@ -82,6 +89,11 @@ static void message_done(int err, void *ctx)
 		return;
 	}
 	retry_ms = 0;
+	if (cal_wanted && map.t6_id && msg[0] == map.t6_id && msg[1] & (MXT_T6_RESET | MXT_T6_CAL)) {
+		cal_wanted = false;
+		cal_t = time_ms();
+		cal_due = true;
+	}
 	if (msg[0] != 0xff && mxt_palm(&map, msg)) {
 		struct touch t = { TOUCH_PALM, last_x, last_y, false, time_ms() };
 		was_down = false;
@@ -198,16 +210,121 @@ static bool mxt_init(void)
 	return true;
 }
 
-/* The vendor's low power settings while the screen sleeps. A message in
- * flight finishes first. */
-static void mxt_sleep(bool on, bool wakes)
+/* Waits for a message in flight, and holds off the next. */
+static void hold(void)
 {
-	if (!map.t9_addr)
-		return;
 	configuring = true;
 	gpio_irq_enable(GPIO_IRQ, false);
 	for (uint32_t t0 = time_ms(); i2c_busy(BUS) && time_ms() - t0 < 50;)
 		i2c_poll(BUS);
+}
+
+static void release(void)
+{
+	configuring = false;
+	if (!retry)
+		rearm();
+}
+
+static void wr(uint16_t addr, uint8_t val)
+{
+	uint8_t w[3] = { (uint8_t)addr, (uint8_t)(addr >> 8), val };
+	if (i2c_xfer(BUS, ADDR, w, 3, NULL, 0))
+		errors++;
+}
+
+static void calibrate(void)
+{
+	if (map.t6_addr)
+		wr((uint16_t)(map.t6_addr + MXT_T6_CALIBRATE), 1);
+}
+
+static void ldo_load(uint32_t ma)
+{
+#ifdef RPM_LDOA
+	if (board->touch_pins.ldo && rpm_regulator_load(board->touch_pins.ldo, ma, ma != 0))
+		log_printf("touch: ldo %u load not acknowledged\n", board->touch_pins.ldo);
+#else
+	(void)ma;
+#endif
+}
+
+static void idle_writes(bool on)
+{
+	for (unsigned i = 0; i < MXT_IDLE_WRITES; i++) {
+		uint16_t addr;
+		uint8_t val;
+		if (mxt_idle_write(&map, i, on, &addr, &val))
+			wr(addr, val);
+	}
+}
+
+/* The vendor's: with taps waking, LG's idle settings and the lowest
+ * load on the supply; without, the supply off and the line masked until
+ * a reset on wake, and a calibration once the chip says it is up. */
+static void t100_sleep(bool on, bool wakes)
+{
+	if (on) {
+		if (starting) {
+			uint32_t left = ms_left(start_t, START_MS, time_ms());
+			if (left)
+				delay_ms(left);
+			starting = false;
+		}
+		hold();
+		cal_wanted = cal_due = false;
+		if (wakes) {
+			calibrate();
+			idle_writes(true);
+			ldo_load(0);
+			idle = true;
+		} else {
+			if (board->touch_pins.ldo && regulator_off(board->touch_pins.ldo))
+				log_printf("touch: ldo %u off not acknowledged\n", board->touch_pins.ldo);
+			wake_pin_touch(false);
+			retry = false;
+			stopped = true;
+			if (was_down) {
+				struct touch t = { TOUCH_UP, last_x, last_y, false, time_ms() };
+				was_down = false;
+				uint32_t flags = irq_save();
+				push(&t);
+				irq_restore(flags);
+			}
+		}
+		release();
+	} else if (stopped) {
+		gpio_set(GPIO_RESET, 0);
+		delay_ms(5);
+		if (board->touch_pins.ldo && regulator_on(board->touch_pins.ldo, board->touch_pins.ldo_uv))
+			log_printf("touch: ldo %u on not acknowledged\n", board->touch_pins.ldo);
+		delay_ms(10);
+		gpio_set(GPIO_RESET, 1);
+		wake_pin_touch(true);
+		stopped = false;
+		start_t = time_ms();
+		starting = cal_wanted = true;
+	} else if (idle) {
+		hold();
+		idle_writes(false);
+		calibrate();
+		ldo_load(LOAD_MA);
+		idle = false;
+		release();
+	}
+}
+
+/* The vendor's low power settings while the screen sleeps. A message in
+ * flight finishes first. */
+static void mxt_sleep(bool on, bool wakes)
+{
+	if (map.t100_ids) {
+		t100_sleep(on, wakes);
+		return;
+	}
+	if (!map.t9_addr)
+		return;
+	hold();
 	for (unsigned i = 0; i < MXT_POWER_WRITES; i++) {
 		uint16_t addr;
 		uint8_t val;
@@ -216,19 +333,20 @@ static void mxt_sleep(bool on, bool wakes)
 		if (mxt_power_write(&map, i, on, &addr, &val)) {
 			if (!on && kept[i])
 				val = awake[i];
-			uint8_t w[3] = { (uint8_t)addr, (uint8_t)(addr >> 8), val };
-			if (i2c_xfer(BUS, ADDR, w, 3, NULL, 0))
-				errors++;
+			wr(addr, val);
 		}
 	}
-	configuring = false;
-	if (!retry)
-		rearm();
+	release();
 }
 
 static uint32_t mxt_next_ms(void)
 {
-	return retry ? ms_left(retry_t, retry_ms, time_ms()) : UINT32_MAX;
+	uint32_t now = time_ms(), next = retry ? ms_left(retry_t, retry_ms, now) : UINT32_MAX, n;
+	if (starting && (n = ms_left(start_t, START_MS, now)) < next)
+		next = n;
+	if (cal_due && (n = ms_left(cal_t, CAL_DELAY_MS, now)) < next)
+		next = n;
+	return next;
 }
 
 /* A swipe made up for the console: down, moves and up over its time. */
@@ -277,9 +395,20 @@ static bool mxt_poll(struct touch *t)
 	if (fake.active)
 		fake_poll();
 	i2c_poll(BUS);
+	if (starting && time_ms() - start_t >= START_MS) {
+		starting = false;
+		if (!retry)
+			rearm();
+	}
 	if (retry && time_ms() - retry_t >= retry_ms) {
 		retry = false;
 		rearm();
+	}
+	if (cal_due && time_ms() - cal_t >= CAL_DELAY_MS) {
+		cal_due = false;
+		hold();
+		calibrate();
+		release();
 	}
 	if (q_tail == q_head)
 		return false;

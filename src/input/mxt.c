@@ -63,6 +63,17 @@ bool mxt_parse(uint8_t *table, unsigned n, struct mxt_map *m)
 			m->t46_addr = (uint16_t)address(o);
 		} else if (o[0] == MXT_T62_NOISE) {
 			m->t62_addr = (uint16_t)address(o);
+		} else if (o[0] == MXT_T6_COMMAND) {
+			m->t6_addr = (uint16_t)address(o);
+			m->t6_id = ids ? (uint8_t)id : 0;
+		} else if (o[0] == MXT_T8_ACQUIRE) {
+			m->t8_addr = (uint16_t)address(o);
+		} else if (o[0] == MXT_T72_NOISE) {
+			m->t72_addr = (uint16_t)address(o);
+		} else if (o[0] == MXT_T104_AUXTOUCH) {
+			m->t104_addr = (uint16_t)address(o);
+		} else if (o[0] == MXT_T111_SELFCAP) {
+			m->t111_addr = (uint16_t)address(o);
 		}
 		id += ids;
 		if (id > 255)
@@ -101,6 +112,42 @@ bool mxt_power_write(const struct mxt_map *m, unsigned i, bool asleep, uint16_t 
 		return false;
 	*addr = (uint16_t)(base + power_writes[i].offset);
 	*val = asleep ? power_writes[i].asleep : power_writes[i].awake;
+	return true;
+}
+
+/* Events 5 (idle, unplugged) and 6 (active, unplugged) of the patch in
+ * the vendor's atmel_touch.fw (at 0x24832 and 0x2486a). Offsets past an
+ * object's first instance reach into the next one, as the vendor's do. */
+static const struct { uint8_t object, offset, idle, awake; } idle_writes[MXT_IDLE_WRITES] = {
+	{ MXT_T7_POWER, 0, 64, 16 },
+	{ MXT_T7_POWER, 2, 3, 30 },
+	{ MXT_T8_ACQUIRE, 2, 5, 3 },
+	{ MXT_T111_SELFCAP, 6, 20, 10 },
+	{ MXT_T111_SELFCAP, 38, 20, 10 },
+	{ MXT_T8_ACQUIRE, 11, 8, 1 },
+	{ MXT_T42_SUPPRESS, 11, 0, 4 },
+	{ MXT_T72_NOISE, 0, 1, 11 },
+	{ MXT_T100_TOUCH, 30, 32, 32 },
+	{ MXT_T104_AUXTOUCH, 2, 32, 32 },
+	{ MXT_T104_AUXTOUCH, 7, 32, 32 },
+};
+
+bool mxt_idle_write(const struct mxt_map *m, unsigned i, bool idle, uint16_t *addr, uint8_t *val)
+{
+	uint16_t base = 0;
+	switch (idle_writes[i].object) {
+	case MXT_T7_POWER: base = m->t7_addr; break;
+	case MXT_T8_ACQUIRE: base = m->t8_addr; break;
+	case MXT_T42_SUPPRESS: base = m->t42_addr; break;
+	case MXT_T72_NOISE: base = m->t72_addr; break;
+	case MXT_T100_TOUCH: base = m->t100_addr; break;
+	case MXT_T104_AUXTOUCH: base = m->t104_addr; break;
+	case MXT_T111_SELFCAP: base = m->t111_addr; break;
+	}
+	if (!base)
+		return false;
+	*addr = (uint16_t)(base + idle_writes[i].offset);
+	*val = idle ? idle_writes[i].idle : idle_writes[i].awake;
 	return true;
 }
 
